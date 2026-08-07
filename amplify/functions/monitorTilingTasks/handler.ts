@@ -17,6 +17,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
+import { createShadowWorkflowRun } from '../workflowStats/runWriter';
 import {
   tilingTasksByStatus,
   tilingBatchesByTaskId,
@@ -141,6 +142,7 @@ type LaunchConfig = {
   isFalseNegatives?: boolean;
   samplePercent?: number;
   launchImageIds?: string[];
+  launchedBy?: string;
 };
 
 type TilingTaskRecord = {
@@ -362,6 +364,29 @@ async function processTask(task: TilingTaskRecord) {
       task.locationSetId,
       allLocations,
       organizationId
+    );
+    await createShadowWorkflowRun(
+      {
+        runId: mainQueue.id,
+        workflowType: launchConfig.isFalseNegatives
+          ? 'false-negatives'
+          : 'species-labelling',
+        projectId: task.projectId,
+        annotationSetId: task.annotationSetId,
+        displayName: launchConfig.queueOptions.name,
+        configuration: {
+          locationSetId: task.locationSetId,
+          tilingTaskId: task.id,
+          taskTag: launchConfig.taskTag,
+          batchSize: launchConfig.batchSize,
+          launchedCount: finalLocationIds.length,
+          samplePercent: launchConfig.samplePercent,
+        },
+      },
+      {
+        userId: launchConfig.launchedBy ?? 'system',
+        organizationId,
+      }
     );
     await enqueueLocations(
       mainQueue.url,

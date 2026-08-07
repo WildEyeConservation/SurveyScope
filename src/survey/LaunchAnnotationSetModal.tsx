@@ -10,8 +10,7 @@ import QCReview from './QCReview';
 import InfoTagsLaunch from './InfoTagsLaunch';
 import HomographyLaunch from './HomographyLaunch';
 import IndividualId from './IndividualId';
-
-type TaskType = 'species-labelling' | 'false-negatives' | 'homographies' | 'qc-review' | 'info-tags' | 'individual-id';
+import type { WorkflowType } from '../workflowRegistry';
 
 type LaunchHandlerType = {
   execute: (
@@ -34,7 +33,7 @@ export default function LaunchAnnotationSetModal({
     status: Schema['Project']['type']['status']
   ) => void;
 }) {
-  const [taskType, setTaskType] = useState<TaskType>('species-labelling');
+  const [taskType, setTaskType] = useState<WorkflowType>('species-labelling');
   const [launching, setLaunching] = useState(false);
   const [progressMessage, setProgressMessage] = useState<string>('');
   const [launchError, setLaunchError] = useState<string>('');
@@ -52,11 +51,11 @@ export default function LaunchAnnotationSetModal({
 
   // Task type for each tab, in render order. Info tagging is still
   // experimental, so its tab is only shown to sysadmins.
-  const tabTaskTypes: TaskType[] = [
+  const tabTaskTypes: WorkflowType[] = [
     'species-labelling',
     'false-negatives',
     'qc-review',
-    ...(isSysadmin ? (['info-tags'] as TaskType[]) : []),
+    ...(isSysadmin ? (['info-tags'] as WorkflowType[]) : []),
     'homographies',
     'individual-id',
   ];

@@ -21,6 +21,10 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import {
+  createShadowWorkflowRun,
+  workflowLaunchUserId,
+} from '../workflowStats/runWriter';
+import {
   locationsBySetIdAndConfidence,
   annotationsByAnnotationSetId,
   imagesByProjectId,
@@ -338,7 +342,11 @@ export const handler: LaunchFalseNegativesHandler = async (event) => {
       { projectId: payload.projectId }
     );
 
-    const result = await handleLaunch(payload, organizationId);
+    const result = await handleLaunch(
+      payload,
+      organizationId,
+      workflowLaunchUserId(event.identity)
+    );
 
     // Clean up the S3 payload file after successful processing.
     if (payloadS3Key) {
@@ -374,7 +382,11 @@ export const handler: LaunchFalseNegativesHandler = async (event) => {
 //   1. First launch – compute candidates, create pool & history, sample.
 //   2. Additional sample – load existing pool, exclude launched, sample remaining.
 //   3. Continuation – re-enqueue remaining tiles from an unfinished session.
-async function handleLaunch(payload: LaunchFalseNegativesPayload, organizationId: string) {
+async function handleLaunch(
+  payload: LaunchFalseNegativesPayload,
+  organizationId: string,
+  launchedBy: string
+) {
   const workerBatchSize = payload.batchSize ?? 200;
   const { projectId, annotationSetId, locationSetId } = payload;
 
@@ -382,7 +394,11 @@ async function handleLaunch(payload: LaunchFalseNegativesPayload, organizationId
 
   // If we need to create tiles from tiledRequest, use distributed tiling
   if (!payload.locationSetId && payload.tiledRequest) {
-    return handleDistributedFalseNegativesLaunch(payload, organizationId);
+    return handleDistributedFalseNegativesLaunch(
+      payload,
+      organizationId,
+      launchedBy
+    );
   }
 
   let selectedTiles: MinimalTile[];
@@ -672,6 +688,25 @@ async function handleLaunch(payload: LaunchFalseNegativesPayload, organizationId
     })
   );
 
+  await createShadowWorkflowRun(
+    {
+      runId: queue.id,
+      workflowType: 'false-negatives',
+      projectId,
+      annotationSetId,
+      displayName: payload.queueOptions.name,
+      configuration: {
+        locationSetId,
+        taskTag: payload.queueTag,
+        batchSize: workerBatchSize,
+        samplePercent: payload.samplePercent,
+        isContinuation: payload.isContinuation,
+        launchedCount: selectedTiles.length,
+      },
+    },
+    { userId: launchedBy, organizationId }
+  );
+
   await withTiming('enqueueTiles', () =>
     enqueueTiles(queue.url, queue.id, selectedTiles, annotationSetId, payload.queueTag)
   );
@@ -752,7 +787,11 @@ async function handleLaunch(payload: LaunchFalseNegativesPayload, organizationId
 }
 
 // Handle distributed tiling for false negatives when creating a new location set
-async function handleDistributedFalseNegativesLaunch(payload: LaunchFalseNegativesPayload, organizationId: string) {
+async function handleDistributedFalseNegativesLaunch(
+  payload: LaunchFalseNegativesPayload,
+  organizationId: string,
+  launchedBy: string
+) {
   const tiledRequest = payload.tiledRequest!;
   const workerBatchSize = payload.batchSize ?? 200;
 
@@ -931,6 +970,7 @@ async function handleDistributedFalseNegativesLaunch(payload: LaunchFalseNegativ
     // False negatives specific config
     isFalseNegatives: true,
     samplePercent: payload.samplePercent,
+    launchedBy,
   });
 
   // Create TilingTask record

@@ -62,7 +62,10 @@ import * as path from 'path';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Duration } from 'aws-cdk-lib';
-import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import {
+  SqsDlq,
+  SqsEventSource,
+} from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -388,6 +391,305 @@ const enableJollyFargate =
 
 const envName =
   process.env.AMPLIFY_ENV ?? process.env.AWS_BRANCH ?? 'production';
+
+const workflowStatsEnvName = envName
+  .toLowerCase()
+  .replace(/[^a-z0-9-]/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 32) || 'default';
+const workflowStatsStack = backend.createStack('DetwebWorkflowStats');
+const workflowRunsTableName = `detweb-workflow-runs-${workflowStatsEnvName}`;
+
+// These tables deliberately live outside the Amplify data stack. Their names
+// are stable so future workflow adapters can derive their ARNs without adding
+// CloudFormation exports back into the already constrained data stack.
+const workflowRunsTable = new dynamodb.Table(
+  workflowStatsStack,
+  'WorkflowRuns',
+  {
+    tableName: workflowRunsTableName,
+    partitionKey: {
+      name: 'runId',
+      type: dynamodb.AttributeType.STRING,
+    },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+workflowRunsTable.addGlobalSecondaryIndex({
+  indexName: 'byProjectAndLaunchedAt',
+  partitionKey: {
+    name: 'projectId',
+    type: dynamodb.AttributeType.STRING,
+  },
+  sortKey: {
+    name: 'launchedAt',
+    type: dynamodb.AttributeType.STRING,
+  },
+});
+
+for (const launchResource of [
+  backend.launchAnnotationSet,
+  backend.launchFalseNegatives,
+  backend.monitorTilingTasks,
+]) {
+  launchResource.addEnvironment(
+    'WORKFLOW_RUNS_TABLE',
+    workflowRunsTableName
+  );
+  const launchFunction = launchResource.resources.lambda;
+  launchFunction.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
+      resources: [
+        Stack.of(launchFunction).formatArn({
+          service: 'dynamodb',
+          resource: 'table',
+          resourceName: workflowRunsTableName,
+        }),
+      ],
+    })
+  );
+}
+
+const workflowEventsTable = new dynamodb.Table(
+  workflowStatsStack,
+  'WorkflowTaskEvents',
+  {
+    tableName: `detweb-workflow-events-${workflowStatsEnvName}`,
+    partitionKey: {
+      name: 'eventId',
+      type: dynamodb.AttributeType.STRING,
+    },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+workflowEventsTable.addGlobalSecondaryIndex({
+  indexName: 'byRunAndCompletedAt',
+  partitionKey: {
+    name: 'workflowRunId',
+    type: dynamodb.AttributeType.STRING,
+  },
+  sortKey: {
+    name: 'completedAt',
+    type: dynamodb.AttributeType.STRING,
+  },
+});
+
+const workflowDailyStatsTable = new dynamodb.Table(
+  workflowStatsStack,
+  'WorkflowDailyStats',
+  {
+    tableName: `detweb-workflow-daily-stats-${workflowStatsEnvName}`,
+    partitionKey: {
+      name: 'scopeKey',
+      type: dynamodb.AttributeType.STRING,
+    },
+    sortKey: {
+      name: 'bucketKey',
+      type: dynamodb.AttributeType.STRING,
+    },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+
+const workflowStatsWriterLogGroup = new logs.LogGroup(
+  workflowStatsStack,
+  'WorkflowStatsWriterLogs',
+  {
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+
+const recordWorkflowTaskEventFunction = new NodejsFunction(
+  workflowStatsStack,
+  'RecordWorkflowTaskEvent',
+  {
+    entry: path.join(
+      __dirname,
+      'functions/workflowStats/recordTaskEvent.ts'
+    ),
+    handler: 'handler',
+    runtime: lambda.Runtime.NODEJS_20_X,
+    architecture: lambda.Architecture.ARM_64,
+    timeout: Duration.seconds(15),
+    memorySize: 512,
+    reservedConcurrentExecutions: 25,
+    tracing: lambda.Tracing.ACTIVE,
+    logGroup: workflowStatsWriterLogGroup,
+    bundling: {
+      minify: true,
+      sourceMap: true,
+      externalModules: [],
+    },
+    environment: {
+      WORKFLOW_RUNS_TABLE: workflowRunsTable.tableName,
+      WORKFLOW_EVENTS_TABLE: workflowEventsTable.tableName,
+      WORKFLOW_DAILY_STATS_TABLE: workflowDailyStatsTable.tableName,
+      NODE_OPTIONS: '--enable-source-maps',
+    },
+  }
+);
+workflowRunsTable.grantReadData(recordWorkflowTaskEventFunction);
+workflowEventsTable.grantReadWriteData(recordWorkflowTaskEventFunction);
+workflowDailyStatsTable.grantReadWriteData(recordWorkflowTaskEventFunction);
+
+new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterErrors', {
+  metric: recordWorkflowTaskEventFunction.metricErrors({
+    period: Duration.minutes(5),
+  }),
+  threshold: 1,
+  evaluationPeriods: 1,
+  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+});
+new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterDuration', {
+  metric: recordWorkflowTaskEventFunction.metricDuration({
+    period: Duration.minutes(5),
+    statistic: 'p99',
+  }),
+  threshold: 12_000,
+  evaluationPeriods: 1,
+  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+});
+
+const workflowStatsFailureQueue = new sqs.Queue(
+  workflowStatsStack,
+  'WorkflowStatsProjectionFailures',
+  {
+    encryption: sqs.QueueEncryption.SQS_MANAGED,
+    enforceSSL: true,
+    retentionPeriod: Duration.days(14),
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+const workflowStatsProjectorLogGroup = new logs.LogGroup(
+  workflowStatsStack,
+  'WorkflowStatsProjectorLogs',
+  {
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+const workflowStatsObservationProjector = new NodejsFunction(
+  workflowStatsStack,
+  'ProjectObservationWorkflowStats',
+  {
+    entry: path.join(
+      __dirname,
+      'functions/workflowStats/projectObservation.ts'
+    ),
+    handler: 'handler',
+    runtime: lambda.Runtime.NODEJS_20_X,
+    architecture: lambda.Architecture.ARM_64,
+    timeout: Duration.seconds(30),
+    memorySize: 512,
+    reservedConcurrentExecutions: 10,
+    tracing: lambda.Tracing.ACTIVE,
+    logGroup: workflowStatsProjectorLogGroup,
+    bundling: {
+      minify: true,
+      sourceMap: true,
+      externalModules: [],
+    },
+    environment: {
+      WORKFLOW_RUNS_TABLE: workflowRunsTable.tableName,
+      WORKFLOW_EVENTS_TABLE: workflowEventsTable.tableName,
+      WORKFLOW_DAILY_STATS_TABLE: workflowDailyStatsTable.tableName,
+      NODE_OPTIONS: '--enable-source-maps',
+    },
+  }
+);
+workflowRunsTable.grantReadData(workflowStatsObservationProjector);
+workflowEventsTable.grantReadWriteData(workflowStatsObservationProjector);
+workflowDailyStatsTable.grantReadWriteData(
+  workflowStatsObservationProjector
+);
+const workflowStatsStreamGrant = observationTable.grantStreamRead(
+  workflowStatsObservationProjector
+);
+const workflowStatsObservationMapping = new EventSourceMapping(
+  workflowStatsStack,
+  'WorkflowStatsObservationMapping',
+  {
+    target: workflowStatsObservationProjector,
+    eventSourceArn: observationTable.tableStreamArn,
+    startingPosition: StartingPosition.TRIM_HORIZON,
+    batchSize: 25,
+    bisectBatchOnError: true,
+    reportBatchItemFailures: true,
+    retryAttempts: 5,
+    maxRecordAge: Duration.hours(24),
+    parallelizationFactor: 1,
+    onFailure: new SqsDlq(workflowStatsFailureQueue),
+    filters: [
+      lambda.FilterCriteria.filter({
+        eventName: lambda.FilterRule.isEqual('INSERT'),
+      }),
+    ],
+  }
+);
+workflowStatsStreamGrant.applyBefore(workflowStatsObservationMapping);
+
+new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorErrors', {
+  metric: workflowStatsObservationProjector.metricErrors({
+    period: Duration.minutes(5),
+  }),
+  threshold: 1,
+  evaluationPeriods: 1,
+  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+});
+new cloudwatch.Alarm(
+  workflowStatsStack,
+  'WorkflowStatsProjectorThrottles',
+  {
+    metric: workflowStatsObservationProjector.metricThrottles({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  }
+);
+new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorDuration', {
+  metric: workflowStatsObservationProjector.metricDuration({
+    period: Duration.minutes(5),
+    statistic: 'p99',
+  }),
+  threshold: 24_000,
+  evaluationPeriods: 1,
+  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+});
+new cloudwatch.Alarm(
+  workflowStatsStack,
+  'WorkflowStatsProjectorIteratorAge',
+  {
+    metric: workflowStatsObservationProjector.metric('IteratorAge', {
+      period: Duration.minutes(5),
+      statistic: 'Maximum',
+    }),
+    threshold: 15 * 60 * 1000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  }
+);
+new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectionFailures', {
+  metric:
+    workflowStatsFailureQueue.metricApproximateNumberOfMessagesVisible({
+      period: Duration.minutes(5),
+    }),
+  threshold: 1,
+  evaluationPeriods: 1,
+  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+});
 
 let lightglueQueueUrl: string | undefined;
 let scoutbotQueueUrl: string | undefined;
