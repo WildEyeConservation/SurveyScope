@@ -157,6 +157,16 @@ backend.updateUserStats.addEnvironment(
   'STATS_RECEIPT_TABLE',
   statsReceiptTable.tableName
 );
+// Real table names, not derived ones: the AppSync endpoint hostname is not the
+// API ID that Amplify uses in table suffixes.
+backend.updateUserStats.addEnvironment(
+  'USER_STATS_TABLE',
+  backend.data.resources.tables['UserStats'].tableName
+);
+backend.updateUserStats.addEnvironment(
+  'QUEUE_TABLE',
+  backend.data.resources.tables['Queue'].tableName
+);
 
 // This stack must depend on nothing: the data stack (stream mapping failure
 // destination), the function stack (alarm actions), and the workflow stats

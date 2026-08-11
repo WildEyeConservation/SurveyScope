@@ -32,23 +32,19 @@ const logger = new Logger({
   serviceName: 'update-user-stats',
 });
 
-function modelTableName(modelName: string): string {
-  const endpoint = new URL(env.AMPLIFY_DATA_GRAPHQL_ENDPOINT);
-  const apiId = endpoint.hostname.split('.')[0];
-  if (!apiId) throw new Error('Could not derive the AppSync API ID');
-  return `${modelName}-${apiId}-NONE`;
-}
-
 function requiredEnvironmentVariable(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable ${name}`);
   return value;
 }
 
+// Table names are injected from backend.ts. They cannot be derived from the
+// GraphQL endpoint: Amplify suffixes tables with the AppSync API ID, while the
+// endpoint hostname carries a different endpoint identifier.
 const tables = {
   receipts: requiredEnvironmentVariable('STATS_RECEIPT_TABLE'),
-  userStats: modelTableName('UserStats'),
-  queues: modelTableName('Queue'),
+  userStats: requiredEnvironmentVariable('USER_STATS_TABLE'),
+  queues: requiredEnvironmentVariable('QUEUE_TABLE'),
 };
 
 const documentClient = DynamoDBDocumentClient.from(
