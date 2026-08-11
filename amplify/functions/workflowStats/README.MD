@@ -95,8 +95,9 @@ Species Labelling and False Negatives are the first shadow-mode migration slice:
    `runId`.
 2. A temporary second Observation stream consumer resolves workflow identity
    from the durable run rather than `Queue.tag` or `Observation.source`.
-3. The adapter uses `Observation.id` as the idempotency source and Location ID
-   as the completed work item.
+3. The adapter uses `Observation.id` as the idempotency source. The completed
+   work item is the Location record: `workItemType` is `location` for Species
+   Labelling and `tile` for False Negatives, matching the registry units.
 4. Test observations whose annotation set differs from the run are excluded.
 5. Legacy observations without a Workflow Run are explicitly logged and
    skipped, so they cannot block the live stream shard.

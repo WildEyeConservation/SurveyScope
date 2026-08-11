@@ -86,7 +86,10 @@ export function workflowTaskFromObservation(
       workflowRunId: run.runId,
       projectId: run.projectId,
       annotationSetId: run.annotationSetId,
-      workItemType: 'location',
+      // The registry unit for False Negatives is the tile; the work item ID is
+      // still the Location record that represents that tile.
+      workItemType:
+        run.workflowType === 'false-negatives' ? 'tile' : 'location',
       workItemId: locationId,
       activeTimeMs,
       waitingTimeMs,

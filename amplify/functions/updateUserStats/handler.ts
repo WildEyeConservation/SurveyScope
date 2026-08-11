@@ -304,9 +304,11 @@ export const handler: DynamoDBStreamHandler = async (event) => {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
-      // The existing event source mapping does not enable partial-batch
-      // responses. Throw so Lambda retries the batch; transaction receipts make
-      // already-applied records safe to replay.
+      // The event source mapping does not enable partial-batch responses.
+      // Throw so Lambda retries the batch; transaction receipts make
+      // already-applied records safe to replay, and the mapping's bisection,
+      // retry bound, and SQS failure destination stop a permanently bad record
+      // from stalling the shard.
       throw error;
     }
   }

@@ -30,6 +30,7 @@ test('maps an Observation into a Species Labelling shadow event', () => {
 
   assert.equal(decision.actor.userId, 'user-1');
   assert.equal(decision.task.workflowRunId, 'queue-1');
+  assert.equal(decision.task.workItemType, 'location');
   assert.equal(decision.task.outcome, 'sighting');
   assert.deepEqual(decision.task.metrics, {
     sightings: 1,
@@ -48,6 +49,7 @@ test('maps the same Observation to False Negative workflow metrics from its run'
   assert.equal(decision.kind, 'project');
   if (decision.kind !== 'project') return;
 
+  assert.equal(decision.task.workItemType, 'tile');
   assert.deepEqual(decision.task.metrics, {
     missedAnimalsFound: 3,
     annotationsAdded: 3,

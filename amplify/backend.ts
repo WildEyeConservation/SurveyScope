@@ -71,6 +71,9 @@ import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 
 const backend = defineBackend({
   auth,
@@ -155,6 +158,57 @@ backend.updateUserStats.addEnvironment(
   statsReceiptTable.tableName
 );
 
+// This stack must depend on nothing: the data stack (stream mapping failure
+// destination), the function stack (alarm actions), and the workflow stats
+// stack (alarm actions) all import from it, so any reference out of it would
+// create a nested-stack cycle.
+const statsReliabilityStack = backend.createStack('DetwebStatsReliability');
+
+// Synth-time gate: set STATS_ALARM_EMAIL in the build environment to route
+// every statistics alarm to an email subscription. Unset, alarms still exist
+// but have no action, matching the previous behavior.
+const statsAlarmEmail = process.env.STATS_ALARM_EMAIL;
+const statsAlarmTopic = statsAlarmEmail
+  ? new sns.Topic(statsReliabilityStack, 'StatsAlarmTopic')
+  : undefined;
+if (statsAlarmTopic && statsAlarmEmail) {
+  statsAlarmTopic.addSubscription(
+    new snsSubscriptions.EmailSubscription(statsAlarmEmail)
+  );
+}
+const withStatsAlarmAction = (alarm: cloudwatch.Alarm): cloudwatch.Alarm => {
+  if (statsAlarmTopic) {
+    alarm.addAlarmAction(new cloudwatchActions.SnsAction(statsAlarmTopic));
+  }
+  return alarm;
+};
+
+// Failure destination for the legacy UserStats stream mapping. The handler
+// throws on any record failure; without a retry bound one permanently bad
+// record (for example an Observation whose Project lost its organization)
+// would stall UserStats and Queue progress for its whole shard until the
+// record ages out of the 24-hour stream.
+const userStatsFailureQueue = new sqs.Queue(
+  statsReliabilityStack,
+  'UserStatsStreamFailures',
+  {
+    encryption: sqs.QueueEncryption.SQS_MANAGED,
+    enforceSSL: true,
+    retentionPeriod: Duration.days(14),
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'UserStatsStreamFailuresVisible', {
+    metric: userStatsFailureQueue.metricApproximateNumberOfMessagesVisible({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+
 const streamPolicy = new Policy(
   statsDataStack,
   'MyDynamoDBFunctionStreamingPolicy',
@@ -215,9 +269,37 @@ const mapping1 = new EventSourceMapping(
     target: statsFunction,
     eventSourceArn: observationTable.tableStreamArn,
     startingPosition: StartingPosition.LATEST,
+    // The handler throws on the first failed record. Bisection isolates a
+    // poison record instead of letting it block the shard, the retry bound
+    // hands it to the failure queue, and transaction receipts make the
+    // replayed healthy records idempotent.
+    bisectBatchOnError: true,
+    retryAttempts: 10,
+    maxRecordAge: Duration.hours(24),
+    onFailure: new SqsDlq(userStatsFailureQueue),
   }
 );
 mapping1.node.addDependency(streamPolicy);
+
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsFunctionStack, 'UpdateUserStatsErrors', {
+    metric: statsFunction.metricErrors({ period: Duration.minutes(5) }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsFunctionStack, 'UpdateUserStatsIteratorAge', {
+    metric: statsFunction.metric('IteratorAge', {
+      period: Duration.minutes(5),
+      statistic: 'Maximum',
+    }),
+    threshold: 15 * 60 * 1000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 const backfillStack = backend.createStack('BackfillLocationGroup');
 const locationTable = backend.data.resources.tables['Location'];
@@ -543,23 +625,27 @@ workflowRunsTable.grantReadData(recordWorkflowTaskEventFunction);
 workflowEventsTable.grantReadWriteData(recordWorkflowTaskEventFunction);
 workflowDailyStatsTable.grantReadWriteData(recordWorkflowTaskEventFunction);
 
-new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterErrors', {
-  metric: recordWorkflowTaskEventFunction.metricErrors({
-    period: Duration.minutes(5),
-  }),
-  threshold: 1,
-  evaluationPeriods: 1,
-  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-});
-new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterDuration', {
-  metric: recordWorkflowTaskEventFunction.metricDuration({
-    period: Duration.minutes(5),
-    statistic: 'p99',
-  }),
-  threshold: 12_000,
-  evaluationPeriods: 1,
-  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-});
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterErrors', {
+    metric: recordWorkflowTaskEventFunction.metricErrors({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterDuration', {
+    metric: recordWorkflowTaskEventFunction.metricDuration({
+      period: Duration.minutes(5),
+      statistic: 'p99',
+    }),
+    threshold: 12_000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 const workflowStatsFailureQueue = new sqs.Queue(
   workflowStatsStack,
@@ -639,57 +725,67 @@ const workflowStatsObservationMapping = new EventSourceMapping(
 );
 workflowStatsStreamGrant.applyBefore(workflowStatsObservationMapping);
 
-new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorErrors', {
-  metric: workflowStatsObservationProjector.metricErrors({
-    period: Duration.minutes(5),
-  }),
-  threshold: 1,
-  evaluationPeriods: 1,
-  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-});
-new cloudwatch.Alarm(
-  workflowStatsStack,
-  'WorkflowStatsProjectorThrottles',
-  {
-    metric: workflowStatsObservationProjector.metricThrottles({
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorErrors', {
+    metric: workflowStatsObservationProjector.metricErrors({
       period: Duration.minutes(5),
     }),
     threshold: 1,
     evaluationPeriods: 1,
     treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-  }
+  })
 );
-new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorDuration', {
-  metric: workflowStatsObservationProjector.metricDuration({
-    period: Duration.minutes(5),
-    statistic: 'p99',
-  }),
-  threshold: 24_000,
-  evaluationPeriods: 1,
-  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-});
-new cloudwatch.Alarm(
-  workflowStatsStack,
-  'WorkflowStatsProjectorIteratorAge',
-  {
-    metric: workflowStatsObservationProjector.metric('IteratorAge', {
+withStatsAlarmAction(
+  new cloudwatch.Alarm(
+    workflowStatsStack,
+    'WorkflowStatsProjectorThrottles',
+    {
+      metric: workflowStatsObservationProjector.metricThrottles({
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }
+  )
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorDuration', {
+    metric: workflowStatsObservationProjector.metricDuration({
       period: Duration.minutes(5),
-      statistic: 'Maximum',
+      statistic: 'p99',
     }),
-    threshold: 15 * 60 * 1000,
+    threshold: 24_000,
     evaluationPeriods: 1,
     treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-  }
+  })
 );
-new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectionFailures', {
-  metric:
-    workflowStatsFailureQueue.metricApproximateNumberOfMessagesVisible({
-      period: Duration.minutes(5),
-    }),
-  threshold: 1,
-  evaluationPeriods: 1,
-  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-});
+withStatsAlarmAction(
+  new cloudwatch.Alarm(
+    workflowStatsStack,
+    'WorkflowStatsProjectorIteratorAge',
+    {
+      metric: workflowStatsObservationProjector.metric('IteratorAge', {
+        period: Duration.minutes(5),
+        statistic: 'Maximum',
+      }),
+      threshold: 15 * 60 * 1000,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }
+  )
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectionFailuresDepth', {
+    metric:
+      workflowStatsFailureQueue.metricApproximateNumberOfMessagesVisible({
+        period: Duration.minutes(5),
+      }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 let lightglueQueueUrl: string | undefined;
 let scoutbotQueueUrl: string | undefined;
