@@ -19,6 +19,7 @@ export function ImageContextFromHook({
   image,
   children,
   taskTag,
+  active = true,
   onAnnotationCreate,
 }: {
   hook: AnnotationsHook;
@@ -26,6 +27,8 @@ export function ImageContextFromHook({
   image: AnnotationImage;
   children: React.ReactNode;
   taskTag?: string;
+  /** Only the visible buffered workspace may update shared task metadata. */
+  active?: boolean;
   /** Called synchronously once a locally-created annotation passes validation. */
   onAnnotationCreate?: () => void;
 }) {
@@ -146,8 +149,8 @@ export function ImageContextFromHook({
     nextNeighboursQuery.isSuccess;
 
   useEffect(() => {
-    setCurrentTaskTag(taskTag ?? '');
-  }, []);
+    if (active) setCurrentTaskTag(taskTag ?? '');
+  }, [active, setCurrentTaskTag, taskTag]);
 
   const create = useCallback(
     (annotation: Schema['Annotation']['type']) => {

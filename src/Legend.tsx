@@ -2,6 +2,7 @@ import { useContext } from 'react';
 import { ProjectContext } from './Context';
 import { Card, Button } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { formatShortcutKey } from './utils/hotkeys';
 
 /**
  * SideLegend shows which classes correspond to which colour markers in the
@@ -16,7 +17,6 @@ interface LegendProps {
   // Optional: provide categories explicitly (e.g., when the annotation set is from another project)
   categoriesOverride?: any[];
 }
-
 interface SideLegendProps extends LegendProps {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -86,7 +86,7 @@ export function SideLegend({
                     ></div>
                     <div>{category.name}</div>
                   </div>
-                  <div>({category.shortcutKey})</div>
+                  <div>({formatShortcutKey(category.shortcutKey)})</div>
                 </Button>
               ))}
           </Card.Body>
@@ -95,4 +95,3 @@ export function SideLegend({
     </div>
   );
 }
-

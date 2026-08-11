@@ -18,6 +18,7 @@ import { GlobalContext, UserContext } from './Context';
 import { TaskBuffer } from './TaskBuffer';
 import InfoTagAnnotation from './InfoTagAnnotation';
 import { fetchAllPaginatedResults } from './utils';
+import useUnsavedWorkGuard from './useUnsavedWorkGuard';
 
 const VISIBILITY_TIMEOUT_SECONDS = 3600;
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
@@ -32,6 +33,7 @@ type InfoTagTaskPayload = {
 };
 
 export default function InfoTagTask() {
+  useUnsavedWorkGuard();
   const { queueId } = useParams<{ queueId: string }>();
   const { getSqsClient, myMembershipHook } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;

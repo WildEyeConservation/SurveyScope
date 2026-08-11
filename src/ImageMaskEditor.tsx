@@ -16,8 +16,8 @@ Polygon mask editor drawn as an SVG overlay on the sample image — click to
 add vertices, click the first vertex (or double-click) to close, drag
 vertices to adjust, right-click a polygon to remove it.
 
-Masks are reported in the same coordinate convention the Leaflet (CRS.Simple)
-version used: [x, y] with y measured from the image bottom.
+Masks use the persisted coordinate convention: [x, y] with y measured from
+the image bottom.
 */
 const ImageMaskEditor: React.FC<ImageMaskEditorProps> = ({ setMasks }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);

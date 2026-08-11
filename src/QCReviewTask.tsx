@@ -10,6 +10,7 @@ import { Badge } from 'react-bootstrap';
 import { TaskBuffer } from './TaskBuffer';
 import QCAnnotationReview from './QCAnnotationReview';
 import { fetchAllPaginatedResults } from './utils';
+import useUnsavedWorkGuard from './useUnsavedWorkGuard';
 
 /**
  * QC Review Task — SQS-driven task buffer for annotation QC review.
@@ -23,6 +24,7 @@ export default function QCReviewTask() {
   const { client } = useContext(GlobalContext)!;
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
+  useUnsavedWorkGuard();
   const [queueUrl, setQueueUrl] = useState<string | undefined>(undefined);
   const [annotationSetId, setAnnotationSetId] = useState<string | undefined>(
     undefined

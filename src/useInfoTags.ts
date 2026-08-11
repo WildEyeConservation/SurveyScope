@@ -8,6 +8,13 @@ import {
   infoTagNamesFor,
   type InfoTagSetData,
 } from './infoTags';
+import { mapFromEntries } from './utils/persistedMap';
+
+/** InfoTagSetData as it is cached: Maps flattened to entries so it survives JSON. */
+type SerializedInfoTagSetData = {
+  tagIdsByAnnotation: [string, string[]][];
+  nameById: [string, string][];
+};
 
 // Info tags only change when someone runs an informational tagging job, so a
 // generous stale time keeps the review page from re-scanning the link index
@@ -21,12 +28,17 @@ export function useInfoTagNames(annotationSetId: string | null | undefined) {
     queryKey: ['info-tag-names', annotationSetId],
     enabled: Boolean(annotationSetId),
     staleTime: STALE_TIME,
-    queryFn: () => fetchInfoTagNamesForSet(client, annotationSetId!),
+    // Entries, not the Map: query data is persisted to localStorage as JSON,
+    // which turns a Map into `{}`. See utils/persistedMap.
+    queryFn: async () =>
+      Array.from(await fetchInfoTagNamesForSet(client, annotationSetId!)),
   });
-  return query.data ?? EMPTY_NAMES;
+  const entries = query.data;
+  return useMemo(() => mapFromEntries(entries, EMPTY_NAMES), [entries]);
 }
 
 const EMPTY_NAMES = new Map<string, string>();
+const EMPTY_TAG_IDS = new Map<string, string[]>();
 const EMPTY_LIST: string[] = [];
 
 /**
@@ -48,7 +60,15 @@ export function useInfoTagData(annotationSetIds: string[]) {
     queries: ids.map((id) => ({
       queryKey: ['info-tag-data', id],
       staleTime: STALE_TIME,
-      queryFn: () => fetchInfoTagDataForSet(client, id),
+      // Both fields are Maps, so both are cached as entries. See the comment on
+      // useInfoTagNames.
+      queryFn: async (): Promise<SerializedInfoTagSetData> => {
+        const data = await fetchInfoTagDataForSet(client, id);
+        return {
+          tagIdsByAnnotation: Array.from(data.tagIdsByAnnotation),
+          nameById: Array.from(data.nameById),
+        };
+      },
     })),
   });
 
@@ -56,7 +76,11 @@ export function useInfoTagData(annotationSetIds: string[]) {
   // queries actually resolve (useQueries returns new objects every render).
   const dataSig = queries
     .map((q) =>
-      q.data ? `${q.data.nameById.size}:${q.data.tagIdsByAnnotation.size}` : ''
+      q.data
+        ? `${q.data.nameById?.length ?? -1}:${
+            q.data.tagIdsByAnnotation?.length ?? -1
+          }`
+        : ''
     )
     .join('|');
 
@@ -64,7 +88,14 @@ export function useInfoTagData(annotationSetIds: string[]) {
     const map = new Map<string, InfoTagSetData>();
     ids.forEach((id, index) => {
       const data = queries[index]?.data;
-      if (data) map.set(id, data);
+      if (!data) return;
+      map.set(id, {
+        tagIdsByAnnotation: mapFromEntries(
+          data.tagIdsByAnnotation,
+          EMPTY_TAG_IDS
+        ),
+        nameById: mapFromEntries(data.nameById, EMPTY_NAMES),
+      });
     });
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,10 +138,19 @@ export function useImageInfoTags(
     // Sets without any tags never reach the (per-image) link query.
     enabled: Boolean(imageId && annotationSetId && nameById.size > 0),
     staleTime: STALE_TIME,
-    queryFn: () =>
-      fetchInfoTagNamesForImage(client, imageId!, annotationSetId!, nameById),
+    // Entries, not the Map. See the comment on useInfoTagNames.
+    queryFn: async () =>
+      Array.from(
+        await fetchInfoTagNamesForImage(
+          client,
+          imageId!,
+          annotationSetId!,
+          nameById
+        )
+      ),
   });
-  return query.data ?? EMPTY_IMAGE_TAGS;
+  const entries = query.data;
+  return useMemo(() => mapFromEntries(entries, EMPTY_IMAGE_TAGS), [entries]);
 }
 
 const EMPTY_IMAGE_TAGS = new Map<string, string[]>();

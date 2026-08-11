@@ -47,6 +47,12 @@ import { useEffect, useContext, useMemo, useCallback } from 'react';
 import type { Schema } from './amplify/client-schema';
 import type { DataModels, SubscriptionOptions } from '../amplify/shared/data-schema.generated';
 import { GlobalContext, ProjectContext } from './Context';
+import {
+  isMissingRow,
+  withRowReinstated,
+  withRowRestored,
+  withoutRow,
+} from './utils/optimisticCache';
 
 
 // Options interface to optionally pass a composite key resolver and subscription auth mode
@@ -150,6 +156,24 @@ export function useOptimisticUpdates<
     //eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscriptionFilter]);
 
+  /*
+  Rollbacks go through the pure transforms in utils/optimisticCache so a failed
+  write only ever affects its own row. See that module for why a whole-list
+  snapshot rollback is wrong here, and why a null row counts as a failure even
+  though react-query reports the mutation as a success.
+  */
+  const dropFromCache = (item: T) => {
+    queryClient.setQueryData<T[]>(queryKey, (old = []) =>
+      withoutRow(old, item, getKey)
+    );
+  };
+
+  const restoreInCache = (item: T, previousItems: T[] | undefined) => {
+    queryClient.setQueryData<T[]>(queryKey, (old = []) =>
+      withRowRestored(old, item, previousItems, getKey)
+    );
+  };
+
   const createMutation = useMutation({
     mutationFn: model.create,
     onMutate: async (newItem: any) => {
@@ -162,9 +186,17 @@ export function useOptimisticUpdates<
       ]);
       return { previousItems };
     },
+    onSuccess: (result: unknown, newItem: T) => {
+      if (!isMissingRow(result)) return;
+      console.error(
+        `${String(modelKey)}.create returned no row — the write was rejected. Rolling back.`,
+        newItem
+      );
+      dropFromCache(newItem);
+    },
     onError: (err, newItem, context) => {
       console.error(err, newItem, context);
-      queryClient.setQueryData(queryKey, context?.previousItems);
+      dropFromCache(newItem);
     },
   });
 
@@ -182,9 +214,17 @@ export function useOptimisticUpdates<
       );
       return { previousItems };
     },
+    onSuccess: (result: unknown, updatedItem: T, context) => {
+      if (!isMissingRow(result)) return;
+      console.error(
+        `${String(modelKey)}.update returned no row — the write was rejected. Rolling back.`,
+        updatedItem
+      );
+      restoreInCache(updatedItem, context?.previousItems);
+    },
     onError: (err, updatedItem, context) => {
       console.error(err, updatedItem, context);
-      queryClient.setQueryData(queryKey, context?.previousItems);
+      restoreInCache(updatedItem, context?.previousItems);
     },
   });
 
@@ -198,9 +238,23 @@ export function useOptimisticUpdates<
       );
       return { previousItems };
     },
+    onSuccess: (result: unknown, deletedItem: T) => {
+      // Deliberately not resurrected. A null row here is ambiguous — deleting an
+      // already-deleted row answers the same way — and a row that survives a
+      // failed delete is the harmless direction: it stays in the results rather
+      // than vanishing from them. Restoring the marker would instead invite the
+      // user into a delete-it-again loop.
+      if (!isMissingRow(result)) return;
+      console.warn(
+        `${String(modelKey)}.delete returned no row; the row may still exist.`,
+        deletedItem
+      );
+    },
     onError: (err, deletedItem, context) => {
       console.error(err, deletedItem, context);
-      queryClient.setQueryData(queryKey, context?.previousItems);
+      queryClient.setQueryData<T[]>(queryKey, (old = []) =>
+        withRowReinstated(old, deletedItem, context?.previousItems, getKey)
+      );
     },
   });
 

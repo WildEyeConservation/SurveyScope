@@ -44,8 +44,8 @@ export interface GPSSubsetProps {
 
 // ---------------------------------------------------------------------------
 // Map constants. Rendering goes through MapLibre GeoJSON sources + WebGL
-// circle layers (same pattern as the Edit Survey tabs) instead of one Leaflet
-// SVG marker per point — the old approach created 100k+ DOM nodes on large
+// circle layers (same pattern as the Edit Survey tabs) instead of one SVG
+// marker per point — the old approach created 100k+ DOM nodes on large
 // surveys and killed the tab.
 // ---------------------------------------------------------------------------
 
@@ -523,7 +523,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
 
       // Polygon lasso. Terra Draw renders its own layers via the adapter; the
       // finished polygons stay on the map until "Include"/"Remove"/cancel so
-      // users can draw several before applying, like the old Leaflet control.
+      // users can draw several before applying.
       const draw = new TerraDraw({
         adapter: new TerraDrawMapLibreGLAdapter({ map }),
         modes: [new TerraDrawPolygonMode()],

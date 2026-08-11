@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { CategoryType } from '../schemaTypes';
 import type { ImageMenuItem } from '../useImageMenuItems';
+import { formatShortcutKey } from '../utils/hotkeys';
 
 export interface MenuState {
   x: number;
@@ -101,7 +102,7 @@ export function AnnotationLegendOverlay({
                   }}
                 />
                 <span style={{ flexGrow: 1 }}>{category.name}</span>
-                <span>({category.shortcutKey})</span>
+                <span>({formatShortcutKey(category.shortcutKey)})</span>
               </div>
             ))
           : 'Legend'}

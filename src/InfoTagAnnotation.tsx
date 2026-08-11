@@ -34,6 +34,7 @@ import {
   formatInfoTagsForDisplay,
   type InfoTagImageProgress,
 } from './infoTags';
+import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 
 const TILE_SIZE = 256;
 const DEFAULT_ZOOM_OFFSET = 6;
@@ -978,9 +979,12 @@ export default function InfoTagAnnotation({
         commitAndAdvance();
         return;
       }
-      const key = event.key.toLowerCase();
-      const tag = infoTags.find(
-        (candidate) => candidate.shortcutKey?.toLowerCase() === key
+      // A stored shortcutKey may be a combo ('ctrl+h') or a physical key name
+      // ('period'), so match through findShortcutMatch rather than event.key.
+      const tag = findShortcutMatch(
+        event,
+        infoTags,
+        (candidate) => candidate.shortcutKey
       );
       if (tag) {
         event.preventDefault();
@@ -1169,7 +1173,7 @@ export default function InfoTagAnnotation({
                     >
                       <span>{tag.name}</span>
                       {tag.shortcutKey && (
-                        <span>({tag.shortcutKey.toUpperCase()})</span>
+                        <span>({formatShortcutKey(tag.shortcutKey)})</span>
                       )}
                     </Button>
                   ))}

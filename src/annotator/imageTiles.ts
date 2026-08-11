@@ -10,10 +10,9 @@ MapLibre's native tile grid. A custom `detweb://` protocol feeds tiles from
 getTileBlob (S3 + on-demand Lambda generation + localforage cache), and
 MapLibre handles fading, retention and overzoom natively.
 
-Zoom parity: Leaflet CRS.Simple displayed pyramid level z natively at map
-zoom z; MapLibre (256px tiles over a 512px world) displays level z natively
-at map zoom z-1. Stored default zooms (Queue.zoom, localStorage) remain on
-the Leaflet scale, so convert with leafletZoom2MapZoom / mapZoom2LeafletZoom.
+Stored zoom parity: saved default zooms (Queue.zoom and localStorage) use the
+image pyramid's level numbering. MapLibre uses a 512px world with 256px tiles,
+so its native zoom is one level lower. Convert at the persistence boundary.
 */
 
 export const SOURCE_TILES = 'image-tiles';
@@ -62,8 +61,8 @@ export function makeProjection(
   return { px2lngLat, lngLat2px, maxNativeZoom };
 }
 
-export const leafletZoom2MapZoom = (zoom: number) => zoom - 1;
-export const mapZoom2LeafletZoom = (zoom: number) => zoom + 1;
+export const storedZoomToMapZoom = (zoom: number) => zoom - 1;
+export const mapZoomToStoredZoom = (zoom: number) => zoom + 1;
 
 /** Create a MapLibre map over an image pyramid, with rotation and (map)
  * keyboard handling disabled — arrow keys belong to task navigation. */

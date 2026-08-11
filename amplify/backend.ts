@@ -415,7 +415,7 @@ const groupS3QueueManifestsPolicy = new iam.PolicyStatement({
 });
 
 const groupEcsListPolicy = new iam.PolicyStatement({
-  actions: ['ecs:ListClusters', 'ecs:DescribeClusters', 'ecs:ListServices', 'ecs:DescribeServices'],
+  actions: ['ecs:ListClusters', 'ecs:DescribeClusters', 'ecs:ListServices', 'ecs:DescribeServices', 'ecs:DescribeTaskDefinition'],
   resources: ['*'],
 });
 

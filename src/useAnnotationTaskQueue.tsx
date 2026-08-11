@@ -12,6 +12,8 @@ import type {
 } from './annotationTypes';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
+import { decideTestCadence } from './testCadence';
+import type { BeforeNextDecision } from './TaskBuffer';
 
 const LOCATION_SELECTION = [
   'id',
@@ -65,17 +67,15 @@ export default function useAnnotationTaskQueue() {
   const processedLocationsRef = useRef<Set<string>>(new Set());
 
   // user testing state
-  const [config, setConfig] = useState<
-    Schema['ProjectTestConfig']['type'] | undefined
-  >(undefined);
-  const [testUser, setTestUser] = useState(false);
-  // Ref, not state: concurrent fetcher calls must not both claim the same test.
-  const pushTestRef = useRef(false);
+  const configRef = useRef<Schema['ProjectTestConfig']['type']>();
+  const testUserRef = useRef(false);
+  const testingSetupPromiseRef = useRef<Promise<void>>(Promise.resolve());
+  const maxCadenceIndexRef = useRef(-1);
   const { fetcher: testFetcher } = useTesting();
-  const [maxJobsCompleted, setMaxJobsCompleted] = useState(0);
   const {
     jobsCompleted,
     currentAnnoCount,
+    currentTaskTag,
     setCurrentAnnoCount,
     unannotatedJobs,
     setUnannotatedJobs,
@@ -91,41 +91,6 @@ export default function useAnnotationTaskQueue() {
       }),
     [currentPM.projectId]
   );
-
-  // Count consecutive unannotated jobs, and decide when to slip in a test.
-  useEffect(() => {
-    if (jobsCompleted > maxJobsCompleted) {
-      setMaxJobsCompleted(jobsCompleted);
-
-      const userAnnotated = Object.values(currentAnnoCount).some(
-        (annotations) => annotations.length > 0
-      );
-
-      if (userAnnotated) {
-        setUnannotatedJobs(0);
-        setCurrentAnnoCount({});
-      } else if (
-        !testFetcher ||
-        !config ||
-        !testUser ||
-        config.testType === 'none' ||
-        (config.testType === 'interval' &&
-          unannotatedJobs < config.interval!) ||
-        (config.testType === 'random' &&
-          Math.random() >= config.random! / 100) ||
-        (config.testType === 'random' && jobsCompleted <= config.deadzone!)
-      ) {
-        setUnannotatedJobs((j) => j + 1);
-        setCurrentAnnoCount({});
-      } else {
-        pushTestRef.current = true;
-        setUnannotatedJobs(0);
-      }
-    }
-    // This is an edge-triggered transition: process each jobsCompleted value
-    // once, using the state captured by that render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobsCompleted]);
 
   useEffect(() => {
     if (currentPM.queueId) {
@@ -146,6 +111,8 @@ export default function useAnnotationTaskQueue() {
     }
 
     async function setupTesting() {
+      configRef.current = undefined;
+      testUserRef.current = false;
       const { data: config } = await client.models.ProjectTestConfig.get(
         {
           projectId: currentPM.projectId,
@@ -165,18 +132,18 @@ export default function useAnnotationTaskQueue() {
       );
 
       if (config?.projectId) {
-        setConfig(config);
+        configRef.current = config;
 
         const shouldTest =
           myOrganizationHook.data?.find(
             (membership) =>
               membership.organizationId === config.project.organizationId
           )?.isTested ?? false;
-        setTestUser(shouldTest);
+        testUserRef.current = shouldTest;
       }
     }
 
-    setupTesting();
+    testingSetupPromiseRef.current = setupTesting();
     // Queue/test configuration is refreshed when the active membership changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPM]);
@@ -249,19 +216,6 @@ export default function useAnnotationTaskQueue() {
 
   const fetcher = useCallback(async (): Promise<AnnotationTaskPayload> => {
     for (;;) {
-      // Clear the flag before awaiting so concurrent fetcher calls cannot
-      // both claim the same pending test.
-      if (testFetcher && pushTestRef.current) {
-        pushTestRef.current = false;
-        const testLocation = await testFetcher();
-        if (testLocation) {
-          const preparedTest = await prepareTask(
-            testLocation as unknown as AnnotationTaskMessage
-          );
-          if (preparedTest) return preparedTest;
-        }
-      }
-
       if (!url) {
         await sleep(5000);
         continue;
@@ -352,15 +306,104 @@ export default function useAnnotationTaskQueue() {
         revalidate: async () => Boolean(await prepareTask(body)),
       };
     }
-  }, [
-    url,
-    backupUrl,
-    getSqsClient,
-    testFetcher,
-    prepareTask,
-    zoom,
-    backupZoom,
-  ]);
+  }, [url, backupUrl, getSqsClient, prepareTask, zoom, backupZoom]);
 
-  return { fetcher: url ? fetcher : undefined };
+  const standbyTestFetcher = useCallback(
+    async (): Promise<AnnotationTaskPayload | null> => {
+      try {
+        await testingSetupPromiseRef.current;
+      } catch (error) {
+        console.error('Failed to load test configuration', error);
+        return null;
+      }
+
+      if (
+        !testUserRef.current ||
+        !configRef.current ||
+        configRef.current.testType === 'none'
+      ) {
+        return null;
+      }
+
+      const testLocation = await testFetcher();
+      if (!testLocation) return null;
+      return prepareTask(testLocation as unknown as AnnotationTaskMessage);
+    },
+    [prepareTask, testFetcher]
+  );
+
+  const beforeNext = useCallback(
+    async (
+      completedTask: AnnotationTaskPayload & { id: string },
+      completedIndex: number,
+      { standbyReady }: { standbyReady: boolean }
+    ): Promise<BeforeNextDecision<AnnotationTaskPayload>> => {
+      try {
+        await testingSetupPromiseRef.current;
+      } catch (error) {
+        // Testing setup must never prevent ordinary queue navigation.
+        console.error('Failed to load test configuration', error);
+      }
+
+      // Going back and forward through retained buffer entries must not count
+      // the same visible task more than once.
+      if (completedIndex <= maxCadenceIndexRef.current) {
+        setCurrentAnnoCount({});
+        return null;
+      }
+
+      const userAnnotated = Object.values(currentAnnoCount).some(
+        (annotations) => annotations.length > 0
+      );
+      const decision = decideTestCadence({
+        unannotatedJobs,
+        userAnnotated,
+        isTestTask: Boolean(completedTask.isTest),
+        testingEnabled: testUserRef.current,
+        config: configRef.current,
+        jobsCompleted,
+      });
+
+      // The acknowledgement callback captures this task's annotation state
+      // before navigation. Clear the shared working set for the next task.
+      setCurrentAnnoCount({});
+
+      if (!decision.shouldInsertTest) {
+        maxCadenceIndexRef.current = completedIndex;
+        setUnannotatedJobs(decision.nextUnannotatedJobs);
+        return null;
+      }
+
+      if (standbyReady) {
+        maxCadenceIndexRef.current = completedIndex;
+        setUnannotatedJobs(0);
+        return {
+          kind: 'promote-standby',
+          overrides: {
+            taskTag: completedTask.taskTag || currentTaskTag,
+          },
+        };
+      }
+
+      // The threshold remains reached if warming has not finished. Navigation
+      // continues normally and the next newly completed task retries.
+      maxCadenceIndexRef.current = completedIndex;
+      setUnannotatedJobs(decision.nextUnannotatedJobs);
+      return null;
+    },
+    [
+      currentAnnoCount,
+      currentTaskTag,
+      jobsCompleted,
+      setCurrentAnnoCount,
+      setUnannotatedJobs,
+      unannotatedJobs,
+    ]
+  );
+
+  return {
+    fetcher: url ? fetcher : undefined,
+    standbyTestFetcher,
+    beforeNext,
+  };
 }

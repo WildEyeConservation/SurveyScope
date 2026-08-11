@@ -20,6 +20,7 @@ import {
   formatInfoTagsForDisplay,
   infoTagNamesFor,
 } from './infoTags';
+import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 
 // ── Constants ──
 
@@ -180,7 +181,7 @@ export default function QCAnnotationReview({
     [categories]
   );
   const fpHotkey = existingFpCategory ? existingFpCategory.shortcutKey : '+';
-  const fpLabel = `False Positive (${fpHotkey ? fpHotkey.toUpperCase() : '+/='})`;
+  const fpLabel = `False Positive (${fpHotkey ? formatShortcutKey(fpHotkey) : '+/='})`;
   const [creatingFp, setCreatingFp] = useState(false);
 
   // Filter false positive category from legend if it exists
@@ -921,11 +922,14 @@ export default function QCAnnotationReview({
         return;
       }
 
-      const lowerKey = key.toLowerCase();
-
-      // Check if key matches a category shortcutKey.
-      const matchingCategory = categories.find(
-        (c) => c.shortcutKey?.toLowerCase() === lowerKey
+      // Check if key matches a category shortcutKey. Matching goes through
+      // findShortcutMatch because a stored shortcutKey may be a combo
+      // ('ctrl+h') or a physical key name ('period'), neither of which can be
+      // compared against event.key directly.
+      const matchingCategory = findShortcutMatch(
+        e,
+        categories,
+        (c) => c.shortcutKey
       );
       if (matchingCategory) {
         e.preventDefault();
@@ -1130,7 +1134,9 @@ export default function QCAnnotationReview({
 
                     >
                       <div>{cat.name}</div>
-                      {cat.shortcutKey && <div>({cat.shortcutKey.toUpperCase()})</div>}
+                      {cat.shortcutKey && (
+                        <div>({formatShortcutKey(cat.shortcutKey)})</div>
+                      )}
                     </Button>
                   ))}
               </Card.Body>

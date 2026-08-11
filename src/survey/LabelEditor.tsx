@@ -7,6 +7,7 @@ import { GlobalContext } from '../Context';
 import { useQueryClient } from '@tanstack/react-query';
 import pLimit from 'p-limit';
 import { fetchAllPaginatedResults } from '../utils';
+import { formatShortcutKey } from '../utils/hotkeys';
 
 interface Label {
   id: string;
@@ -226,8 +227,8 @@ export default function LabelEditor({
               placeholder='Record shortcut key'
               value={
                 isRecording && activeRowId === label.id
-                  ? Array.from(keys).join('+')
-                  : label.shortcutKey
+                  ? formatShortcutKey(Array.from(keys).join('+'))
+                  : formatShortcutKey(label.shortcutKey)
               }
               onFocus={start}
               onBlur={() => {

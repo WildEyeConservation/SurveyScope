@@ -3,7 +3,7 @@ import { Modal, Body, Header, Footer, Title } from '../Modal';
 import { useState, useContext } from 'react';
 import { Tabs, Tab } from '../Tabs';
 import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
+import { GlobalContext } from '../Context';
 import SpeciesLabelling from './SpeciesLabelling';
 import FalseNegatives from './FalseNegatives';
 import QCReview from './QCReview';
@@ -46,16 +46,13 @@ export default function LaunchAnnotationSetModal({
   const [individualIdLaunchHandler, setIndividualIdLaunchHandler] = useState<LaunchHandlerType>(null);
 
   const { showModal } = useContext(GlobalContext)! as any;
-  const { cognitoGroups } = useContext(UserContext)!;
-  const isSysadmin = cognitoGroups.includes('sysadmin');
 
-  // Task type for each tab, in render order. Info tagging is still
-  // experimental, so its tab is only shown to sysadmins.
+  // Task type for each tab, in render order.
   const tabTaskTypes: WorkflowType[] = [
     'species-labelling',
     'false-negatives',
     'qc-review',
-    ...(isSysadmin ? (['info-tags'] as WorkflowType[]) : []),
+    'info-tags',
     'homographies',
     'individual-id',
   ];
@@ -173,17 +170,15 @@ export default function LaunchAnnotationSetModal({
                 setQCLaunchHandler={setQCLaunchHandler as any}
               />
             </Tab>
-            {isSysadmin && (
-              <Tab label='Info Tags'>
-                <InfoTagsLaunch
-                  project={project}
-                  annotationSet={annotationSet}
-                  launching={launching}
-                  setLaunchDisabled={setLaunchDisabled}
-                  setInfoTagsLaunchHandler={setInfoTagsLaunchHandler as any}
-                />
-              </Tab>
-            )}
+            <Tab label='Info Tags'>
+              <InfoTagsLaunch
+                project={project}
+                annotationSet={annotationSet}
+                launching={launching}
+                setLaunchDisabled={setLaunchDisabled}
+                setInfoTagsLaunchHandler={setInfoTagsLaunchHandler as any}
+              />
+            </Tab>
             <Tab label='Homographies'>
               <HomographyLaunch
                 project={project}

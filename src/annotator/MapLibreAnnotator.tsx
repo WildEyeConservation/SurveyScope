@@ -8,18 +8,21 @@ import {
 } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import * as jdenticon from 'jdenticon';
 import { useHotkeys, isHotkeyPressed } from 'react-hotkeys-hook';
 import {
   makeProjection,
   createImageMap,
   addImageTiles,
-  leafletZoom2MapZoom,
-  mapZoom2LeafletZoom,
+  storedZoomToMapZoom,
+  mapZoomToStoredZoom,
 } from './imageTiles';
 import { ImageContext, ManagementContext, ProjectContext } from '../Context';
 import useImageMenuItems from '../useImageMenuItems';
 import { isWithinLocationBounds, resolveCategoryIdForSet } from '../utils';
+import {
+  canonicalHotkeyFromParsed,
+  normalizeShortcutKey,
+} from '../utils/hotkeys';
 import { NavButtons } from '../NavButtons';
 import ChangeCategoryModal from '../ChangeCategoryModal';
 import type { CategoryType, ExtendedAnnotationType } from '../schemaTypes';
@@ -42,11 +45,15 @@ import {
 } from './AnnotatorOverlays';
 import useImageFileSource from './useImageFileSource';
 import MapRotateControl from './MapRotateControl';
+import {
+  addAnnotationMarkerLayers,
+  ANNOTATION_MARKER_LAYERS,
+  registerAnnotationMarkerImages,
+} from './annotationMarkerLayers';
 
 /*
-MapLibre-based replacement for the Leaflet stack in the species-labelling
-workflow (BaseImage + StorageLayer + ShowMarkers/DetwebMarker + Location +
-CreateAnnotationOnClick/OnHotkeys + ZoomTracker + MapLegend).
+MapLibre-based image viewer for the species-labelling workflow, including
+image tiles, annotations, location bounds, hotkeys, zoom tracking and legend.
 
 Tiling: the image is mapped onto the full mercator world square, so the
 existing slippy pyramid (slippymaps/{key}/{z}/{row}/{col}.png) aligns exactly
@@ -54,18 +61,17 @@ with MapLibre's native tile grid. A custom `detweb://` protocol feeds tiles
 from getTileBlob (S3 + on-demand Lambda generation + localforage cache), and
 MapLibre handles fading, retention and overzoom natively.
 
-Zoom parity: Leaflet CRS.Simple displayed pyramid level z natively at map
-zoom z; MapLibre (256px tiles over a 512px world) displays level z natively
-at map zoom z-1. Stored default zooms (Queue.zoom, localStorage) remain on
-the Leaflet scale, so we convert on the way in (zoom - 1) and out (zoom + 1).
+Stored zoom parity: saved default zooms use the image pyramid's level
+numbering. MapLibre's native zoom is one level lower, so convert on the way in
+(zoom - 1) and out (zoom + 1).
 */
 
 const SOURCE_ANNOTATIONS = 'annotations';
-const LAYER_ACTIVE = 'annotation-active-ring';
-const LAYER_OUTLINES = 'annotation-outlines';
-const LAYER_CIRCLES = 'annotation-circles';
-const LAYER_ICONS = 'annotation-icons';
-const LAYER_STATUS_ICONS = 'annotation-status-icons';
+const LAYER_ACTIVE = ANNOTATION_MARKER_LAYERS.active;
+const LAYER_OUTLINES = ANNOTATION_MARKER_LAYERS.outlines;
+const LAYER_CIRCLES = ANNOTATION_MARKER_LAYERS.circles;
+const LAYER_ICONS = ANNOTATION_MARKER_LAYERS.icons;
+const LAYER_STATUS_ICONS = ANNOTATION_MARKER_LAYERS.statusIcons;
 const SOURCE_LOCATION = 'location-rect';
 const LAYER_LOCATION = 'location-rect-line';
 
@@ -73,7 +79,7 @@ export interface MapLibreAnnotatorProps {
   image: AnnotationImage;
   location: AnnotationLocation;
   visible: boolean;
-  /** Default zoom on the Leaflet scale (as stored in Queue.zoom / localStorage). */
+  /** Default zoom using the persisted image-pyramid scale. */
   zoom?: number;
   viewBoundsScale?: number;
   next?: () => void;
@@ -250,67 +256,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     );
     map.addControl(new MapRotateControl(), 'top-left');
 
-    // Generate marker icons on demand: identicons per objectId and the
-    // false-negative "!" badge.
-    map.on('styleimagemissing', (e: maplibregl.MapStyleImageMissingEvent) => {
-      const id: string = e.id;
-      if (id === 'fn-marker') {
-        const canvas = document.createElement('canvas');
-        canvas.width = canvas.height = 20;
-        const ctx = canvas.getContext('2d')!;
-        ctx.font = 'bold 16px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('!', 10, 11);
-        map.addImage(
-          id,
-          ctx.getImageData(0, 0, 20, 20) as unknown as ImageData
-        );
-      } else if (id.startsWith('identicon-')) {
-        const canvas = document.createElement('canvas');
-        canvas.width = canvas.height = 14;
-        const ctx = canvas.getContext('2d')!;
-        jdenticon.drawIcon(ctx, id.slice('identicon-'.length), 14);
-        if (!map.hasImage(id)) {
-          map.addImage(id, ctx.getImageData(0, 0, 14, 14));
-        }
-      } else if (id === 'obscured-marker') {
-        const canvas = document.createElement('canvas');
-        const size = 32;
-        canvas.width = canvas.height = size;
-        const ctx = canvas.getContext('2d')!;
-
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#1f2933';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.save();
-        ctx.translate(5, 5);
-        ctx.scale(22 / 24, 22 / 24);
-        ctx.strokeStyle = '#1f2933';
-        ctx.lineWidth = 2.75;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        [
-          'M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49',
-          'M14.084 14.158a3 3 0 0 1-4.242-4.242',
-          'M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143',
-          'm2 2 20 20',
-        ].forEach((path) => ctx.stroke(new Path2D(path)));
-        ctx.restore();
-
-        if (!map.hasImage(id)) {
-          map.addImage(id, ctx.getImageData(0, 0, size, size), {
-            pixelRatio: 2,
-          });
-        }
-      }
-    });
+    const unregisterMarkerImages = registerAnnotationMarkerImages(map);
 
     map.on('load', () => {
       addImageTiles(map, sourceKey, image, projection);
@@ -350,76 +296,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
-      map.addLayer({
-        id: LAYER_OUTLINES,
-        type: 'circle',
-        source: SOURCE_ANNOTATIONS,
-        paint: {
-          'circle-radius': ['+', 10, ['get', 'borderWidth']],
-          'circle-color': 'rgba(0, 0, 0, 0)',
-          'circle-stroke-width': 1,
-          'circle-stroke-color': 'rgba(0, 0, 0, 0.45)',
-          'circle-opacity': ['get', 'opacity'],
-          'circle-stroke-opacity': ['get', 'opacity'],
-        },
-      });
-      map.addLayer({
-        id: LAYER_ACTIVE,
-        type: 'circle',
-        source: SOURCE_ANNOTATIONS,
-        filter: ['==', ['get', 'active'], true],
-        paint: {
-          'circle-radius': ['+', 10, ['get', 'borderWidth']],
-          'circle-color': 'rgba(0, 0, 0, 0)',
-          'circle-stroke-width': 3,
-          'circle-stroke-color': '#ff8c1a',
-          'circle-opacity': ['get', 'opacity'],
-          'circle-stroke-opacity': ['get', 'opacity'],
-        },
-      });
-      map.addLayer({
-        id: LAYER_CIRCLES,
-        type: 'circle',
-        source: SOURCE_ANNOTATIONS,
-        paint: {
-          'circle-radius': 10,
-          'circle-color': ['get', 'color'],
-          'circle-stroke-width': ['get', 'borderWidth'],
-          'circle-stroke-color': ['get', 'borderColor'],
-          'circle-opacity': ['get', 'opacity'],
-          'circle-stroke-opacity': ['get', 'opacity'],
-        },
-      });
-      map.addLayer({
-        id: LAYER_ICONS,
-        type: 'symbol',
-        source: SOURCE_ANNOTATIONS,
-        filter: ['!=', ['get', 'icon'], ''],
-        layout: {
-          'icon-image': ['get', 'icon'],
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-        paint: {
-          'icon-opacity': ['get', 'opacity'],
-        },
-      });
-      map.addLayer({
-        id: LAYER_STATUS_ICONS,
-        type: 'symbol',
-        source: SOURCE_ANNOTATIONS,
-        filter: ['!=', ['get', 'statusIcon'], ''],
-        layout: {
-          'icon-image': ['get', 'statusIcon'],
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-        paint: {
-          'icon-translate': [7, -7],
-          'icon-translate-anchor': 'viewport',
-          'icon-opacity': ['get', 'opacity'],
-        },
-      });
+      addAnnotationMarkerLayers(map, SOURCE_ANNOTATIONS);
 
       refreshAnnotationSource();
       setMapReady(true);
@@ -427,11 +304,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     });
 
     map.on('zoomend', () => {
-      // Report on the Leaflet scale for parity with stored default zooms
-      setZoom(mapZoom2LeafletZoom(map.getZoom()));
+      // Report using the persisted scale so existing default zooms stay stable.
+      setZoom(mapZoomToStoredZoom(map.getZoom()));
     });
 
     return () => {
+      unregisterMarkerImages();
       popupRef.current?.remove();
       popupRef.current = null;
       map.remove();
@@ -452,7 +330,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
           location?.x ?? image.width / 2,
           location?.y ?? image.height / 2
         ),
-        zoom: leafletZoom2MapZoom(zoom),
+        zoom: storedZoomToMapZoom(zoom),
       });
     } else {
       const scale = viewBoundsScale ?? 1.5;
@@ -769,14 +647,26 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     () => (categories ?? []).filter((c) => c.shortcutKey),
     [categories]
   );
+  const categoryByHotkey = useMemo(() => {
+    const map = new Map<string, CategoryType>();
+    for (const category of hotkeyCategories) {
+      const key = normalizeShortcutKey(category.shortcutKey);
+      // First one wins, matching the previous find() semantics on duplicates.
+      if (key && !map.has(key)) map.set(key, category);
+    }
+    return map;
+  }, [hotkeyCategories]);
   const hotkeys = hotkeyCategories.map((c) => c.shortcutKey!).join(',');
   useHotkeys(
     hotkeys || 'f24',
-    (event) => {
+    (event, hotkeysEvent) => {
       if (event.repeat) return;
       if (!mouseOverMapRef.current) return;
-      const category = hotkeyCategories.find(
-        (c) => c.shortcutKey!.toLowerCase() === event.key?.toLowerCase()
+      // Resolve from the hotkey that actually matched rather than event.key:
+      // event.key cannot represent a combo ('ctrl+h'), does not match recorded
+      // physical key names ('period'), and diverges from them on non-US layouts.
+      const category = categoryByHotkey.get(
+        canonicalHotkeyFromParsed(hotkeysEvent)
       );
       if (!category) return;
       event.preventDefault();
@@ -798,7 +688,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       setCurrentCategory(category);
     },
     { keydown: true, keyup: false, enabled: visible && hotkeys.length > 0 },
-    [hotkeyCategories, annotationsHook, setId, image.id, source, project]
+    [categoryByHotkey, annotationsHook, setId, image.id, source, project]
   );
 
   return (

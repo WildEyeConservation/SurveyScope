@@ -8,6 +8,12 @@ import {
   fitPxBounds,
 } from './imageTiles';
 import { NavButtons } from '../NavButtons';
+import type { AnnotationFeatureProperties } from './annotationFeatures';
+import {
+  addAnnotationMarkerLayers,
+  ANNOTATION_MARKER_LAYERS,
+  registerAnnotationMarkerImages,
+} from './annotationMarkerLayers';
 
 /*
 Read-only MapLibre image viewer: tiles + coloured annotation dots with a
@@ -17,17 +23,13 @@ full annotator's editing machinery.
 */
 
 const SOURCE_POINTS = 'light-points';
-const LAYER_POINTS = 'light-points-circles';
+const LAYER_POINTS = ANNOTATION_MARKER_LAYERS.circles;
 const SOURCE_RECTS = 'light-rects';
 const LAYER_RECTS = 'light-rects-lines';
 
-export interface LightAnnotation {
-  id: string;
+export interface LightAnnotation extends AnnotationFeatureProperties {
   x: number;
   y: number;
-  color: string;
-  /** 0 renders an outline-only dot (e.g. secondary sightings). */
-  fillOpacity?: number;
   popupLines?: string[];
 }
 
@@ -84,6 +86,7 @@ export default function MapLibreLightViewer({
     if (!containerRef.current || !sourceKey) return;
     const map = createImageMap(containerRef.current, projection);
     mapRef.current = map;
+    const unregisterMarkerImages = registerAnnotationMarkerImages(map);
 
     map.on('load', () => {
       addImageTiles(map, sourceKey, image, projection);
@@ -106,18 +109,7 @@ export default function MapLibreLightViewer({
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
-      map.addLayer({
-        id: LAYER_POINTS,
-        type: 'circle',
-        source: SOURCE_POINTS,
-        paint: {
-          'circle-radius': 7,
-          'circle-color': ['get', 'color'],
-          'circle-opacity': ['get', 'fillOpacity'],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': ['get', 'color'],
-        },
-      });
+      addAnnotationMarkerLayers(map, SOURCE_POINTS);
 
       map.on('mousemove', (e) => {
         const feature = map.queryRenderedFeatures(e.point, {
@@ -162,6 +154,7 @@ export default function MapLibreLightViewer({
     });
 
     return () => {
+      unregisterMarkerImages();
       popupRef.current?.remove();
       popupRef.current = null;
       map.remove();
@@ -195,7 +188,9 @@ export default function MapLibreLightViewer({
     const map = mapRef.current;
     if (!map || !mapReady) return;
 
-    (map.getSource(SOURCE_POINTS) as maplibregl.GeoJSONSource | undefined)?.setData({
+    (
+      map.getSource(SOURCE_POINTS) as maplibregl.GeoJSONSource | undefined
+    )?.setData({
       type: 'FeatureCollection',
       features: (annotations ?? []).map((a) => ({
         type: 'Feature',
@@ -203,12 +198,22 @@ export default function MapLibreLightViewer({
         properties: {
           id: a.id,
           color: a.color,
-          fillOpacity: a.fillOpacity ?? 1,
+          markerKind: a.markerKind,
+          borderColor: a.borderColor,
+          borderWidth: a.borderWidth,
+          opacity: a.opacity,
+          active: a.active,
+          obscured: a.obscured,
+          readonly: a.readonly,
+          icon: a.icon,
+          statusIcon: a.statusIcon,
         },
       })),
     } as any);
 
-    (map.getSource(SOURCE_RECTS) as maplibregl.GeoJSONSource | undefined)?.setData({
+    (
+      map.getSource(SOURCE_RECTS) as maplibregl.GeoJSONSource | undefined
+    )?.setData({
       type: 'FeatureCollection',
       features: (rects ?? []).map((r) => {
         const x0 = r.x - r.width / 2;

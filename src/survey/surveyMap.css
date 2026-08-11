@@ -1,13 +1,4 @@
-/*
- * Shared map styling for the Edit Survey tabs (Shapefile, Transects & Strata,
- * Delete Images).
- *
- * The global `.leaflet-container` rule in index.css absolutely-positions every
- * map, centres it and caps it at max-width: 1024px. That makes the maps in
- * these modal tabs sit narrower than their container with empty side gaps.
- * Here we scope an override so maps inside `.survey-map` simply fill their
- * wrapper (stretched correctly) without touching any other map in the app.
- */
+/* Shared map styling for the Edit Survey tabs and GPS subset editor. */
 .survey-map {
   position: relative;
   width: 100%;
@@ -15,16 +6,4 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 4px;
   overflow: hidden;
-}
-
-.survey-map .leaflet-container {
-  position: relative;
-  top: auto;
-  bottom: auto;
-  left: auto;
-  transform: none;
-  max-width: none;
-  width: 100%;
-  height: 100%;
-  flex-grow: 0;
 }

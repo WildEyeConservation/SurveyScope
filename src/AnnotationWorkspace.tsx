@@ -382,6 +382,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       locationId={location.id}
       image={location.image}
       taskTag={taskTag}
+      active={visible}
       onAnnotationCreate={() => {
         localAnnotationCreated.current = true;
       }}
@@ -558,8 +559,8 @@ function SetDefaultZoom({
             const sharedZoom = Math.round(zoom);
             await client.models.Queue.update({
               id: currentProjectMembership.queueId,
-              // Queue.zoom is an AppSync Int retained from the legacy Leaflet
-              // viewer, while MapLibre reports fractional zoom levels.
+              // Queue.zoom is an AppSync Int, while MapLibre reports
+              // fractional zoom levels.
               zoom: sharedZoom,
             });
             setDefaultZoom(sharedZoom);

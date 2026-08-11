@@ -5,6 +5,8 @@ import MapLibreLightViewer, {
   LightAnnotation,
   LightRect,
 } from '../annotator/MapLibreLightViewer';
+import { buildAnnotationFeatureProperties } from '../annotator/annotationFeatures';
+import type { ExtendedAnnotationType } from '../schemaTypes';
 
 type MinimalLocationRef = { id: string; annotationSetId: string };
 
@@ -122,10 +124,12 @@ export default function LightLocationView({
         .map((a) => {
           const category = categories?.find((c) => c.id === a.categoryId);
           return {
-            id: a.id,
+            ...buildAnnotationFeatureProperties(
+              a as ExtendedAnnotationType,
+              () => category?.color ?? 'red'
+            ),
             x: a.x,
             y: a.y,
-            color: category?.color ?? 'red',
             popupLines: [`Label: ${category?.name ?? 'Unknown'}`],
           };
         }),

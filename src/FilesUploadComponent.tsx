@@ -295,8 +295,8 @@ export function FileUploadCore({
   const [useUtm, setUseUtm] = useState(false);
   const [utmColumn, setUtmColumn] = useState<string | undefined>(undefined);
 
-  // Track visited wizard steps so heavy children (the MapLibre map, the
-  // Leaflet mask editor) only mount once their section is actually visible —
+  // Track visited wizard steps so heavy children (the map and mask editor)
+  // only mount once their section is actually visible —
   // maps initialise with a broken 0x0 canvas inside display:none containers.
   const visitedStepsRef = useRef<Set<UploadWizardStep>>(new Set());
   if (currentStep && currentStep !== 'none') {

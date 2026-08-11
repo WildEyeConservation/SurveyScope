@@ -7,6 +7,8 @@ import MapLibreLightViewer, {
 } from './annotator/MapLibreLightViewer';
 import { useImageInfoTags } from './useInfoTags';
 import { formatInfoTagsForDisplay } from './infoTags';
+import { buildAnnotationFeatureProperties } from './annotator/annotationFeatures';
+import type { ExtendedAnnotationType } from './schemaTypes';
 
 type AnnotationItem = {
   id: string;
@@ -14,6 +16,9 @@ type AnnotationItem = {
   y: number;
   setId: string;
   objectId: string;
+  categoryId: string;
+  source?: string | null;
+  obscured?: boolean | null;
   category: { id: string; name: string } | null;
 };
 
@@ -76,6 +81,9 @@ export default function LightImageView({
             'y',
             'setId',
             'objectId',
+            'categoryId',
+            'source',
+            'obscured',
             'category.id',
             'category.name',
           ] as const,
@@ -140,11 +148,12 @@ export default function LightImageView({
         const isPrimary = a.id === a.objectId;
         const infoTags = infoTagsByAnnotation.get(a.id);
         return {
-          id: a.id,
+          ...buildAnnotationFeatureProperties(
+            a as ExtendedAnnotationType,
+            () => categoryColors.get(categoryId) || '#999999'
+          ),
           x: a.x,
           y: a.y,
-          color: categoryColors.get(categoryId) || '#999999',
-          fillOpacity: isPrimary ? 0.8 : 0,
           popupLines: [
             `Label: ${a.category?.name || 'Unknown'}`,
             `Sighting: ${isPrimary ? 'Primary' : 'Secondary'}`,

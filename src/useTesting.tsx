@@ -10,8 +10,7 @@ export default function useTesting() {
   // Use ref for index to prevent race conditions when multiple fetcher calls happen concurrently
   const iRef = useRef(0);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
-  const [hasPrimaryCandidates, setHasPrimaryCandidates] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const setupPromiseRef = useRef<Promise<void>>(Promise.resolve());
 
   const primaryCandidates = useRef<
     { locationId: string; annotationSetId: string; testPresetId: string }[]
@@ -24,14 +23,10 @@ export default function useTesting() {
 
   useEffect(() => {
     async function setup() {
-      setLoading(true);
-
       if (currentPM.queueId) {
-        client.models.Queue.get({ id: currentPM.queueId }).then(
-          ({ data }) => {
-            if (data?.zoom) setZoom(data.zoom);
-          }
-        );
+        client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
+          if (data?.zoom) setZoom(data.zoom);
+        });
       }
 
       const { data: config } = await client.models.ProjectTestConfig.get({
@@ -39,7 +34,6 @@ export default function useTesting() {
       });
 
       if (!config) {
-        setLoading(false);
         return;
       }
 
@@ -51,12 +45,10 @@ export default function useTesting() {
         }
       );
 
-      fetchPrimaryLocations(presets);
-
-      setLoading(false);
+      await fetchPrimaryLocations(presets);
     }
 
-    setup();
+    setupPromiseRef.current = setup();
   }, [currentPM]);
 
   async function fetchPrimaryLocations(presets: { testPresetId: string }[]) {
@@ -80,7 +72,8 @@ export default function useTesting() {
       )
       .sort(
         (a, b) =>
-          new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+          new Date(b.createdAt ?? 0).getTime() -
+          new Date(a.createdAt ?? 0).getTime()
       )
       .filter(
         (location, index, self) =>
@@ -122,7 +115,8 @@ export default function useTesting() {
       )
       .sort(
         (a, b) =>
-          new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+          new Date(b.createdAt ?? 0).getTime() -
+          new Date(a.createdAt ?? 0).getTime()
       );
 
     // add seen locations to the end of the array as backup (only if still part of current test presets)
@@ -143,28 +137,24 @@ export default function useTesting() {
       annotationSetId: l.annotationSetId,
       testPresetId: l.testPresetId,
     }));
-
-    setHasPrimaryCandidates(primaryCandidates.current.length > 0);
   }
 
-  async function getTestLocation() {
+  const getTestLocation = useCallback(async () => {
     const candidateEntries = [...primaryCandidates.current];
     if (candidateEntries.length === 0) {
       throw new Error('No primary candidates available for testing');
     }
-    console.log('candidates', candidateEntries);
     const length = candidateEntries.length;
-    
+
     // Capture and immediately increment the index to prevent race conditions
     // when multiple concurrent fetcher calls happen
     const startIndex = iRef.current;
     iRef.current = (startIndex + 1) % length;
-    
+
     // Try each candidate once, wrapping around if necessary
     for (let attempt = 0; attempt < length; attempt++) {
       const currentIndex = (startIndex + attempt) % length;
       const entry = candidateEntries[currentIndex];
-      console.log(`entry ${currentIndex}`, entry);
       const categoryCounts = await fetchAllPaginatedResults(
         client.models.LocationAnnotationCount
           .categoryCountsByLocationIdAndAnnotationSetId,
@@ -198,7 +188,7 @@ export default function useTesting() {
     );
     iRef.current = (fallbackIndex + 1) % length;
     return candidateEntries[fallbackIndex];
-  }
+  }, [client, categoriesHook.data]);
 
   const fetcher = useCallback(async (): Promise<Identifiable> => {
     const location = await getTestLocation();
@@ -228,10 +218,30 @@ export default function useTesting() {
       isTest: true,
     };
     return body;
-  }, [primaryCandidates, zoom]);
+  }, [getTestLocation, zoom]);
+
+  const fetchWhenReady = useCallback(async (): Promise<Identifiable | null> => {
+    await setupPromiseRef.current;
+    if (primaryCandidates.current.length === 0) return null;
+    /*
+    The survey's categories load asynchronously and read as an empty array until
+    they arrive (useOptimisticUpdates returns `data ?? []`). getTestLocation
+    rejects any candidate using a category the survey does not have, so against
+    an empty list *every* candidate fails and the fallback serves a test that may
+    use labels the annotator has no way to pick.
+
+    Defer instead. Returning null simply leaves the standby slot unfilled, and
+    because this callback depends on categoriesHook.data, its identity changes
+    once the categories land — which re-runs TaskBuffer's standby effect and
+    resolves a test location properly. It also avoids a round of per-candidate
+    LocationAnnotationCount queries whose outcome is a foregone conclusion.
+    */
+    if (categoriesHook.data.length === 0) return null;
+    return fetcher();
+  }, [fetcher, categoriesHook.data]);
 
   return {
-    fetcher: !loading && hasPrimaryCandidates ? fetcher : undefined,
+    fetcher: fetchWhenReady,
     fetchedLocation: currentLocation.current,
   };
 }

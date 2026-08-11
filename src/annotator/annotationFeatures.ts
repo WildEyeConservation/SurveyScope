@@ -54,6 +54,40 @@ export function annotationObjectName(seed: string): string {
   });
 }
 
+export function buildAnnotationFeatureProperties(
+  annotation: ExtendedAnnotationType,
+  categoryColor: (categoryId: string) => string,
+  locationBounds?: AnnotationBounds
+): AnnotationFeatureProperties {
+  const markerKind = annotation.shadow
+    ? 'shadow'
+    : annotation.objectId && annotation.objectId !== annotation.id
+    ? 'secondary'
+    : 'primary';
+  const identityKey =
+    annotation.objectId ?? annotation.proposedObjectId ?? annotation.id;
+
+  return {
+    id: annotation.id,
+    color: categoryColor(annotation.categoryId),
+    markerKind,
+    borderColor: markerKind === 'shadow' ? '#ffffff' : 'rgba(0, 0, 0, 0.7)',
+    borderWidth: markerKind === 'shadow' ? 2 : 1,
+    opacity: markerKind === 'shadow' ? 0.75 : 1,
+    active: Boolean(annotation.selected),
+    obscured: Boolean(annotation.obscured),
+    readonly: locationBounds
+      ? !isWithinLocationBounds(annotation, locationBounds)
+      : false,
+    icon: isFalseNegative(annotation)
+      ? 'fn-marker'
+      : markerKind === 'primary'
+      ? `identicon-${identityKey}`
+      : '',
+    statusIcon: annotation.obscured ? 'obscured-marker' : '',
+  };
+}
+
 export function buildAnnotationFeatureCollection({
   annotations,
   draggedAnnotationId,
@@ -72,40 +106,17 @@ export function buildAnnotationFeatureCollection({
         draggedAnnotationId === annotation.id ? dragPosition : null;
       const x = override?.x ?? annotation.x;
       const y = override?.y ?? annotation.y;
-      const markerKind = annotation.shadow
-        ? 'shadow'
-        : annotation.objectId && annotation.objectId !== annotation.id
-        ? 'secondary'
-        : 'primary';
-      const identityKey =
-        annotation.objectId ?? annotation.proposedObjectId ?? annotation.id;
-
       return {
         type: 'Feature',
         geometry: {
           type: 'Point',
           coordinates: px2lngLat(x, y),
         },
-        properties: {
-          id: annotation.id,
-          color: categoryColor(annotation.categoryId),
-          markerKind,
-          borderColor:
-            markerKind === 'shadow' ? '#ffffff' : 'rgba(0, 0, 0, 0.7)',
-          borderWidth: markerKind === 'shadow' ? 2 : 1,
-          opacity: markerKind === 'shadow' ? 0.75 : 1,
-          active: Boolean(annotation.selected),
-          obscured: Boolean(annotation.obscured),
-          readonly: locationBounds
-            ? !isWithinLocationBounds(annotation, locationBounds)
-            : false,
-          icon: isFalseNegative(annotation)
-            ? 'fn-marker'
-            : markerKind === 'primary'
-            ? `identicon-${identityKey}`
-            : '',
-          statusIcon: annotation.obscured ? 'obscured-marker' : '',
-        },
+        properties: buildAnnotationFeatureProperties(
+          annotation,
+          categoryColor,
+          locationBounds
+        ),
       };
     }),
   };
