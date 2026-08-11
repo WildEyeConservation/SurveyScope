@@ -5,7 +5,7 @@ export interface UseAckOnTimeoutProps {
   next?: () => void;
   visible: boolean;
   /** Called to ack the task. Receives the timestamp at which the user submitted (paged past), since the call itself is deliberately delayed. */
-  ack: (submittedAt?: number) => void;
+  ack: (submittedAt?: number) => void | Promise<void>;
 }
 
 export interface UseAckOnTimeoutResult {
@@ -87,7 +87,15 @@ export default function useAckOnTimeout({
     // Capture the submit time now — the ack fires 2s later (grace period for
     // paging back), and observation timing must not include that delay.
     const submittedAt = Date.now();
-    setTimer(window.setTimeout(() => ack(submittedAt), 2000));
+    setTimer(
+      window.setTimeout(() => {
+        void Promise.resolve(ack(submittedAt)).catch((error) => {
+          // SQS acknowledgement follows Observation persistence, so a failed
+          // completion leaves the task available for a safe retry.
+          console.error('Task completion failed; the task will be retried', error);
+        });
+      }, 2000)
+    );
     if (next) {
       next();
     } else {

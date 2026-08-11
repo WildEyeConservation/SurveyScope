@@ -1,51 +1,90 @@
-import type { DynamoDBStreamHandler } from "aws-lambda";
-import { Logger } from "@aws-lambda-powertools/logger";
-import { Amplify } from "aws-amplify";
-import { env } from '$amplify/env/updateUserStats'
-import { generateClient } from "aws-amplify/data";
-import { Handler } from "aws-lambda";
-import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
-import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3'
-import { getUserStats, getQueue } from './graphql/queries'
-import { updateUserStats, createUserStats, updateQueue } from './graphql/mutations'
-import type { CreateUserStatsInput, UpdateUserStatsInput } from './graphql/API'
-
-Amplify.configure(
-    {
-        API: {
-            GraphQL: {
-                endpoint: env.AMPLIFY_DATA_GRAPHQL_ENDPOINT,
-                region: env.AWS_REGION,
-                defaultAuthMode: "iam",
-            },
-        },
-    },
-    {
-        Auth: {
-            credentialsProvider: {
-                getCredentialsAndIdentityId: async () => ({
-                    credentials: {
-                        accessKeyId: env.AWS_ACCESS_KEY_ID,
-                        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-                        sessionToken: env.AWS_SESSION_TOKEN,
-                    },
-                }),
-                clearCredentialsAndIdentityId: () => {
-                    /* noop */
-                },
-            },
-        },
-    }
-);
-
-const client = generateClient({
-    authMode: "iam",
-});
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  TransactWriteCommand,
+  type TransactWriteCommandInput,
+} from '@aws-sdk/lib-dynamodb';
+import { unmarshall } from '@aws-sdk/util-dynamodb';
+import { Logger } from '@aws-lambda-powertools/logger';
+import { Amplify } from 'aws-amplify';
+import { generateClient } from 'aws-amplify/data';
+import type {
+  DynamoDBRecord,
+  DynamoDBStreamHandler,
+} from 'aws-lambda';
+import { env } from '$amplify/env/updateUserStats';
+import {
+  updateQueue as notifyQueue,
+  updateUserStats as notifyUserStats,
+} from './graphql/mutations';
+import {
+  buildQueueTransaction,
+  buildStatsTransaction,
+  queueReceiptId,
+  statsDeltaFromObservation,
+  statsReceiptId,
+  type StatsDelta,
+} from './core';
 
 const logger = new Logger({
-    logLevel: "INFO",
-    serviceName: "dynamodb-stream-handler",
+  logLevel: 'INFO',
+  serviceName: 'update-user-stats',
 });
+
+function modelTableName(modelName: string): string {
+  const endpoint = new URL(env.AMPLIFY_DATA_GRAPHQL_ENDPOINT);
+  const apiId = endpoint.hostname.split('.')[0];
+  if (!apiId) throw new Error('Could not derive the AppSync API ID');
+  return `${modelName}-${apiId}-NONE`;
+}
+
+function requiredEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing required environment variable ${name}`);
+  return value;
+}
+
+const tables = {
+  receipts: requiredEnvironmentVariable('STATS_RECEIPT_TABLE'),
+  userStats: modelTableName('UserStats'),
+  queues: modelTableName('Queue'),
+};
+
+const documentClient = DynamoDBDocumentClient.from(
+  new DynamoDBClient({ region: env.AWS_REGION, maxAttempts: 8 }),
+  { marshallOptions: { removeUndefinedValues: true } }
+);
+
+Amplify.configure(
+  {
+    API: {
+      GraphQL: {
+        endpoint: env.AMPLIFY_DATA_GRAPHQL_ENDPOINT,
+        region: env.AWS_REGION,
+        defaultAuthMode: 'iam',
+      },
+    },
+  },
+  {
+    Auth: {
+      credentialsProvider: {
+        getCredentialsAndIdentityId: async () => ({
+          credentials: {
+            accessKeyId: env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+            sessionToken: env.AWS_SESSION_TOKEN,
+          },
+        }),
+        clearCredentialsAndIdentityId: () => {
+          // No cached identity is used by this Lambda.
+        },
+      },
+    },
+  }
+);
+
+const graphQLClient = generateClient({ authMode: 'iam' });
 
 const getProjectOrganizationId = /* GraphQL */ `
   query GetProject($id: ID!) {
@@ -53,360 +92,224 @@ const getProjectOrganizationId = /* GraphQL */ `
   }
 `;
 
-const organizationIdCache: Record<string, string | undefined> = {};
-
-async function getOrganizationId(projectId: string): Promise<string | undefined> {
-    if (projectId in organizationIdCache) return organizationIdCache[projectId];
-    try {
-        const projectResponse = await client.graphql({
-            query: getProjectOrganizationId,
-            variables: { id: projectId },
-        });
-        const organizationId = (projectResponse as any).data?.getProject?.organizationId;
-        organizationIdCache[projectId] = organizationId;
-        return organizationId;
-    } catch (error) {
-        logger.error('Failed to fetch organizationId for project', {
-            projectId,
-            error: error instanceof Error ? error.message : String(error),
-        });
-        organizationIdCache[projectId] = undefined;
-        return undefined;
-    }
+interface GraphQLErrorLike {
+  message?: string;
 }
 
-interface StatsEntry {
-    setId: string;
-    date: string;
-    userId: string;
-    projectId: string;
-    observationCount: number;
-    annotationCount: number;
-    sightingCount: number;
-    activeTime: number;
-    searchTime: number;
-    searchCount: number;
-    annotationTime: number;
-    waitingTime: number;
+interface ProjectOrganizationResult {
+  data?: {
+    getProject?: { organizationId?: string | null } | null;
+  };
+  errors?: readonly GraphQLErrorLike[];
 }
 
-let stats: Record<string, StatsEntry> = {};
-let queueCounts: Record<string, number> = {}; // queueId → observation count delta
-
-function accumulateStats(input: any): boolean {
-    try {
-        // Validate required fields exist
-        if (!input.annotationSetId?.S || !input.createdAt?.S || !input.owner?.S || !input.projectId?.S) {
-            logger.warn('Missing required fields in observation', {
-                hasAnnotationSetId: !!input.annotationSetId?.S,
-                hasCreatedAt: !!input.createdAt?.S,
-                hasOwner: !!input.owner?.S,
-                hasProjectId: !!input.projectId?.S
-            });
-            return false;
-        }
-
-        const setId = input.annotationSetId.S;
-        const date = input.createdAt.S.split('T')[0];
-
-        // Extract userId from owner field - handle different formats
-        let userId: string;
-        const ownerValue = input.owner.S;
-        if (ownerValue.includes('::')) {
-            userId = ownerValue.split('::')[1];
-        } else {
-            // If no '::' separator, use the entire owner value as userId
-            userId = ownerValue;
-        }
-
-        if (!userId || userId.trim() === '') {
-            logger.warn('Invalid userId extracted from owner', { owner: ownerValue });
-            return false;
-        }
-
-        const projectId = input.projectId.S;
-        const annotationCount = parseInt(input.annotationCount?.N || '0', 10) || 0;
-        let timeTaken = parseFloat(input.timeTaken?.N || '0') || 0;
-        const waitingTime = parseFloat(input.waitingTime?.N || '0') || 0;
-        const sighting = (annotationCount > 0 ? 1 : 0);
-        if (timeTaken > (sighting ? 900 * 1000 : 120 * 1000)) timeTaken = 0;
-
-        const key = `${setId}-${date}-${userId}-${projectId}`;
-        if (!stats[key]) {
-            stats[key] = {
-                setId,
-                date,
-                userId,
-                projectId,
-                observationCount: 0,
-                annotationCount: 0,
-                sightingCount: 0,
-                activeTime: 0,
-                searchTime: 0,
-                searchCount: 0,
-                annotationTime: 0,
-                waitingTime: 0
-            };
-        }
-        stats[key].observationCount += 1;
-        stats[key].annotationCount += annotationCount;
-        stats[key].sightingCount += sighting;
-        stats[key].activeTime += timeTaken;
-        stats[key].searchTime += (1 - sighting) * timeTaken;
-        stats[key].searchCount += (1 - sighting);
-        stats[key].annotationTime += sighting * timeTaken;
-        stats[key].waitingTime += Math.max(waitingTime, 0);
-
-        // Track queue observation counts for requeue detection
-        const queueId = input.queueId?.S;
-        if (queueId) {
-            queueCounts[queueId] = (queueCounts[queueId] || 0) + 1;
-        }
-
-        logger.info(`Accumulated stats for ${key}`);
-        return true;
-    } catch (error) {
-        logger.error('Error accumulating stats', {
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            input: JSON.stringify(input, null, 2)
-        });
-        return false;
-    }
+interface UserStatsNotificationResult {
+  data?: { updateUserStats?: { projectId: string } | null };
+  errors?: readonly GraphQLErrorLike[];
 }
 
-async function applyUpdate(update: StatsEntry): Promise<boolean> {
-    try {
-        // Validate required fields
-        if (!update.userId || !update.projectId || !update.setId || !update.date) {
-            logger.error('Invalid update entry - missing required fields', {
-                userId: update.userId,
-                projectId: update.projectId,
-                setId: update.setId,
-                date: update.date
-            });
-            return false;
-        }
-
-        const result = await client.graphql({
-            query: getUserStats,
-            variables: {
-                userId: update.userId,
-                projectId: update.projectId,
-                setId: update.setId,
-                date: update.date
-            }
-        });
-
-        // Check for GraphQL errors
-        if (result.errors && result.errors.length > 0) {
-            logger.error('GraphQL query errors', {
-                errors: result.errors,
-                variables: { userId: update.userId, projectId: update.projectId, setId: update.setId, date: update.date }
-            });
-            return false;
-        }
-
-        const statExists = !!result.data?.getUserStats;
-        const existingStats = result.data?.getUserStats || {
-            observationCount: 0,
-            annotationCount: 0,
-            sightingCount: 0,
-            activeTime: 0,
-            searchTime: 0,
-            searchCount: 0,
-            annotationTime: 0,
-            waitingTime: 0
-        };
-
-        // Add accumulated deltas from this batch to existing stats
-        const baseInput = {
-            userId: update.userId,
-            projectId: update.projectId,
-            setId: update.setId,
-            date: update.date,
-            observationCount: existingStats.observationCount + update.observationCount,
-            annotationCount: existingStats.annotationCount + update.annotationCount,
-            sightingCount: (existingStats.sightingCount || 0) + update.sightingCount,
-            activeTime: (existingStats.activeTime || 0) + update.activeTime,
-            searchTime: (existingStats.searchTime || 0) + update.searchTime,
-            searchCount: (existingStats.searchCount || 0) + update.searchCount,
-            annotationTime: (existingStats.annotationTime || 0) + update.annotationTime,
-            waitingTime: (existingStats.waitingTime || 0) + update.waitingTime
-        };
-
-        let mutationResult;
-        if (statExists) {
-            const input: UpdateUserStatsInput = baseInput;
-            mutationResult = await client.graphql({ query: updateUserStats, variables: { input } });
-        } else {
-            const organizationId = await getOrganizationId(update.projectId);
-            const input: CreateUserStatsInput = {
-                ...baseInput,
-                ...(organizationId ? { group: organizationId } : {}),
-            };
-            mutationResult = await client.graphql({ query: createUserStats, variables: { input } });
-        }
-
-        // Check for mutation errors
-        if (mutationResult.errors && mutationResult.errors.length > 0) {
-            logger.error('GraphQL mutation errors', {
-                errors: mutationResult.errors,
-                operation: statExists ? 'updateUserStats' : 'createUserStats',
-                input: baseInput
-            });
-            return false;
-        }
-
-        // Publish real-time update to clients listening on this annotation set
-        // try {
-        //     await client.graphql({
-        //         query: publish,
-        //         variables: {
-        //             channelName: `${update.setId}-userstats`,
-        //             content: JSON.stringify(baseInput),
-        //         },
-        //     });
-        // } catch (publishError: any) {
-        //     logger.warn('Failed to publish stats update', {
-        //         error: publishError instanceof Error ? publishError.message : JSON.stringify(publishError),
-        //         errors: publishError?.errors,
-        //         data: publishError?.data,
-        //         setId: update.setId,
-        //     });
-        // }
-
-        return true;
-    } catch (error) {
-        logger.error('Error applying update', {
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            update: JSON.stringify(update, null, 2)
-        });
-        return false;
-    }
+interface QueueNotificationResult {
+  data?: { updateQueue?: { id: string } | null };
+  errors?: readonly GraphQLErrorLike[];
 }
 
-async function updateStats() {
-    const updates = Object.values(stats);
-    logger.info(`Updating ${updates.length} unique stat entries`);
+const organizationIdCache = new Map<string, string>();
 
-    const results = await Promise.allSettled(
-        updates.map(async (update) => await applyUpdate(update))
+function describeGraphQLErrors(errors: readonly GraphQLErrorLike[] | undefined) {
+  return errors?.map((error) => error.message ?? 'Unknown GraphQL error').join('; ');
+}
+
+async function getOrganizationId(projectId: string): Promise<string> {
+  const cached = organizationIdCache.get(projectId);
+  if (cached !== undefined) return cached;
+
+  const response = (await graphQLClient.graphql({
+    query: getProjectOrganizationId,
+    variables: { id: projectId },
+  })) as ProjectOrganizationResult;
+  if (response.errors?.length) {
+    throw new Error(
+      `Failed to fetch organization for project ${projectId}: ${describeGraphQLErrors(response.errors)}`
     );
+  }
 
-    const successful = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
-    const failed = results.length - successful;
-
-    if (failed > 0) {
-        logger.warn(`Failed to update ${failed} out of ${results.length} stat entries`);
-        results.forEach((result, index) => {
-            if (result.status === 'rejected' || (result.status === 'fulfilled' && result.value === false)) {
-                logger.error(`Failed update ${index + 1}`, {
-                    status: result.status,
-                    reason: result.status === 'rejected' ? result.reason : 'applyUpdate returned false',
-                    update: updates[index]
-                });
-            }
-        });
-    }
-
-    logger.info(`Successfully updated ${successful} stat entries`);
+  const organizationId = response.data?.getProject?.organizationId;
+  if (!organizationId) {
+    throw new Error(`Project ${projectId} has no organization`);
+  }
+  organizationIdCache.set(projectId, organizationId);
+  return organizationId;
 }
 
-async function updateQueueObservedCounts() {
-    const entries = Object.entries(queueCounts);
-    if (entries.length === 0) return;
+async function receiptExists(receiptId: string): Promise<boolean> {
+  const response = await documentClient.send(
+    new GetCommand({
+      TableName: tables.receipts,
+      Key: { id: receiptId },
+      ConsistentRead: true,
+      ProjectionExpression: 'id',
+    })
+  );
+  return Boolean(response.Item);
+}
 
-    logger.info(`Updating observedCount for ${entries.length} queues`);
+async function transactOnce(
+  input: TransactWriteCommandInput,
+  receiptId: string
+): Promise<void> {
+  try {
+    await documentClient.send(new TransactWriteCommand(input));
+  } catch (error) {
+    // This check covers both conditional duplicates and ambiguous network
+    // failures where DynamoDB committed the transaction but the response was lost.
+    if (await receiptExists(receiptId)) return;
+    throw error;
+  }
+}
 
-    for (const [queueId, delta] of entries) {
-        try {
-            const result = await client.graphql({
-                query: getQueue,
-                variables: { id: queueId }
-            });
+async function applyStats(eventId: string, delta: StatsDelta): Promise<void> {
+  await transactOnce(
+    buildStatsTransaction(eventId, delta, {
+      receipts: tables.receipts,
+      userStats: tables.userStats,
+    }),
+    statsReceiptId(eventId)
+  );
+}
 
-            const queue = result.data?.getQueue;
-            if (!queue) {
-                logger.warn(`Queue ${queueId} not found, skipping observedCount update`);
-                continue;
-            }
+async function queueExists(queueId: string): Promise<boolean> {
+  const response = await documentClient.send(
+    new GetCommand({
+      TableName: tables.queues,
+      Key: { id: queueId },
+      ConsistentRead: true,
+      ProjectionExpression: 'id',
+    })
+  );
+  return Boolean(response.Item);
+}
 
-            const newCount = (queue.observedCount || 0) + delta;
-            await client.graphql({
-                query: updateQueue,
-                variables: {
-                    input: {
-                        id: queueId,
-                        observedCount: newCount,
-                    }
-                }
-            });
-            logger.info(`Updated queue ${queueId} observedCount: ${queue.observedCount || 0} -> ${newCount} (+${delta})`);
-        } catch (error: any) {
-            logger.error(`Failed to update observedCount for queue ${queueId}`, {
-                error: error instanceof Error ? error.message : JSON.stringify(error),
-                errors: error?.errors,
-                data: error?.data,
-                delta
-            });
-        }
+async function applyQueueProgress(
+  eventId: string,
+  delta: StatsDelta
+): Promise<void> {
+  if (!delta.queueId) return;
+
+  const receiptId = queueReceiptId(eventId);
+  try {
+    await transactOnce(
+      buildQueueTransaction(
+        eventId,
+        delta.observationId,
+        delta.queueId,
+        { receipts: tables.receipts, queues: tables.queues }
+      ),
+      receiptId
+    );
+  } catch (error) {
+    // A queue may legitimately be deleted after its work is completed. The
+    // conditional update prevents accidentally recreating it.
+    if (!(await queueExists(delta.queueId))) {
+      logger.info('Queue no longer exists; skipping progress update', {
+        queueId: delta.queueId,
+        observationId: delta.observationId,
+      });
+      return;
     }
+    throw error;
+  }
+}
+
+async function notifyStatsSubscribers(delta: StatsDelta): Promise<void> {
+  // The counters are updated directly and atomically in DynamoDB. A key-only
+  // AppSync update preserves the existing onUpdate subscription behavior
+  // without reading or replacing any counter values.
+  const response = (await graphQLClient.graphql({
+    query: notifyUserStats,
+    variables: {
+      input: {
+        projectId: delta.projectId,
+        userId: delta.userId,
+        date: delta.date,
+        setId: delta.setId,
+      },
+    },
+  })) as UserStatsNotificationResult;
+
+  if (response.errors?.length || !response.data?.updateUserStats) {
+    throw new Error(
+      `Failed to publish UserStats update: ${
+        describeGraphQLErrors(response.errors) ?? 'no row returned'
+      }`
+    );
+  }
+}
+
+async function notifyQueueSubscribers(delta: StatsDelta): Promise<void> {
+  if (!delta.queueId) return;
+
+  const response = (await graphQLClient.graphql({
+    query: notifyQueue,
+    variables: { input: { id: delta.queueId } },
+  })) as QueueNotificationResult;
+
+  if (response.errors?.length || !response.data?.updateQueue) {
+    // Queue deletion after completion is legitimate and should not poison the
+    // Observation stream. Other failures must retry so subscribers stay fresh.
+    if (!(await queueExists(delta.queueId))) {
+      logger.info('Queue no longer exists; skipping subscriber notification', {
+        queueId: delta.queueId,
+        observationId: delta.observationId,
+      });
+      return;
+    }
+    throw new Error(
+      `Failed to publish Queue update: ${
+        describeGraphQLErrors(response.errors) ?? 'no row returned'
+      }`
+    );
+  }
+}
+
+function observationFromRecord(record: DynamoDBRecord): Record<string, unknown> {
+  const image = record.dynamodb?.NewImage;
+  if (!image) throw new Error('INSERT stream record has no NewImage');
+  return unmarshall(image as Parameters<typeof unmarshall>[0]);
+}
+
+async function processRecord(record: DynamoDBRecord): Promise<void> {
+  if (record.eventName !== 'INSERT') return;
+  if (!record.eventID) throw new Error('Stream record has no eventID');
+
+  const delta = statsDeltaFromObservation(observationFromRecord(record));
+  if (!delta.organizationId) {
+    delta.organizationId = await getOrganizationId(delta.projectId);
+  }
+
+  // These effects have separate receipts so a retry can resume between them.
+  await applyStats(record.eventID, delta);
+  await applyQueueProgress(record.eventID, delta);
+  await notifyQueueSubscribers(delta);
+  await notifyStatsSubscribers(delta);
 }
 
 export const handler: DynamoDBStreamHandler = async (event) => {
-    stats = {};
-    queueCounts = {};
+  for (const record of event.Records) {
     try {
-        logger.info(`Processing ${event.Records.length} records`);
-
-        let processedCount = 0;
-        let skippedCount = 0;
-
-        for (const record of event.Records) {
-            logger.info(`Processing record: ${record.eventID}`);
-            logger.info(`Event Type: ${record.eventName}`);
-
-            if (!record.dynamodb) {
-                logger.warn('No dynamodb data in record', { record });
-                skippedCount++;
-                continue;
-            }
-            if (record.eventName === "INSERT") {
-                const success = accumulateStats(record.dynamodb.NewImage);
-                if (success) {
-                    processedCount++;
-                } else {
-                    skippedCount++;
-                }
-            } else {
-                skippedCount++;
-            }
-        }
-
-        logger.info(`Processed ${processedCount} records, skipped ${skippedCount} records`);
-        await updateStats();
-        await updateQueueObservedCounts();
-        return {
-            batchItemFailures: [],
-        };
+      await processRecord(record);
     } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorStack = error instanceof Error ? error.stack : undefined;
-        const errorDetails = error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-        } : error;
-
-        logger.error('Error processing records:', {
-            error: errorMessage,
-            errorDetails: errorDetails,
-            errorString: JSON.stringify(errorDetails, Object.getOwnPropertyNames(errorDetails), 2),
-            stack: errorStack,
-            recordCount: event.Records?.length || 0
-        });
-        throw error;
+      logger.error('Failed to aggregate Observation stream record', {
+        eventId: record.eventID,
+        sequenceNumber: record.dynamodb?.SequenceNumber,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      // The event source mapping does not enable partial-batch responses.
+      // Throw so Lambda retries the batch; transaction receipts make
+      // already-applied records safe to replay, and the mapping's bisection,
+      // retry bound, and SQS failure destination stop a permanently bad record
+      // from stalling the shard.
+      throw error;
     }
+  }
 };

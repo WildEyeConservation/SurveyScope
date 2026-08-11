@@ -43,6 +43,7 @@ interface AnnotationSessionProps {
   testPresetId?: string;
   testSetId?: string;
   queueId?: string;
+  observationId?: string;
   observationSource?: string;
   allowOutside?: boolean;
   categories: CategoryType[];
@@ -68,6 +69,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     testPresetId,
     testSetId,
     queueId,
+    observationId,
     observationSource,
     allowOutside,
     categories,
@@ -88,6 +90,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     testPresetId,
     testSetId,
     queueId,
+    observationId,
     observationSource,
   });
 
@@ -131,6 +134,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     isTest,
     hideZoomSetting = false,
     queueId,
+    observationId,
     revalidate,
     taskTag,
     viewBoundsScale,
@@ -452,6 +456,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
             isTest={isTest}
             testSetId={testSetId}
             queueId={queueId}
+            observationId={observationId}
             observationSource={source}
             allowOutside={allowOutside}
             categories={filteredCategories}

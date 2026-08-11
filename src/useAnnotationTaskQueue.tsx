@@ -46,6 +46,7 @@ interface AnnotationTaskMessage {
   testPresetId?: string;
   isTest?: boolean;
   queueId?: string;
+  observationId?: string;
   taskTag?: string;
 }
 
@@ -183,6 +184,7 @@ export default function useAnnotationTaskQueue() {
         testPresetId: message.testPresetId,
         isTest: message.isTest,
         queueId: message.queueId,
+        observationId: message.observationId,
         taskTag: message.taskTag,
       };
 
@@ -247,6 +249,9 @@ export default function useAnnotationTaskQueue() {
       const sourceUrl = usingBackup ? backupUrl! : url;
       const entity = response.Messages[0];
       const body = JSON.parse(entity.Body!) as AnnotationTaskMessage;
+      if (entity.MessageId) {
+        body.observationId = `queue-message:${entity.MessageId}`;
+      }
       body.zoom = usingBackup ? backupZoom : zoom;
       body.ack = async () => {
         try {
@@ -258,11 +263,15 @@ export default function useAnnotationTaskQueue() {
               ReceiptHandle: entity.ReceiptHandle,
             })
           );
+          if (body.location?.id) {
+            processedLocationsRef.current.add(body.location.id);
+          }
         } catch (error) {
           console.error(
             `Failed to acknowledge location ${body.location.id}`,
             error
           );
+          throw error;
         }
       };
 
@@ -270,19 +279,23 @@ export default function useAnnotationTaskQueue() {
         body.location?.id &&
         processedLocationsRef.current.has(body.location.id)
       ) {
-        body.ack();
+        try {
+          await body.ack();
+        } catch {
+          await sleep(1000);
+        }
         // Back off so a run of duplicates cannot spin the loop.
         await sleep(500);
         continue;
       }
 
-      if (body.location?.id) {
-        processedLocationsRef.current.add(body.location.id);
-      }
-
       const preparedTask = await prepareTask(body);
       if (!preparedTask) {
-        body.ack();
+        try {
+          await body.ack();
+        } catch {
+          await sleep(1000);
+        }
         await sleep(1000);
         continue;
       }

@@ -44,6 +44,8 @@ export interface AnnotationWorkspaceProps {
   testPresetId?: string;
   isTest?: boolean;
   queueId?: string;
+  /** Stable identifier for retry-safe Observation creation. */
+  observationId?: string;
   taskTag?: string;
 }
 

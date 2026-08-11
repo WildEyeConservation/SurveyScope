@@ -20,6 +20,10 @@ import {
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
+import {
+  createShadowWorkflowRun,
+  workflowLaunchUserId,
+} from '../workflowStats/runWriter';
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
 const getProjectOrganizationId = /* GraphQL */ `
@@ -408,7 +412,11 @@ export const handler: LaunchAnnotationSetHandler = async (event) => {
       updateProjectMembershipsMutation,
       { projectId: payload.projectId }
     );
-    const result = await handleLaunch(payload, organizationId);
+    const result = await handleLaunch(
+      payload,
+      organizationId,
+      workflowLaunchUserId(event.identity)
+    );
 
     // Clean up the S3 payload file after successful processing.
     if (payloadS3Key) {
@@ -464,7 +472,11 @@ async function readImageIdsFromManifest(key: string): Promise<string[]> {
   );
 }
 
-async function handleLaunch(payload: LaunchLambdaPayload, organizationId: string) {
+async function handleLaunch(
+  payload: LaunchLambdaPayload,
+  organizationId: string,
+  launchedBy: string
+) {
   const locationSetIds = new Set(payload.locationSetIds ?? []);
   const locationIds = payload.locationIds ?? [];
 
@@ -479,7 +491,11 @@ async function handleLaunch(payload: LaunchLambdaPayload, organizationId: string
     );
 
     // Use distributed tiling for large tile sets
-    const result = await handleDistributedTiling(payload, organizationId);
+    const result = await handleDistributedTiling(
+      payload,
+      organizationId,
+      launchedBy
+    );
     return result;
   }
 
@@ -518,6 +534,25 @@ async function handleLaunch(payload: LaunchLambdaPayload, organizationId: string
     payload.locationManifestS3Key,
     payload.launchedCount,
     organizationId
+  );
+
+  await createShadowWorkflowRun(
+    {
+      runId: mainQueue.id,
+      workflowType: 'species-labelling',
+      projectId: payload.projectId,
+      annotationSetId: payload.annotationSetId,
+      displayName: payload.queueOptions.name,
+      configuration: {
+        locationSetId,
+        taskTag: payload.taskTag,
+        batchSize: payload.batchSize,
+        launchedCount: payload.launchedCount ?? locationIds.length,
+        allowOutside: payload.allowOutside,
+        skipLocationWithAnnotations: payload.skipLocationWithAnnotations,
+      },
+    },
+    { userId: launchedBy, organizationId }
   );
 
   await enqueueLocations(
@@ -618,7 +653,11 @@ async function handleLaunch(payload: LaunchLambdaPayload, organizationId: string
 }
 
 // Handle distributed tiling for large tile sets
-async function handleDistributedTiling(payload: LaunchLambdaPayload, organizationId: string) {
+async function handleDistributedTiling(
+  payload: LaunchLambdaPayload,
+  organizationId: string,
+  launchedBy: string
+) {
   const tiledRequest = payload.tiledRequest!;
   let locationSetId: string;
 
@@ -732,6 +771,7 @@ async function handleDistributedTiling(payload: LaunchLambdaPayload, organizatio
     batchSize: payload.batchSize,
     zoom: payload.zoom,
     launchImageIds: payload.launchImageIds, // Pass the filter to the monitor
+    launchedBy,
   });
 
   // Create TilingTask record

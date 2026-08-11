@@ -109,6 +109,10 @@ export default function UserStats() {
   useEffect(() => {
     let cancelled = false;
     const subs: { unsubscribe: () => void }[] = [];
+    const selectedSetIds = new Set(
+      selectedSets?.map((set) => set.value) ?? []
+    );
+    const selectedProjectId = project?.value;
 
     // Reset state when selectedSets changes
     setUserStats([]);
@@ -147,53 +151,36 @@ export default function UserStats() {
 
     rapidFetch();
 
-    // onCreate - add new item (or replace if exists)
-    subs.push(
-      client.models.UserStats.onCreate().subscribe({
-        next: (newItem) => {
-          if (!cancelled && newItem) {
-            setUserStats((prev) => {
-              // Check if already exists by composite key
-              const exists = prev.some(
-                (s) =>
-                  s.userId === newItem.userId &&
-                  s.date === newItem.date &&
-                  s.setId === newItem.setId &&
-                  s.projectId === newItem.projectId
-              );
-              if (exists) {
-                return prev.map((s) =>
-                  s.userId === newItem.userId &&
-                    s.date === newItem.date &&
-                    s.setId === newItem.setId &&
-                    s.projectId === newItem.projectId
-                    ? { ...s, ...newItem }
-                    : s
-                );
-              }
-              return [...prev, newItem];
-            });
-          }
-        },
-        error: (error) => console.error('UserStats onCreate error:', error),
-      })
-    );
-
-    // onUpdate - replace existing item by composite key
+    // onUpdate - add or replace by composite key. The statistics aggregator
+    // creates rows atomically in DynamoDB and emits a key-only AppSync update,
+    // so the first live event for a new row can be an update.
     subs.push(
       client.models.UserStats.onUpdate().subscribe({
         next: (updatedItem) => {
-          if (!cancelled && updatedItem) {
-            setUserStats((prev) =>
-              prev.map((s) =>
-                s.userId === updatedItem.userId &&
+          if (
+            !cancelled &&
+            updatedItem &&
+            updatedItem.projectId === selectedProjectId &&
+            selectedSetIds.has(updatedItem.setId)
+          ) {
+            setUserStats((prev) => {
+              const exists = prev.some(
+                (s) =>
+                  s.userId === updatedItem.userId &&
                   s.date === updatedItem.date &&
                   s.setId === updatedItem.setId &&
                   s.projectId === updatedItem.projectId
+              );
+              if (!exists) return [...prev, updatedItem];
+              return prev.map((s) =>
+                s.userId === updatedItem.userId &&
+                s.date === updatedItem.date &&
+                s.setId === updatedItem.setId &&
+                s.projectId === updatedItem.projectId
                   ? { ...s, ...updatedItem }
                   : s
-              )
-            );
+              );
+            });
           }
         },
         error: (error) => console.error('UserStats onUpdate error:', error),
@@ -247,7 +234,7 @@ export default function UserStats() {
       cancelled = true;
       subs.forEach((sub) => sub.unsubscribe());
     };
-  }, [client, selectedSets]);
+  }, [client, project?.value, selectedSets]);
 
   useEffect(() => {
     // Compute all stats synchronously, then set state once

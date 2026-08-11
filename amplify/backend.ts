@@ -62,12 +62,18 @@ import * as path from 'path';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Duration } from 'aws-cdk-lib';
-import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
+import {
+  SqsDlq,
+  SqsEventSource,
+} from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 
 const backend = defineBackend({
   auth,
@@ -132,8 +138,79 @@ userPoolClient.tokenValidityUnits = {
 };
 
 const observationTable = backend.data.resources.tables['Observation'];
-const policy = new Policy(
-  Stack.of(observationTable),
+const statsDataStack = Stack.of(observationTable);
+const statsFunction = backend.updateUserStats.resources.lambda;
+const statsFunctionStack = Stack.of(statsFunction);
+const statsReceiptTable = new dynamodb.Table(
+  statsFunctionStack,
+  'StatsEventReceiptTable',
+  {
+    partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    timeToLiveAttribute: 'expiresAt',
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+backend.updateUserStats.addEnvironment(
+  'STATS_RECEIPT_TABLE',
+  statsReceiptTable.tableName
+);
+
+// This stack must depend on nothing: the data stack (stream mapping failure
+// destination), the function stack (alarm actions), and the workflow stats
+// stack (alarm actions) all import from it, so any reference out of it would
+// create a nested-stack cycle.
+const statsReliabilityStack = backend.createStack('DetwebStatsReliability');
+
+// Synth-time gate: set STATS_ALARM_EMAIL in the build environment to route
+// every statistics alarm to an email subscription. Unset, alarms still exist
+// but have no action, matching the previous behavior.
+const statsAlarmEmail = process.env.STATS_ALARM_EMAIL;
+const statsAlarmTopic = statsAlarmEmail
+  ? new sns.Topic(statsReliabilityStack, 'StatsAlarmTopic')
+  : undefined;
+if (statsAlarmTopic && statsAlarmEmail) {
+  statsAlarmTopic.addSubscription(
+    new snsSubscriptions.EmailSubscription(statsAlarmEmail)
+  );
+}
+const withStatsAlarmAction = (alarm: cloudwatch.Alarm): cloudwatch.Alarm => {
+  if (statsAlarmTopic) {
+    alarm.addAlarmAction(new cloudwatchActions.SnsAction(statsAlarmTopic));
+  }
+  return alarm;
+};
+
+// Failure destination for the legacy UserStats stream mapping. The handler
+// throws on any record failure; without a retry bound one permanently bad
+// record (for example an Observation whose Project lost its organization)
+// would stall UserStats and Queue progress for its whole shard until the
+// record ages out of the 24-hour stream.
+const userStatsFailureQueue = new sqs.Queue(
+  statsReliabilityStack,
+  'UserStatsStreamFailures',
+  {
+    encryption: sqs.QueueEncryption.SQS_MANAGED,
+    enforceSSL: true,
+    retentionPeriod: Duration.days(14),
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'UserStatsStreamFailuresVisible', {
+    metric: userStatsFailureQueue.metricApproximateNumberOfMessagesVisible({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+
+const streamPolicy = new Policy(
+  statsDataStack,
   'MyDynamoDBFunctionStreamingPolicy',
   {
     statements: [
@@ -150,18 +227,79 @@ const policy = new Policy(
     ],
   }
 );
-backend.updateUserStats.resources.lambda.role?.attachInlinePolicy(policy);
+statsFunction.role?.attachInlinePolicy(streamPolicy);
 
-const mapping1 = new EventSourceMapping(
-  Stack.of(observationTable),
-  'ObservationEventStreamMapping',
+const userStatsTableArn = statsFunctionStack.formatArn({
+  service: 'dynamodb',
+  resource: 'table',
+  resourceName: 'UserStats-*',
+});
+const queueTableArn = statsFunctionStack.formatArn({
+  service: 'dynamodb',
+  resource: 'table',
+  resourceName: 'Queue-*',
+});
+const statsWritePolicy = new Policy(
+  statsFunctionStack,
+  'UpdateUserStatsDynamoDBPolicy',
   {
-    target: backend.updateUserStats.resources.lambda,
-    eventSourceArn: observationTable.tableStreamArn,
-    startingPosition: StartingPosition.LATEST,
+    statements: [
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:PutItem',
+          'dynamodb:UpdateItem',
+        ],
+        resources: [
+          statsReceiptTable.tableArn,
+          userStatsTableArn,
+          queueTableArn,
+        ],
+      }),
+    ],
   }
 );
-mapping1.node.addDependency(policy);
+statsFunction.role?.attachInlinePolicy(statsWritePolicy);
+
+const mapping1 = new EventSourceMapping(
+  statsDataStack,
+  'ObservationEventStreamMapping',
+  {
+    target: statsFunction,
+    eventSourceArn: observationTable.tableStreamArn,
+    startingPosition: StartingPosition.LATEST,
+    // The handler throws on the first failed record. Bisection isolates a
+    // poison record instead of letting it block the shard, the retry bound
+    // hands it to the failure queue, and transaction receipts make the
+    // replayed healthy records idempotent.
+    bisectBatchOnError: true,
+    retryAttempts: 10,
+    maxRecordAge: Duration.hours(24),
+    onFailure: new SqsDlq(userStatsFailureQueue),
+  }
+);
+mapping1.node.addDependency(streamPolicy);
+
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsFunctionStack, 'UpdateUserStatsErrors', {
+    metric: statsFunction.metricErrors({ period: Duration.minutes(5) }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsFunctionStack, 'UpdateUserStatsIteratorAge', {
+    metric: statsFunction.metric('IteratorAge', {
+      period: Duration.minutes(5),
+      statistic: 'Maximum',
+    }),
+    threshold: 15 * 60 * 1000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 const backfillStack = backend.createStack('BackfillLocationGroup');
 const locationTable = backend.data.resources.tables['Location'];
@@ -335,6 +473,319 @@ const enableJollyFargate =
 
 const envName =
   process.env.AMPLIFY_ENV ?? process.env.AWS_BRANCH ?? 'production';
+
+const workflowStatsEnvName = envName
+  .toLowerCase()
+  .replace(/[^a-z0-9-]/g, '-')
+  .replace(/^-+|-+$/g, '')
+  .slice(0, 32) || 'default';
+const workflowStatsStack = backend.createStack('DetwebWorkflowStats');
+const workflowRunsTableName = `detweb-workflow-runs-${workflowStatsEnvName}`;
+
+// These tables deliberately live outside the Amplify data stack. Their names
+// are stable so future workflow adapters can derive their ARNs without adding
+// CloudFormation exports back into the already constrained data stack.
+const workflowRunsTable = new dynamodb.Table(
+  workflowStatsStack,
+  'WorkflowRuns',
+  {
+    tableName: workflowRunsTableName,
+    partitionKey: {
+      name: 'runId',
+      type: dynamodb.AttributeType.STRING,
+    },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+workflowRunsTable.addGlobalSecondaryIndex({
+  indexName: 'byProjectAndLaunchedAt',
+  partitionKey: {
+    name: 'projectId',
+    type: dynamodb.AttributeType.STRING,
+  },
+  sortKey: {
+    name: 'launchedAt',
+    type: dynamodb.AttributeType.STRING,
+  },
+});
+
+for (const launchResource of [
+  backend.launchAnnotationSet,
+  backend.launchFalseNegatives,
+  backend.monitorTilingTasks,
+]) {
+  launchResource.addEnvironment(
+    'WORKFLOW_RUNS_TABLE',
+    workflowRunsTableName
+  );
+  const launchFunction = launchResource.resources.lambda;
+  launchFunction.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
+      resources: [
+        Stack.of(launchFunction).formatArn({
+          service: 'dynamodb',
+          resource: 'table',
+          resourceName: workflowRunsTableName,
+        }),
+      ],
+    })
+  );
+}
+
+const workflowEventsTable = new dynamodb.Table(
+  workflowStatsStack,
+  'WorkflowTaskEvents',
+  {
+    tableName: `detweb-workflow-events-${workflowStatsEnvName}`,
+    partitionKey: {
+      name: 'eventId',
+      type: dynamodb.AttributeType.STRING,
+    },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+workflowEventsTable.addGlobalSecondaryIndex({
+  indexName: 'byRunAndCompletedAt',
+  partitionKey: {
+    name: 'workflowRunId',
+    type: dynamodb.AttributeType.STRING,
+  },
+  sortKey: {
+    name: 'completedAt',
+    type: dynamodb.AttributeType.STRING,
+  },
+});
+
+const workflowDailyStatsTable = new dynamodb.Table(
+  workflowStatsStack,
+  'WorkflowDailyStats',
+  {
+    tableName: `detweb-workflow-daily-stats-${workflowStatsEnvName}`,
+    partitionKey: {
+      name: 'scopeKey',
+      type: dynamodb.AttributeType.STRING,
+    },
+    sortKey: {
+      name: 'bucketKey',
+      type: dynamodb.AttributeType.STRING,
+    },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+
+const workflowStatsWriterLogGroup = new logs.LogGroup(
+  workflowStatsStack,
+  'WorkflowStatsWriterLogs',
+  {
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+
+const recordWorkflowTaskEventFunction = new NodejsFunction(
+  workflowStatsStack,
+  'RecordWorkflowTaskEvent',
+  {
+    entry: path.join(
+      __dirname,
+      'functions/workflowStats/recordTaskEvent.ts'
+    ),
+    handler: 'handler',
+    runtime: lambda.Runtime.NODEJS_20_X,
+    architecture: lambda.Architecture.ARM_64,
+    timeout: Duration.seconds(15),
+    memorySize: 512,
+    reservedConcurrentExecutions: 25,
+    tracing: lambda.Tracing.ACTIVE,
+    logGroup: workflowStatsWriterLogGroup,
+    bundling: {
+      minify: true,
+      sourceMap: true,
+      externalModules: [],
+    },
+    environment: {
+      WORKFLOW_RUNS_TABLE: workflowRunsTable.tableName,
+      WORKFLOW_EVENTS_TABLE: workflowEventsTable.tableName,
+      WORKFLOW_DAILY_STATS_TABLE: workflowDailyStatsTable.tableName,
+      NODE_OPTIONS: '--enable-source-maps',
+    },
+  }
+);
+workflowRunsTable.grantReadData(recordWorkflowTaskEventFunction);
+workflowEventsTable.grantReadWriteData(recordWorkflowTaskEventFunction);
+workflowDailyStatsTable.grantReadWriteData(recordWorkflowTaskEventFunction);
+
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterErrors', {
+    metric: recordWorkflowTaskEventFunction.metricErrors({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsWriterDuration', {
+    metric: recordWorkflowTaskEventFunction.metricDuration({
+      period: Duration.minutes(5),
+      statistic: 'p99',
+    }),
+    threshold: 12_000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+
+const workflowStatsFailureQueue = new sqs.Queue(
+  workflowStatsStack,
+  'WorkflowStatsProjectionFailures',
+  {
+    encryption: sqs.QueueEncryption.SQS_MANAGED,
+    enforceSSL: true,
+    retentionPeriod: Duration.days(14),
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+const workflowStatsProjectorLogGroup = new logs.LogGroup(
+  workflowStatsStack,
+  'WorkflowStatsProjectorLogs',
+  {
+    retention: logs.RetentionDays.ONE_MONTH,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+const workflowStatsObservationProjector = new NodejsFunction(
+  workflowStatsStack,
+  'ProjectObservationWorkflowStats',
+  {
+    entry: path.join(
+      __dirname,
+      'functions/workflowStats/projectObservation.ts'
+    ),
+    handler: 'handler',
+    runtime: lambda.Runtime.NODEJS_20_X,
+    architecture: lambda.Architecture.ARM_64,
+    timeout: Duration.seconds(30),
+    memorySize: 512,
+    reservedConcurrentExecutions: 10,
+    tracing: lambda.Tracing.ACTIVE,
+    logGroup: workflowStatsProjectorLogGroup,
+    bundling: {
+      minify: true,
+      sourceMap: true,
+      externalModules: [],
+    },
+    environment: {
+      WORKFLOW_RUNS_TABLE: workflowRunsTable.tableName,
+      WORKFLOW_EVENTS_TABLE: workflowEventsTable.tableName,
+      WORKFLOW_DAILY_STATS_TABLE: workflowDailyStatsTable.tableName,
+      NODE_OPTIONS: '--enable-source-maps',
+    },
+  }
+);
+workflowRunsTable.grantReadData(workflowStatsObservationProjector);
+workflowEventsTable.grantReadWriteData(workflowStatsObservationProjector);
+workflowDailyStatsTable.grantReadWriteData(
+  workflowStatsObservationProjector
+);
+const workflowStatsStreamGrant = observationTable.grantStreamRead(
+  workflowStatsObservationProjector
+);
+const workflowStatsObservationMapping = new EventSourceMapping(
+  workflowStatsStack,
+  'WorkflowStatsObservationMapping',
+  {
+    target: workflowStatsObservationProjector,
+    eventSourceArn: observationTable.tableStreamArn,
+    startingPosition: StartingPosition.TRIM_HORIZON,
+    batchSize: 25,
+    bisectBatchOnError: true,
+    reportBatchItemFailures: true,
+    retryAttempts: 5,
+    maxRecordAge: Duration.hours(24),
+    parallelizationFactor: 1,
+    onFailure: new SqsDlq(workflowStatsFailureQueue),
+    filters: [
+      lambda.FilterCriteria.filter({
+        eventName: lambda.FilterRule.isEqual('INSERT'),
+      }),
+    ],
+  }
+);
+workflowStatsStreamGrant.applyBefore(workflowStatsObservationMapping);
+
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorErrors', {
+    metric: workflowStatsObservationProjector.metricErrors({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(
+    workflowStatsStack,
+    'WorkflowStatsProjectorThrottles',
+    {
+      metric: workflowStatsObservationProjector.metricThrottles({
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }
+  )
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectorDuration', {
+    metric: workflowStatsObservationProjector.metricDuration({
+      period: Duration.minutes(5),
+      statistic: 'p99',
+    }),
+    threshold: 24_000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(
+    workflowStatsStack,
+    'WorkflowStatsProjectorIteratorAge',
+    {
+      metric: workflowStatsObservationProjector.metric('IteratorAge', {
+        period: Duration.minutes(5),
+        statistic: 'Maximum',
+      }),
+      threshold: 15 * 60 * 1000,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    }
+  )
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(workflowStatsStack, 'WorkflowStatsProjectionFailuresDepth', {
+    metric:
+      workflowStatsFailureQueue.metricApproximateNumberOfMessagesVisible({
+        period: Duration.minutes(5),
+      }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 let lightglueQueueUrl: string | undefined;
 let scoutbotQueueUrl: string | undefined;

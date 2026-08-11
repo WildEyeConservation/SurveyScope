@@ -14,6 +14,7 @@ interface UseTaskCompletionProps {
   testPresetId?: string;
   testSetId?: string;
   queueId?: string;
+  observationId?: string;
   observationSource?: string;
 }
 
@@ -31,6 +32,7 @@ export default function useTaskCompletion({
   testPresetId,
   testSetId,
   queueId,
+  observationId,
   observationSource,
 }: UseTaskCompletionProps) {
   const observationAck = useCreateObservation({
@@ -40,6 +42,7 @@ export default function useTaskCompletion({
     testPresetId,
     testSetId,
     queueId,
+    observationId,
     observationSource,
   });
 

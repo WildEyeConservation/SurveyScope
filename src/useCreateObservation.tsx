@@ -1,4 +1,4 @@
-import { useCallback, useContext, useState } from 'react';
+import { useCallback, useContext, useRef } from 'react';
 import { GlobalContext, ImageContext, ProjectContext } from './Context';
 import useCreateTestResult from './useCreateTestResult';
 import type {
@@ -21,7 +21,10 @@ interface UseCreateObservationProps {
   testPresetId?: string;
   /** The ephemeral set the user's test annotations were written to. */
   testSetId?: string;
-  queueId?: string; // Queue ID for incrementing observed count
+  /** Queue ID persisted on the Observation for server-side progress aggregation. */
+  queueId?: string;
+  /** Stable SQS message identifier used to make Observation creation retry safe. */
+  observationId?: string;
   /** Optional source tag for the observation (e.g., 'manual-false-negative') */
   observationSource?: string;
 }
@@ -29,6 +32,10 @@ interface UseCreateObservationProps {
 // Time limits in milliseconds (matching server-side validation)
 const MAX_TIME_WITH_ANNOTATIONS = 900 * 1000; // 15 minutes
 const MAX_TIME_WITHOUT_ANNOTATIONS = 120 * 1000; // 2 minutes
+
+function describeErrors(errors: readonly { message?: string }[] | undefined) {
+  return errors?.map((error) => error.message || 'Unknown GraphQL error').join('; ');
+}
 
 export default function useCreateObservation(props: UseCreateObservationProps) {
   const {
@@ -38,6 +45,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     testPresetId,
     testSetId,
     queueId,
+    observationId,
     observationSource,
   } = props;
   const annotationSetId = location?.annotationSetId;
@@ -51,7 +59,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   } = useContext(ImageContext)!;
   const { project } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
-  const [acked, setAcked] = useState(false);
+  const completionRef = useRef<Promise<void> | null>(null);
 
   const createTestResult = useCreateTestResult({
     locationId: id,
@@ -61,11 +69,19 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   });
 
   const newAck = useCallback(
-    (submittedAt?: number) => {
-      // The SQS ack is deliberately delayed after the user pages past (see
-      // useAckOnTimeout), so callers pass the timestamp captured at submit time.
-      const submittedTimestamp = submittedAt ?? Date.now();
-      if (!acked && id && annotationSetId && project) {
+    (submittedAt?: number): Promise<void> => {
+      if (completionRef.current) return completionRef.current;
+
+      const completion = (async () => {
+        // The SQS ack is deliberately delayed after the user pages past (see
+        // useAckOnTimeout), so callers pass the timestamp captured at submit time.
+        const submittedTimestamp = submittedAt ?? Date.now();
+        if (!id || !annotationSetId || !project) {
+          throw new Error(
+            'Cannot complete task without a location, annotation set, and project'
+          );
+        }
+
         let timeTaken = visibleTimestamp
           ? submittedTimestamp - visibleTimestamp
           : 0;
@@ -87,42 +103,89 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           timeTaken = maxTime;
         }
 
-        client.models.Observation.create({
-          annotationSetId: annotationSetToUse ?? annotationSetId,
-          annotationCount: annoCount,
-          timeTaken,
-          // Time the user spent looking at a not-yet-loaded image. With
-          // preloading the image usually finishes before it becomes visible,
-          // in which case the user waited 0ms (never negative).
-          waitingTime:
-            visibleTimestamp && fullyLoadedTimestamp
-              ? Math.max(0, fullyLoadedTimestamp - visibleTimestamp)
+        const persistedAnnotationSetId = annotationSetToUse ?? annotationSetId;
+        const input = {
+            ...(observationId ? { id: observationId } : {}),
+            annotationSetId: persistedAnnotationSetId,
+            annotationCount: annoCount,
+            timeTaken,
+            // Time the user spent looking at a not-yet-loaded image. With
+            // preloading the image usually finishes before it becomes visible,
+            // in which case the user waited 0ms (never negative).
+            waitingTime:
+              visibleTimestamp && fullyLoadedTimestamp
+                ? Math.max(0, fullyLoadedTimestamp - visibleTimestamp)
+                : 0,
+            loadingTime: fullyLoadedTimestamp
+              ? fullyLoadedTimestamp - (startLoadingTimestamp ?? 0)
               : 0,
-          loadingTime: fullyLoadedTimestamp
-            ? fullyLoadedTimestamp - (startLoadingTimestamp ?? 0)
-            : 0,
-          locationId: id,
-          projectId: project.id,
-          queueId: queueId || undefined, // Track which queue this observation belongs to
-          source: observationSource,
-          group: project.organizationId,
-        });
+            locationId: id,
+            projectId: project.id,
+            queueId: queueId || undefined,
+            source: observationSource,
+            group: project.organizationId,
+        };
 
-        setAcked(true);
-      }
+        const created = await client.models.Observation.create(input);
+        if (!created.data) {
+            // A lost response after a successful write is indistinguishable from
+            // a failed create. Queued observations use a deterministic ID, so a
+            // strongly identified existing row proves persistence and makes the
+            // client retry safe.
+          let existingObservationConfirmed = false;
+          if (observationId) {
+            const existing = await client.models.Observation.get(
+                { id: observationId },
+                {
+                  selectionSet: [
+                    'id',
+                    'annotationSetId',
+                    'locationId',
+                    'queueId',
+                  ],
+                }
+            );
+            if (
+              existing.data?.annotationSetId === persistedAnnotationSetId &&
+              existing.data.locationId === id &&
+              (existing.data.queueId ?? undefined) === (queueId ?? undefined)
+            ) {
+              existingObservationConfirmed = true;
+            }
+          }
 
-      if (isTest) {
-        createTestResult();
-      }
+          if (!existingObservationConfirmed) {
+            throw new Error(
+              `Failed to persist observation: ${
+                describeErrors(created.errors) || 'no row returned'
+              }`
+            );
+          }
+        }
 
-      ack(submittedAt);
+        // observedCount is bumped by the updateUserStats DynamoDB stream handler
+        // when the Observation row lands; don't also increment from the client.
+
+        if (isTest) {
+          await createTestResult();
+        }
+
+        await ack(submittedAt);
+      })();
+
+      completionRef.current = completion.catch((error) => {
+        // Permit a later retry after either persistence or SQS acknowledgement
+        // fails. Deterministic queued Observation IDs make that retry safe.
+        completionRef.current = null;
+        throw error;
+      });
+      return completionRef.current;
     },
     [
       id,
       annotationSetId,
       annotationSetToUse,
       project,
-      acked,
       visibleTimestamp,
       startLoadingTimestamp,
       fullyLoadedTimestamp,
@@ -130,6 +193,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
       isTest,
       createTestResult,
       queueId,
+      observationId,
       observationSource,
       client,
       ack,
