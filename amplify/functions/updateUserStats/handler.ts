@@ -38,14 +38,35 @@ function requiredEnvironmentVariable(name: string): string {
   return value;
 }
 
-// Table names are injected from backend.ts. They cannot be derived from the
-// GraphQL endpoint: Amplify suffixes tables with the AppSync API ID, while the
-// endpoint hostname carries a different endpoint identifier.
-const tables = {
-  receipts: requiredEnvironmentVariable('STATS_RECEIPT_TABLE'),
-  userStats: requiredEnvironmentVariable('USER_STATS_TABLE'),
-  queues: requiredEnvironmentVariable('QUEUE_TABLE'),
-};
+interface ModelTables {
+  receipts: string;
+  userStats: string;
+  queues: string;
+}
+
+// The UserStats and Queue table names cannot be derived from the GraphQL
+// endpoint (its hostname is an endpoint identifier, not the API ID Amplify
+// uses in table suffixes), and they cannot be injected from backend.ts (the
+// data stack references this function for its stream mapping, so a reference
+// back would be a circular nested-stack dependency). The stream record's
+// eventSourceARN carries the authoritative Observation-<apiId>-NONE table
+// name, so the sibling model tables are derived from it.
+function tablesFromEventSource(eventSourceARN: string | undefined): ModelTables {
+  const tableName = eventSourceARN?.split('/')[1];
+  const apiSuffix = tableName?.startsWith('Observation-')
+    ? tableName.slice('Observation-'.length)
+    : undefined;
+  if (!apiSuffix) {
+    throw new Error(
+      `Cannot derive model tables from event source ${eventSourceARN}`
+    );
+  }
+  return {
+    receipts: requiredEnvironmentVariable('STATS_RECEIPT_TABLE'),
+    userStats: `UserStats-${apiSuffix}`,
+    queues: `Queue-${apiSuffix}`,
+  };
+}
 
 const documentClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: env.AWS_REGION, maxAttempts: 8 }),
@@ -137,7 +158,10 @@ async function getOrganizationId(projectId: string): Promise<string> {
   return organizationId;
 }
 
-async function receiptExists(receiptId: string): Promise<boolean> {
+async function receiptExists(
+  tables: ModelTables,
+  receiptId: string
+): Promise<boolean> {
   const response = await documentClient.send(
     new GetCommand({
       TableName: tables.receipts,
@@ -150,6 +174,7 @@ async function receiptExists(receiptId: string): Promise<boolean> {
 }
 
 async function transactOnce(
+  tables: ModelTables,
   input: TransactWriteCommandInput,
   receiptId: string
 ): Promise<void> {
@@ -158,13 +183,18 @@ async function transactOnce(
   } catch (error) {
     // This check covers both conditional duplicates and ambiguous network
     // failures where DynamoDB committed the transaction but the response was lost.
-    if (await receiptExists(receiptId)) return;
+    if (await receiptExists(tables, receiptId)) return;
     throw error;
   }
 }
 
-async function applyStats(eventId: string, delta: StatsDelta): Promise<void> {
+async function applyStats(
+  tables: ModelTables,
+  eventId: string,
+  delta: StatsDelta
+): Promise<void> {
   await transactOnce(
+    tables,
     buildStatsTransaction(eventId, delta, {
       receipts: tables.receipts,
       userStats: tables.userStats,
@@ -173,7 +203,10 @@ async function applyStats(eventId: string, delta: StatsDelta): Promise<void> {
   );
 }
 
-async function queueExists(queueId: string): Promise<boolean> {
+async function queueExists(
+  tables: ModelTables,
+  queueId: string
+): Promise<boolean> {
   const response = await documentClient.send(
     new GetCommand({
       TableName: tables.queues,
@@ -186,6 +219,7 @@ async function queueExists(queueId: string): Promise<boolean> {
 }
 
 async function applyQueueProgress(
+  tables: ModelTables,
   eventId: string,
   delta: StatsDelta
 ): Promise<void> {
@@ -194,6 +228,7 @@ async function applyQueueProgress(
   const receiptId = queueReceiptId(eventId);
   try {
     await transactOnce(
+      tables,
       buildQueueTransaction(
         eventId,
         delta.observationId,
@@ -205,7 +240,7 @@ async function applyQueueProgress(
   } catch (error) {
     // A queue may legitimately be deleted after its work is completed. The
     // conditional update prevents accidentally recreating it.
-    if (!(await queueExists(delta.queueId))) {
+    if (!(await queueExists(tables, delta.queueId))) {
       logger.info('Queue no longer exists; skipping progress update', {
         queueId: delta.queueId,
         observationId: delta.observationId,
@@ -241,7 +276,10 @@ async function notifyStatsSubscribers(delta: StatsDelta): Promise<void> {
   }
 }
 
-async function notifyQueueSubscribers(delta: StatsDelta): Promise<void> {
+async function notifyQueueSubscribers(
+  tables: ModelTables,
+  delta: StatsDelta
+): Promise<void> {
   if (!delta.queueId) return;
 
   const response = (await graphQLClient.graphql({
@@ -252,7 +290,7 @@ async function notifyQueueSubscribers(delta: StatsDelta): Promise<void> {
   if (response.errors?.length || !response.data?.updateQueue) {
     // Queue deletion after completion is legitimate and should not poison the
     // Observation stream. Other failures must retry so subscribers stay fresh.
-    if (!(await queueExists(delta.queueId))) {
+    if (!(await queueExists(tables, delta.queueId))) {
       logger.info('Queue no longer exists; skipping subscriber notification', {
         queueId: delta.queueId,
         observationId: delta.observationId,
@@ -277,15 +315,16 @@ async function processRecord(record: DynamoDBRecord): Promise<void> {
   if (record.eventName !== 'INSERT') return;
   if (!record.eventID) throw new Error('Stream record has no eventID');
 
+  const tables = tablesFromEventSource(record.eventSourceARN);
   const delta = statsDeltaFromObservation(observationFromRecord(record));
   if (!delta.organizationId) {
     delta.organizationId = await getOrganizationId(delta.projectId);
   }
 
   // These effects have separate receipts so a retry can resume between them.
-  await applyStats(record.eventID, delta);
-  await applyQueueProgress(record.eventID, delta);
-  await notifyQueueSubscribers(delta);
+  await applyStats(tables, record.eventID, delta);
+  await applyQueueProgress(tables, record.eventID, delta);
+  await notifyQueueSubscribers(tables, delta);
   await notifyStatsSubscribers(delta);
 }
 
