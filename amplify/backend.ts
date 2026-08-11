@@ -157,16 +157,12 @@ backend.updateUserStats.addEnvironment(
   'STATS_RECEIPT_TABLE',
   statsReceiptTable.tableName
 );
-// Real table names, not derived ones: the AppSync endpoint hostname is not the
-// API ID that Amplify uses in table suffixes.
-backend.updateUserStats.addEnvironment(
-  'USER_STATS_TABLE',
-  backend.data.resources.tables['UserStats'].tableName
-);
-backend.updateUserStats.addEnvironment(
-  'QUEUE_TABLE',
-  backend.data.resources.tables['Queue'].tableName
-);
+// The UserStats and Queue table names are deliberately NOT injected here. The
+// data stack already references this function (the Observation stream mapping
+// below), so any function-stack reference to data-stack outputs is a circular
+// nested-stack dependency. The handler derives the table names from each
+// stream record's eventSourceARN instead, which carries the real
+// Observation-<apiId>-NONE table name.
 
 // This stack must depend on nothing: the data stack (stream mapping failure
 // destination), the function stack (alarm actions), and the workflow stats
