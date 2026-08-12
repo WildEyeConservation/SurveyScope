@@ -170,21 +170,44 @@ backend.updateUserStats.addEnvironment(
 // create a nested-stack cycle.
 const statsReliabilityStack = backend.createStack('DetwebStatsReliability');
 
-// Synth-time gate: set STATS_ALARM_EMAIL in the build environment to route
-// every statistics alarm to an email subscription. Unset, alarms still exist
-// but have no action, matching the previous behavior.
-const statsAlarmEmail = process.env.STATS_ALARM_EMAIL;
-const statsAlarmTopic = statsAlarmEmail
-  ? new sns.Topic(statsReliabilityStack, 'StatsAlarmTopic')
+// Synth-time gate: set STATS_ALARM_EMAIL in the Amplify branch environment
+// (comma-separated for several recipients) to route every statistics alarm to
+// email. Unset, the alarms still exist but have no action.
+const statsAlarmEmails = [
+  ...new Set(
+    (process.env.STATS_ALARM_EMAIL ?? '')
+      .split(',')
+      .map((address) => address.trim())
+      .filter((address) => address !== '')
+  ),
+];
+// Fail the build rather than deploy a silently unmonitored pipeline: a typo
+// entered in the console would otherwise be indistinguishable from working
+// alerting until the day an alarm needed to reach someone.
+for (const address of statsAlarmEmails) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+    throw new Error(
+      `STATS_ALARM_EMAIL contains an invalid address: "${address}"`
+    );
+  }
+}
+const statsAlarmTopic = statsAlarmEmails.length
+  ? new sns.Topic(statsReliabilityStack, 'StatsAlarmTopic', {
+      displayName: 'Detweb statistics alarms',
+    })
   : undefined;
-if (statsAlarmTopic && statsAlarmEmail) {
-  statsAlarmTopic.addSubscription(
-    new snsSubscriptions.EmailSubscription(statsAlarmEmail)
+for (const address of statsAlarmEmails) {
+  statsAlarmTopic?.addSubscription(
+    new snsSubscriptions.EmailSubscription(address)
   );
 }
 const withStatsAlarmAction = (alarm: cloudwatch.Alarm): cloudwatch.Alarm => {
   if (statsAlarmTopic) {
-    alarm.addAlarmAction(new cloudwatchActions.SnsAction(statsAlarmTopic));
+    const action = new cloudwatchActions.SnsAction(statsAlarmTopic);
+    alarm.addAlarmAction(action);
+    // Recovery matters as much as failure when nobody is watching: without an
+    // OK action, a self-clearing alarm looks the same as an unresolved one.
+    alarm.addOkAction(action);
   }
   return alarm;
 };
