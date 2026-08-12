@@ -139,14 +139,60 @@ function describeGraphQLErrors(errors: readonly GraphQLErrorLike[] | undefined) 
   return errors?.map((error) => error.message ?? 'Unknown GraphQL error').join('; ');
 }
 
+interface GraphQLResultLike {
+  data?: unknown;
+  errors?: readonly GraphQLErrorLike[];
+}
+
+function isGraphQLResultLike(value: unknown): value is GraphQLResultLike {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    ('errors' in value || 'data' in value)
+  );
+}
+
+// The Amplify client REJECTS with a plain { data, errors } object when the
+// response carries GraphQL errors, so a thrown value and a returned value have
+// the same shape and must be handled identically. Letting the rejection
+// propagate skipped the queue-deleted fallback below and, because the thrown
+// value is not an Error, logged only "[object Object]".
+// The client's return type is a union that includes a subscription Observable,
+// so the operation is typed loosely and awaited here.
+async function runGraphQL<T>(operation: () => unknown): Promise<T> {
+  try {
+    return (await operation()) as T;
+  } catch (error) {
+    if (isGraphQLResultLike(error)) return error as T;
+    throw error;
+  }
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (isGraphQLResultLike(error) && error.errors?.length) {
+    return describeGraphQLErrors(error.errors) ?? 'Unknown GraphQL error';
+  }
+  if (error && typeof error === 'object') {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
+}
+
 async function getOrganizationId(projectId: string): Promise<string> {
   const cached = organizationIdCache.get(projectId);
   if (cached !== undefined) return cached;
 
-  const response = (await graphQLClient.graphql({
-    query: getProjectOrganizationId,
-    variables: { id: projectId },
-  })) as ProjectOrganizationResult;
+  const response = await runGraphQL<ProjectOrganizationResult>(() =>
+    graphQLClient.graphql({
+      query: getProjectOrganizationId,
+      variables: { id: projectId },
+    })
+  );
   if (response.errors?.length) {
     throw new Error(
       `Failed to fetch organization for project ${projectId}: ${describeGraphQLErrors(response.errors)}`
@@ -275,17 +321,19 @@ async function notifyStatsSubscribers(delta: StatsDelta): Promise<void> {
   // The counters are updated directly and atomically in DynamoDB. A key-only
   // AppSync update preserves the existing onUpdate subscription behavior
   // without reading or replacing any counter values.
-  const response = (await graphQLClient.graphql({
-    query: notifyUserStats,
-    variables: {
-      input: {
-        projectId: delta.projectId,
-        userId: delta.userId,
-        date: delta.date,
-        setId: delta.setId,
+  const response = await runGraphQL<UserStatsNotificationResult>(() =>
+    graphQLClient.graphql({
+      query: notifyUserStats,
+      variables: {
+        input: {
+          projectId: delta.projectId,
+          userId: delta.userId,
+          date: delta.date,
+          setId: delta.setId,
+        },
       },
-    },
-  })) as UserStatsNotificationResult;
+    })
+  );
 
   if (response.errors?.length || !response.data?.updateUserStats) {
     throw new Error(
@@ -300,17 +348,20 @@ async function notifyQueueSubscribers(
   tables: ModelTables,
   delta: StatsDelta
 ): Promise<void> {
-  if (!delta.queueId) return;
+  const queueId = delta.queueId;
+  if (!queueId) return;
 
-  const response = (await graphQLClient.graphql({
-    query: notifyQueue,
-    variables: { input: { id: delta.queueId } },
-  })) as QueueNotificationResult;
+  const response = await runGraphQL<QueueNotificationResult>(() =>
+    graphQLClient.graphql({
+      query: notifyQueue,
+      variables: { input: { id: queueId } },
+    })
+  );
 
   if (response.errors?.length || !response.data?.updateQueue) {
     // Queue deletion after completion is legitimate and should not poison the
     // Observation stream. Other failures must retry so subscribers stay fresh.
-    if (!(await queueExists(tables, delta.queueId))) {
+    if (!(await queueExists(tables, queueId))) {
       logger.info('Queue no longer exists; skipping subscriber notification', {
         queueId: delta.queueId,
         observationId: delta.observationId,
@@ -356,7 +407,7 @@ export const handler: DynamoDBStreamHandler = async (event) => {
       logger.error('Failed to aggregate Observation stream record', {
         eventId: record.eventID,
         sequenceNumber: record.dynamodb?.SequenceNumber,
-        error: error instanceof Error ? error.message : String(error),
+        error: describeError(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
       // The event source mapping does not enable partial-batch responses.

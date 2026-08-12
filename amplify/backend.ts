@@ -310,11 +310,17 @@ const mapping1 = new EventSourceMapping(
 );
 mapping1.node.addDependency(streamPolicy);
 
+// Error-count alarms describe sustained degradation, not individual failures:
+// this consumer processes ~50k records a day and retries transient faults
+// internally, so a single self-healing error must not page anyone. The
+// authoritative "something was actually lost" signals are the failure-queue
+// depth alarms below, which stay deliberately hair-trigger.
 withStatsAlarmAction(
   new cloudwatch.Alarm(statsFunctionStack, 'UpdateUserStatsErrors', {
     metric: statsFunction.metricErrors({ period: Duration.minutes(5) }),
-    threshold: 1,
-    evaluationPeriods: 1,
+    threshold: 5,
+    evaluationPeriods: 2,
+    datapointsToAlarm: 2,
     treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
   })
 );
@@ -660,7 +666,8 @@ withStatsAlarmAction(
       period: Duration.minutes(5),
     }),
     threshold: 1,
-    evaluationPeriods: 1,
+    evaluationPeriods: 2,
+    datapointsToAlarm: 2,
     treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
   })
 );
@@ -760,7 +767,8 @@ withStatsAlarmAction(
       period: Duration.minutes(5),
     }),
     threshold: 1,
-    evaluationPeriods: 1,
+    evaluationPeriods: 2,
+    datapointsToAlarm: 2,
     treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
   })
 );
@@ -773,7 +781,8 @@ withStatsAlarmAction(
         period: Duration.minutes(5),
       }),
       threshold: 1,
-      evaluationPeriods: 1,
+      evaluationPeriods: 2,
+      datapointsToAlarm: 2,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     }
   )
