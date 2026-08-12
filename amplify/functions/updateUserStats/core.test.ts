@@ -3,9 +3,11 @@ import test from 'node:test';
 import {
   buildQueueTransaction,
   buildStatsTransaction,
+  isTransactionConflict,
   queueReceiptId,
   statsDeltaFromObservation,
   statsReceiptId,
+  transactionConflictDelayMs,
 } from './core';
 
 const observation = {
@@ -132,4 +134,35 @@ test('builds an idempotent conditional Queue increment', () => {
     update?.UpdateExpression,
     'SET #lastObservationAt = :now ADD #observedCount :one'
   );
+});
+
+test('recognises a transaction conflict but not other cancellations', () => {
+  assert.equal(
+    isTransactionConflict({
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'None' }, { Code: 'TransactionConflict' }],
+    }),
+    true
+  );
+  assert.equal(
+    isTransactionConflict({
+      name: 'TransactionCanceledException',
+      CancellationReasons: [
+        { Code: 'ConditionalCheckFailed' },
+        { Code: 'None' },
+      ],
+    }),
+    false
+  );
+  assert.equal(isTransactionConflict(new Error('network failure')), false);
+  assert.equal(isTransactionConflict(undefined), false);
+});
+
+test('conflict backoff grows to a cap and stays fully jittered', () => {
+  // Full jitter spans [0, cap]; the cap doubles per attempt up to 1s.
+  assert.equal(transactionConflictDelayMs(0, () => 1), 50);
+  assert.equal(transactionConflictDelayMs(3, () => 1), 400);
+  assert.equal(transactionConflictDelayMs(10, () => 1), 1_000);
+  assert.equal(transactionConflictDelayMs(3, () => 0), 0);
+  assert.equal(transactionConflictDelayMs(3, () => 0.5), 200);
 });

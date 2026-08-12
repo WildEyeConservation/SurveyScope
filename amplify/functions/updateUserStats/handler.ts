@@ -21,9 +21,12 @@ import {
 import {
   buildQueueTransaction,
   buildStatsTransaction,
+  isTransactionConflict,
   queueReceiptId,
   statsDeltaFromObservation,
   statsReceiptId,
+  transactionConflictDelayMs,
+  TRANSACTION_CONFLICT_ATTEMPTS,
   type StatsDelta,
 } from './core';
 
@@ -173,18 +176,35 @@ async function receiptExists(
   return Boolean(response.Item);
 }
 
+const sleep = (ms: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 async function transactOnce(
   tables: ModelTables,
   input: TransactWriteCommandInput,
   receiptId: string
 ): Promise<void> {
-  try {
-    await documentClient.send(new TransactWriteCommand(input));
-  } catch (error) {
-    // This check covers both conditional duplicates and ambiguous network
-    // failures where DynamoDB committed the transaction but the response was lost.
-    if (await receiptExists(tables, receiptId)) return;
-    throw error;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await documentClient.send(new TransactWriteCommand(input));
+      return;
+    } catch (error) {
+      // A conflicted transaction is guaranteed not to have committed, so it
+      // can be retried without consulting the receipt.
+      if (
+        isTransactionConflict(error) &&
+        attempt < TRANSACTION_CONFLICT_ATTEMPTS - 1
+      ) {
+        await sleep(transactionConflictDelayMs(attempt));
+        continue;
+      }
+      // This check covers both conditional duplicates and ambiguous network
+      // failures where DynamoDB committed the transaction but the response was lost.
+      if (await receiptExists(tables, receiptId)) return;
+      throw error;
+    }
   }
 }
 

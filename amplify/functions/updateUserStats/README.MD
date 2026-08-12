@@ -11,6 +11,13 @@ expire after 30 days through DynamoDB TTL.
 After the transactions commit, key-only AppSync updates notify existing
 `UserStats.onUpdate` and `Queue.onUpdate` subscribers.
 
+Every annotator on a queue increments the same Queue item, and the key-only
+AppSync notifications write it too, so concurrent invocations collide there
+routinely. DynamoDB cancels the losing transaction with `TransactionConflict`
+and the AWS SDK does not retry that, so each transaction is retried in process
+with full-jitter backoff. A cancelled transaction never commits, so the retry
+is safe without consulting the receipt.
+
 The handler throws on the first failed record, so the batch retries. The event
 source mapping bisects failed batches, bounds retries and record age, and sends
 an exhausted record's shard position to the retained
