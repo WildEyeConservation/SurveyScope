@@ -32,6 +32,37 @@ export interface QueueTransactionTables {
 // delayed replays remain idempotent.
 const RECEIPT_TTL_SECONDS = 30 * 24 * 60 * 60;
 
+// Every annotator on one queue increments the same Queue item, and the
+// key-only AppSync notifications write it too, so concurrent stream
+// invocations routinely collide there. DynamoDB cancels the losing
+// transaction with TransactionConflict and the AWS SDK does not retry it, so
+// without in-process retries a normal working day fails whole batches
+// repeatedly. A cancelled transaction never commits, so retrying is safe.
+export const TRANSACTION_CONFLICT_ATTEMPTS = 6;
+
+interface CancellationReasonLike {
+  Code?: string;
+}
+
+export function isTransactionConflict(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const reasons = (error as { CancellationReasons?: unknown }).CancellationReasons;
+  if (!Array.isArray(reasons)) return false;
+  return reasons.some(
+    (reason) => (reason as CancellationReasonLike)?.Code === 'TransactionConflict'
+  );
+}
+
+// Full jitter: colliding invocations must not retry in lockstep, or they
+// simply collide again.
+export function transactionConflictDelayMs(
+  attempt: number,
+  random: () => number = Math.random
+): number {
+  const cap = Math.min(1_000, 50 * 2 ** attempt);
+  return Math.round(random() * cap);
+}
+
 function requiredString(
   input: Record<string, unknown>,
   field: string
