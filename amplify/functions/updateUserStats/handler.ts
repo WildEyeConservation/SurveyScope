@@ -317,31 +317,95 @@ async function applyQueueProgress(
   }
 }
 
+const NOTIFICATION_ATTEMPTS = 4;
+
+// These mutations write the very items the aggregation transactions touch, so
+// a notification regularly arrives while a transaction still holds the item
+// and DynamoDB rejects it with "Transaction is ongoing for the item". That and
+// throttling are transient by definition.
+const RETRYABLE_NOTIFICATION_PATTERNS = [
+  /transaction is ongoing/i,
+  /throttl/i,
+  /rate exceeded/i,
+  /provisionedthroughputexceeded/i,
+  /serviceunavailable/i,
+  /internal (server )?error/i,
+];
+
+function isRetryableNotificationFailure(
+  errors: readonly GraphQLErrorLike[] | undefined
+): boolean {
+  const description = describeGraphQLErrors(errors);
+  if (!description) return false;
+  return RETRYABLE_NOTIFICATION_PATTERNS.some((pattern) =>
+    pattern.test(description)
+  );
+}
+
+// The counters are already committed and durable by the time these run; the
+// notification only refreshes screens that are open right now. Replaying a
+// whole batch to redo a UI hint would cost far more than the hint is worth, so
+// an exhausted notification degrades to a warning instead of failing the
+// record. Subscribers pick the value up on their next load.
+async function notifySubscribers(
+  label: string,
+  context: Record<string, unknown>,
+  attempt: (
+    attemptIndex: number
+  ) => Promise<{ published: boolean; errors?: readonly GraphQLErrorLike[] }>
+): Promise<void> {
+  for (let index = 0; ; index += 1) {
+    const { published, errors } = await attempt(index);
+    if (published) return;
+
+    if (
+      index < NOTIFICATION_ATTEMPTS - 1 &&
+      isRetryableNotificationFailure(errors)
+    ) {
+      await sleep(transactionConflictDelayMs(index));
+      continue;
+    }
+
+    logger.warn(`${label}; subscribers will refresh on their next load`, {
+      ...context,
+      error: describeGraphQLErrors(errors) ?? 'no row returned',
+    });
+    return;
+  }
+}
+
 async function notifyStatsSubscribers(delta: StatsDelta): Promise<void> {
   // The counters are updated directly and atomically in DynamoDB. A key-only
   // AppSync update preserves the existing onUpdate subscription behavior
   // without reading or replacing any counter values.
-  const response = await runGraphQL<UserStatsNotificationResult>(() =>
-    graphQLClient.graphql({
-      query: notifyUserStats,
-      variables: {
-        input: {
-          projectId: delta.projectId,
-          userId: delta.userId,
-          date: delta.date,
-          setId: delta.setId,
-        },
-      },
-    })
+  await notifySubscribers(
+    'Failed to publish UserStats update',
+    {
+      projectId: delta.projectId,
+      userId: delta.userId,
+      date: delta.date,
+      setId: delta.setId,
+    },
+    async () => {
+      const response = await runGraphQL<UserStatsNotificationResult>(() =>
+        graphQLClient.graphql({
+          query: notifyUserStats,
+          variables: {
+            input: {
+              projectId: delta.projectId,
+              userId: delta.userId,
+              date: delta.date,
+              setId: delta.setId,
+            },
+          },
+        })
+      );
+      return {
+        published: !response.errors?.length && Boolean(response.data?.updateUserStats),
+        errors: response.errors,
+      };
+    }
   );
-
-  if (response.errors?.length || !response.data?.updateUserStats) {
-    throw new Error(
-      `Failed to publish UserStats update: ${
-        describeGraphQLErrors(response.errors) ?? 'no row returned'
-      }`
-    );
-  }
 }
 
 async function notifyQueueSubscribers(
@@ -351,28 +415,35 @@ async function notifyQueueSubscribers(
   const queueId = delta.queueId;
   if (!queueId) return;
 
-  const response = await runGraphQL<QueueNotificationResult>(() =>
-    graphQLClient.graphql({
-      query: notifyQueue,
-      variables: { input: { id: queueId } },
-    })
+  let queueDeleted = false;
+  await notifySubscribers(
+    'Failed to publish Queue update',
+    { queueId, observationId: delta.observationId },
+    async () => {
+      const response = await runGraphQL<QueueNotificationResult>(() =>
+        graphQLClient.graphql({
+          query: notifyQueue,
+          variables: { input: { id: queueId } },
+        })
+      );
+      if (!response.errors?.length && response.data?.updateQueue) {
+        return { published: true };
+      }
+      // Queue deletion after completion is legitimate: report it as published
+      // so it is neither retried nor warned about.
+      if (!(await queueExists(tables, queueId))) {
+        queueDeleted = true;
+        return { published: true };
+      }
+      return { published: false, errors: response.errors };
+    }
   );
 
-  if (response.errors?.length || !response.data?.updateQueue) {
-    // Queue deletion after completion is legitimate and should not poison the
-    // Observation stream. Other failures must retry so subscribers stay fresh.
-    if (!(await queueExists(tables, queueId))) {
-      logger.info('Queue no longer exists; skipping subscriber notification', {
-        queueId: delta.queueId,
-        observationId: delta.observationId,
-      });
-      return;
-    }
-    throw new Error(
-      `Failed to publish Queue update: ${
-        describeGraphQLErrors(response.errors) ?? 'no row returned'
-      }`
-    );
+  if (queueDeleted) {
+    logger.info('Queue no longer exists; skipping subscriber notification', {
+      queueId,
+      observationId: delta.observationId,
+    });
   }
 }
 
