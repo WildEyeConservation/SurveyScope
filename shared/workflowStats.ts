@@ -39,10 +39,7 @@ export const WORKFLOW_METRIC_DEFINITIONS = {
     label: 'Suggested points retained',
     unit: 'count',
   },
-  pairsResolved: { label: 'Pairs resolved', unit: 'count' },
-  linksCreated: { label: 'Links created', unit: 'count' },
-  newIndividuals: { label: 'New individuals', unit: 'count' },
-  reunionsReviewed: { label: 'Reunions reviewed', unit: 'count' },
+  annotationsLinked: { label: 'Annotations linked', unit: 'count' },
 } as const;
 
 export type WorkflowMetricKey = keyof typeof WORKFLOW_METRIC_DEFINITIONS;
@@ -92,13 +89,12 @@ export const WORKFLOW_REGISTRY: Record<WorkflowType, WorkflowDefinition> = {
   },
   'individual-id': {
     label: 'ChainLinker',
-    unit: { singular: 'transect', plural: 'transects' },
-    metricKeys: [
-      'pairsResolved',
-      'linksCreated',
-      'newIndividuals',
-      'reunionsReviewed',
-    ],
+    // A pair is the unit of work, not a transect: transects vary enormously in
+    // size. Pair count alone is still misleading, because a pair holding 200
+    // buffalo is far more work than one holding 6 elephants, so annotations
+    // linked is reported alongside it.
+    unit: { singular: 'pair', plural: 'pairs' },
+    metricKeys: ['annotationsLinked'],
   },
 };
 

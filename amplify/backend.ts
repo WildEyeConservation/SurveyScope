@@ -58,6 +58,7 @@ import { reconcileIndividualId } from './functions/reconcileIndividualId/resourc
 import { releaseIndividualIdTransects } from './functions/releaseIndividualIdTransects/resource';
 import { generateSurveyResults } from './functions/generateSurveyResults/resource';
 import { queryWorkflowStats } from './functions/queryWorkflowStats/resource';
+import { recordWorkflowTask } from './functions/recordWorkflowTask/resource';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as path from 'path';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -128,6 +129,7 @@ const backend = defineBackend({
   releaseIndividualIdTransects,
   generateSurveyResults,
   queryWorkflowStats,
+  recordWorkflowTask,
 });
 
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
@@ -553,6 +555,7 @@ for (const launchResource of [
   backend.launchAnnotationSet,
   backend.launchFalseNegatives,
   backend.monitorTilingTasks,
+  backend.launchIndividualId,
 ]) {
   launchResource.addEnvironment(
     'WORKFLOW_RUNS_TABLE',
@@ -610,11 +613,60 @@ queryWorkflowStatsFunction.addToRolePolicy(
   })
 );
 
+// The browser-facing writer needs the same three tables. It only ever reads the
+// run (to derive project, set and organization) and writes the event and its
+// daily projection.
+const workflowEventsTableName = `detweb-workflow-events-${workflowStatsEnvName}`;
+backend.recordWorkflowTask.addEnvironment(
+  'WORKFLOW_RUNS_TABLE',
+  workflowRunsTableName
+);
+backend.recordWorkflowTask.addEnvironment(
+  'WORKFLOW_EVENTS_TABLE',
+  workflowEventsTableName
+);
+backend.recordWorkflowTask.addEnvironment(
+  'WORKFLOW_DAILY_STATS_TABLE',
+  workflowDailyStatsTableName
+);
+const recordWorkflowTaskFunction = backend.recordWorkflowTask.resources.lambda;
+const recordWorkflowTaskStack = Stack.of(recordWorkflowTaskFunction);
+const eventsArnForWriter = recordWorkflowTaskStack.formatArn({
+  service: 'dynamodb',
+  resource: 'table',
+  resourceName: workflowEventsTableName,
+});
+recordWorkflowTaskFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem'],
+    resources: [
+      recordWorkflowTaskStack.formatArn({
+        service: 'dynamodb',
+        resource: 'table',
+        resourceName: workflowRunsTableName,
+      }),
+    ],
+  })
+);
+recordWorkflowTaskFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem'],
+    resources: [
+      eventsArnForWriter,
+      recordWorkflowTaskStack.formatArn({
+        service: 'dynamodb',
+        resource: 'table',
+        resourceName: workflowDailyStatsTableName,
+      }),
+    ],
+  })
+);
+
 const workflowEventsTable = new dynamodb.Table(
   workflowStatsStack,
   'WorkflowTaskEvents',
   {
-    tableName: `detweb-workflow-events-${workflowStatsEnvName}`,
+    tableName: workflowEventsTableName,
     partitionKey: {
       name: 'eventId',
       type: dynamodb.AttributeType.STRING,

@@ -161,6 +161,56 @@ test('builds one atomic run check, immutable event put, and additive projection'
   );
 });
 
+test('ChainLinker reports one pair per event with the links it required', () => {
+  // A pair count alone is misleading: pairs differ wildly in how many animals
+  // they hold, so annotationsLinked is part of the contract, and metrics
+  // outside the workflow's whitelist must still be rejected.
+  assert.deepEqual(WORKFLOW_REGISTRY['individual-id'].unit, {
+    singular: 'pair',
+    plural: 'pairs',
+  });
+
+  const task = parseRecordWorkflowTaskEventInput({
+    idempotencyKey: 'pair:image-a__image-b',
+    workflowType: 'individual-id',
+    workflowRunId: 'job-1',
+    projectId: 'project-1',
+    annotationSetId: 'set-1',
+    workItemType: 'image-pair',
+    workItemId: 'image-a__image-b',
+    outcome: 'linked',
+    metrics: { annotationsLinked: 37 },
+  });
+  assert.deepEqual(task.metrics, { annotationsLinked: 37 });
+
+  const prepared = prepareWorkflowTaskEvent(task, actor, {
+    completedAt: '2026-08-17T10:00:00.000Z',
+  });
+  const transaction = buildRecordWorkflowTaskEventTransaction(
+    task,
+    actor,
+    prepared,
+    { runs: 'runs-table', events: 'events-table', dailyStats: 'daily-table' }
+  );
+  const update = transaction.TransactItems?.[2]?.Update;
+  assert.match(update?.UpdateExpression ?? '', /ADD #completedUnits :one/);
+  assert.equal(
+    Object.values(update?.ExpressionAttributeNames ?? {}).includes(
+      'metric_annotationsLinked'
+    ),
+    true
+  );
+
+  assert.throws(
+    () =>
+      parseRecordWorkflowTaskEventInput({
+        ...task,
+        metrics: { sightings: 1 },
+      }),
+    /Metric sightings is not supported by individual-id/
+  );
+});
+
 test('rejects impossible timing and untrusted actor shapes', () => {
   const input = parseRecordWorkflowTaskEventInput(rawTask);
   assert.throws(

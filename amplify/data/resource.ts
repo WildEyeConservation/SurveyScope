@@ -13,6 +13,7 @@ import { runScoutbot } from '../functions/runScoutbot/resource';
 import { deleteProject } from '../functions/deleteProject/resource';
 import { generateSurveyResults } from '../functions/generateSurveyResults/resource';
 import { queryWorkflowStats } from '../functions/queryWorkflowStats/resource';
+import { recordWorkflowTask } from '../functions/recordWorkflowTask/resource';
 import { getJwtSecret } from '../functions/getJwtSecret/resource';
 import { runMadDetector } from '../functions/runMadDetector/resource';
 import { runStormflyDetector } from '../functions/runStormflyDetector/resource';
@@ -1317,6 +1318,27 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.group('sysadmin')])
       .handler(a.handler.function(queryWorkflowStats)),
+    // Records one completed unit for workflows whose completion happens in the
+    // browser. The caller names only the run and the work item: workflow type,
+    // project, annotation set and organization are read from the durable run,
+    // and the credited user comes from the request identity.
+    recordWorkflowTask: a
+      .mutation()
+      .arguments({
+        workflowRunId: a.string().required(),
+        workItemType: a.string().required(),
+        workItemId: a.string().required(),
+        outcome: a.string().required(),
+        idempotencyKey: a.string(),
+        startedAt: a.string(),
+        activeTimeMs: a.integer(),
+        waitingTimeMs: a.integer(),
+        skipped: a.boolean(),
+        metrics: a.json(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(recordWorkflowTask)),
     // Named `snapshot...` to avoid clashing with the auto-generated `createChainShare` mutation.
     snapshotChainShare: a
       .mutation()
@@ -1586,6 +1608,21 @@ export type GenerateSurveyResultsHandler = MutationHandler<{
   annotationSetId: string;
   categoryIds: string[];
 }>;
+export type RecordWorkflowTaskHandler = MutationHandler<
+  {
+    workflowRunId: string;
+    workItemType: string;
+    workItemId: string;
+    outcome: string;
+    idempotencyKey?: string | null;
+    startedAt?: string | null;
+    activeTimeMs?: number | null;
+    waitingTimeMs?: number | null;
+    skipped?: boolean | null;
+    metrics?: unknown;
+  },
+  { eventId: string; duplicate: boolean }
+>;
 export type LaunchAnnotationSetHandler = MutationHandler<{ request: string }>;
 export type LaunchFalseNegativesHandler = MutationHandler<{ request: string }>;
 export type LaunchQCReviewHandler = MutationHandler<{ request: string }>;
