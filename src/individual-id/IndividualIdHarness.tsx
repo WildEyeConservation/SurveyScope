@@ -9,6 +9,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { GlobalContext, ProjectContext } from '../Context';
 import { recordWorkflowTask } from '../recordWorkflowTask';
+import { useActiveTimeTracker } from '../useActiveTimeTracker';
 import type {
   AnnotationType,
   ImageNeighbourType,
@@ -867,9 +868,16 @@ export function IndividualIdHarness({
   const currentPairKeyRef = useRef<string | undefined>(undefined);
   const linksByPairRef = useRef<Map<string, number>>(new Map());
   const reportedPairsRef = useRef<Set<string>>(new Set());
+  // Elapsed time is the wrong measure here: a pair of 200 buffalo can honestly
+  // take half an hour, so any cap loose enough for it would also absorb a
+  // lunch break. This counts only time between interactions.
+  const activeTime = useActiveTimeTracker();
 
   const reportPairCompleted = useCallback(() => {
     const pairKey = currentPairKeyRef.current;
+    // The measurement is reset per pair whether or not it gets reported, so a
+    // pair with no run to attribute it to cannot inflate the next one.
+    const activeTimeMs = activeTime.reset();
     // Chain-review mode and jobs launched before runs existed have no run to
     // attribute the work to.
     if (!jobId || !pairKey) return;
@@ -884,11 +892,12 @@ export function IndividualIdHarness({
       workItemId: pairKey,
       outcome: 'linked',
       idempotencyKey: `pair:${pairKey}`,
+      activeTimeMs,
       metrics: {
         annotationsLinked: linksByPairRef.current.get(pairKey) ?? 0,
       },
     });
-  }, [client, jobId]);
+  }, [client, jobId, activeTime]);
 
   const handleAllAccepted = useCallback(() => {
     // Recorded before the navigation guard below, so the last pair of a
@@ -928,6 +937,13 @@ export function IndividualIdHarness({
   // parent's, so an effect here could still hold the previous pair when the
   // completion callback fires.
   currentPairKeyRef.current = currentPairKey;
+
+  // Start each pair's clock from zero. Leaving a pair unfinished discards its
+  // time rather than billing it to whichever pair is opened next; only
+  // completed pairs are reported, so there is nothing to attribute it to.
+  useEffect(() => {
+    activeTime.reset();
+  }, [currentPairKey, activeTime]);
 
   // Persist a dragged real annotation's new position straight to the DB
   // (optimistic local + cache update, rolled back on failure).

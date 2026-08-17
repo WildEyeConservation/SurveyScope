@@ -28,6 +28,14 @@ ChainLinker reports one completed unit per image pair, with `annotationsLinked`
 alongside it. Pair count alone understates effort, because pairs differ wildly
 in how many animals they contain; the two figures are only meaningful together.
 
+Its active time is measured differently from the Observation-based workflows.
+Those record plain wall-clock from the task becoming visible to it being
+submitted, bounded by a tight per-task cap. A pair holding hundreds of animals
+can honestly take half an hour, so a cap loose enough to be fair to it would
+also absorb a break. ChainLinker therefore accumulates time between user
+interactions and discards gaps longer than 90 seconds, reporting time worked
+rather than time elapsed.
+
 ## Physical storage
 
 The Amplify data stack is close to its CloudFormation change-set resource cap.
