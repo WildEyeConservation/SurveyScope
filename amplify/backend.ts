@@ -57,6 +57,7 @@ import { completeIndividualIdTransect } from './functions/completeIndividualIdTr
 import { reconcileIndividualId } from './functions/reconcileIndividualId/resource';
 import { releaseIndividualIdTransects } from './functions/releaseIndividualIdTransects/resource';
 import { generateSurveyResults } from './functions/generateSurveyResults/resource';
+import { queryWorkflowStats } from './functions/queryWorkflowStats/resource';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as path from 'path';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -126,6 +127,7 @@ const backend = defineBackend({
   reconcileIndividualId,
   releaseIndividualIdTransects,
   generateSurveyResults,
+  queryWorkflowStats,
 });
 
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
@@ -571,6 +573,43 @@ for (const launchResource of [
   );
 }
 
+const workflowDailyStatsTableName = `detweb-workflow-daily-stats-${workflowStatsEnvName}`;
+
+// The reporting query reads the same tables. Names are pinned literals and the
+// ARNs are formatted rather than imported, so the function stack gains no
+// dependency on DetwebWorkflowStats (which would be a cycle, since that stack
+// is created from this backend).
+backend.queryWorkflowStats.addEnvironment(
+  'WORKFLOW_RUNS_TABLE',
+  workflowRunsTableName
+);
+backend.queryWorkflowStats.addEnvironment(
+  'WORKFLOW_DAILY_STATS_TABLE',
+  workflowDailyStatsTableName
+);
+const queryWorkflowStatsFunction = backend.queryWorkflowStats.resources.lambda;
+const queryWorkflowStatsStack = Stack.of(queryWorkflowStatsFunction);
+const workflowRunsArn = queryWorkflowStatsStack.formatArn({
+  service: 'dynamodb',
+  resource: 'table',
+  resourceName: workflowRunsTableName,
+});
+const workflowDailyStatsArn = queryWorkflowStatsStack.formatArn({
+  service: 'dynamodb',
+  resource: 'table',
+  resourceName: workflowDailyStatsTableName,
+});
+queryWorkflowStatsFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['dynamodb:Query'],
+    resources: [
+      workflowRunsArn,
+      `${workflowRunsArn}/index/*`,
+      workflowDailyStatsArn,
+    ],
+  })
+);
+
 const workflowEventsTable = new dynamodb.Table(
   workflowStatsStack,
   'WorkflowTaskEvents',
@@ -602,7 +641,7 @@ const workflowDailyStatsTable = new dynamodb.Table(
   workflowStatsStack,
   'WorkflowDailyStats',
   {
-    tableName: `detweb-workflow-daily-stats-${workflowStatsEnvName}`,
+    tableName: workflowDailyStatsTableName,
     partitionKey: {
       name: 'scopeKey',
       type: dynamodb.AttributeType.STRING,

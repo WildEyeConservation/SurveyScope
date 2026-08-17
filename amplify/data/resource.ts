@@ -12,6 +12,7 @@ import { runImageRegistration } from '../functions/runImageRegistration/resource
 import { runScoutbot } from '../functions/runScoutbot/resource';
 import { deleteProject } from '../functions/deleteProject/resource';
 import { generateSurveyResults } from '../functions/generateSurveyResults/resource';
+import { queryWorkflowStats } from '../functions/queryWorkflowStats/resource';
 import { getJwtSecret } from '../functions/getJwtSecret/resource';
 import { runMadDetector } from '../functions/runMadDetector/resource';
 import { runStormflyDetector } from '../functions/runStormflyDetector/resource';
@@ -1302,6 +1303,20 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(generateSurveyResults)),
+    // Reads the standalone workflow statistics tables, which are not Amplify
+    // Data models. Returns json rather than custom types to keep the resource
+    // footprint of the data stack minimal.
+    queryWorkflowStats: a
+      .query()
+      .arguments({
+        projectId: a.string().required(),
+        annotationSetIds: a.string().array(),
+        startDate: a.string(),
+        endDate: a.string(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.group('sysadmin')])
+      .handler(a.handler.function(queryWorkflowStats)),
     // Named `snapshot...` to avoid clashing with the auto-generated `createChainShare` mutation.
     snapshotChainShare: a
       .mutation()

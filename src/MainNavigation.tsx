@@ -240,6 +240,14 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
                   >
                     Chain Shares
                   </Nav.Link>
+                  <Nav.Link
+                    as={NavLink}
+                    eventKey={`workflow-statistics`}
+                    to={`workflow-statistics`}
+                    className='px-2'
+                  >
+                    Workflow Statistics
+                  </Nav.Link>
                   {process.env.NODE_ENV === 'development' && (
                     <Nav.Link
                       as={NavLink}
