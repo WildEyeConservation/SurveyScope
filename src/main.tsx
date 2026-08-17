@@ -7,6 +7,7 @@ import { Progress } from './UserContext';
 import { GlobalContextProvider } from './Context';
 import AnnotationQueuePage from './AnnotationQueuePage';
 import UserStats from './UserStats';
+import WorkflowStatistics from './WorkflowStatistics';
 import { LocationLoader } from './LocationLoader';
 import { ImageLoader } from './ImageLoader';
 import { Review } from './Review';
@@ -212,6 +213,12 @@ const router = createBrowserRouter([
       {
         path: 'annotation-statistics',
         element: <UserStats />,
+      },
+      {
+        // The screen itself also checks the sysadmin group, so reaching this
+        // path directly shows a notice rather than an empty report.
+        path: 'workflow-statistics',
+        element: <WorkflowStatistics />,
       },
       {
         path: 'SSAdmin',
