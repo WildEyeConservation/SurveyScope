@@ -116,10 +116,6 @@ export default function QCReviewTask() {
           continue;
         }
 
-        if (annotationId) {
-          processedRef.current.add(annotationId);
-        }
-
         body.ack = async () => {
           try {
             const sqsClient2 = await getSqsClient();
@@ -129,10 +125,22 @@ export default function QCReviewTask() {
                 ReceiptHandle: entity.ReceiptHandle,
               })
             );
-          } catch {
-            console.log(
-              `QC ack failed for annotation ${annotationId} with receipthandle ${entity.ReceiptHandle}`
+          } catch (err) {
+            console.error(
+              `QC ack failed for annotation ${annotationId} with receipthandle ${entity.ReceiptHandle}`,
+              err
             );
+            // The caller must know the message is still on the queue, so the
+            // annotation is not recorded as handled below.
+            throw err;
+          }
+          // Marking the annotation handled only after its message is really
+          // gone: doing it on receipt meant a redelivery following a failed
+          // save was discarded here as a duplicate, losing the review. A
+          // genuine duplicate is still safe, because committing a review is
+          // idempotent for the same reviewer.
+          if (annotationId) {
+            processedRef.current.add(annotationId);
           }
         };
 

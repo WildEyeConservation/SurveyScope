@@ -686,73 +686,94 @@ export default function QCAnnotationReview({
     }
   }, [client, queueId]);
 
-  const isReviewedByOther = useCallback(async (): Promise<boolean> => {
+  const fetchExistingReviewer = useCallback(async (): Promise<string | null> => {
     try {
       const { data } = await client.models.Annotation.get(
         { id: annotation.id },
         { selectionSet: ['id', 'reviewedBy'] }
       );
-      const reviewer = data?.reviewedBy;
-      // Allow re-review by same user (undo case), block if different user reviewed
-      return !!reviewer && reviewer !== user.userId;
+      return data?.reviewedBy ?? null;
     } catch {
-      return false;
+      return null;
     }
-  }, [client, annotation.id, user.userId]);
+  }, [client, annotation.id]);
+
+  // The SQS message must only be deleted once the review is durably stored.
+  // Acknowledging alongside the write meant a failed write still discarded the
+  // task, losing the review silently instead of letting it be redelivered.
+  const commitReview = useCallback(
+    async (reviewCatId: string) => {
+      const existingReviewer = await fetchExistingReviewer();
+      // Re-review by the same user is legitimate (an undo, or a redelivery
+      // after a failed acknowledgement); another user's review is not.
+      if (existingReviewer && existingReviewer !== user.userId) {
+        await ack?.();
+        return;
+      }
+
+      const { data, errors } = await client.models.Annotation.update({
+        id: annotation.id,
+        reviewCatId,
+        reviewedBy: user.userId,
+        x: markerPosition.x,
+        y: markerPosition.y,
+      });
+      // The client resolves with errors rather than throwing, so an unchecked
+      // await would look identical to a successful save.
+      if (!data) {
+        throw new Error(
+          `Failed to save review: ${
+            errors?.map((error) => error.message).join('; ') ||
+            'no row returned'
+          }`
+        );
+      }
+
+      // Queue progress counts each annotation once; a re-review must not
+      // advance it again.
+      if (!existingReviewer) {
+        await incrementObservedCount();
+      }
+
+      await ack?.();
+    },
+    [
+      client,
+      annotation.id,
+      ack,
+      user.userId,
+      markerPosition,
+      fetchExistingReviewer,
+      incrementObservedCount,
+    ]
+  );
 
   const handleApprove = useCallback(() => {
 
     setReviewedCatId(annotation.categoryId);
 
-    // Fire and forget — don't block navigation on network requests.
-    isReviewedByOther().then((reviewed) => {
-      if (reviewed) {
-        ack?.().catch((err) => console.error('Failed to ack', err));
-        return;
-      }
-      Promise.all([
-        client.models.Annotation.update({
-          id: annotation.id,
-          reviewCatId: annotation.categoryId,
-          reviewedBy: user.userId,
-          x: markerPosition.x,
-          y: markerPosition.y,
-        }),
-        incrementObservedCount(),
-        ack?.(),
-      ]).catch((err) => console.error('Failed to approve annotation', err));
-    });
+    // Navigation still is not blocked on the network; the commit runs in the
+    // background, but its steps are ordered so a failure leaves the task on
+    // the queue to be redelivered.
+    void commitReview(annotation.categoryId).catch((err) =>
+      console.error('Failed to approve annotation', err)
+    );
 
     if (next) {
       next();
     } else {
       startWaiting();
     }
-  }, [annotation, client, ack, next, user.userId, incrementObservedCount, isReviewedByOther, markerPosition]);
+  }, [annotation, commitReview, next]);
 
   const handleRelabel = useCallback(
     (newCategoryId: string) => {
 
       setReviewedCatId(newCategoryId);
 
-      // Fire and forget — don't block navigation on network requests.
-      isReviewedByOther().then((reviewed) => {
-        if (reviewed) {
-          ack?.().catch((err) => console.error('Failed to ack', err));
-          return;
-        }
-        Promise.all([
-          client.models.Annotation.update({
-            id: annotation.id,
-            reviewCatId: newCategoryId,
-            reviewedBy: user.userId,
-            x: markerPosition.x,
-            y: markerPosition.y,
-          }),
-          incrementObservedCount(),
-          ack?.(),
-        ]).catch((err) => console.error('Failed to relabel annotation', err));
-      });
+      void commitReview(newCategoryId).catch((err) =>
+        console.error('Failed to relabel annotation', err)
+      );
 
       if (next) {
         next();
@@ -760,7 +781,7 @@ export default function QCAnnotationReview({
         startWaiting();
       }
     },
-    [annotation, client, ack, next, user.userId, incrementObservedCount, isReviewedByOther, markerPosition]
+    [commitReview, next]
   );
 
   const startWaiting = useCallback(() => {
@@ -872,23 +893,9 @@ export default function QCAnnotationReview({
 
     setReviewedCatId(fpCatId);
 
-    isReviewedByOther().then((reviewed) => {
-      if (reviewed) {
-        ack?.().catch((err) => console.error('Failed to ack', err));
-        return;
-      }
-      Promise.all([
-        client.models.Annotation.update({
-          id: annotation.id,
-          reviewCatId: fpCatId,
-          reviewedBy: user.userId,
-          x: markerPosition.x,
-          y: markerPosition.y,
-        }),
-        incrementObservedCount(),
-        ack?.(),
-      ]).catch((err) => console.error('Failed to mark as false positive', err));
-    });
+    void commitReview(fpCatId).catch((err) =>
+      console.error('Failed to mark as false positive', err)
+    );
 
     if (next) {
       next();
@@ -897,8 +904,8 @@ export default function QCAnnotationReview({
     }
   }, [
     existingFpCategory, projectId, annotationSetId, creatingFp,
-    client, annotation, ack, next, user.userId, incrementObservedCount,
-    isReviewedByOther, setCategories, startWaiting, markerPosition,
+    client, group, commitReview, next,
+    setCategories, startWaiting,
   ]);
 
   // ── Hotkey handling ──
