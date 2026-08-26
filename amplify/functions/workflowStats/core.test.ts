@@ -6,6 +6,7 @@ import {
 } from '../../../shared/workflowStats';
 import {
   buildCreateWorkflowRunPut,
+  buildFinishWorkflowRunUpdate,
   buildRecordWorkflowTaskEventTransaction,
   parseRecordWorkflowTaskEventInput,
   parseWorkflowActor,
@@ -60,6 +61,49 @@ test('builds a durable workflow run without trusting an organization from input'
   assert.equal(put.Item?.organizationId, 'organization-1');
   assert.equal(put.Item?.status, 'active');
   assert.equal(put.ConditionExpression, 'attribute_not_exists(#runId)');
+});
+
+test('finishes only an active run and records why', () => {
+  const update = buildFinishWorkflowRunUpdate(
+    {
+      runId: 'queue-1',
+      status: 'completed',
+      reason: 'requeue-limit',
+      launchedCount: 100,
+      observedCount: 98,
+    },
+    'Runs',
+    new Date('2026-08-20T17:00:00.000Z')
+  );
+
+  assert.equal(update.TableName, 'Runs');
+  assert.deepEqual(update.Key, { runId: 'queue-1' });
+  assert.equal(
+    update.ConditionExpression,
+    'attribute_exists(#runId) AND #status = :active'
+  );
+  assert.equal(update.ExpressionAttributeValues?.[':status'], 'completed');
+  assert.equal(update.ExpressionAttributeValues?.[':finishReason'], 'requeue-limit');
+  assert.equal(
+    update.ExpressionAttributeValues?.[':finishedAt'],
+    '2026-08-20T17:00:00.000Z'
+  );
+  assert.equal(update.ExpressionAttributeValues?.[':launchedCount'], 100);
+  assert.equal(update.ExpressionAttributeValues?.[':observedCount'], 98);
+  assert.match(update.UpdateExpression ?? '', /#updatedAt = :finishedAt/);
+
+  assert.throws(() =>
+    buildFinishWorkflowRunUpdate(
+      { runId: 'queue-1', status: 'active' as 'completed', reason: 'drained' },
+      'Runs'
+    )
+  );
+  assert.throws(() =>
+    buildFinishWorkflowRunUpdate(
+      { runId: 'queue-1', status: 'cancelled', reason: 'user', observedCount: -1 },
+      'Runs'
+    )
+  );
 });
 
 test('parses a workflow-specific task and rejects unsupported metrics', () => {

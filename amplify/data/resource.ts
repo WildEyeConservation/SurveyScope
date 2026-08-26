@@ -13,6 +13,7 @@ import { runScoutbot } from '../functions/runScoutbot/resource';
 import { deleteProject } from '../functions/deleteProject/resource';
 import { generateSurveyResults } from '../functions/generateSurveyResults/resource';
 import { queryWorkflowStats } from '../functions/queryWorkflowStats/resource';
+import { queryWorkflowEvents } from '../functions/queryWorkflowEvents/resource';
 import { recordWorkflowTask } from '../functions/recordWorkflowTask/resource';
 import { getJwtSecret } from '../functions/getJwtSecret/resource';
 import { runMadDetector } from '../functions/runMadDetector/resource';
@@ -33,6 +34,7 @@ import { respondToInvite } from '../functions/respondToInvite/resource';
 import { removeUserFromOrganization } from '../functions/removeUserFromOrganization/resource';
 import { updateOrganizationMemberAdmin } from '../functions/updateOrganizationMemberAdmin/resource';
 import { deleteQueue } from '../functions/deleteQueue/resource';
+import { cancelIndividualIdJob } from '../functions/cancelIndividualIdJob/resource';
 import { updateActiveOrganizations } from '../functions/updateActiveOrganizations/resource';
 import { launchQCReview } from '../functions/launchQCReview/resource';
 import { launchInfoTags } from '../functions/launchInfoTags/resource';
@@ -903,6 +905,14 @@ const schema = a
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(deleteQueue))
       .returns(a.json()),
+    // Cancels a ChainLinker job server-side so its workflow run can be closed
+    // as cancelled. Same authorization as deleteQueueMutation.
+    cancelIndividualIdJob: a
+      .mutation()
+      .arguments({ jobId: a.string().required() })
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(cancelIndividualIdJob))
+      .returns(a.json()),
     Message: a.customType({
       content: a.string().required(),
       channelName: a.string().required(),
@@ -1318,6 +1328,22 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.group('sysadmin')])
       .handler(a.handler.function(queryWorkflowStats)),
+    // Pages through the immutable task events behind the daily statistics,
+    // for raw exports and time-of-day snapshots. Runs are validated against
+    // the project so an export cannot mix in another survey's work.
+    queryWorkflowEvents: a
+      .query()
+      .arguments({
+        projectId: a.string().required(),
+        runIds: a.string().array(),
+        startAt: a.string(),
+        endAt: a.string(),
+        nextToken: a.string(),
+        limit: a.integer(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.group('sysadmin')])
+      .handler(a.handler.function(queryWorkflowEvents)),
     // Records one completed unit for workflows whose completion happens in the
     // browser. The caller names only the run and the work item: workflow type,
     // project, annotation set and organization are read from the durable run,
@@ -1562,6 +1588,7 @@ const schema = a
     allow.resource(removeUserFromOrganization),
     allow.resource(updateOrganizationMemberAdmin),
     allow.resource(deleteQueue),
+    allow.resource(cancelIndividualIdJob),
     allow.resource(updateActiveOrganizations),
     allow.resource(launchIndividualId),
     allow.resource(updateImageTransect),
@@ -1644,6 +1671,7 @@ export type RespondToInviteHandler = MutationHandler<{ inviteId: string; accept:
 export type RemoveUserFromOrganizationHandler = MutationHandler<{ organizationId: string; userId: string }>;
 export type UpdateOrganizationMemberAdminHandler = MutationHandler<{ organizationId: string; userId: string; isAdmin: boolean }>;
 export type DeleteQueueHandler = MutationHandler<{ queueId: string }>;
+export type CancelIndividualIdJobHandler = MutationHandler<{ jobId: string }>;
 export type UpdateActiveOrganizationsHandler = MutationHandler<{ activatedOrganizationIds: string[] }>;
 export type LaunchIndividualIdHandler = MutationHandler<{ request: string }>;
 export type ClaimIndividualIdTransectHandler = MutationHandler<{ jobId: string }>;

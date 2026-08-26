@@ -37,6 +37,8 @@ interface WorkflowRunSummary {
   displayName: string;
   status: string;
   launchedAt: string;
+  finishedAt: string | null;
+  finishReason: string | null;
 }
 
 interface QueryWorkflowStatsResult {
@@ -220,6 +222,10 @@ export const handler: AppSyncResolverHandler<
       displayName: String(item.displayName ?? ''),
       status: String(item.status ?? ''),
       launchedAt: String(item.launchedAt ?? ''),
+      finishedAt:
+        typeof item.finishedAt === 'string' ? item.finishedAt : null,
+      finishReason:
+        typeof item.finishReason === 'string' ? item.finishReason : null,
     }));
 
   return { buckets, runs, truncated };

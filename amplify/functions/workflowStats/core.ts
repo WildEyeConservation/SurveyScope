@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type {
   PutCommandInput,
   TransactWriteCommandInput,
+  UpdateCommandInput,
 } from '@aws-sdk/lib-dynamodb';
 import {
   isMetricAllowed,
@@ -115,6 +116,79 @@ export function buildCreateWorkflowRunPut(
     },
     ConditionExpression: 'attribute_not_exists(#runId)',
     ExpressionAttributeNames: { '#runId': 'runId' },
+  };
+}
+
+export type WorkflowRunFinishStatus = 'completed' | 'cancelled';
+
+/** Why a run left the active state; kept alongside status for reporting. */
+export type WorkflowRunFinishReason =
+  | 'drained'
+  | 'requeue-limit'
+  | 'stale'
+  | 'user'
+  | 'backfill';
+
+export interface FinishWorkflowRunInput {
+  runId: string;
+  status: WorkflowRunFinishStatus;
+  reason: WorkflowRunFinishReason;
+  finishedBy?: string;
+  launchedCount?: number;
+  observedCount?: number;
+}
+
+// Only an active run can finish, so a late duplicate (cleanup and a manual
+// cancel racing, or a replayed stream record) leaves the first outcome intact.
+export function buildFinishWorkflowRunUpdate(
+  input: FinishWorkflowRunInput,
+  tableName: string,
+  finishedAt = new Date()
+): UpdateCommandInput {
+  if (input.status !== 'completed' && input.status !== 'cancelled') {
+    throw new Error('status must be completed or cancelled');
+  }
+  const names: Record<string, string> = {
+    '#runId': 'runId',
+    '#status': 'status',
+    '#finishedAt': 'finishedAt',
+    '#finishReason': 'finishReason',
+    '#updatedAt': 'updatedAt',
+  };
+  const values: Record<string, string | number> = {
+    ':active': 'active',
+    ':status': input.status,
+    ':finishedAt': finishedAt.toISOString(),
+    ':finishReason': input.reason,
+  };
+  const sets = [
+    '#status = :status',
+    '#finishedAt = :finishedAt',
+    '#finishReason = :finishReason',
+    '#updatedAt = :finishedAt',
+  ];
+  if (input.finishedBy) {
+    names['#finishedBy'] = 'finishedBy';
+    values[':finishedBy'] = requiredIdentifier(input.finishedBy, 'finishedBy');
+    sets.push('#finishedBy = :finishedBy');
+  }
+  for (const key of ['launchedCount', 'observedCount'] as const) {
+    const count = input[key];
+    if (count === undefined) continue;
+    if (!Number.isSafeInteger(count) || count < 0) {
+      throw new Error(`${key} must be a non-negative integer`);
+    }
+    names[`#${key}`] = key;
+    values[`:${key}`] = count;
+    sets.push(`#${key} = :${key}`);
+  }
+  return {
+    TableName: tableName,
+    Key: { runId: requiredIdentifier(input.runId, 'runId') },
+    UpdateExpression: `SET ${sets.join(', ')}`,
+    ConditionExpression: 'attribute_exists(#runId) AND #status = :active',
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: values,
   };
 }
 

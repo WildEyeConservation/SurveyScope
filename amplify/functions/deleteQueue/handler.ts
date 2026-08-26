@@ -5,6 +5,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { SQSClient, DeleteQueueCommand } from '@aws-sdk/client-sqs';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { finishShadowWorkflowRun } from '../workflowStats/runWriter';
 
 const getQueueQuery = /* GraphQL */ `
   query GetQueue($id: ID!) {
@@ -171,6 +172,14 @@ export const handler: DeleteQueueHandler = async (event) => {
     // 5. Delete the Queue DynamoDB record
     await executeGraphql(deleteQueueMutation, {
       input: { id: queueId },
+    });
+
+    // A queue deleted here was cancelled by a person, not drained.
+    await finishShadowWorkflowRun({
+      runId: queueId,
+      status: 'cancelled',
+      reason: 'user',
+      finishedBy: identity.sub,
     });
 
     // 6. Trigger FN pool reconciliation for non-FN queues

@@ -58,7 +58,9 @@ import { reconcileIndividualId } from './functions/reconcileIndividualId/resourc
 import { releaseIndividualIdTransects } from './functions/releaseIndividualIdTransects/resource';
 import { generateSurveyResults } from './functions/generateSurveyResults/resource';
 import { queryWorkflowStats } from './functions/queryWorkflowStats/resource';
+import { queryWorkflowEvents } from './functions/queryWorkflowEvents/resource';
 import { recordWorkflowTask } from './functions/recordWorkflowTask/resource';
+import { cancelIndividualIdJob } from './functions/cancelIndividualIdJob/resource';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as path from 'path';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
@@ -129,7 +131,9 @@ const backend = defineBackend({
   releaseIndividualIdTransects,
   generateSurveyResults,
   queryWorkflowStats,
+  queryWorkflowEvents,
   recordWorkflowTask,
+  cancelIndividualIdJob,
 });
 
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
@@ -576,6 +580,30 @@ for (const launchResource of [
   );
 }
 
+// These close a run when its queue or job ends. The update is conditional on
+// the run still being active, so they need no read permission.
+for (const finishResource of [
+  backend.cleanupJobs,
+  backend.deleteQueue,
+  backend.completeIndividualIdTransect,
+  backend.cancelIndividualIdJob,
+]) {
+  finishResource.addEnvironment('WORKFLOW_RUNS_TABLE', workflowRunsTableName);
+  const finishFunction = finishResource.resources.lambda;
+  finishFunction.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['dynamodb:UpdateItem'],
+      resources: [
+        Stack.of(finishFunction).formatArn({
+          service: 'dynamodb',
+          resource: 'table',
+          resourceName: workflowRunsTableName,
+        }),
+      ],
+    })
+  );
+}
+
 const workflowDailyStatsTableName = `detweb-workflow-daily-stats-${workflowStatsEnvName}`;
 
 // The reporting query reads the same tables. Names are pinned literals and the
@@ -613,10 +641,47 @@ queryWorkflowStatsFunction.addToRolePolicy(
   })
 );
 
+const workflowEventsTableName = `detweb-workflow-events-${workflowStatsEnvName}`;
+
+// The event export reads runs (to validate project membership) and pages the
+// events index. Same pinned-name approach as the reporting query above.
+backend.queryWorkflowEvents.addEnvironment(
+  'WORKFLOW_RUNS_TABLE',
+  workflowRunsTableName
+);
+backend.queryWorkflowEvents.addEnvironment(
+  'WORKFLOW_EVENTS_TABLE',
+  workflowEventsTableName
+);
+const queryWorkflowEventsFunction = backend.queryWorkflowEvents.resources.lambda;
+const queryWorkflowEventsStack = Stack.of(queryWorkflowEventsFunction);
+const workflowEventsArnForExport = queryWorkflowEventsStack.formatArn({
+  service: 'dynamodb',
+  resource: 'table',
+  resourceName: workflowEventsTableName,
+});
+queryWorkflowEventsFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['dynamodb:BatchGetItem'],
+    resources: [
+      queryWorkflowEventsStack.formatArn({
+        service: 'dynamodb',
+        resource: 'table',
+        resourceName: workflowRunsTableName,
+      }),
+    ],
+  })
+);
+queryWorkflowEventsFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['dynamodb:Query'],
+    resources: [`${workflowEventsArnForExport}/index/byRunAndCompletedAt`],
+  })
+);
+
 // The browser-facing writer needs the same three tables. It only ever reads the
 // run (to derive project, set and organization) and writes the event and its
 // daily projection.
-const workflowEventsTableName = `detweb-workflow-events-${workflowStatsEnvName}`;
 backend.recordWorkflowTask.addEnvironment(
   'WORKFLOW_RUNS_TABLE',
   workflowRunsTableName
