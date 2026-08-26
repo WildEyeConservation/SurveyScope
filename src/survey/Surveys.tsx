@@ -388,10 +388,27 @@ export default function Surveys() {
           (j: any) => j.status === 'active' || j.status === 'launching'
         );
         if (iidJob) {
-          await (client.models as any).IndividualIdJob.update({
-            id: iidJob.id,
-            status: 'cancelled',
-          });
+          // The mutation closes the job's workflow run as well. Generated
+          // client types come from the deployed outputs, so it is resolved at
+          // runtime; before that deploy the direct update still works.
+          const cancelJob = (
+            client.mutations as unknown as Record<string, unknown>
+          ).cancelIndividualIdJob;
+          if (typeof cancelJob === 'function') {
+            const { errors } = await (
+              cancelJob as (args: { jobId: string }) => Promise<{
+                errors?: { message?: string }[];
+              }>
+            )({ jobId: iidJob.id });
+            if (errors?.length) {
+              throw new Error(errors.map((e) => e.message).join('; '));
+            }
+          } else {
+            await (client.models as any).IndividualIdJob.update({
+              id: iidJob.id,
+              status: 'cancelled',
+            });
+          }
           await logAdminAction(
             client,
             user.userId,

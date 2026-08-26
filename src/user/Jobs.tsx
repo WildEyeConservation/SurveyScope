@@ -411,6 +411,8 @@ export default function Jobs() {
           transectId: result.transectId,
           categoryId: result.categoryId,
           annotationSetId: result.annotationSetId,
+          // Doubles as the Workflow Run id when recording pair completions.
+          jobId: result.jobId ?? job.jobId,
         },
       });
     } catch (e) {

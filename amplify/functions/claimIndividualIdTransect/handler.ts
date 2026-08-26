@@ -1,4 +1,4 @@
-import type { ClaimIndividualIdTransectHandler } from '../../data/resource';
+﻿import type { ClaimIndividualIdTransectHandler } from '../../data/resource';
 import { env } from '$amplify/env/claimIndividualIdTransect';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
@@ -160,6 +160,8 @@ export const handler: ClaimIndividualIdTransectHandler = async (event) => {
       return {
         transectRowId: existing.id,
         transectId: existing.transectId,
+        // The job id is the Workflow Run id for ChainLinker statistics.
+        jobId,
         categoryId: job.categoryId,
         annotationSetId: job.annotationSetId,
         projectId: job.projectId,
@@ -167,7 +169,7 @@ export const handler: ClaimIndividualIdTransectHandler = async (event) => {
     }
 
     // Atomically claim the first still-available transect. The conditional
-    // write (status must still be 'available') is the lock — only one
+    // write (status must still be 'available') is the lock â€” only one
     // concurrent caller can win a given row; losers fall through to the next.
     const now = new Date().toISOString();
     for (const t of transects) {
@@ -186,6 +188,7 @@ export const handler: ClaimIndividualIdTransectHandler = async (event) => {
         return {
           transectRowId: t.id,
           transectId: t.transectId,
+          jobId,
           categoryId: job.categoryId,
           annotationSetId: job.annotationSetId,
           projectId: job.projectId,

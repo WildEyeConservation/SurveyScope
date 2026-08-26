@@ -8,6 +8,8 @@ import {
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { GlobalContext, ProjectContext } from '../Context';
+import { recordWorkflowTask } from '../recordWorkflowTask';
+import { useActiveTimeTracker } from '../useActiveTimeTracker';
 import type {
   AnnotationType,
   ImageNeighbourType,
@@ -194,6 +196,7 @@ export function IndividualIdHarness({
   chainObjectId,
   categoryId,
   annotationSetId,
+  jobId,
   leniency: leniencyProp,
   onComplete,
 }: {
@@ -203,6 +206,12 @@ export function IndividualIdHarness({
   chainObjectId?: string;
   categoryId: string;
   annotationSetId?: string;
+  /**
+   * The IndividualIdJob id, which doubles as the Workflow Run id for
+   * statistics. Absent in chain-review mode and for jobs launched before runs
+   * were recorded, in which case pair completions are simply not reported.
+   */
+  jobId?: string;
   leniency?: number;
   // Called when every pair in the transect is complete. The parent
   // (IndividualIdTaskPage) wires this to the transect-complete lambda.
@@ -853,7 +862,48 @@ export function IndividualIdHarness({
     return undefined;
   }, [activeLane, currentIndex, lanes, laneContainingPair, pairViews]);
 
+  // ---- Statistics bookkeeping ----
+  // Refs rather than state: these are read from callbacks declared before the
+  // current-pair values exist, and must never cause a re-render of the pair.
+  const currentPairKeyRef = useRef<string | undefined>(undefined);
+  const linksByPairRef = useRef<Map<string, number>>(new Map());
+  const reportedPairsRef = useRef<Set<string>>(new Set());
+  // Elapsed time is the wrong measure here: a pair of 200 buffalo can honestly
+  // take half an hour, so any cap loose enough for it would also absorb a
+  // lunch break. This counts only time between interactions.
+  const activeTime = useActiveTimeTracker();
+
+  const reportPairCompleted = useCallback(() => {
+    const pairKey = currentPairKeyRef.current;
+    // The measurement is reset per pair whether or not it gets reported, so a
+    // pair with no run to attribute it to cannot inflate the next one.
+    const activeTimeMs = activeTime.reset();
+    // Chain-review mode and jobs launched before runs existed have no run to
+    // attribute the work to.
+    if (!jobId || !pairKey) return;
+    // The completion callback can fire again if the user re-opens a finished
+    // pair; the pair is one unit however many times it is visited.
+    if (reportedPairsRef.current.has(pairKey)) return;
+    reportedPairsRef.current.add(pairKey);
+
+    void recordWorkflowTask(client, {
+      workflowRunId: jobId,
+      workItemType: 'image-pair',
+      workItemId: pairKey,
+      outcome: 'linked',
+      idempotencyKey: `pair:${pairKey}`,
+      activeTimeMs,
+      metrics: {
+        annotationsLinked: linksByPairRef.current.get(pairKey) ?? 0,
+      },
+    });
+  }, [client, jobId, activeTime]);
+
   const handleAllAccepted = useCallback(() => {
+    // Recorded before the navigation guard below, so the last pair of a
+    // transect counts like any other.
+    reportPairCompleted();
+
     // Suppress the "Stay / Next pair" popup when no other pair in the
     // active set is still incomplete. There's nothing to navigate to —
     // and the completion effect will take over (open ReunionDialog or
@@ -867,7 +917,7 @@ export function IndividualIdHarness({
       lane: completeNavigationTarget.lane,
       earlier: completeNavigationTarget.earlier,
     });
-  }, [completeNavigationTarget]);
+  }, [completeNavigationTarget, reportPairCompleted]);
 
   const acceptCompletePopup = () => {
     if (completePopup.target !== undefined) {
@@ -883,6 +933,17 @@ export function IndividualIdHarness({
   const currentPair = pairs[currentIndex];
   const currentView = pairViews[currentIndex];
   const currentPairKey = currentView?.pairKeyStr;
+  // Assigned during render, not in an effect: child effects run before the
+  // parent's, so an effect here could still hold the previous pair when the
+  // completion callback fires.
+  currentPairKeyRef.current = currentPairKey;
+
+  // Start each pair's clock from zero. Leaving a pair unfinished discards its
+  // time rather than billing it to whichever pair is opened next; only
+  // completed pairs are reported, so there is nothing to attribute it to.
+  useEffect(() => {
+    activeTime.reset();
+  }, [currentPairKey, activeTime]);
 
   // Persist a dragged real annotation's new position straight to the DB
   // (optimistic local + cache update, rolled back on failure).
@@ -1644,6 +1705,18 @@ export function IndividualIdHarness({
         if (ann.objectId !== rootId) {
           updates.push({ id: ann.id, patch: { objectId: rootId } });
         }
+      }
+
+      // One confirmed link per call, regardless of how many rows the chain
+      // cascade rewrites: the user made one linking decision. Accumulated per
+      // pair so the pair's completion event can report the effort involved,
+      // since a pair of 200 buffalo is far more work than one of 6 elephants.
+      const statsPairKey = currentPairKeyRef.current;
+      if (statsPairKey) {
+        linksByPairRef.current.set(
+          statsPairKey,
+          (linksByPairRef.current.get(statsPairKey) ?? 0) + 1
+        );
       }
 
       // Optimistic local merge so the next Munkres run treats this as

@@ -13,6 +13,7 @@ import { Queue } from "./graphql/API";
 import { SQSClient } from "@aws-sdk/client-sqs";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { finishShadowWorkflowRun } from "../workflowStats/runWriter";
 
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
@@ -174,6 +175,16 @@ export const handler: Handler = async (event, context) => {
           },
         });
         await sqsClient.send(new DeleteQueueCommand({ QueueUrl: queue.url }));
+
+        // The Queue is the run's only liveness signal, so its deletion is the
+        // moment the run's outcome is known.
+        await finishShadowWorkflowRun({
+          runId: queue.id,
+          status: 'cancelled',
+          reason: 'stale',
+          launchedCount: queue.launchedCount ?? undefined,
+          observedCount: queue.observedCount ?? undefined,
+        });
 
         deletedProjectIds.add(queue.projectId);
         continue;
@@ -394,6 +405,14 @@ export const handler: Handler = async (event, context) => {
             console.error('Failed to trigger FN reconciliation', err);
           }
         }
+
+        await finishShadowWorkflowRun({
+          runId: queue.id,
+          status: 'completed',
+          reason: hasTrackingFields && mayHaveMissing ? 'requeue-limit' : 'drained',
+          launchedCount: queue.launchedCount ?? undefined,
+          observedCount: queue.observedCount ?? undefined,
+        });
 
         deletedProjectIds.add(queue.projectId);
         continue;

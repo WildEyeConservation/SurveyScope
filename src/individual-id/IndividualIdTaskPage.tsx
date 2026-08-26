@@ -18,6 +18,8 @@ type ClaimState = {
   transectId?: string;
   categoryId?: string;
   annotationSetId?: string;
+  /** Workflow Run id for statistics; absent for jobs launched before it existed. */
+  jobId?: string;
 };
 
 export function IndividualIdTaskPage() {
@@ -71,6 +73,7 @@ export function IndividualIdTaskPage() {
       transectId={state!.transectId!}
       categoryId={state!.categoryId!}
       annotationSetId={state!.annotationSetId}
+      jobId={state!.jobId}
       onComplete={handleComplete}
     />
   );

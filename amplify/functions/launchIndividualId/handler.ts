@@ -14,6 +14,10 @@ import {
 } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
+import {
+  createShadowWorkflowRun,
+  workflowLaunchUserId,
+} from '../workflowStats/runWriter';
 
 const getProjectOrganizationId = /* GraphQL */ `
   query GetProject($id: ID!) {
@@ -231,7 +235,11 @@ export const handler: LaunchIndividualIdHandler = async (event) => {
       throw err;
     }
 
-    const result = await handleLaunch(payload, organizationId);
+    const result = await handleLaunch(
+      payload,
+      organizationId,
+      workflowLaunchUserId(event.identity)
+    );
 
     if (payloadS3Key) {
       await deletePayloadFromS3(payloadS3Key);
@@ -260,7 +268,8 @@ export const handler: LaunchIndividualIdHandler = async (event) => {
 
 async function handleLaunch(
   payload: LaunchIndividualIdPayload,
-  organizationId: string
+  organizationId: string,
+  launchedBy: string
 ) {
   const { projectId, annotationSetId, categoryId, categoryName } = payload;
   const annotatedImageIds = new Set(payload.annotatedImageIds);
@@ -420,6 +429,24 @@ async function handleLaunch(
       group: organizationId,
     },
   });
+
+  // The job id doubles as the Workflow Run id: ChainLinker has no Queue, and
+  // the job is the durable thing a pair completion belongs to.
+  await createShadowWorkflowRun(
+    {
+      runId: jobId,
+      workflowType: 'individual-id',
+      projectId,
+      annotationSetId,
+      displayName: categoryName || 'ChainLinker',
+      configuration: {
+        categoryId,
+        categoryName,
+        totalTransects: transectCount,
+      },
+    },
+    { userId: launchedBy, organizationId }
+  );
 
   // Availability rows (only the transects with real, still-incomplete work).
   const rowLimit = pLimit(15);

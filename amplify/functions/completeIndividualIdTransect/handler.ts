@@ -3,6 +3,7 @@ import { env } from '$amplify/env/completeIndividualIdTransect';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
+import { finishShadowWorkflowRun } from '../workflowStats/runWriter';
 
 Amplify.configure(
   {
@@ -162,6 +163,12 @@ export const handler: CompleteIndividualIdTransectHandler = async (event) => {
       // itself is already 'active' so it simply has no launched job anymore.
       await executeGraphql(updateJobMutation, {
         input: { id: row.jobId, status: 'completed' },
+      });
+      // The job ID is the ChainLinker run ID.
+      await finishShadowWorkflowRun({
+        runId: row.jobId,
+        status: 'completed',
+        reason: 'drained',
       });
       try {
         await executeGraphql(updateProjectMembershipsMutation, {

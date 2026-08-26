@@ -3,11 +3,19 @@ import type { CSSProperties } from 'react';
 import { useState, useEffect, useRef } from 'react';
 import Button from 'react-bootstrap/esm/Button';
 import Form from 'react-bootstrap/Form';
+import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
+import Tooltip from 'react-bootstrap/Tooltip';
 import { MoveUp, MoveDown } from 'lucide-react';
 
 interface TableObject {
   tableData: { id: any; rowData: React.ReactNode[] }[];
-  tableHeadings?: { content: string; style?: CSSProperties; sort?: boolean }[];
+  tableHeadings?: {
+    content: string;
+    style?: CSSProperties;
+    sort?: boolean;
+    /** Shown as a tooltip when hovering the heading. */
+    description?: string;
+  }[];
   pagination?: boolean;
   itemsPerPage?: number;
   emptyMessage?: string;
@@ -146,19 +154,40 @@ export default function MyTable(input: TableObject) {
         {tableHeadings && (
           <thead>
             <tr>
-              {tableHeadings.map(({ content, style, sort }, index) => (
-                <th
-                  key={`heading${index}`}
-                  className='bg-dark'
-                  onClick={sort ? () => handleSort(index) : undefined}
-                  style={{ cursor: sort ? 'pointer' : 'default', ...style }}
-                >
-                  <div className='d-flex align-items-center justify-content-between'>
-                    {content}
-                    {sort && renderSortIndicator(index)}
-                  </div>
-                </th>
-              ))}
+              {tableHeadings.map(
+                ({ content, style, sort, description }, index) => {
+                  const heading = (
+                    <th
+                      key={`heading${index}`}
+                      className='bg-dark'
+                      onClick={sort ? () => handleSort(index) : undefined}
+                      style={{
+                        cursor: sort ? 'pointer' : description ? 'help' : 'default',
+                        ...style,
+                      }}
+                    >
+                      <div className='d-flex align-items-center justify-content-between'>
+                        {content}
+                        {sort && renderSortIndicator(index)}
+                      </div>
+                    </th>
+                  );
+                  if (!description) return heading;
+                  return (
+                    <OverlayTrigger
+                      key={`heading${index}`}
+                      placement='top'
+                      overlay={
+                        <Tooltip id={`heading-tooltip-${index}`}>
+                          {description}
+                        </Tooltip>
+                      }
+                    >
+                      {heading}
+                    </OverlayTrigger>
+                  );
+                }
+              )}
             </tr>
           </thead>
         )}

@@ -18,15 +18,23 @@ The shared workflow registry defines these durable identifiers:
 | `qc-review` | Review | Annotation |
 | `info-tags` | Info Tags | Image |
 | `homographies` | Homographies | Image pair |
-| `individual-id` | ChainLinker | Transect |
+| `individual-id` | ChainLinker | Image pair |
 
 `Queue.tag` and `Queue.name` are not workflow identifiers. Queue IDs can be
 reused as Workflow Run IDs for the five SQS-backed workflows. Individual ID can
 use its durable job ID as the run ID.
 
-The ChainLinker completion unit is intentionally provisional. Before that
-workflow is instrumented, product owners must decide whether pair-level work is
-reported only as workflow-specific metrics or also as a common completed unit.
+ChainLinker reports one completed unit per image pair, with `annotationsLinked`
+alongside it. Pair count alone understates effort, because pairs differ wildly
+in how many animals they contain; the two figures are only meaningful together.
+
+Its active time is measured differently from the Observation-based workflows.
+Those record plain wall-clock from the task becoming visible to it being
+submitted, bounded by a tight per-task cap. A pair holding hundreds of animals
+can honestly take half an hour, so a cap loose enough to be fair to it would
+also absorb a break. ChainLinker therefore accumulates time between user
+interactions and discards gaps longer than 90 seconds, reporting time worked
+rather than time elapsed.
 
 ## Physical storage
 

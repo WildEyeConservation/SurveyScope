@@ -3,10 +3,13 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
   buildCreateWorkflowRunPut,
+  buildFinishWorkflowRunUpdate,
   type CreateWorkflowRunInput,
+  type FinishWorkflowRunInput,
   type WorkflowActor,
 } from './core';
 
@@ -61,6 +64,49 @@ async function ensureWorkflowRun(
       // Preserve the original conditional or service error below.
     }
     throw error;
+  }
+}
+
+/**
+ * Closes a run when the work that backs it ends. Returns 'skipped' when the
+ * run is unknown (launched before runs existed) or already finished. Like run
+ * creation this is best-effort: a statistics outage must not stop a queue
+ * from being cleaned up or a job from being cancelled.
+ */
+export async function finishShadowWorkflowRun(
+  input: FinishWorkflowRunInput
+): Promise<'finished' | 'skipped' | 'failed'> {
+  const tableName = process.env.WORKFLOW_RUNS_TABLE;
+  if (!tableName) {
+    console.error('Workflow statistics run finish skipped', {
+      runId: input.runId,
+      error: 'WORKFLOW_RUNS_TABLE is not configured',
+    });
+    return 'failed';
+  }
+  try {
+    await documentClient.send(
+      new UpdateCommand(buildFinishWorkflowRunUpdate(input, tableName))
+    );
+    console.info('Workflow statistics run finished', {
+      runId: input.runId,
+      status: input.status,
+      reason: input.reason,
+    });
+    return 'finished';
+  } catch (error) {
+    if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
+      console.info('Workflow statistics run not active; finish skipped', {
+        runId: input.runId,
+      });
+      return 'skipped';
+    }
+    console.error('Workflow statistics run finish failed', {
+      runId: input.runId,
+      status: input.status,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return 'failed';
   }
 }
 

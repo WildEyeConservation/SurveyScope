@@ -1,5 +1,12 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Spinner } from 'react-bootstrap';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Alert, Button, Card, Col, Row, Spinner } from 'react-bootstrap';
 import Select from 'react-select';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -8,22 +15,30 @@ import MyTable from './Table';
 import { GlobalContext, UserContext } from './Context';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
+import { WORKFLOW_REGISTRY, type WorkflowType } from './workflowRegistry';
+import WorkflowSnapshotModal from './WorkflowSnapshotModal';
 import {
-  WORKFLOW_METRIC_DEFINITIONS,
-  WORKFLOW_REGISTRY,
-  isWorkflowType,
-  type WorkflowMetricKey,
-  type WorkflowType,
-} from './workflowRegistry';
+  eventToCsvRow,
+  fetchAllWorkflowEvents,
+} from './workflowEvents';
+import {
+  buildWorkflowSections,
+  localDateString,
+  localDayEnd,
+  localDayStart,
+} from './workflowStatsSections';
 
 /**
  * Reports the workflow-neutral statistics pipeline: completions, timing and
  * per-workflow metrics for every instrumented workflow, read from the durable
  * Workflow Run / Daily Stats tables rather than from Observations.
  *
- * Sysadmin-only for now. The pipeline currently records Species Labelling and
- * False Negatives; the other workflows appear here automatically once their
- * adapters land, because the columns come from the shared workflow registry.
+ * Sysadmin-only for now. The columns come from the shared workflow registry,
+ * so newly instrumented workflows appear here without changes.
+ *
+ * Layout: inputs (survey, annotation sets, date range) in a filter bar;
+ * results below it, with the run filter beside them because it narrows what
+ * is shown rather than what is fetched; exports in the card footer.
  */
 
 interface StatsBucket {
@@ -46,6 +61,27 @@ interface RunSummary {
   displayName: string;
   status: string;
   launchedAt: string;
+  finishedAt?: string | null;
+  finishReason?: string | null;
+}
+
+const FINISH_REASON_LABELS: Record<string, string> = {
+  drained: 'all work done',
+  'requeue-limit': 'finished with unreturned work',
+  stale: 'no activity for 60 days',
+  user: 'cancelled by a user',
+  backfill: 'closed by backfill',
+};
+
+function formatUtc(timestamp: string | null | undefined): string {
+  return timestamp ? timestamp.replace('T', ' ').slice(0, 19) : '';
+}
+
+function runStatusLabel(run: RunSummary): string {
+  const reason = run.finishReason
+    ? FINISH_REASON_LABELS[run.finishReason] ?? run.finishReason
+    : undefined;
+  return reason ? `${run.status} (${reason})` : run.status;
 }
 
 interface QueryResult {
@@ -85,39 +121,8 @@ interface ProjectOption {
 
 type SelectOption = { label: string; value: string };
 
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `${hours}:${String(minutes).padStart(2, '0')}:${String(
-    seconds
-  ).padStart(2, '0')}`;
-}
-
-function localDateString(date: Date | null): string | undefined {
-  if (!date) return undefined;
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-    2,
-    '0'
-  )}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function metricLabel(key: string): string {
-  return (
-    WORKFLOW_METRIC_DEFINITIONS[key as WorkflowMetricKey]?.label ?? key
-  );
-}
-
-function isDurationMetric(key: string): boolean {
-  return (
-    WORKFLOW_METRIC_DEFINITIONS[key as WorkflowMetricKey]?.unit ===
-    'milliseconds'
-  );
-}
-
-function formatMetric(key: string, value: number): string {
-  return isDurationMetric(key) ? formatDuration(value) : String(value);
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 export default function WorkflowStatistics() {
@@ -132,12 +137,11 @@ export default function WorkflowStatistics() {
   >({});
   const [project, setProject] = useState<SelectOption | null>(null);
   const [selectedSets, setSelectedSets] = useState<SelectOption[]>([]);
-  const [startDate, setStartDate] = useState<Date | null>(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 30);
-    return date;
-  });
-  const [endDate, setEndDate] = useState<Date | null>(new Date());
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  // Until the user touches the dates, the range follows the survey: from its
+  // earliest run launch to today, so an older survey never opens empty.
+  const [dateRangeIsAuto, setDateRangeIsAuto] = useState(true);
   const [selectedRun, setSelectedRun] = useState<SelectOption | null>(null);
 
   const [buckets, setBuckets] = useState<StatsBucket[]>([]);
@@ -145,7 +149,11 @@ export default function WorkflowStatistics() {
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasQueried, setHasQueried] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [exportProgress, setExportProgress] = useState<string | null>(null);
+  const [showSnapshot, setShowSnapshot] = useState(false);
+  // Selections can change faster than queries return; only the latest wins.
+  const requestSequence = useRef(0);
 
   useEffect(() => {
     if (!isSysadmin) return;
@@ -224,47 +232,110 @@ export default function WorkflowStatistics() {
     }));
   }, [projects, project?.value]);
 
-  async function loadStats() {
-    if (!project || selectedSets.length === 0) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const statsQuery = resolveStatsQuery(client);
-      if (!statsQuery) {
-        setError(
-          'The workflow statistics query is not available in this environment yet. It ships with the backend deploy that adds it.'
-        );
-        return;
-      }
-      const { data, errors } = await statsQuery({
-        projectId: project.value,
-        annotationSetIds: selectedSets.map((set) => set.value),
-        startDate: localDateString(startDate),
-        endDate: localDateString(endDate),
-      });
-      if (errors?.length) {
-        throw new Error(
-          errors.map((entry) => entry.message ?? 'Unknown error').join('; ')
-        );
-      }
-      const parsed = (
-        typeof data === 'string' ? JSON.parse(data) : data ?? {}
-      ) as QueryResult;
-      setBuckets(parsed.buckets ?? []);
-      setRuns(parsed.runs ?? []);
-      setTruncated(parsed.truncated === true);
-      setHasQueried(true);
-      setSelectedRun(null);
-    } catch (queryError) {
-      setError(
-        queryError instanceof Error
-          ? queryError.message
-          : 'Failed to load workflow statistics'
-      );
-    } finally {
-      setLoading(false);
+  const userName = useCallback(
+    (userId: string) =>
+      allUsers.find((candidate) => candidate.id === userId)?.name ?? userId,
+    [allUsers]
+  );
+
+  // Buckets are small (one per user, day and run), so the whole history for
+  // the selected sets is fetched once and the date range is applied here.
+  // Changing dates is then instant and needs no round trip.
+  useEffect(() => {
+    if (!project || selectedSets.length === 0) {
+      setBuckets([]);
+      setRuns([]);
+      setHasLoaded(false);
+      return;
     }
+    const sequence = ++requestSequence.current;
+    const projectId = project.value;
+    const annotationSetIds = selectedSets.map((set) => set.value);
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const statsQuery = resolveStatsQuery(client);
+        if (!statsQuery) {
+          throw new Error(
+            'The workflow statistics query is not available in this environment yet. It ships with the backend deploy that adds it.'
+          );
+        }
+        const { data, errors } = await statsQuery({
+          projectId,
+          annotationSetIds,
+        });
+        if (sequence !== requestSequence.current) return;
+        if (errors?.length) {
+          throw new Error(
+            errors.map((entry) => entry.message ?? 'Unknown error').join('; ')
+          );
+        }
+        const parsed = (
+          typeof data === 'string' ? JSON.parse(data) : data ?? {}
+        ) as QueryResult;
+        setBuckets(parsed.buckets ?? []);
+        setRuns(parsed.runs ?? []);
+        setTruncated(parsed.truncated === true);
+        setHasLoaded(true);
+        setSelectedRun(null);
+      } catch (queryError) {
+        if (sequence !== requestSequence.current) return;
+        setError(
+          queryError instanceof Error
+            ? queryError.message
+            : 'Failed to load workflow statistics'
+        );
+        setBuckets([]);
+        setRuns([]);
+      } finally {
+        if (sequence === requestSequence.current) setLoading(false);
+      }
+    }
+    load();
+  }, [client, project, selectedSets]);
+
+  useEffect(() => {
+    if (!dateRangeIsAuto || !hasLoaded) return;
+    const launches = runs
+      .map((run) => new Date(run.launchedAt).getTime())
+      .filter((time) => Number.isFinite(time));
+    const bucketDates = buckets
+      .map((bucket) => new Date(`${bucket.date}T00:00:00`).getTime())
+      .filter((time) => Number.isFinite(time));
+    const earliest = Math.min(...launches, ...bucketDates);
+    setStartDate(
+      Number.isFinite(earliest) ? startOfLocalDay(new Date(earliest)) : null
+    );
+    setEndDate(startOfLocalDay(new Date()));
+  }, [dateRangeIsAuto, hasLoaded, runs, buckets]);
+
+  function selectProject(option: SelectOption | null) {
+    setProject(option);
+    setSelectedRun(null);
+    setDateRangeIsAuto(true);
+    const sets =
+      projects
+        .find((candidate) => candidate.id === option?.value)
+        ?.annotationSets?.map((set) => ({ label: set.name, value: set.id })) ??
+      [];
+    // A single set needs no choice; several do, so the user picks.
+    setSelectedSets(sets.length === 1 ? sets : []);
   }
+
+  const startString = localDateString(startDate);
+  const endString = localDateString(endDate);
+
+  const bucketsInRange = useMemo(
+    () =>
+      buckets.filter(
+        (bucket) =>
+          (!startString || bucket.date >= startString) &&
+          (!endString || bucket.date <= endString)
+      ),
+    [buckets, startString, endString]
+  );
 
   const runOptions = useMemo(() => {
     const named = new Map<string, string>();
@@ -287,156 +358,38 @@ export default function WorkflowStatistics() {
     return [...named.entries()].map(([value, label]) => ({ label, value }));
   }, [runs, buckets]);
 
+  const runName = useCallback(
+    (runId: string) =>
+      runOptions.find((option) => option.value === runId)?.label ?? runId,
+    [runOptions]
+  );
+
   const visibleBuckets = useMemo(
     () =>
       selectedRun
-        ? buckets.filter(
+        ? bucketsInRange.filter(
             (bucket) => bucket.workflowRunId === selectedRun.value
           )
-        : buckets,
-    [buckets, selectedRun]
+        : bucketsInRange,
+    [bucketsInRange, selectedRun]
   );
 
-  // Group by workflow, then by user. The metric columns per workflow come from
-  // the registry, so an instrumented workflow needs no change here.
-  const workflowSections = useMemo(() => {
-    const byWorkflow = new Map<string, StatsBucket[]>();
-    visibleBuckets.forEach((bucket) => {
-      const list = byWorkflow.get(bucket.workflowType) ?? [];
-      list.push(bucket);
-      byWorkflow.set(bucket.workflowType, list);
-    });
+  const visibleRunIds = useMemo(
+    () =>
+      selectedRun
+        ? [selectedRun.value]
+        : runOptions.map((option) => option.value),
+    [selectedRun, runOptions]
+  );
 
-    return [...byWorkflow.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([workflowType, workflowBuckets]) => {
-        const definition = isWorkflowType(workflowType)
-          ? WORKFLOW_REGISTRY[workflowType]
-          : undefined;
-        const metricKeys = definition
-          ? definition.metricKeys.filter((key) =>
-              workflowBuckets.some((bucket) => bucket.metrics[key] !== undefined)
-            )
-          : [
-              ...new Set(
-                workflowBuckets.flatMap((bucket) => Object.keys(bucket.metrics))
-              ),
-            ].sort();
-
-        const byUser = new Map<
-          string,
-          {
-            completedUnits: number;
-            skippedUnits: number;
-            activeTimeMs: number;
-            waitingTimeMs: number;
-            metrics: Record<string, number>;
-          }
-        >();
-        workflowBuckets.forEach((bucket) => {
-          const totals =
-            byUser.get(bucket.userId) ??
-            {
-              completedUnits: 0,
-              skippedUnits: 0,
-              activeTimeMs: 0,
-              waitingTimeMs: 0,
-              metrics: {} as Record<string, number>,
-            };
-          totals.completedUnits += bucket.completedUnits;
-          totals.skippedUnits += bucket.skippedUnits;
-          totals.activeTimeMs += bucket.activeTimeMs;
-          totals.waitingTimeMs += bucket.waitingTimeMs;
-          Object.entries(bucket.metrics).forEach(([key, value]) => {
-            totals.metrics[key] = (totals.metrics[key] ?? 0) + value;
-          });
-          byUser.set(bucket.userId, totals);
-        });
-
-        const unitPlural = definition?.unit.plural ?? 'units';
-        const rows = [...byUser.entries()]
-          .sort(
-            ([, left], [, right]) => right.completedUnits - left.completedUnits
-          )
-          .map(([userId, totals]) => ({
-            id: `${workflowType}:${userId}`,
-            rowData: [
-              allUsers.find((candidate) => candidate.id === userId)?.name ??
-                userId,
-              totals.completedUnits,
-              totals.skippedUnits,
-              formatDuration(totals.activeTimeMs),
-              totals.completedUnits > 0
-                ? (totals.activeTimeMs / 1000 / totals.completedUnits).toFixed(
-                    1
-                  )
-                : '0.0',
-              formatDuration(totals.waitingTimeMs),
-              ...metricKeys.map((key) =>
-                formatMetric(key, totals.metrics[key] ?? 0)
-              ),
-            ],
-          }));
-
-        const totalsRow = workflowBuckets.reduce(
-          (accumulator, bucket) => {
-            accumulator.completedUnits += bucket.completedUnits;
-            accumulator.skippedUnits += bucket.skippedUnits;
-            accumulator.activeTimeMs += bucket.activeTimeMs;
-            accumulator.waitingTimeMs += bucket.waitingTimeMs;
-            metricKeys.forEach((key) => {
-              accumulator.metrics[key] =
-                (accumulator.metrics[key] ?? 0) + (bucket.metrics[key] ?? 0);
-            });
-            return accumulator;
-          },
-          {
-            completedUnits: 0,
-            skippedUnits: 0,
-            activeTimeMs: 0,
-            waitingTimeMs: 0,
-            metrics: {} as Record<string, number>,
-          }
-        );
-
-        return {
-          workflowType,
-          label: definition?.label ?? workflowType,
-          unitPlural,
-          headings: [
-            { content: 'Username' },
-            { content: `${unitPlural} completed`, sort: true },
-            { content: 'Skipped' },
-            { content: 'Time spent' },
-            { content: `Average (s/${definition?.unit.singular ?? 'unit'})` },
-            { content: 'Waiting time' },
-            ...metricKeys.map((key) => ({ content: metricLabel(key) })),
-          ],
-          rows,
-          footer: [
-            'All users',
-            totalsRow.completedUnits,
-            totalsRow.skippedUnits,
-            formatDuration(totalsRow.activeTimeMs),
-            totalsRow.completedUnits > 0
-              ? (
-                  totalsRow.activeTimeMs /
-                  1000 /
-                  totalsRow.completedUnits
-                ).toFixed(1)
-              : '0.0',
-            formatDuration(totalsRow.waitingTimeMs),
-            ...metricKeys.map((key) =>
-              formatMetric(key, totalsRow.metrics[key] ?? 0)
-            ),
-          ],
-        };
-      });
-  }, [visibleBuckets, allUsers]);
+  const workflowSections = useMemo(
+    () => buildWorkflowSections(visibleBuckets, userName),
+    [visibleBuckets, userName]
+  );
 
   const runRows = useMemo(() => {
     const completionsByRun = new Map<string, number>();
-    buckets.forEach((bucket) => {
+    bucketsInRange.forEach((bucket) => {
       completionsByRun.set(
         bucket.workflowRunId,
         (completionsByRun.get(bucket.workflowRunId) ?? 0) +
@@ -444,7 +397,7 @@ export default function WorkflowStatistics() {
       );
     });
     return runs
-      .slice()
+      .filter((run) => !selectedRun || run.runId === selectedRun.value)
       .sort((left, right) => right.launchedAt.localeCompare(left.launchedAt))
       .map((run) => ({
         id: run.runId,
@@ -452,14 +405,19 @@ export default function WorkflowStatistics() {
           run.displayName || run.runId,
           WORKFLOW_REGISTRY[run.workflowType as WorkflowType]?.label ??
             run.workflowType,
-          run.launchedAt ? run.launchedAt.replace('T', ' ').slice(0, 19) : '',
-          run.status,
+          formatUtc(run.launchedAt),
+          formatUtc(run.finishedAt),
+          runStatusLabel(run),
           completionsByRun.get(run.runId) ?? 0,
         ],
       }));
-  }, [runs, buckets]);
+  }, [runs, bucketsInRange, selectedRun]);
 
-  function handleExport() {
+  const exportBaseName = `${project?.label ?? 'survey'}_${startString ?? 'all'}_${
+    endString ?? 'all'
+  }`.replace(/[\s()]/g, '_');
+
+  function exportDailyStats() {
     if (visibleBuckets.length === 0) return;
     const rows = visibleBuckets.map((bucket) => ({
       workflow:
@@ -467,11 +425,10 @@ export default function WorkflowStatistics() {
         bucket.workflowType,
       workflowType: bucket.workflowType,
       date: bucket.date,
-      user:
-        allUsers.find((candidate) => candidate.id === bucket.userId)?.name ??
-        bucket.userId,
+      user: userName(bucket.userId),
       userId: bucket.userId,
       annotationSetId: bucket.annotationSetId,
+      run: runName(bucket.workflowRunId),
       workflowRunId: bucket.workflowRunId,
       completedUnits: bucket.completedUnits,
       skippedUnits: bucket.skippedUnits,
@@ -486,9 +443,44 @@ export default function WorkflowStatistics() {
     }));
     exportFromJSON({
       data: rows,
-      fileName: `workflow-statistics-${project?.value ?? 'survey'}`,
+      fileName: `${exportBaseName}_DailyStats`,
       exportType: exportFromJSON.types.csv,
     });
+  }
+
+  async function exportTaskEvents() {
+    if (!project || visibleRunIds.length === 0) return;
+    setExportProgress('Starting…');
+    setError(null);
+    try {
+      const events = await fetchAllWorkflowEvents(
+        client,
+        {
+          projectId: project.value,
+          runIds: visibleRunIds,
+          startAt: startDate ? localDayStart(startDate) : undefined,
+          endAt: endDate ? localDayEnd(endDate) : undefined,
+        },
+        (count) => setExportProgress(`${count.toLocaleString()} events…`)
+      );
+      if (events.length === 0) {
+        setError('No task events in the selected period.');
+        return;
+      }
+      exportFromJSON({
+        data: events.map((event) => eventToCsvRow(event, userName, runName)),
+        fileName: `${exportBaseName}_TaskEvents`,
+        exportType: exportFromJSON.types.csv,
+      });
+    } catch (exportError) {
+      setError(
+        exportError instanceof Error
+          ? exportError.message
+          : 'Failed to export task events'
+      );
+    } finally {
+      setExportProgress(null);
+    }
   }
 
   if (!isSysadmin) {
@@ -498,6 +490,10 @@ export default function WorkflowStatistics() {
       </div>
     );
   }
+
+  const hasResults = workflowSections.length > 0;
+  const needsSetChoice =
+    project !== null && selectedSets.length === 0 && setOptions.length > 1;
 
   return (
     <div
@@ -515,128 +511,91 @@ export default function WorkflowStatistics() {
           </Card.Title>
         </Card.Header>
         <Card.Body>
-          <p className='text-muted'>
-            Throughput per workflow from the workflow statistics pipeline.
-            Species Labelling and False Negatives are instrumented; other
-            workflows appear here once their adapters are added.
-          </p>
-
-          <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
-            <div className='d-flex align-items-center gap-2'>
-              <label htmlFor='workflow-start-date' className='mb-0'>
-                From:
+          <Row className='g-3 align-items-end'>
+            <Col md={4}>
+              <label htmlFor='workflow-survey' className='form-label mb-1'>
+                Survey
               </label>
-              <DatePicker
-                id='workflow-start-date'
-                selected={startDate ?? undefined}
-                onChange={(date) => setStartDate(date)}
-                selectsStart
-                startDate={startDate ?? undefined}
-                endDate={endDate ?? undefined}
-                className='form-control'
-                isClearable
-                dateFormat='yyyy/MM/dd'
-                placeholderText='No start date'
+              <Select
+                inputId='workflow-survey'
+                className='text-black'
+                value={project}
+                options={projectOptions}
+                onChange={selectProject}
+                placeholder='Select a survey'
               />
-            </div>
-            <div className='d-flex align-items-center gap-2'>
-              <label htmlFor='workflow-end-date' className='mb-0'>
-                To:
+            </Col>
+            <Col md={4}>
+              <label htmlFor='workflow-sets' className='form-label mb-1'>
+                Annotation sets
               </label>
-              <DatePicker
-                id='workflow-end-date'
-                selected={endDate ?? undefined}
-                onChange={(date) => setEndDate(date)}
-                selectsEnd
-                startDate={startDate ?? undefined}
-                endDate={endDate ?? undefined}
-                className='form-control'
-                isClearable
-                dateFormat='yyyy/MM/dd'
-                placeholderText='No end date'
+              <Select
+                inputId='workflow-sets'
+                className='text-black basic-multi-select'
+                value={selectedSets}
+                onChange={(options) => setSelectedSets([...options])}
+                isMulti
+                isDisabled={!project}
+                options={setOptions}
+                classNamePrefix='select'
+                closeMenuOnSelect={false}
+                placeholder={
+                  needsSetChoice
+                    ? 'Choose one or more sets'
+                    : 'Select a survey first'
+                }
               />
-            </div>
-          </div>
-
-          <div className='mt-3'>
-            <label className='mb-2'>Select Survey</label>
-            <Select
-              className='text-black'
-              value={project}
-              options={projectOptions}
-              onChange={(option) => {
-                setProject(option);
-                const sets =
-                  projects
-                    .find((candidate) => candidate.id === option?.value)
-                    ?.annotationSets?.map((set) => ({
-                      label: set.name,
-                      value: set.id,
-                    })) ?? [];
-                setSelectedSets(sets);
-                setBuckets([]);
-                setRuns([]);
-                setHasQueried(false);
-              }}
-            />
-          </div>
-
-          <div className='mt-3'>
-            <label className='mb-2'>Select Annotation Sets</label>
-            <Select
-              className='text-black basic-multi-select'
-              value={selectedSets}
-              onChange={(options) => setSelectedSets([...options])}
-              isMulti
-              name='Annotation sets'
-              options={setOptions}
-              classNamePrefix='select'
-              closeMenuOnSelect={false}
-            />
-          </div>
-
-          <div className='mt-3 d-flex align-items-end gap-2 flex-wrap'>
-            <Button
-              variant='primary'
-              onClick={loadStats}
-              disabled={loading || !project || selectedSets.length === 0}
-            >
-              {loading ? 'Loading…' : 'Load statistics'}
-            </Button>
-            <Button
-              variant='outline-light'
-              onClick={handleExport}
-              disabled={visibleBuckets.length === 0}
-            >
-              Export CSV
-            </Button>
-          </div>
+            </Col>
+            <Col md={4}>
+              <label className='form-label mb-1'>Date range</label>
+              <div className='d-flex align-items-center gap-2'>
+                <DatePicker
+                  selected={startDate ?? undefined}
+                  onChange={(date) => {
+                    setDateRangeIsAuto(false);
+                    setStartDate(date);
+                  }}
+                  selectsStart
+                  startDate={startDate ?? undefined}
+                  endDate={endDate ?? undefined}
+                  className='form-control'
+                  isClearable
+                  dateFormat='yyyy/MM/dd'
+                  placeholderText='From'
+                />
+                <span>–</span>
+                <DatePicker
+                  selected={endDate ?? undefined}
+                  onChange={(date) => {
+                    setDateRangeIsAuto(false);
+                    setEndDate(date);
+                  }}
+                  selectsEnd
+                  startDate={startDate ?? undefined}
+                  endDate={endDate ?? undefined}
+                  minDate={startDate ?? undefined}
+                  className='form-control'
+                  isClearable
+                  dateFormat='yyyy/MM/dd'
+                  placeholderText='To'
+                />
+              </div>
+            </Col>
+          </Row>
 
           {error && (
-            <Alert variant='danger' className='mt-3'>
+            <Alert variant='danger' className='mt-3 mb-0'>
               {error}
             </Alert>
           )}
           {truncated && (
-            <Alert variant='warning' className='mt-3'>
+            <Alert variant='warning' className='mt-3 mb-0'>
               This survey returned more rows than the query limit, so the
-              figures below are incomplete. Narrow the date range.
+              figures below are incomplete.
             </Alert>
           )}
 
-          {runOptions.length > 0 && (
-            <div className='mt-3'>
-              <label className='mb-2'>Filter by run (optional)</label>
-              <Select
-                className='text-black'
-                value={selectedRun}
-                options={runOptions}
-                onChange={(option) => setSelectedRun(option)}
-                isClearable
-                placeholder='All runs'
-              />
-            </div>
-          )}
+          <hr className='my-4' />
 
           {loading ? (
             <div className='d-flex justify-content-center align-items-center py-5'>
@@ -645,16 +604,47 @@ export default function WorkflowStatistics() {
               </Spinner>
               <span className='ms-3'>Loading statistics…</span>
             </div>
+          ) : !project ? (
+            <p className='text-muted mb-0'>Select a survey to see its statistics.</p>
+          ) : needsSetChoice ? (
+            <p className='text-muted mb-0'>
+              This survey has several annotation sets. Choose the ones to report on.
+            </p>
           ) : (
             <>
+              <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
+                <h5 className='mb-0'>Results</h5>
+                {runOptions.length > 1 && (
+                  <div className='d-flex align-items-center gap-2'>
+                    <label htmlFor='workflow-run' className='mb-0'>
+                      Run:
+                    </label>
+                    <div style={{ minWidth: '320px' }}>
+                      <Select
+                        inputId='workflow-run'
+                        className='text-black'
+                        value={selectedRun}
+                        options={runOptions}
+                        onChange={(option) => setSelectedRun(option)}
+                        isClearable
+                        placeholder='All runs'
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {workflowSections.map((section) => (
-                <div key={section.workflowType} className='mt-4'>
-                  <h5 className='mb-2'>{section.label}</h5>
+                <div key={section.workflowType} className='mt-3'>
+                  <h6 className='mb-2'>{section.label}</h6>
                   <div className='overflow-x-auto'>
                     <MyTable
                       tableHeadings={section.headings}
                       tableData={[
-                        ...section.rows,
+                        ...section.rows.map((row) => ({
+                          id: row.id,
+                          rowData: row.cells,
+                        })),
                         {
                           id: `${section.workflowType}:__total`,
                           rowData: section.footer.map((cell, index) => (
@@ -662,13 +652,12 @@ export default function WorkflowStatistics() {
                           )),
                         },
                       ]}
-                      emptyMessage='No completions in this period.'
                     />
                   </div>
                 </div>
               ))}
 
-              {hasQueried && workflowSections.length === 0 && (
+              {hasLoaded && !hasResults && (
                 <Alert variant='info' className='mt-3'>
                   No workflow completions recorded for this survey and period.
                   Work done on runs launched before the pipeline was deployed is
@@ -678,18 +667,40 @@ export default function WorkflowStatistics() {
 
               {runRows.length > 0 && (
                 <div className='mt-4'>
-                  <h5 className='mb-2'>Runs</h5>
+                  <h6 className='mb-2'>Runs</h6>
                   <div className='overflow-x-auto'>
                     <MyTable
                       tableHeadings={[
-                        { content: 'Run' },
-                        { content: 'Workflow' },
-                        { content: 'Launched (UTC)' },
-                        { content: 'Status' },
-                        { content: 'Completions' },
+                        {
+                          content: 'Run',
+                          description:
+                            'The job name given when the workflow was launched.',
+                        },
+                        {
+                          content: 'Workflow',
+                          description: 'The type of work this run contains.',
+                        },
+                        {
+                          content: 'Launched (UTC)',
+                          description: 'When the run was launched.',
+                        },
+                        {
+                          content: 'Finished (UTC)',
+                          description:
+                            'When the run ended: its queue drained or was cancelled, or its last ChainLinker transect was completed. Blank while active.',
+                        },
+                        {
+                          content: 'Status',
+                          description:
+                            'Active until the work behind the run ends. Completed runs drained their queue; cancelled runs were stopped by a user or by cleanup after 60 idle days. Runs launched before status tracking existed were closed by a one-off backfill.',
+                        },
+                        {
+                          content: 'Completions',
+                          description:
+                            'Units completed in this run within the selected period, across all users.',
+                        },
                       ]}
                       tableData={runRows}
-                      emptyMessage='No runs recorded for this survey.'
                     />
                   </div>
                 </div>
@@ -697,7 +708,53 @@ export default function WorkflowStatistics() {
             </>
           )}
         </Card.Body>
+        {hasLoaded && !loading && (
+          <Card.Footer className='d-flex justify-content-center gap-2'>
+            <Button
+              variant='primary'
+              style={{ flex: 1 }}
+              onClick={() => setShowSnapshot(true)}
+              disabled={visibleRunIds.length === 0 || !startDate || !endDate}
+            >
+              Snapshot
+            </Button>
+            <Button
+              variant='primary'
+              style={{ flex: 1 }}
+              onClick={exportDailyStats}
+              disabled={visibleBuckets.length === 0}
+            >
+              Export daily stats
+            </Button>
+            <Button
+              variant='primary'
+              style={{ flex: 1 }}
+              onClick={exportTaskEvents}
+              disabled={visibleRunIds.length === 0 || exportProgress !== null}
+            >
+              {exportProgress
+                ? `Exporting… ${exportProgress}`
+                : 'Export task events'}
+            </Button>
+          </Card.Footer>
+        )}
       </Card>
+      {project && (
+        <WorkflowSnapshotModal
+          show={showSnapshot}
+          onHide={() => setShowSnapshot(false)}
+          client={client}
+          projectId={project.value}
+          projectLabel={project.label}
+          runs={visibleRunIds.map((runId) => ({
+            runId,
+            displayName: runName(runId),
+          }))}
+          startDate={startDate}
+          endDate={endDate}
+          userName={userName}
+        />
+      )}
     </div>
   );
 }
