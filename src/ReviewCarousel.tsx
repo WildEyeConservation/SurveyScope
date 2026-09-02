@@ -344,6 +344,9 @@ export default function ReviewCarousel({
                 <AnnotationWorkspace
                   {...task}
                   hideZoomSetting={true}
+                  // Reviewers must be able to correct or remove every annotation,
+                  // including malformed coordinates outside the image bounds.
+                  allowOutside
                   // Tight fit around locations for review; 0.55 keeps a small margin
                   viewBoundsScale={0.55}
                 />
