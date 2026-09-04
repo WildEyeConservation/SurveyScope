@@ -33,6 +33,8 @@ interface Props {
   category: CategoryType | null;
   /** Hotkeys are disabled when false. */
   visible: boolean;
+  /** Fires once both images have their first visible tiles on screen. */
+  onImagesReady?: () => void;
 
   onDrag: (
     candidateKey: string,
@@ -141,6 +143,7 @@ export function IndividualIdMapPair(props: Props) {
     candidates,
     category,
     visible,
+    onImagesReady,
     onDrag,
     onAccept,
     onUnfocus,
@@ -395,6 +398,18 @@ export function IndividualIdMapPair(props: Props) {
     conflictHighlightAnnotationIds,
     chainViewerHrefFor,
   ]);
+
+  const readySidesRef = useRef<Set<'A' | 'B'>>(new Set());
+  const onImagesReadyRef = useRef(onImagesReady);
+  onImagesReadyRef.current = onImagesReady;
+  const markSideReady = useCallback((side: 'A' | 'B') => {
+    const sides = readySidesRef.current;
+    if (sides.has(side)) return;
+    sides.add(side);
+    if (sides.size === 2) onImagesReadyRef.current?.();
+  }, []);
+  const handleSideReadyA = useCallback(() => markSideReady('A'), [markSideReady]);
+  const handleSideReadyB = useCallback(() => markSideReady('B'), [markSideReady]);
 
   // Dragging a marker also focuses it — acting on any marker moves the
   // active state to that marker. Informational markers can't be focused, so
@@ -966,6 +981,7 @@ export function IndividualIdMapPair(props: Props) {
             // Side A's overlay traces image B's bounds projected onto A.
             previewTransform={markersHidden ? undefined : pair.backward}
             otherImage={imageB}
+            onInitialTilesLoaded={handleSideReadyA}
           />
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
@@ -991,6 +1007,7 @@ export function IndividualIdMapPair(props: Props) {
             // Side B's overlay traces image A's bounds projected onto B.
             previewTransform={markersHidden ? undefined : pair.forward}
             otherImage={imageA}
+            onInitialTilesLoaded={handleSideReadyB}
           />
         </div>
         <OovPanel

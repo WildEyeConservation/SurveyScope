@@ -193,6 +193,8 @@ interface Props {
    * view's "hold Tab to peek" gesture.
    */
   markersHidden?: boolean;
+  /** Fires once, when the first batch of visible tiles has finished loading. */
+  onInitialTilesLoaded?: () => void;
 }
 
 const TILE_SIZE = 256;
@@ -477,10 +479,14 @@ export function IndividualIdMap({
   locationSources,
   locationRows,
   markersHidden,
+  onInitialTilesLoaded,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const cancelledRef = useRef(false);
+  const onInitialTilesLoadedRef = useRef(onInitialTilesLoaded);
+  onInitialTilesLoadedRef.current = onInitialTilesLoaded;
+  const initialTilesReportedRef = useRef(false);
   const loadedTilesRef = useRef<Set<string>>(new Set());
   const blobUrlsRef = useRef<string[]>([]);
   const markerRefs = useRef<Map<string, maplibregl.Marker>>(new Map());
@@ -881,6 +887,7 @@ export function IndividualIdMap({
       const cols = Math.ceil(imageWidth / tileCoverage);
       const rows = Math.ceil(imageHeight / tileCoverage);
       const bounds = m.getBounds();
+      const pending: Promise<unknown>[] = [];
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const sourceId = `tile-${z}-${row}-${col}`;
@@ -911,7 +918,7 @@ export function IndividualIdMap({
           }
           loadedTilesRef.current.add(sourceId);
           const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
-          getTileBlob(path)
+          const tile = getTileBlob(path)
             .then((blob) => {
               if (cancelledRef.current) return;
               const url = URL.createObjectURL(blob);
@@ -960,7 +967,14 @@ export function IndividualIdMap({
             .catch(() => {
               loadedTilesRef.current.delete(sourceId);
             });
+          pending.push(tile);
         }
+      }
+      if (!initialTilesReportedRef.current) {
+        initialTilesReportedRef.current = true;
+        Promise.allSettled(pending).then(() => {
+          if (!cancelledRef.current) onInitialTilesLoadedRef.current?.();
+        });
       }
     },
     [sourceKey, imageWidth, imageHeight, px2lngLat, scale]
@@ -971,6 +985,7 @@ export function IndividualIdMap({
     if (!containerRef.current) return;
     cancelledRef.current = false;
     loadedTilesRef.current = new Set();
+    initialTilesReportedRef.current = false;
     blobUrlsRef.current = [];
     markerRefs.current = new Map();
 

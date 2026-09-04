@@ -68,6 +68,8 @@ const REUNION_MAX_HOPS = 20;
  * apart on the same image won't accidentally claim each other.
  */
 const DEFAULT_LENIENCY = 40;
+// Loading a pair should never take hours; anything longer is a stale tab.
+const MAX_WAITING_MS = 10 * 60 * 1000;
 
 /**
  * Chronological order between two images, ported from the
@@ -868,6 +870,8 @@ export function IndividualIdHarness({
   const currentPairKeyRef = useRef<string | undefined>(undefined);
   const linksByPairRef = useRef<Map<string, number>>(new Map());
   const reportedPairsRef = useRef<Set<string>>(new Set());
+  const pairShownAtRef = useRef<number>(Date.now());
+  const pairWaitingMsRef = useRef<number | null>(null);
   // Elapsed time is the wrong measure here: a pair of 200 buffalo can honestly
   // take half an hour, so any cap loose enough for it would also absorb a
   // lunch break. This counts only time between interactions.
@@ -878,6 +882,7 @@ export function IndividualIdHarness({
     // The measurement is reset per pair whether or not it gets reported, so a
     // pair with no run to attribute it to cannot inflate the next one.
     const activeTimeMs = activeTime.reset();
+    const waitingTimeMs = pairWaitingMsRef.current ?? 0;
     // Chain-review mode and jobs launched before runs existed have no run to
     // attribute the work to.
     if (!jobId || !pairKey) return;
@@ -893,6 +898,7 @@ export function IndividualIdHarness({
       outcome: 'linked',
       idempotencyKey: `pair:${pairKey}`,
       activeTimeMs,
+      waitingTimeMs,
       metrics: {
         annotationsLinked: linksByPairRef.current.get(pairKey) ?? 0,
       },
@@ -943,7 +949,20 @@ export function IndividualIdHarness({
   // completed pairs are reported, so there is nothing to attribute it to.
   useEffect(() => {
     activeTime.reset();
+    pairShownAtRef.current = Date.now();
+    pairWaitingMsRef.current = null;
   }, [currentPairKey, activeTime]);
+
+  // Time until both images are on screen is waiting, not work, so the active
+  // clock restarts once the pair is ready.
+  const handlePairImagesReady = useCallback(() => {
+    if (pairWaitingMsRef.current !== null) return;
+    pairWaitingMsRef.current = Math.min(
+      Date.now() - pairShownAtRef.current,
+      MAX_WAITING_MS
+    );
+    activeTime.reset();
+  }, [activeTime]);
 
   // Persist a dragged real annotation's new position straight to the DB
   // (optimistic local + cache update, rolled back on failure).
@@ -2033,6 +2052,7 @@ export function IndividualIdHarness({
             conflictHighlightAnnotationIds={conflictHighlightAnnotationIds}
             onClearConflictHighlights={clearConflictHighlights}
             visible
+            onImagesReady={handlePairImagesReady}
             leniency={leniency}
             onLeniencyChange={setLeniency}
             onDrag={handleDrag}
