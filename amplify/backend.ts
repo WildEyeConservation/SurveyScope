@@ -703,7 +703,7 @@ const eventsArnForWriter = recordWorkflowTaskStack.formatArn({
 });
 recordWorkflowTaskFunction.addToRolePolicy(
   new iam.PolicyStatement({
-    actions: ['dynamodb:GetItem'],
+    actions: ['dynamodb:GetItem', 'dynamodb:ConditionCheckItem'],
     resources: [
       recordWorkflowTaskStack.formatArn({
         service: 'dynamodb',
