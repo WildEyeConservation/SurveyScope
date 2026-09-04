@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { Alert, Button, Card, Col, Row, Spinner } from 'react-bootstrap';
 import Select from 'react-select';
+import { RefreshCw } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import exportFromJSON from 'export-from-json';
@@ -121,6 +122,9 @@ interface ProjectOption {
 
 type SelectOption = { label: string; value: string };
 
+const AUTO_REFRESH_S = 30;
+const MANUAL_REFRESH_COOLDOWN_MS = 5_000;
+
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -152,6 +156,11 @@ export default function WorkflowStatistics() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
   const [showSnapshot, setShowSnapshot] = useState(false);
+  const [refreshCooldown, setRefreshCooldown] = useState(false);
+  const [secondsUntilSync, setSecondsUntilSync] = useState(AUTO_REFRESH_S);
+  const [pageVisible, setPageVisible] = useState(
+    () => document.visibilityState === 'visible'
+  );
   // Selections can change faster than queries return; only the latest wins.
   const requestSequence = useRef(0);
 
@@ -241,19 +250,13 @@ export default function WorkflowStatistics() {
   // Buckets are small (one per user, day and run), so the whole history for
   // the selected sets is fetched once and the date range is applied here.
   // Changing dates is then instant and needs no round trip.
-  useEffect(() => {
-    if (!project || selectedSets.length === 0) {
-      setBuckets([]);
-      setRuns([]);
-      setHasLoaded(false);
-      return;
-    }
-    const sequence = ++requestSequence.current;
-    const projectId = project.value;
-    const annotationSetIds = selectedSets.map((set) => set.value);
-
-    async function load() {
-      setLoading(true);
+  const loadStats = useCallback(
+    async (background: boolean) => {
+      if (!project || selectedSets.length === 0) return;
+      const sequence = ++requestSequence.current;
+      const projectId = project.value;
+      const annotationSetIds = selectedSets.map((set) => set.value);
+      if (!background) setLoading(true);
       setError(null);
       try {
         const statsQuery = resolveStatsQuery(client);
@@ -279,7 +282,7 @@ export default function WorkflowStatistics() {
         setRuns(parsed.runs ?? []);
         setTruncated(parsed.truncated === true);
         setHasLoaded(true);
-        setSelectedRun(null);
+        if (!background) setSelectedRun(null);
       } catch (queryError) {
         if (sequence !== requestSequence.current) return;
         setError(
@@ -287,14 +290,73 @@ export default function WorkflowStatistics() {
             ? queryError.message
             : 'Failed to load workflow statistics'
         );
-        setBuckets([]);
-        setRuns([]);
+        if (!background) {
+          setBuckets([]);
+          setRuns([]);
+        }
       } finally {
-        if (sequence === requestSequence.current) setLoading(false);
+        if (sequence === requestSequence.current && !background) {
+          setLoading(false);
+        }
       }
+    },
+    [client, project, selectedSets]
+  );
+
+  useEffect(() => {
+    if (!project || selectedSets.length === 0) {
+      requestSequence.current += 1;
+      setBuckets([]);
+      setRuns([]);
+      setHasLoaded(false);
+      return;
     }
-    load();
-  }, [client, project, selectedSets]);
+    setSecondsUntilSync(AUTO_REFRESH_S);
+    loadStats(false);
+  }, [project, selectedSets, loadStats]);
+
+  // Auto-sync countdown; paused while the tab is hidden.
+  useEffect(() => {
+    function onVisibilityChange() {
+      const visible = document.visibilityState === 'visible';
+      setPageVisible(visible);
+      if (visible) setSecondsUntilSync(0);
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () =>
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoaded || !pageVisible) return;
+    const timer = setInterval(
+      () => setSecondsUntilSync((seconds) => Math.max(0, seconds - 1)),
+      1000
+    );
+    return () => clearInterval(timer);
+  }, [hasLoaded, pageVisible]);
+
+  useEffect(() => {
+    if (!hasLoaded || !pageVisible || secondsUntilSync > 0) return;
+    setSecondsUntilSync(AUTO_REFRESH_S);
+    loadStats(true);
+  }, [hasLoaded, pageVisible, secondsUntilSync, loadStats]);
+
+  useEffect(() => {
+    if (!refreshCooldown) return;
+    const timeout = setTimeout(
+      () => setRefreshCooldown(false),
+      MANUAL_REFRESH_COOLDOWN_MS
+    );
+    return () => clearTimeout(timeout);
+  }, [refreshCooldown]);
+
+  function refreshNow() {
+    if (refreshCooldown) return;
+    setRefreshCooldown(true);
+    setSecondsUntilSync(AUTO_REFRESH_S);
+    loadStats(true);
+  }
 
   useEffect(() => {
     if (!dateRangeIsAuto || !hasLoaded) return;
@@ -613,7 +675,28 @@ export default function WorkflowStatistics() {
           ) : (
             <>
               <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
-                <h5 className='mb-0'>Results</h5>
+                <div className='d-flex align-items-center gap-2'>
+                  <h5 className='mb-0'>Results</h5>
+                  <small className='text-muted ms-2'>
+                    Syncs in {secondsUntilSync} s
+                  </small>
+                  <Button
+                    variant='link'
+                    size='sm'
+                    style={{
+                      padding: 0,
+                      color: 'var(--ss-text-muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                    onClick={refreshNow}
+                    disabled={refreshCooldown}
+                    title='Refresh now'
+                    aria-label='Refresh now'
+                  >
+                    <RefreshCw size={14} />
+                  </Button>
+                </div>
                 {runOptions.length > 1 && (
                   <div className='d-flex align-items-center gap-2'>
                     <label htmlFor='workflow-run' className='mb-0'>
@@ -645,12 +728,16 @@ export default function WorkflowStatistics() {
                           id: row.id,
                           rowData: row.cells,
                         })),
-                        {
-                          id: `${section.workflowType}:__total`,
-                          rowData: section.footer.map((cell, index) => (
-                            <strong key={index}>{cell}</strong>
-                          )),
-                        },
+                        ...(section.footer
+                          ? [
+                              {
+                                id: `${section.workflowType}:__total`,
+                                rowData: section.footer.map((cell, index) => (
+                                  <strong key={index}>{cell}</strong>
+                                )),
+                              },
+                            ]
+                          : []),
                       ]}
                     />
                   </div>

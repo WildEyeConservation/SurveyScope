@@ -33,7 +33,7 @@ export interface WorkflowSection {
   headings: TableHeading[];
   /** One row per user; cells are already formatted for display. */
   rows: { id: string; userId: string; cells: (string | number)[] }[];
-  footer: (string | number)[];
+  footer: (string | number)[] | null;
 }
 
 export function formatDuration(ms: number): string {
@@ -258,7 +258,7 @@ export function buildWorkflowSections(
           })),
         ],
         rows,
-        footer: ['All users', ...cellsFor(overall)],
+        footer: rows.length > 1 ? ['All users', ...cellsFor(overall)] : null,
       };
     });
 }
@@ -268,7 +268,10 @@ export function sectionToCsvRows(
   section: WorkflowSection
 ): Record<string, string | number>[] {
   const keys = section.headings.map((heading) => heading.content);
-  return [...section.rows.map((row) => row.cells), section.footer].map(
+  return [
+    ...section.rows.map((row) => row.cells),
+    ...(section.footer ? [section.footer] : []),
+  ].map(
     (cells) => Object.fromEntries(keys.map((key, index) => [key, cells[index]]))
   );
 }

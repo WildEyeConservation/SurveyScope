@@ -179,12 +179,16 @@ export default function WorkflowSnapshotModal({
                     id: row.id,
                     rowData: row.cells,
                   })),
-                  {
-                    id: `${section.workflowType}:__total`,
-                    rowData: section.footer.map((cell, index) => (
-                      <strong key={index}>{cell}</strong>
-                    )),
-                  },
+                  ...(section.footer
+                    ? [
+                        {
+                          id: `${section.workflowType}:__total`,
+                          rowData: section.footer.map((cell, index) => (
+                            <strong key={index}>{cell}</strong>
+                          )),
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </div>
