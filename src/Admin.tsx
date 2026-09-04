@@ -1,5 +1,4 @@
-import { useContext } from 'react';
-import { UserContext } from './Context';
+import { useSession } from './session';
 import { Tabs, Tab } from './Tabs';
 import { Card } from 'react-bootstrap';
 import PendingOrganizations from './PendingOrganizations';
@@ -9,7 +8,7 @@ import AwsServiceHealth from './AwsServiceHealth';
 import AdminSurveys from './AdminSurveys';
 
 export default function Admin() {
-  const { cognitoGroups } = useContext(UserContext)!;
+  const { cognitoGroups } = useSession();
 
   if (!cognitoGroups.includes('sysadmin')) {
     return <div>You are not authorized to access this page.</div>;

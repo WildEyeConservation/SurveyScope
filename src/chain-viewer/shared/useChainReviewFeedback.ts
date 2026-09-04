@@ -1,5 +1,5 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
-import { UserContext } from '../../Context';
+import { useCallback, useEffect, useState } from 'react';
+import { useSession } from '../../session';
 import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 
@@ -36,7 +36,7 @@ function isConditionalCheckError(
  * Row ids are scoped by share and reviewer to keep reshares separate.
  */
 export function useChainReviewFeedback(shareId: string | undefined) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
   const userSub = user?.userId ?? 'anon';
 
   // Net overlay per snapshot annotation id, plus which row ids already exist.

@@ -1,5 +1,9 @@
-import { useContext, useEffect, useState } from 'react';
-import { UserContext } from './Context';
+import { useEffect, useState } from 'react';
+import { useSession } from './session';
+import {
+  setJobsCompletedAction,
+  useJobsCompleted,
+} from './stores/taskStore';
 import { client } from './stores/appClient';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
@@ -9,11 +13,9 @@ import { useNavigate } from 'react-router-dom';
 import { useCurrentMembershipRow } from './data/projectScope';
 
 export function JobsRemaining() {
-  const {
-    getSqsClient,
-    jobsCompleted: sessionJobsCompleted,
-    setJobsCompleted: setSessionJobsCompleted,
-  } = useContext(UserContext)!;
+  const { getSqsClient } = useSession();
+  const sessionJobsCompleted = useJobsCompleted();
+  const setSessionJobsCompleted = setJobsCompletedAction;
   const currentPM = useCurrentMembershipRow();
   const [jobsRemaining, setJobsRemaining] = useState<string>('Unknown');
   const [url, setUrl] = useState<string | undefined>(undefined);

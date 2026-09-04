@@ -1,6 +1,7 @@
 import { Card } from 'react-bootstrap';
-import { useContext, useEffect, useState } from 'react';
-import { UserContext } from '../Context';
+import { useEffect, useState } from 'react';
+import { useSession } from '../session';
+import { useMyMemberships, useMyOrganizations } from '../data/memberships';
 import { client } from '../stores/appClient';
 import { Schema } from '../amplify/client-schema';
 import { Spinner, Button, Form } from 'react-bootstrap';
@@ -34,11 +35,9 @@ type Project = {
 };
 
 export default function Jobs() {
-  const {
-    myMembershipHook: userProjectMembershipHook,
-    myOrganizationHook,
-    getSqsClient,
-  } = useContext(UserContext)!;
+  const userProjectMembershipHook = useMyMemberships();
+  const myOrganizationHook = useMyOrganizations();
+  const { getSqsClient } = useSession();
   const navigate = useNavigate();
 
   const [displayProjects, setDisplayProjects] = useState<Project[]>([]);
@@ -376,7 +375,9 @@ export default function Jobs() {
       return;
     }
 
-    userProjectMembershipHook.update({ id: currentMembership.id, queueId: job.queueId });
+    userProjectMembershipHook.update(
+      { id: currentMembership.id, queueId: job.queueId } as typeof currentMembership
+    );
     navigate(`/surveys/${job.projectId}/annotate`);
 
     setTakingJob(false);

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Navbar from 'react-bootstrap/Navbar';
 import Nav from 'react-bootstrap/Nav';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
@@ -6,7 +6,12 @@ import { ProgressIndicators } from './ProgressIndicators.jsx';
 import { Outlet } from 'react-router-dom';
 import Container from 'react-bootstrap/Container';
 import Notifications from './user/Notifications.tsx';
-import { UserContext } from './Context.tsx';
+import { useSession } from './session';
+import {
+  useIsOrganizationAdmin,
+  useMyMemberships,
+  useMyOrganizations,
+} from './data/memberships';
 import { client } from './stores/appClient';
 import {
   setIsAnnotatePathAction,
@@ -19,15 +24,12 @@ import { verifyToken } from './utils/jwt.ts';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function MainNavigation({ signOut }: { signOut: () => void }) {
-  const {
-    cognitoGroups,
-    myOrganizationHook,
-    isOrganizationAdmin,
-    myMembershipHook: myProjectsHook,
-    user,
-  } = useContext(UserContext)!;
-  // Route-driven flag now lives in taskStore so nav state does not force
-  // UserContext consumers to re-render.
+  const { cognitoGroups, user } = useSession();
+  const myOrganizationHook = useMyOrganizations();
+  const isOrganizationAdmin = useIsOrganizationAdmin();
+  const myProjectsHook = useMyMemberships();
+  // Route-driven flag lives in taskStore so unrelated consumers do not
+  // re-render when navigation changes.
   const isAnnotatePath = useIsAnnotatePath();
   const setIsAnnotatePath = setIsAnnotatePathAction;
   const queryClient = useQueryClient();

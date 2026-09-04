@@ -332,7 +332,6 @@ export function useOptimisticUpdates<
 
 // export function useOptimisticUpdatesByProject<T extends ModelTypeByProject>(modelName: T) {
 //   return (projectId?: string) => {
-//     const { currentPM } = useContext(UserContext);
 //     projectId ||= currentPM?.projectId;
 //     return useOptimisticUpdates<T>(
 //       modelName,

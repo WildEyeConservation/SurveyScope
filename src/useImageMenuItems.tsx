@@ -1,9 +1,7 @@
 import { useContext, useMemo } from 'react';
 import { getUrl } from 'aws-amplify/storage';
-import {
-  ImageContext,
-  UserContext,
-} from './Context';
+import { ImageContext } from './imageContext';
+import { useSession } from './session';
 import type { AnnotationImage, AnnotationLocation } from './annotationTypes';
 import { useProjectMemberships } from './data/projectSets';
 import { useCurrentProject, useProjectId } from './data/projectScope';
@@ -41,7 +39,7 @@ export default function useImageMenuItems({
   const project = useCurrentProject();
   const projectId = useProjectId();
   const { data: projectMemberships } = useProjectMemberships(projectId);
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
 
   const belongsToCurrentProject = projectMemberships?.find(
     (pm) => pm.userId == user.userId && pm.projectId == project.id

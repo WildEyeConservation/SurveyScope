@@ -16,7 +16,7 @@ import {
   storedZoomToMapZoom,
   mapZoomToStoredZoom,
 } from './imageTiles';
-import { ImageContext } from '../Context';
+import { ImageContext } from '../imageContext';
 import useImageMenuItems from '../useImageMenuItems';
 import { isWithinLocationBounds, resolveCategoryIdForSet } from '../utils';
 import {

@@ -1,5 +1,5 @@
-import { useContext, useEffect, useRef, useState } from 'react';
-import { UserContext } from '../Context';
+import { useEffect, useRef, useState } from 'react';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { Spinner, ProgressBar } from 'react-bootstrap';
@@ -10,7 +10,7 @@ type ProjectProgressProps = {
 };
 
 export default function ProjectProgress({ projectId, onScanningChange }: ProjectProgressProps) {
-  const { getSqsClient } = useContext(UserContext)!;
+  const { getSqsClient } = useSession();
   const [isLoading, setIsLoading] = useState(true);
   const [queueInfo, setQueueInfo] = useState<{
     url: string;

@@ -1,8 +1,8 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Form, Spinner } from 'react-bootstrap';
 import { uploadData, downloadData, remove } from 'aws-amplify/storage';
 import { Schema } from '../amplify/client-schema';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
@@ -59,7 +59,7 @@ export default function FalseNegatives({
     React.SetStateAction<LaunchHandler | null>
   >;
 }) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
 
   // Global tiled location set from project
   const tiledLocationSetId = (project as any).tiledLocationSetId as

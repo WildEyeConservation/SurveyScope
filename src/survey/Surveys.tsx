@@ -1,6 +1,10 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { UserContext } from '../Context.tsx';
+import { useSession } from '../session';
+import {
+  useIsOrganizationAdmin,
+  useMyMemberships,
+} from '../data/memberships';
 import { client } from '../stores/appClient';
 import { showModalAction, useModalToShow } from '../stores/modalStore';
 import {
@@ -70,11 +74,9 @@ const fileStoreUploaded = localforage.createInstance({
 export default function Surveys() {
   const modalToShow = useModalToShow();
   const showModal = showModalAction;
-  const {
-    myMembershipHook: myProjectsHook,
-    isOrganizationAdmin,
-    user,
-  } = useContext(UserContext)!;
+  const myProjectsHook = useMyMemberships();
+  const isOrganizationAdmin = useIsOrganizationAdmin();
+  const { user } = useSession();
   const activeUploadProjectId = useActiveUploadProjectId();
   const { deletingProjectId } = useUploadUi();
   const uploadActive = activeUploadProjectId !== null;

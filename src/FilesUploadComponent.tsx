@@ -1,7 +1,6 @@
 import {
   useEffect,
   useState,
-  useContext,
   useCallback,
   useMemo,
   useRef,
@@ -12,7 +11,7 @@ import Modal from 'react-bootstrap/Modal';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import Alert from 'react-bootstrap/Alert';
-import { UserContext } from './Context.tsx';
+import { useSession } from './session';
 import { backendOutputs as backend, client } from './stores/appClient';
 import { uploadOrchestrator } from './upload/core/UploadOrchestrator.ts';
 import { saveDirectoryHandle } from './upload/core/dirHandles.ts';
@@ -188,7 +187,7 @@ export function FileUploadCore({
   summaryDetails,
 }: FilesUploadBaseProps) {
   const [name, setName] = useState('');
-  const { cognitoGroups, user } = useContext(UserContext)!;
+  const { cognitoGroups, user } = useSession();
   const [scannedFiles, setScannedFiles] = useState<File[]>([]);
   const [directoryHandle, setDirectoryHandle] = useState<unknown>(null);
   const [cameraSelection, setCameraSelection] = useState<

@@ -1,6 +1,7 @@
-import { useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { UserContext } from './Context';
+import { useSession } from './session';
+import { useMyMemberships } from './data/memberships';
 import { client } from './stores/appClient';
 import {
   ReceiveMessageCommand,
@@ -21,7 +22,8 @@ import useUnsavedWorkGuard from './useUnsavedWorkGuard';
  */
 export default function QCReviewTask() {
   const { queueId } = useParams<{ queueId: string }>();
-  const { getSqsClient, myMembershipHook } = useContext(UserContext)!;
+  const { getSqsClient } = useSession();
+  const myMembershipHook = useMyMemberships();
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
   useUnsavedWorkGuard();

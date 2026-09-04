@@ -1,14 +1,11 @@
 import { useMemo, useContext, useEffect, useRef, useState } from 'react';
 import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
 import { SideLegend } from './Legend';
-import {
-  UserContext,
-  ImageContext,
-  type AnnotationsHook,
-} from './Context';
+import { ImageContext } from './imageContext';
+import type { AnnotationsHook } from './data/types';
 import { client } from './stores/appClient';
 import { useOptimisticUpdates } from './useOptimisticUpdates';
-import { ImageContextFromHook } from './ImageContext';
+import { ImageContextFromHook } from './ImageContextProvider';
 import { Schema } from './amplify/client-schema';
 import useImageStats from './useImageStats';
 import { Badge, Button } from 'react-bootstrap';
@@ -27,7 +24,12 @@ import {
   subscribeToSharedDefaultZoom,
 } from './defaultZoomEvents';
 import { useCategories } from './data/project';
+import { useMyMemberships } from './data/memberships';
 import { useProjectId } from './data/projectScope';
+import {
+  useCurrentTaskTag,
+  useIsAnnotatePath,
+} from './stores/taskStore';
 import {
   setExpandLegendAction,
   useExpandLegend,
@@ -187,8 +189,9 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     };
   }, [visible, revalidate]);
 
-  const { currentTaskTag, isAnnotatePath, myMembershipHook } =
-    useContext(UserContext)!;
+  const currentTaskTag = useCurrentTaskTag();
+  const isAnnotatePath = useIsAnnotatePath();
+  const myMembershipHook = useMyMemberships();
   const navigate = useNavigate();
   const { surveyId } = useParams();
   // Read localStorage synchronously so tiles are never loaded at the wrong zoom.

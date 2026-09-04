@@ -1,5 +1,5 @@
-import { useContext, useState } from 'react';
-import { UserContext } from '../Context';
+import { useState } from 'react';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { Schema } from '../amplify/client-schema';
 import Button from 'react-bootstrap/Button';
@@ -9,7 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export default function Notifications() {
   const [show, setShow] = useState(false);
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
   const username = user.username;
 
   const { data: allInvites, isFetching, refetch } = useQuery<Schema['OrganizationInvite']['type'][]>({

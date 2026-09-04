@@ -1,6 +1,6 @@
 import outputs from '../../amplify_outputs.json';
 import { limitedClient } from '../limitedClient';
-import type { BackendOutputs } from '../Context';
+import type { BackendOutputs } from '../data/types';
 
 // Static app client. No React needed: import these directly. Keeps data
 // access independent of tree position.

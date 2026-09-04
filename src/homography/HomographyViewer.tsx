@@ -1,8 +1,8 @@
-import { useState, useContext, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Form, Button, Alert, Spinner, Badge, Card } from 'react-bootstrap';
 import { matrix, inv } from 'mathjs';
 import type { Matrix } from 'mathjs';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { MapLibrePairViewer } from './MapLibrePairViewer';
 import { makeTransform, fetchAllPaginatedResults } from '../utils';
@@ -32,7 +32,7 @@ type LoadedPair = {
 };
 
 export default function HomographyViewer() {
-  const { cognitoGroups } = useContext(UserContext)!;
+  const { cognitoGroups } = useSession();
   const isSysadmin = cognitoGroups.includes('sysadmin');
 
   const [image1IdInput, setImage1IdInput] = useState('');

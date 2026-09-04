@@ -1,6 +1,6 @@
 import { Button, Form } from 'react-bootstrap';
 import { useContext, useState, useEffect } from 'react';
-import { TestingContext } from '../Context';
+import { TestingContext } from './testingContext';
 import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import MyTable from '../Table';

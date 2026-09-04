@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Spinner } from 'react-bootstrap';
 import { Check, Copy, RefreshCw } from 'lucide-react';
 import {
@@ -19,7 +19,7 @@ import {
   type Cluster,
 } from '@aws-sdk/client-ecs';
 import { fetchAuthSession } from 'aws-amplify/auth';
-import { UserContext } from './Context';
+import { useSession } from './session';
 import {
   appRegion as region,
   backendOutputs as backend,
@@ -123,8 +123,8 @@ const formatSystemQueueLabel = (key: string): string => {
 };
 
 export default function AwsServiceHealth() {
-  const user = useContext(UserContext);
-  const getSqsClient = user?.getSqsClient;
+  const user = useSession();
+  const getSqsClient = user.getSqsClient;
 
   const [rows, setRows] = useState<QueueHealthRow[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);

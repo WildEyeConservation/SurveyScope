@@ -1,7 +1,7 @@
 import { UserIcon } from 'lucide-react';
-import { useContext, useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchUserAttributes } from 'aws-amplify/auth';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { useUsers } from '../apiInterface';
 import { Button, Form, Badge, Spinner, Alert } from 'react-bootstrap';
@@ -17,7 +17,7 @@ interface MembershipInfo {
 
 export default function Settings({ signOut }: { signOut: () => void }) {
   const [show, setShow] = useState(false);
-  const { user, cognitoGroups } = useContext(UserContext)!;
+  const { user, cognitoGroups } = useSession();
   const { users } = useUsers();
 
   const [userAttributes, setUserAttributes] = useState<{ name?: string; email?: string }>({});

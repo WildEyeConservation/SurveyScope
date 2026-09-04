@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
-import { UserContext } from './Context';
+import React, { useState, useEffect, useRef } from 'react';
+import { setJobsCompletedAction } from './stores/taskStore';
 import {
   insertBufferedTaskAfter,
   promoteStandbyTaskAfter,
@@ -73,7 +73,7 @@ export function TaskBuffer<T extends TaskPayload>({
   >([]);
   const [waitingCount, setWaitingCount] = useState<number>(0);
   const advancingRef = useRef(false);
-  const { setJobsCompleted } = useContext(UserContext)!;
+  const setJobsCompleted = setJobsCompletedAction;
 
   useEffect(() => {
     if (

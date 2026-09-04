@@ -5,14 +5,14 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import { ImageContext } from './Context';
+import { ImageContext } from './imageContext';
 import { client } from './stores/appClient';
 import {
   setCurrentAnnoCountAction,
   setCurrentTaskTagAction,
 } from './stores/taskStore';
 import type { AnnotationImage } from './annotationTypes';
-import type { AnnotationsHook } from './Context';
+import type { AnnotationsHook } from './data/types';
 import { inv, type Matrix } from 'mathjs';
 import type { Schema } from './amplify/client-schema';
 import { array2Matrix, makeTransform } from './utils';
@@ -47,7 +47,7 @@ export function ImageContextFromHook({
   >(undefined);
   const [zoom, setZoom] = useState(1);
   //testing - shared task metadata lives in taskStore so per-annotation updates
-  // do not re-render UserContext consumers.
+  // do not re-render unrelated task-state consumers.
   const setCurrentAnnoCount = setCurrentAnnoCountAction;
   const setCurrentTaskTag = setCurrentTaskTagAction;
 

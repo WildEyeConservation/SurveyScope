@@ -1,10 +1,8 @@
 // import {Form} from "react-bootstrap"
 // import { useContext } from "react"
-// import { UserContext } from "./UserContext"
 // import { useImageSets } from "./useGqlCached"
 
 // export function ImageSetDropdown({setImageSet,selectedSet}){
-//     const {currentProject}=useContext(UserContext)
 //     const {imageSets}=useImageSets(currentProject)
 
 //     const onSelect = (e)=>{

@@ -1,6 +1,6 @@
-import { useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import {
   ReceiveMessageCommand,
@@ -16,7 +16,7 @@ import type { Point } from './ManualHomographyEditor';
 
 export default function HomographyTask() {
   const { queueId } = useParams<{ queueId: string }>();
-  const { getSqsClient } = useContext(UserContext)!;
+  const { getSqsClient } = useSession();
   const navigate = useNavigate();
 
   const [queueUrl, setQueueUrl] = useState<string | undefined>(undefined);

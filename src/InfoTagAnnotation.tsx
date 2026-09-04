@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -17,7 +16,7 @@ import {
   SearchCheck,
   Undo2,
 } from 'lucide-react';
-import { UserContext } from './Context';
+import { useSession } from './session';
 import { client } from './stores/appClient';
 import {
   ACTIVE_MARKER_SIZE,
@@ -145,7 +144,7 @@ export default function InfoTagAnnotation({
   legendCollapsed,
   setLegendCollapsed,
 }: Props) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
   const navigate = useNavigate();
   const [image, setImage] = useState<Schema['Image']['type'] | null>(null);
   const [sourceKey, setSourceKey] = useState<string>();

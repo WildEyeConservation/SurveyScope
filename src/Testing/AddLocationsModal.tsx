@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { TestingContext } from '../Context';
+import { TestingContext } from './testingContext';
 import { client } from '../stores/appClient';
 import { showModalAction as showModal } from '../stores/modalStore';
 import { fetchAllPaginatedResults } from '../utils';

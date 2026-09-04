@@ -1,8 +1,8 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { Schema } from '../amplify/client-schema';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
@@ -53,7 +53,7 @@ export default function QCReview({
     React.SetStateAction<LaunchHandler | null>
   >;
 }) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
 
   // Data loading
   const [categories, setCategories] = useState<CategoryOption[]>([]);

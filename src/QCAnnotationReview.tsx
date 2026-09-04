@@ -1,5 +1,4 @@
 import {
-  useContext,
   useEffect,
   useState,
   useCallback,
@@ -11,7 +10,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Badge, Button, Card } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight, Undo2, SearchCheck, RotateCcw } from 'lucide-react';
-import { UserContext } from './Context';
+import { useSession } from './session';
 import { client } from './stores/appClient';
 import { applyActiveMarkerStyle } from './activeMarkerStyle';
 import { getTileBlob } from './StorageLayer';
@@ -88,7 +87,7 @@ export default function QCAnnotationReview({
   legendCollapsed,
   setLegendCollapsed,
 }: QCReviewProps) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
   const navigate = useNavigate();
 
   // ── Image data ──

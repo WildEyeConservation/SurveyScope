@@ -1,6 +1,6 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { IndividualIdHarness } from '../individual-id';
 
@@ -17,7 +17,7 @@ import { IndividualIdHarness } from '../individual-id';
  */
 export function ChainReviewTaskPage() {
   const { annotationSetId, primaryId } = useParams();
-  const { cognitoGroups } = useContext(UserContext)!;
+  const { cognitoGroups } = useSession();
   const isSysadmin = cognitoGroups.includes('sysadmin');
 
   const [categoryId, setCategoryId] = useState<string | null>(null);

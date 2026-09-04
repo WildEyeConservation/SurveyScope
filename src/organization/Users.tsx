@@ -1,8 +1,8 @@
 import { Button } from 'react-bootstrap';
 import MyTable from '../Table';
 import { Schema } from '../amplify/client-schema';
-import { useContext, useState, useEffect } from 'react';
-import { UserContext } from '../Context';
+import { useState, useEffect } from 'react';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { showModalAction as showModal, useModalToShow } from '../stores/modalStore';
 import { useUsers } from '../apiInterface';
@@ -23,7 +23,7 @@ export default function Users({
   setOnClick: (onClick: { name: string; function: () => void }) => void;
 }) {
   const modalToShow = useModalToShow();
-  const { user: authUser } = useContext(UserContext)!;
+  const { user: authUser } = useSession();
   const { users } = useUsers();
 
   const { data: memberships, isLoading: membershipsLoading, refetch, isFetching } = useQuery<Schema['OrganizationMembership']['type'][]>({

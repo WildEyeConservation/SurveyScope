@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -12,7 +11,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import exportFromJSON from 'export-from-json';
 import MyTable from './Table';
-import { UserContext } from './Context';
+import { useSession } from './session';
 import { client } from './stores/appClient';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
@@ -127,7 +126,7 @@ function startOfLocalDay(date: Date): Date {
 }
 
 export default function WorkflowStatistics() {
-  const { cognitoGroups } = useContext(UserContext)!;
+  const { cognitoGroups } = useSession();
   const { users: allUsers } = useUsers();
   const isSysadmin = cognitoGroups.includes('sysadmin');
 

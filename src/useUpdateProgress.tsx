@@ -7,7 +7,7 @@ import {
 } from 'react';
 import { DateTime } from 'luxon';
 import humanizeDuration from 'humanize-duration';
-import { ProgressContext } from './Context';
+import { ProgressContext } from './progress';
 
 interface UseUpdateProgressParams {
   taskId: string;

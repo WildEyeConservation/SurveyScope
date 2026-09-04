@@ -3,7 +3,7 @@ import AppWithAuthenticator from './App.tsx';
 import './index.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { Progress } from './UserContext';
+import { Progress } from './progress';
 import AnnotationQueuePage from './AnnotationQueuePage';
 import UserStats from './UserStats';
 import WorkflowStatistics from './WorkflowStatistics';

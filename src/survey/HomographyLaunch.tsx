@@ -1,10 +1,10 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Form } from 'react-bootstrap';
 import Select from 'react-select';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { uploadData } from 'aws-amplify/storage';
 import { Schema } from '../amplify/client-schema';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { fetchAllPaginatedResults } from '../utils';
@@ -124,7 +124,7 @@ export default function HomographyLaunch({
     React.SetStateAction<LaunchHandler | null>
   >;
 }) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
 
   // ── Up-front data loading state ──
   const [loading, setLoading] = useState(true);

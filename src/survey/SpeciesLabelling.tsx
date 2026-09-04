@@ -1,9 +1,9 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import Select from 'react-select';
 import { Schema } from '../amplify/client-schema';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { useLaunchTask } from '../useLaunchTask';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
@@ -32,7 +32,7 @@ export default function SpeciesLabelling({
     } | null>
   >;
 }) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
 
   const [batchSize, setBatchSize] = useState<number>(200);
   const [showAdvancedOptions, setShowAdvancedOptions] =

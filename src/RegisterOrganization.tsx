@@ -1,6 +1,6 @@
 import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { useContext, useState } from 'react';
-import { UserContext } from './Context';
+import { useState } from 'react';
+import { useSession } from './session';
 import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import { useNavigate } from 'react-router-dom';
@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 */
 
 export default function RegisterOrganization() {
-  const { user, cognitoGroups } = useContext(UserContext)!;
+  const { user, cognitoGroups } = useSession();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
 

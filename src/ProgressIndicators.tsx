@@ -4,7 +4,7 @@ import Box from '@mui/material/Box';
 import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
 import Tooltip from 'react-bootstrap/Tooltip';
 import { useContext } from 'react';
-import { ProgressContext } from './Context';
+import { ProgressContext } from './progress';
 
 interface CircularProgressWithLabelProps extends CircularProgressProps {
   value?: number;

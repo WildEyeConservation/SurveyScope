@@ -13,6 +13,24 @@ module.exports = {
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh'],
   rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        patterns: [
+          {
+            group: [
+              '**/Context',
+              '**/Context.tsx',
+              '**/UserContext',
+              '**/UserContext.js',
+              '**/UserContext.tsx',
+            ],
+            message:
+              'Use session, data hooks, or stores instead of the legacy contexts.',
+          },
+        ],
+      },
+    ],
     'react-refresh/only-export-components': [
       'warn',
       { allowConstantExport: true },

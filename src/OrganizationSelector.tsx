@@ -1,5 +1,5 @@
-import { useContext, useEffect, useState } from 'react';
-import { UserContext } from './Context';
+import { useEffect, useState } from 'react';
+import { useMyOrganizations } from './data/memberships';
 import { client } from './stores/appClient';
 import { Schema } from './amplify/client-schema';
 import Dropdown from 'react-bootstrap/Dropdown';
@@ -16,9 +16,7 @@ function OrganizationSelector({
   };
   setOrganization: (organization: { id: string; name: string }) => void;
 }) {
-  const {
-    myOrganizationHook: { data: myOrganizations },
-  } = useContext(UserContext)!;
+  const { data: myOrganizations } = useMyOrganizations();
   const [organizations, setOrganizations] = useState<
     Schema['Organization']['type'][]
   >([]);

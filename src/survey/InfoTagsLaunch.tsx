@@ -1,8 +1,8 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import type { Schema } from '../amplify/client-schema';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
@@ -38,7 +38,7 @@ export default function InfoTagsLaunch({
   setLaunchDisabled: (disabled: boolean) => void;
   setInfoTagsLaunchHandler: (handler: LaunchHandler | null) => void;
 }) {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [annotations, setAnnotations] = useState<AnnotationSummary[]>([]);
   const [infoTagCount, setInfoTagCount] = useState(0);

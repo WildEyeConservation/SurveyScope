@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { CRUDhook } from './Context';
+import type { CRUDhook } from './data/types';
 import { useCategories } from './data/project';
 import { useProjectId } from './data/projectScope';
 

@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -14,7 +13,8 @@ import {
   ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
 import { Badge } from 'react-bootstrap';
-import { UserContext } from './Context';
+import { useSession } from './session';
+import { useMyMemberships } from './data/memberships';
 import { client } from './stores/appClient';
 import { TaskBuffer } from './TaskBuffer';
 import InfoTagAnnotation from './InfoTagAnnotation';
@@ -36,7 +36,8 @@ type InfoTagTaskPayload = {
 export default function InfoTagTask() {
   useUnsavedWorkGuard();
   const { queueId } = useParams<{ queueId: string }>();
-  const { getSqsClient, myMembershipHook } = useContext(UserContext)!;
+  const { getSqsClient } = useSession();
+  const myMembershipHook = useMyMemberships();
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
   const [queueUrl, setQueueUrl] = useState<string>();

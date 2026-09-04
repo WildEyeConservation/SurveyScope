@@ -2,12 +2,12 @@ import { Card, Button } from 'react-bootstrap';
 import { Tabs, Tab } from './Tabs';
 import Users from './organization/Users';
 import OrganizationSelector from './OrganizationSelector';
-import { useState, useContext } from 'react';
+import { useState } from 'react';
 import Info from './organization/Info';
-import { UserContext } from './Context';
+import { useIsOrganizationAdmin } from './data/memberships';
 
 export default function Permissions() {
-  const { isOrganizationAdmin } = useContext(UserContext)!;
+  const isOrganizationAdmin = useIsOrganizationAdmin();
   const [organization, setOrganization] = useState<{
     id: string;
     name: string;

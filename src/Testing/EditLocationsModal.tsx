@@ -1,7 +1,11 @@
 import { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { UserContext, TestingContext } from '../Context';
+import { TestingContext } from './testingContext';
+import {
+  setCurrentAnnoCountAction,
+  useCurrentAnnoCount,
+} from '../stores/taskStore';
 import { client } from '../stores/appClient';
 import { showModalAction as showModal } from '../stores/modalStore';
 import { fetchAllPaginatedResults } from '../utils';
@@ -22,7 +26,8 @@ type LocationReferenceTask = TaskPayload & {
 };
 
 export default function EditLocationsModal({ show, preset, surveyId }: Props) {
-  const { currentAnnoCount, setCurrentAnnoCount } = useContext(UserContext)!;
+  const currentAnnoCount = useCurrentAnnoCount();
+  const setCurrentAnnoCount = setCurrentAnnoCountAction;
   const { organizationId } = useContext(TestingContext)!;
   const locationsRef = useRef<
     { testPresetId: string; locationId: string; annotationSetId: string }[]

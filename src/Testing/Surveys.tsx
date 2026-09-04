@@ -1,7 +1,7 @@
 import MyTable from '../Table';
 import { useState, useContext, useEffect, useRef } from 'react';
 import Select from 'react-select';
-import { TestingContext } from '../Context';
+import { TestingContext } from './testingContext';
 import { client } from '../stores/appClient';
 import { showModalAction as showModal, useModalToShow } from '../stores/modalStore';
 import { Button } from 'react-bootstrap';

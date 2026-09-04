@@ -1,5 +1,5 @@
 import MyTable from '../Table';
-import { TestingContext } from '../Context';
+import { TestingContext } from './testingContext';
 import { useContext } from 'react';
 import { useUsers } from '../apiInterface';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';

@@ -1,4 +1,4 @@
-import type { CRUDhook } from './Context';
+import type { CRUDhook } from './data/types';
 import Select, { SingleValue } from 'react-select';
 import { useAnnotationSets } from './data/projectSets';
 import { useCurrentProject, useProjectId } from './data/projectScope';

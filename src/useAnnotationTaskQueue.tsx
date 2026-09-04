@@ -1,5 +1,14 @@
-import { useEffect, useState, useContext, useCallback, useRef } from 'react';
-import { UserContext } from './Context';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSession } from './session';
+import { useMyOrganizations } from './data/memberships';
+import {
+  setCurrentAnnoCountAction,
+  setUnannotatedJobsAction,
+  useCurrentAnnoCount,
+  useCurrentTaskTag,
+  useJobsCompleted,
+  useUnannotatedJobs,
+} from './stores/taskStore';
 import { client } from './stores/appClient';
 import {
   ReceiveMessageCommand,
@@ -59,7 +68,8 @@ and SQS acknowledgement.
 */
 export default function useAnnotationTaskQueue() {
   const currentPM = useCurrentMembershipRow();
-  const { getSqsClient, myOrganizationHook } = useContext(UserContext)!;
+  const { getSqsClient } = useSession();
+  const myOrganizationHook = useMyOrganizations();
   const [url, setUrl] = useState<string | undefined>(undefined);
   const [backupUrl, setBackupUrl] = useState<string | undefined>(undefined);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
@@ -73,14 +83,12 @@ export default function useAnnotationTaskQueue() {
   const testingSetupPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const maxCadenceIndexRef = useRef(-1);
   const { fetcher: testFetcher } = useTesting();
-  const {
-    jobsCompleted,
-    currentAnnoCount,
-    currentTaskTag,
-    setCurrentAnnoCount,
-    unannotatedJobs,
-    setUnannotatedJobs,
-  } = useContext(UserContext)!;
+  const jobsCompleted = useJobsCompleted();
+  const currentAnnoCount = useCurrentAnnoCount();
+  const currentTaskTag = useCurrentTaskTag();
+  const setCurrentAnnoCount = setCurrentAnnoCountAction;
+  const unannotatedJobs = useUnannotatedJobs();
+  const setUnannotatedJobs = setUnannotatedJobsAction;
 
   // Keep future task fetches on the value saved during this active session.
   useEffect(

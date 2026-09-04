@@ -1,6 +1,5 @@
-import { useContext } from 'react';
 import { useParams } from 'react-router-dom';
-import { UserContext } from '../../Context';
+import { useSession } from '../../session';
 import { SharedHerdViewHarness } from './SharedHerdViewHarness';
 
 /**
@@ -11,7 +10,7 @@ import { SharedHerdViewHarness } from './SharedHerdViewHarness';
  */
 export function SharedChainViewerPage() {
   const { shareId } = useParams();
-  const { cognitoGroups } = useContext(UserContext)!;
+  const { cognitoGroups } = useSession();
 
   if (!shareId) {
     return (

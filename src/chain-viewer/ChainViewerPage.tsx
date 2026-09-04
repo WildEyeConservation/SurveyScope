@@ -1,6 +1,5 @@
-import { useContext } from 'react';
 import { useParams } from 'react-router-dom';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { HerdViewHarness } from './HerdViewHarness';
 
 /**
@@ -12,7 +11,7 @@ import { HerdViewHarness } from './HerdViewHarness';
  */
 export function ChainViewerPage() {
   const { annotationSetId } = useParams();
-  const { cognitoGroups } = useContext(UserContext)!;
+  const { cognitoGroups } = useSession();
   const isSysadmin = cognitoGroups.includes('sysadmin');
 
   if (!annotationSetId) {

@@ -1,6 +1,6 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ConfirmationModal from '../ConfirmationModal';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
 import { client, backendOutputs as backend } from '../stores/appClient';
 import type { ImageData } from '../types/ImageData';
 import {
@@ -18,7 +18,7 @@ import {
 
 // Handles resume/delete UI; transfer state lives in ./core.
 export default function UploadManager() {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
   const snapshot = useUploadStatus();
 
   const fileInputRef = useRef<HTMLInputElement>(null);

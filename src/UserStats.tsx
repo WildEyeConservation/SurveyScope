@@ -1,6 +1,6 @@
 import MyTable from './Table';
-import { useContext, useEffect, useState } from 'react';
-import { UserContext } from './Context';
+import { useEffect, useState } from 'react';
+import { useMyMemberships, useMyOrganizations } from './data/memberships';
 import { client } from './stores/appClient';
 import { showModalAction as showModal, useModalToShow } from './stores/modalStore';
 import DatePicker from 'react-datepicker';
@@ -14,8 +14,8 @@ import SnapshotStatsModal from './SnapshotStatsModal';
 import { fetchAllPaginatedResults } from './utils';
 
 export default function UserStats() {
-  const { myOrganizationHook, myMembershipHook } =
-    useContext(UserContext)!;
+  const myOrganizationHook = useMyOrganizations();
+  const myMembershipHook = useMyMemberships();
   const modalToShow = useModalToShow();
   const { users: allUsers } = useUsers();
   const [projects, setProjects] = useState<

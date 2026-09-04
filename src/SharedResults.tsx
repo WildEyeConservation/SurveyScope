@@ -1,12 +1,12 @@
-import { useContext, useEffect, useState } from 'react';
-import { UserContext } from './Context.tsx';
+import { useEffect, useState } from 'react';
+import { useSession } from './session';
 import { client } from './stores/appClient';
 import { Card, Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { fetchAllPaginatedResults } from './utils.tsx';
 
 export default function SharedResults() {
-  const { user } = useContext(UserContext)!;
+  const { user } = useSession();
   const navigate = useNavigate();
   const [annotationSets, setAnnotationSets] = useState<
     { id: string; name: string; projectId: string; projectName: string }[]

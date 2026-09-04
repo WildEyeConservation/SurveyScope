@@ -7,7 +7,6 @@ import './App.css';
 import { configure } from 'react-hotkeys';
 // import { withAuthenticator } from "@aws-amplify/ui-react";
 import '@aws-amplify/ui-react/styles.css';
-import { User } from './UserContext.js';
 import { SessionProvider } from './session.tsx';
 import 'bootswatch/dist/superhero/bootstrap.min.css';
 import { fetchAuthSession, AuthUser } from 'aws-amplify/auth';
@@ -115,21 +114,17 @@ function App({ signOut = () => { }, user }: AppProps) {
   return session ? (
     continueOnMobile ? (
       <SessionProvider user={user!} cognitoGroups={cognitoGroups}>
-        <User user={user! as any} cognitoGroups={cognitoGroups}>
-          {user?.userId && <ClientLogger userId={user.userId} />}
-          <UploadManager />
-          <MainNavigation signOut={signOut} />
-        </User>
+        {user?.userId && <ClientLogger userId={user.userId} />}
+        <UploadManager />
+        <MainNavigation signOut={signOut} />
       </SessionProvider>
     ) : (
       <>
         <BrowserView>
           <SessionProvider user={user!} cognitoGroups={cognitoGroups}>
-            <User user={user! as any} cognitoGroups={cognitoGroups}>
-              {user?.userId && <ClientLogger userId={user.userId} />}
-              <UploadManager />
-              <MainNavigation signOut={signOut} />
-            </User>
+            {user?.userId && <ClientLogger userId={user.userId} />}
+            <UploadManager />
+            <MainNavigation signOut={signOut} />
           </SessionProvider>
         </BrowserView>
         <MobileView>

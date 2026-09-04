@@ -1,5 +1,10 @@
-import { useCallback, useContext } from 'react';
-import { UserContext } from './Context';
+import { useCallback } from 'react';
+import {
+  setCurrentAnnoCountAction,
+  setSessionTestsResultsAction,
+  useCurrentAnnoCount,
+  useSessionTestsResults,
+} from './stores/taskStore';
 import { client } from './stores/appClient';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 import { Schema } from './amplify/client-schema';
@@ -35,12 +40,10 @@ export default function useCreateTestResult({
   const projectId = useProjectId();
   const categoriesHook = useCategories(projectId);
   const currentPM = useCurrentMembershipRow();
-  const {
-    currentAnnoCount,
-    setCurrentAnnoCount,
-    sessionTestsResults,
-    setSessionTestsResults,
-  } = useContext(UserContext)!;
+  const currentAnnoCount = useCurrentAnnoCount();
+  const setCurrentAnnoCount = setCurrentAnnoCountAction;
+  const sessionTestsResults = useSessionTestsResults();
+  const setSessionTestsResults = setSessionTestsResultsAction;
   const annotationSetToUse = testSetId ?? annotationSetId;
 
   return useCallback(async () => {

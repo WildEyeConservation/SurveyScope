@@ -1,10 +1,11 @@
 import { Button, Form } from 'react-bootstrap';
 import { useState } from 'react';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { UserContext } from '../Context';
+import { useSession } from '../session';
+import { useMyOrganizations } from '../data/memberships';
 import { client } from '../stores/appClient';
 import { showModalAction as showModal } from '../stores/modalStore';
-import { useContext, useEffect } from 'react';
+import { useEffect } from 'react';
 import Select from 'react-select';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import MyTable from '../Table';
@@ -40,7 +41,8 @@ export default function NewSurveyModal({
   show: boolean;
   projects: string[];
 }) {
-  const { myOrganizationHook, user } = useContext(UserContext)!;
+  const myOrganizationHook = useMyOrganizations();
+  const { user } = useSession();
   const { users: allUsers } = useUsers();
 
   const [filesReady, setFilesReady] = useState(false);

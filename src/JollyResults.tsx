@@ -1,7 +1,8 @@
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Select from 'react-select';
 import { useParams } from 'react-router-dom';
-import { UserContext } from './Context.tsx';
+import { useSession } from './session';
+import { useMyMemberships } from './data/memberships';
 import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import MyTable from './Table.tsx';
@@ -23,8 +24,8 @@ export default function JollyResults() {
     surveyId: string;
     annotationSetId: string;
   };
-  const { myMembershipHook: myProjectsHook, user: authUser } =
-    useContext(UserContext)!;
+  const myProjectsHook = useMyMemberships();
+  const { user: authUser } = useSession();
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<
     (Schema['JollyResult']['type'] & { stratumName?: string })[]

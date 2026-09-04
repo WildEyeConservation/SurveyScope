@@ -3,7 +3,7 @@ import OrganizationSelector from '../OrganizationSelector';
 import { useState } from 'react';
 import { Tab, Tabs } from '../Tabs';
 import Surveys from './Surveys';
-import { TestingContext } from '../Context';
+import { TestingContext } from './testingContext';
 import { client } from '../stores/appClient';
 import { Schema } from '../amplify/client-schema';
 import { useOptimisticUpdates } from '../useOptimisticUpdates';
