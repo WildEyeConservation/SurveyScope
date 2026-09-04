@@ -1,6 +1,18 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { UserContext, GlobalContext } from '../Context.tsx';
+import { UserContext } from '../Context.tsx';
+import { useAppClient } from '../stores/appClient';
+import { showModalAction, useModalToShow } from '../stores/modalStore';
+import {
+  setSurveysCompactMode,
+  setSurveysOrganizationFilter,
+  setSurveysSearch,
+  setSurveysSortBy,
+  useSurveysCompactMode,
+  useSurveysOrganizationFilter,
+  useSurveysSearch,
+  useSurveysSortBy,
+} from '../stores/surveysUiStore';
 import {
   requestDelete,
   requestResume,
@@ -55,15 +67,10 @@ const fileStoreUploaded = localforage.createInstance({
   storeName: 'filesUploaded',
 });
 
-const STORAGE_KEYS = {
-  ORGANIZATION_FILTER: 'surveysOrganizationFilter',
-  SORT_BY: 'surveysSortBy',
-  COMPACT_MODE: 'surveysCompactMode',
-  SEARCH: 'surveysSearch',
-};
-
 export default function Surveys() {
-  const { client, showModal, modalToShow } = useContext(GlobalContext)!;
+  const { client } = useAppClient();
+  const modalToShow = useModalToShow();
+  const showModal = showModalAction;
   const {
     myMembershipHook: myProjectsHook,
     isOrganizationAdmin,
@@ -83,60 +90,20 @@ export default function Surveys() {
     Schema['AnnotationSet']['type'] | null
   >(null);
 
-  // Initialize search from localStorage or use default
-  const getInitialSearch = () => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(STORAGE_KEYS.SEARCH);
-      if (stored !== null) {
-        return stored;
-      }
-    }
-    return '';
-  };
-
-  const [search, setSearch] = useState(getInitialSearch);
+  // Surveys table prefs live in surveysUiStore (persisted, versioned) so this
+  // page subscribes selectively instead of owning localStorage effects.
+  const search = useSurveysSearch();
+  const setSearch = setSurveysSearch;
+  const sortBy = useSurveysSortBy();
+  const setSortBy = setSurveysSortBy;
+  const organizationFilter = useSurveysOrganizationFilter();
+  const setOrganizationFilter = setSurveysOrganizationFilter;
+  const compactMode = useSurveysCompactMode();
+  const setCompactMode = setSurveysCompactMode;
   const [hasUploadedFiles, setHasUploadedFiles] = useState<{
     [projectId: string]: boolean;
   }>({});
   const [scanningProjects, setScanningProjects] = useState<Set<string>>(new Set());
-
-  // Initialize sortBy from localStorage or use default
-  const getInitialSortBy = () => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(STORAGE_KEYS.SORT_BY);
-      if (stored) {
-        return stored;
-      }
-    }
-    return 'createdAt';
-  };
-
-  // Initialize organizationFilter from localStorage or use default
-  const getInitialOrganizationFilter = () => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(STORAGE_KEYS.ORGANIZATION_FILTER);
-      if (stored !== null) {
-        return stored;
-      }
-    }
-    return '';
-  };
-
-  const [sortBy, setSortBy] = useState(getInitialSortBy);
-  const [organizationFilter, setOrganizationFilter] = useState(getInitialOrganizationFilter);
-
-  // Initialize compactMode from localStorage or use default
-  const getInitialCompactMode = () => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(STORAGE_KEYS.COMPACT_MODE);
-      if (stored !== null) {
-        return stored === 'true';
-      }
-    }
-    return false;
-  };
-
-  const [compactMode, setCompactMode] = useState(getInitialCompactMode);
   const getIsMobile = () =>
     typeof window !== 'undefined' ? window.innerWidth < 1024 : false;
 
@@ -156,34 +123,6 @@ export default function Surveys() {
       window.removeEventListener('resize', handleResize);
     };
   }, []);
-
-  // Persist sortBy to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.SORT_BY, sortBy);
-    }
-  }, [sortBy]);
-
-  // Persist organizationFilter to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.ORGANIZATION_FILTER, organizationFilter);
-    }
-  }, [organizationFilter]);
-
-  // Persist compactMode to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.COMPACT_MODE, String(compactMode));
-    }
-  }, [compactMode]);
-
-  // Persist search to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.SEARCH, search);
-    }
-  }, [search]);
 
   const adminProjectIds = useMemo(
     () =>

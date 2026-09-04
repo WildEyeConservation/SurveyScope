@@ -16,6 +16,20 @@ import {
 } from './Context.tsx';
 import { useOptimisticUpdates, useQueues } from './useOptimisticUpdates.tsx';
 import { useQuery } from '@tanstack/react-query';
+import {
+  setCurrentAnnoCountAction,
+  setCurrentTaskTagAction,
+  setIsAnnotatePathAction,
+  setJobsCompletedAction,
+  setSessionTestsResultsAction,
+  setUnannotatedJobsAction,
+  useCurrentAnnoCount,
+  useCurrentTaskTag,
+  useIsAnnotatePath,
+  useJobsCompleted,
+  useSessionTestsResults,
+  useUnannotatedJobs,
+} from './stores/taskStore';
 
 export function Project({
   children,
@@ -111,20 +125,21 @@ export function User({
   cognitoGroups: string[];
   children: React.ReactNode;
 }) {
-  const [jobsCompleted, setJobsCompleted] = useState<number>(0);
-  const [unannotatedJobs, setUnannotatedJobs] = useState<number>(0);
-  const [currentTaskTag, setCurrentTaskTag] = useState<string>('');
-  const [currentAnnoCount, setCurrentAnnoCount] = useState<{
-    [key: string]: { x: number; y: number }[];
-  }>({});
-  const [isAnnotatePath, setIsAnnotatePath] = useState<boolean>(false);
-  const [sessionTestsResults, setSessionTestsResults] = useState<
-    {
-      id: string;
-      locationId: string;
-      annotationSetId: string;
-    }[]
-  >([]);
+  // Ephemeral task/UI state now lives in taskStore (TanStack Store) so updates
+  // subscribe selectively. These reads keep old UserContext consumers working;
+  // new code should use the taskStore hooks directly and skip this provider.
+  const jobsCompleted = useJobsCompleted();
+  const unannotatedJobs = useUnannotatedJobs();
+  const currentTaskTag = useCurrentTaskTag();
+  const currentAnnoCount = useCurrentAnnoCount();
+  const isAnnotatePath = useIsAnnotatePath();
+  const sessionTestsResults = useSessionTestsResults();
+  const setJobsCompleted = setJobsCompletedAction;
+  const setUnannotatedJobs = setUnannotatedJobsAction;
+  const setCurrentTaskTag = setCurrentTaskTagAction;
+  const setCurrentAnnoCount = setCurrentAnnoCountAction;
+  const setIsAnnotatePath = setIsAnnotatePathAction;
+  const setSessionTestsResults = setSessionTestsResultsAction;
   const { client, region } = useContext(GlobalContext)!;
   //const { items: myMemberships } = useObserveQuery('UserProjectMembership', { filter: { userId: { eq: user!.username } } });
   // const { data: myMemberships } = useOptimisticUpdates(

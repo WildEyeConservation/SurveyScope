@@ -1,4 +1,4 @@
-import { createContext, useState } from 'react';
+import { createContext, useCallback, useMemo } from 'react';
 import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
 import outputs from '../amplify_outputs.json';
 import { AuthUser } from '@aws-amplify/auth';
@@ -6,6 +6,8 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import type { UserType } from '../amplify/shared/types';
 import { limitedClient } from './limitedClient';
+import { useSelector } from '@tanstack/react-store';
+import { modalStore, showModalAction } from './stores/modalStore';
 
 
 export interface ProgressType {
@@ -173,22 +175,25 @@ export function GlobalContextProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [modalToShow, showModal] = useState<string | null>(null);
+  // New code should use modalStore / useModalToShow directly and avoid this
+  // context for modal state. Kept here as a compat shim so existing
+  // useContext(GlobalContext) call sites keep working while they migrate.
+  const modalToShow = useSelector(modalStore, (s) => s.modal);
+  const showModal = useCallback(
+    (value: React.SetStateAction<string | null>) => showModalAction(value),
+    []
+  );
+  const value = useMemo(
+    () => ({
+      backend: backendOutputs,
+      region: outputs.auth.aws_region,
+      client: limitedClient,
+      showModal,
+      modalToShow,
+    }),
+    [showModal, modalToShow]
+  );
   return (
-    //Return a GlobalContextProvider with all members at their default values except
-    //for showModal and modalToShow
-    <GlobalContext.Consumer>
-      {(value) => (
-        <GlobalContext.Provider
-          value={{
-            ...value,
-            showModal,
-            modalToShow,
-          }}
-        >
-          {children}
-        </GlobalContext.Provider>
-      )}
-    </GlobalContext.Consumer>
+    <GlobalContext.Provider value={value}>{children}</GlobalContext.Provider>
   );
 }

@@ -6,7 +6,12 @@ import { ProgressIndicators } from './ProgressIndicators.jsx';
 import { Outlet } from 'react-router-dom';
 import Container from 'react-bootstrap/Container';
 import Notifications from './user/Notifications.tsx';
-import { UserContext, GlobalContext } from './Context.tsx';
+import { UserContext } from './Context.tsx';
+import { useAppClient } from './stores/appClient';
+import {
+  setIsAnnotatePathAction,
+  useIsAnnotatePath,
+} from './stores/taskStore';
 import Settings from './user/Settings.tsx';
 import { Card /*, OverlayTrigger, Tooltip */ } from 'react-bootstrap';
 import UploadProgress from './upload/UploadProgress.tsx';
@@ -19,13 +24,15 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
     myOrganizationHook,
     isOrganizationAdmin,
     myMembershipHook: myProjectsHook,
-    isAnnotatePath,
-    setIsAnnotatePath,
     user,
   } = useContext(UserContext)!;
+  // Route-driven flag now lives in taskStore so nav state does not force
+  // UserContext consumers to re-render.
+  const isAnnotatePath = useIsAnnotatePath();
+  const setIsAnnotatePath = setIsAnnotatePathAction;
   const queryClient = useQueryClient();
 
-  const { client } = useContext(GlobalContext)!;
+  const { client } = useAppClient();
   const [, setCheckingToken] = useState(false);
 
   const location = useLocation();
@@ -44,7 +51,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
       /^\/surveys\/[^/]+\/info-tags\/[^/]+$/.test(location.pathname) ||
       /^\/surveys\/[^/]+\/homography\/[^/]+$/.test(location.pathname)
     );
-  }, [location.pathname]);
+  }, [location.pathname, setIsAnnotatePath]);
 
   useEffect(() => {
     if (

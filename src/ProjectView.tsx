@@ -1,43 +1,35 @@
 import { Project, Management } from './UserContext';
 import { Outlet } from 'react-router-dom';
-import { Schema } from './amplify/client-schema';
-import { UserContext, GlobalContext } from './Context';
-import { useContext, useEffect, useState } from 'react';
+import { UserContext } from './Context';
+import { useAppClient } from './stores/appClient';
+import { useContext } from 'react';
 import { useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 
 export default function ProjectView() {
   const { user } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
+  const { client } = useAppClient();
   const { surveyId } = useParams();
-  const [currentPM, setCurrentPM] = useState<
-    Schema['UserProjectMembership']['type'] | null
-  >(null);
 
-  useEffect(() => {
-    const fetchCurrentPM = async () => {
-      if (!surveyId || !user.userId) {
-        return;
-      }
-
+  // Route-driven membership load. TanStack Query caches per surveyId so
+  // navigating between surveys does not refetch unrelated project data, and
+  // the Project/Management providers below become pure render wrappers.
+  const { data: currentPM } = useQuery({
+    queryKey: ['currentPM', user.userId, surveyId],
+    queryFn: async () => {
+      if (!surveyId || !user.userId) return null;
       const {
-        data: [currentPM],
+        data: [pm],
       } =
         await client.models.UserProjectMembership.userProjectMembershipsByUserId(
-          {
-            userId: user.userId,
-          },
-          {
-            filter: {
-              projectId: {
-                eq: surveyId,
-              },
-            },
-          }
+          { userId: user.userId },
+          { filter: { projectId: { eq: surveyId } } }
         );
-      setCurrentPM(currentPM);
-    };
-    fetchCurrentPM();
-  }, [user.userId, surveyId]);
+      return pm ?? null;
+    },
+    enabled: Boolean(surveyId && user.userId),
+    staleTime: 30_000,
+  });
 
   return currentPM ? (
     <Project currentPM={currentPM}>

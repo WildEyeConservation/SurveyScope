@@ -1,12 +1,16 @@
 import {
   useCallback,
   useState,
-  useContext,
   useEffect,
   useMemo,
   useRef,
 } from 'react';
-import { ImageContext, UserContext, GlobalContext } from './Context';
+import { ImageContext } from './Context';
+import { useAppClient } from './stores/appClient';
+import {
+  setCurrentAnnoCountAction,
+  setCurrentTaskTagAction,
+} from './stores/taskStore';
 import type { AnnotationImage } from './annotationTypes';
 import type { AnnotationsHook } from './Context';
 import { inv, type Matrix } from 'mathjs';
@@ -34,7 +38,7 @@ export function ImageContextFromHook({
 }) {
   const [annoCount, setAnnoCount] = useState(0);
   const lastAnnotationTimeRef = useRef<number>(0);
-  const { client } = useContext(GlobalContext);
+  const { client } = useAppClient();
   const [startLoadingTimestamp, _] = useState<number>(Date.now());
   const [visibleTimestamp, setVisibleTimestamp] = useState<number | undefined>(
     undefined
@@ -43,8 +47,10 @@ export function ImageContextFromHook({
     number | undefined
   >(undefined);
   const [zoom, setZoom] = useState(1);
-  //testing
-  const { setCurrentAnnoCount, setCurrentTaskTag } = useContext(UserContext)!;
+  //testing - shared task metadata lives in taskStore so per-annotation updates
+  // do not re-render UserContext consumers.
+  const setCurrentAnnoCount = setCurrentAnnoCountAction;
+  const setCurrentTaskTag = setCurrentTaskTagAction;
 
   // imageNeighboursQueries contains a list of queries that fetch the neighbours of each image.
   const prevNeighboursQuery = useQuery({
