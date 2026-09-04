@@ -17,7 +17,8 @@ import {
   SearchCheck,
   Undo2,
 } from 'lucide-react';
-import { GlobalContext, UserContext } from './Context';
+import { UserContext } from './Context';
+import { client } from './stores/appClient';
 import {
   ACTIVE_MARKER_SIZE,
   applyActiveMarkerStyle,
@@ -144,7 +145,6 @@ export default function InfoTagAnnotation({
   legendCollapsed,
   setLegendCollapsed,
 }: Props) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
   const navigate = useNavigate();
   const [image, setImage] = useState<Schema['Image']['type'] | null>(null);
@@ -290,7 +290,7 @@ export default function InfoTagAnnotation({
     return () => {
       mounted = false;
     };
-  }, [annotationSetId, categoryIds, client, imageId]);
+  }, [annotationSetId, categoryIds, imageId]);
 
   const currentTarget = targets[currentIndex];
   const currentCategory = categories.find(
@@ -793,7 +793,6 @@ export default function InfoTagAnnotation({
     setZoomOffset(queueZoom ?? DEFAULT_ZOOM_OFFSET);
   }, [
     adminMemberships,
-    client,
     hasLocalZoom,
     map,
     projectId,
@@ -837,7 +836,7 @@ export default function InfoTagAnnotation({
           );
         });
     },
-    [ack, client, queueId]
+    [ack, queueId]
   );
 
   // An image whose annotations are all tagged already is acknowledged without
@@ -930,7 +929,6 @@ export default function InfoTagAnnotation({
     }
   }, [
     annotationSetId,
-    client,
     currentIndex,
     currentTarget,
     finishImage,

@@ -1,13 +1,13 @@
 import { Button, Form } from 'react-bootstrap';
 import { Footer } from '../Modal';
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext } from '../Context';
+import { useEffect, useState } from 'react';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { fetchAllPaginatedResults } from '../utils';
 import SurveyStructure, { Camera } from './SurveyStructure';
 
 export default function EditInformation({ projectId }: { projectId: string }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const [oldProjectName, setOldProjectName] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
   const [fetching, setFetching] = useState(false);
@@ -161,9 +161,6 @@ export default function EditInformation({ projectId }: { projectId: string }) {
     getProject();
     buildSurveyStructure();
   }, [
-    client.models.Camera,
-    client.models.Image.imagesByProjectId,
-    client.models.Project,
     projectId,
   ]);
 

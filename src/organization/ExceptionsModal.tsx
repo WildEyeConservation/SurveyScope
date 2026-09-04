@@ -1,7 +1,7 @@
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import MyTable from '../Table';
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext } from '../Context';
+import { useEffect, useState } from 'react';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import Button from 'react-bootstrap/Button';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
@@ -25,7 +25,6 @@ export default function ExceptionsModal({
   user: { id: string; name: string };
   organization: { id: string; name: string };
 }) {
-  const { client } = useContext(GlobalContext)!;
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [originalPermissions, setOriginalPermissions] = useState<Permission[]>(

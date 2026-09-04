@@ -1,9 +1,9 @@
 import { Alert, Button, Form } from 'react-bootstrap';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { useState, useContext } from 'react';
+import { useState } from 'react';
 import { Tabs, Tab } from '../Tabs';
 import { Schema } from '../amplify/client-schema';
-import { GlobalContext } from '../Context';
+import { showModalAction as showModal } from '../stores/modalStore';
 import SpeciesLabelling from './SpeciesLabelling';
 import FalseNegatives from './FalseNegatives';
 import QCReview from './QCReview';
@@ -44,8 +44,6 @@ export default function LaunchAnnotationSetModal({
   const [infoTagsLaunchHandler, setInfoTagsLaunchHandler] = useState<LaunchHandlerType>(null);
   const [homographyLaunchHandler, setHomographyLaunchHandler] = useState<LaunchHandlerType>(null);
   const [individualIdLaunchHandler, setIndividualIdLaunchHandler] = useState<LaunchHandlerType>(null);
-
-  const { showModal } = useContext(GlobalContext)! as any;
 
   // Task type for each tab, in render order.
   const tabTaskTypes: WorkflowType[] = [

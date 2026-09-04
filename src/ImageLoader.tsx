@@ -1,13 +1,12 @@
 import { useParams } from 'react-router-dom';
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext } from './Context';
+import { useEffect, useState } from 'react';
+import { client } from './stores/appClient';
 import AnnotationWorkspace from './AnnotationWorkspace';
 import type { ImageType } from './schemaTypes';
 
 export function ImageLoader() {
   const { imageId, annotationSetId } = useParams();
   const [image, setImage] = useState<ImageType | null>(null);
-  const { client } = useContext(GlobalContext)!;
 
   useEffect(() => {
     let cancelled = false;

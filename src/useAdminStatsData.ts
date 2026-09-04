@@ -1,6 +1,6 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateTime } from 'luxon';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import { useUsers } from './apiInterface';
 import type { Schema } from './amplify/client-schema';
@@ -93,7 +93,6 @@ function monthKeyFromISO(iso?: string | null): MonthKey | null {
 //
 
 export function useAdminStatsData(monthCount: number): AdminStatsData {
-  const { client } = useContext(GlobalContext)!;
   const { users: cognitoUsers } = useUsers();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -564,7 +563,6 @@ export function useAdminStatsData(monthCount: number): AdminStatsData {
       cancelled = true;
     };
   }, [
-    client,
     windowStartISO,
     months,
     thisMonthKey,

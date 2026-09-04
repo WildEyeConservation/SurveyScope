@@ -1,5 +1,5 @@
-import { useState, useContext, useCallback, useRef, useEffect } from 'react';
-import { GlobalContext } from '../Context';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { client } from '../stores/appClient';
 import { HomographyWorkbench } from './HomographyWorkbench';
 import type { Matrix } from 'mathjs';
 import { inv } from 'mathjs';
@@ -136,7 +136,6 @@ export function HomographyWorkbenchWorker({
   header,
   isSaved = false,
 }: Props) {
-  const { client } = useContext(GlobalContext)!;
   const [isSaving, setIsSaving] = useState(false);
   const [isSkipping, setIsSkipping] = useState(false);
   const currentPointsRef = useRef<{ p1: Point[]; p2: Point[] }>({ p1: [], p2: [] });
@@ -186,7 +185,7 @@ export function HomographyWorkbenchWorker({
     return () => {
       cancelled = true;
     };
-  }, [client, pair.primaryImage.id, pair.secondaryImage.id, pair.pairKey, savedPoints]);
+  }, [pair.primaryImage.id, pair.secondaryImage.id, pair.pairKey, savedPoints]);
 
   const handlePointsChange = useCallback(
     (points: { p1: Point[]; p2: Point[] }) => {
@@ -230,7 +229,7 @@ export function HomographyWorkbenchWorker({
         setIsSaving(false);
       }
     },
-    [client, pair, queueId, onComplete, onSavePoints]
+    [pair, queueId, onComplete, onSavePoints]
   );
 
   const handleSkip = useCallback(async () => {
@@ -264,7 +263,7 @@ export function HomographyWorkbenchWorker({
     } finally {
       setIsSkipping(false);
     }
-  }, [client, pair, queueId, onComplete, onSavePoints]);
+  }, [pair, queueId, onComplete, onSavePoints]);
 
   const handleSaveAndExit = useCallback(async () => {
     if (!onExit) return;

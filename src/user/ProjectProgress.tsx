@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { UserContext, GlobalContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { Spinner, ProgressBar } from 'react-bootstrap';
 
@@ -9,7 +10,6 @@ type ProjectProgressProps = {
 };
 
 export default function ProjectProgress({ projectId, onScanningChange }: ProjectProgressProps) {
-  const { client } = useContext(GlobalContext)!;
   const { getSqsClient } = useContext(UserContext)!;
   const [isLoading, setIsLoading] = useState(true);
   const [queueInfo, setQueueInfo] = useState<{
@@ -88,7 +88,7 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
       cancelled = true;
       clearInterval(interval);
     };
-  }, [projectId, client, getSqsClient]);
+  }, [projectId, getSqsClient]);
 
   const isScanning = jobsRemaining === 0
     && queueInfo?.launchedCount != null

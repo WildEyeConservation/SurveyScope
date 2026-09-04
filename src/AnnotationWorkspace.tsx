@@ -2,12 +2,12 @@ import { useMemo, useContext, useEffect, useRef, useState } from 'react';
 import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
 import { SideLegend } from './Legend';
 import {
-  GlobalContext,
   ProjectContext,
   UserContext,
   ImageContext,
   type AnnotationsHook,
 } from './Context';
+import { client } from './stores/appClient';
 import { useOptimisticUpdates } from './useOptimisticUpdates';
 import { ImageContextFromHook } from './ImageContext';
 import { Schema } from './amplify/client-schema';
@@ -141,7 +141,6 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   } = props;
 
   const { annotationSetId } = location;
-  const { client } = useContext(GlobalContext)!;
   const hasRevalidated = useRef(false);
   const localAnnotationCreated = useRef(false);
   const nextRef = useRef(next);
@@ -234,7 +233,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [client.models.Queue, myMembershipHook.data, surveyId]);
+  }, [myMembershipHook.data, surveyId]);
 
   const testSetId = useMemo(
     () => (isTest ? crypto.randomUUID() : annotationSetId),
@@ -312,7 +311,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [client, annotationSetId, surveyId, projectCategories]);
+  }, [annotationSetId, surveyId, projectCategories]);
   const annotationsHook = useOptimisticUpdates<
     Schema['Annotation']['type'],
     'Annotation'
@@ -521,7 +520,6 @@ function SetDefaultZoom({
 }) {
   const { zoom, setZoom } = useContext(ImageContext)!;
   const { surveyId } = useParams();
-  const { client } = useContext(GlobalContext)!;
   const [storedZoom, setStoredZoom] = useState<boolean>(() => {
     if (surveyId) {
       return localStorage.getItem(`defaultZoom-${surveyId}`) !== null;

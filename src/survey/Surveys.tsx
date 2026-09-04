@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { UserContext } from '../Context.tsx';
-import { useAppClient } from '../stores/appClient';
+import { client } from '../stores/appClient';
 import { showModalAction, useModalToShow } from '../stores/modalStore';
 import {
   setSurveysCompactMode,
@@ -68,7 +68,6 @@ const fileStoreUploaded = localforage.createInstance({
 });
 
 export default function Surveys() {
-  const { client } = useAppClient();
   const modalToShow = useModalToShow();
   const showModal = showModalAction;
   const {

@@ -7,7 +7,7 @@ import { Outlet } from 'react-router-dom';
 import Container from 'react-bootstrap/Container';
 import Notifications from './user/Notifications.tsx';
 import { UserContext } from './Context.tsx';
-import { useAppClient } from './stores/appClient';
+import { client } from './stores/appClient';
 import {
   setIsAnnotatePathAction,
   useIsAnnotatePath,
@@ -32,7 +32,6 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
   const setIsAnnotatePath = setIsAnnotatePathAction;
   const queryClient = useQueryClient();
 
-  const { client } = useAppClient();
   const [, setCheckingToken] = useState(false);
 
   const location = useLocation();

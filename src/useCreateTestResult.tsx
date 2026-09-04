@@ -1,5 +1,6 @@
 import { useCallback, useContext } from 'react';
-import { UserContext, ProjectContext, GlobalContext } from './Context';
+import { UserContext, ProjectContext } from './Context';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 import { Schema } from './amplify/client-schema';
 
@@ -25,7 +26,6 @@ export default function useCreateTestResult({
   testPresetId,
 }: UseCreateTestResultProps) {
   const { project, categoriesHook, currentPM } = useContext(ProjectContext)!;
-  const { client } = useContext(GlobalContext)!;
   const {
     currentAnnoCount,
     setCurrentAnnoCount,
@@ -205,7 +205,6 @@ export default function useCreateTestResult({
     currentAnnoCount,
     setCurrentAnnoCount,
     categoriesHook.data,
-    client,
     currentPM.userId,
     project,
     locationId,

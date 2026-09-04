@@ -1,5 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
-import { GlobalContext, ProjectContext } from '../Context';
+import { ProjectContext } from '../Context';
+import { client } from '../stores/appClient';
 import { useOptimisticUpdates } from '../useOptimisticUpdates';
 import MapLibreLightViewer, {
   LightAnnotation,
@@ -39,7 +40,6 @@ export default function LightLocationView({
     offsetY?: number;
   };
 }) {
-  const { client } = useContext(GlobalContext)!;
   const {
     categoriesHook: { data: categories },
   } = useContext(ProjectContext)!;

@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
-import { GlobalContext, UserContext } from '../../Context';
+import { UserContext } from '../../Context';
+import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 
 export type FeedbackKind = 'obscured' | 'relabel' | 'comment';
@@ -35,7 +36,6 @@ function isConditionalCheckError(
  * Row ids are scoped by share and reviewer to keep reshares separate.
  */
 export function useChainReviewFeedback(shareId: string | undefined) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
   const userSub = user?.userId ?? 'anon';
 
@@ -90,7 +90,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
     return () => {
       cancelled = true;
     };
-  }, [client, shareId, userSub]);
+  }, [shareId, userSub]);
 
   const rowId = useCallback(
     (sharedAnnotationId: string, kind: FeedbackKind) =>
@@ -137,7 +137,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       }
       setExistingIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     },
-    [client, existingIds, rowId, shareId]
+    [existingIds, rowId, shareId]
   );
 
   /** Record the reviewer's obscured opinion for one annotation. */

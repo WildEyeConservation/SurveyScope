@@ -7,7 +7,8 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { GlobalContext, ProjectContext } from '../Context';
+import { ProjectContext } from '../Context';
+import { client } from '../stores/appClient';
 import type { AnnotationType, CategoryType } from '../schemaTypes';
 import { usePairData, type PairData } from './hooks/usePairData';
 import {
@@ -100,7 +101,6 @@ export function IndividualIdPairHarness({
 }: Props) {
   const [leniency, setLeniency] = useState<number>(DEFAULT_LENIENCY);
   const navigate = useNavigate();
-  const { client } = useContext(GlobalContext)!;
   const projectCtx = useContext(ProjectContext);
   const queryClient = useQueryClient();
   const pairData = usePairData({
@@ -232,7 +232,7 @@ export function IndividualIdPairHarness({
         }));
       }
     },
-    [localAnnotations, client, patchPairCache]
+    [localAnnotations, patchPairCache]
   );
 
   const handleDrag = useCallback(
@@ -310,7 +310,6 @@ export function IndividualIdPairHarness({
       categoryId,
       projectCtx?.project?.id,
       projectCtx?.project,
-      client,
       patchPairCache,
     ]
   );
@@ -411,7 +410,7 @@ export function IndividualIdPairHarness({
         patchPairCache((old) => ({ ...old, annotations: before }));
       }
     },
-    [client, localAnnotations, pairData.data?.imagesById, patchPairCache]
+    [localAnnotations, pairData.data?.imagesById, patchPairCache]
   );
 
   const handleToggleObscured = useCallback(
@@ -443,7 +442,7 @@ export function IndividualIdPairHarness({
         }));
       }
     },
-    [localAnnotations, client, patchPairCache]
+    [localAnnotations, patchPairCache]
   );
 
   const handleSetProposedObscured = useCallback(
@@ -596,7 +595,7 @@ export function IndividualIdPairHarness({
         patchPairCache((old) => ({ ...old, annotations: before }));
       }
     },
-    [buildSplitPlan, client, localAnnotations, patchPairCache]
+    [buildSplitPlan, localAnnotations, patchPairCache]
   );
 
   const confirmSplitChain = () => {
@@ -643,7 +642,7 @@ export function IndividualIdPairHarness({
         }));
       }
     },
-    [labelChange, localAnnotations, client, patchPairCache]
+    [labelChange, localAnnotations, patchPairCache]
   );
 
   const commitActorLink = useCallback(
@@ -790,7 +789,6 @@ export function IndividualIdPairHarness({
       projectCtx?.project?.id,
       projectCtx?.project,
       localAnnotations,
-      client,
       patchPairCache,
     ]
   );

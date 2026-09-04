@@ -1,7 +1,8 @@
 import { Form, Alert, Button } from 'react-bootstrap';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { Footer } from '../Modal';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { Schema } from '../amplify/client-schema';
 
 interface CameraFormData {
@@ -15,7 +16,6 @@ interface CameraFormDataMap {
 }
 
 export default function EditCameras({ projectId, organizationId }: { projectId: string; organizationId: string }) {
-  const { client, showModal } = useContext(GlobalContext);
   const [cameras, setCameras] = useState<Schema['Camera']['type'][]>([]);
   const [cameraFormDataMap, setCameraFormDataMap] = useState<CameraFormDataMap>(
     {}

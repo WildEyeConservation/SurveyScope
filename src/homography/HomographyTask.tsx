@@ -1,6 +1,7 @@
 import { useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
@@ -16,7 +17,6 @@ import type { Point } from './ManualHomographyEditor';
 export default function HomographyTask() {
   const { queueId } = useParams<{ queueId: string }>();
   const { getSqsClient } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
   const navigate = useNavigate();
 
   const [queueUrl, setQueueUrl] = useState<string | undefined>(undefined);
@@ -41,7 +41,7 @@ export default function HomographyTask() {
     client.models.Queue.get({ id: queueId }).then(({ data }) => {
       if (data?.url) setQueueUrl(data.url as string);
     });
-  }, [queueId, client]);
+  }, [queueId]);
 
   // Fetch next message from SQS
   const fetchNext = useCallback(async () => {

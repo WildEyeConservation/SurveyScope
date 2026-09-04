@@ -4,7 +4,6 @@ import { AuthUser, fetchAuthSession } from '@aws-amplify/auth';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface.tsx';
 import {
-  GlobalContext,
   ProjectContext,
   ProjectContextType,
   UserContext,
@@ -14,6 +13,7 @@ import {
   ProgressContext,
   ProgressType,
 } from './Context.tsx';
+import { appRegion as region, client } from './stores/appClient';
 import { useOptimisticUpdates, useQueues } from './useOptimisticUpdates.tsx';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -38,7 +38,6 @@ export function Project({
   children: React.ReactNode;
   currentPM: Schema['UserProjectMembership']['type'];
 }) {
-  const { client } = useContext(GlobalContext)!;
   const [expandLegend, setExpandLegend] = useState<boolean>(
     () =>
       localStorage.getItem(`legendCollapsed-${currentPM.projectId}`) !== 'true'
@@ -140,7 +139,6 @@ export function User({
   const setCurrentAnnoCount = setCurrentAnnoCountAction;
   const setIsAnnotatePath = setIsAnnotatePathAction;
   const setSessionTestsResults = setSessionTestsResultsAction;
-  const { client, region } = useContext(GlobalContext)!;
   //const { items: myMemberships } = useObserveQuery('UserProjectMembership', { filter: { userId: { eq: user!.username } } });
   // const { data: myMemberships } = useOptimisticUpdates(
   //   'UserProjectMembership',
@@ -224,7 +222,6 @@ export function User({
   // }, [user.username]);
   //const [credentials, setCredentials] = useState<any>(undefined);
   // useEffect(() => {
-  //   const { region } = useContext(GlobalContext)!;
   //   const setup = async () => {
 
   //     const credentials = Auth.essentialCredentials(await Auth.currentCredentials())
@@ -271,7 +268,6 @@ export function User({
 }
 
 export function Management({ children }: { children: React.ReactNode }) {
-  const { client } = useContext(GlobalContext)!;
   const { project } = useContext(ProjectContext)!;
   const { users: allUsers } = useUsers();
   // const subscriptionFilter = useMemo(() => (
@@ -356,22 +352,6 @@ export function Management({ children }: { children: React.ReactNode }) {
   );
 }
 
-// export function Global({ children }: { children: React.ReactNode }) {
-//   const [modalToShow, showModal] = useState<string | null>(null)
-
-//   return (
-//     <GlobalContext.Provider value={{
-//       backend: outputs,
-//       region: outputs.auth.aws_region,
-//       client: generateClient<Schema>({authMode:"userPool"}),
-//       showModal,
-//       modalToShow
-//     }}>
-//       {children}
-//     </GlobalContext.Provider>
-//   );
-// }
-
 export function Progress({ children }: { children: React.ReactNode }) {
   const [progress, setProgress] = useState<ProgressType>({});
   return (
@@ -387,7 +367,6 @@ export function Progress({ children }: { children: React.ReactNode }) {
 }
 
 // export function Organization({ children }: { children: React.ReactNode }) {
-//   const { client } = useContext(GlobalContext)!;
 //   const subscriptionFilter = useMemo(
 //     () => ({ filter: { organizationId: { eq: project.organizationId } } }),
 //     [project.organizationId]

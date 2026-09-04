@@ -1,13 +1,12 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 import type { CategoryType, ImageType } from '../schemaTypes';
 import maplibregl from 'maplibre-gl';
 import {
@@ -169,7 +168,6 @@ export function IndividualIdMapPair(props: Props) {
     conflictHighlightAnnotationIds = NO_CONFLICT_HIGHLIGHTS,
     onClearConflictHighlights,
   } = props;
-  const { client } = useContext(GlobalContext)!;
 
   // Nothing is focused on load — the user selects a candidate themselves
   // (click a marker, arrow keys, or Space).
@@ -230,7 +228,7 @@ export function IndividualIdMapPair(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [imageA.id, imageB.id, client]);
+  }, [imageA.id, imageB.id]);
 
   const color = category?.color || DEFAULT_COLOR;
 

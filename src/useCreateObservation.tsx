@@ -1,5 +1,6 @@
 import { useCallback, useContext, useRef } from 'react';
-import { GlobalContext, ImageContext, ProjectContext } from './Context';
+import { ImageContext, ProjectContext } from './Context';
+import { client } from './stores/appClient';
 import useCreateTestResult from './useCreateTestResult';
 import type {
   AnnotationLocation,
@@ -58,7 +59,6 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     fullyLoadedTimestamp,
   } = useContext(ImageContext)!;
   const { project } = useContext(ProjectContext)!;
-  const { client } = useContext(GlobalContext)!;
   const completionRef = useRef<Promise<void> | null>(null);
 
   const createTestResult = useCreateTestResult({
@@ -195,7 +195,6 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
       queueId,
       observationId,
       observationSource,
-      client,
       ack,
     ]
   );

@@ -1,5 +1,5 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { GlobalContext } from './Context';
+import { useEffect, useMemo, useState } from 'react';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import { Spinner } from 'react-bootstrap';
 import MapLibreLightViewer, {
@@ -31,7 +31,6 @@ export default function LightImageView({
   annotationSetId: string;
   categoryIds?: string[];
 }) {
-  const { client } = useContext(GlobalContext)!;
   const [imageMeta, setImageMeta] = useState<{
     width: number;
     height: number;
@@ -97,7 +96,7 @@ export default function LightImageView({
     return () => {
       cancelled = true;
     };
-  }, [client, imageId, annotationSetId]);
+  }, [imageId, annotationSetId]);
 
   // Filter annotations to only show those IN the categoryIds array (the labels)
   const filteredAnnotations = useMemo(() => {

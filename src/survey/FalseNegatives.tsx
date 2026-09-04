@@ -2,7 +2,8 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Form, Spinner } from 'react-bootstrap';
 import { uploadData, downloadData, remove } from 'aws-amplify/storage';
 import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
@@ -58,7 +59,6 @@ export default function FalseNegatives({
     React.SetStateAction<LaunchHandler | null>
   >;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
 
   // Global tiled location set from project
@@ -190,7 +190,7 @@ export default function FalseNegatives({
     return () => {
       mounted = false;
     };
-  }, [client.models.LocationSet, tiledLocationSetId]);
+  }, [tiledLocationSetId]);
 
   // Compute remaining tiles when pool + history are loaded
   useEffect(() => {
@@ -242,7 +242,7 @@ export default function FalseNegatives({
     return () => {
       mounted = false;
     };
-  }, [fnPool, fnHistory, client, annotationSet.id]);
+  }, [fnPool, fnHistory, annotationSet.id]);
 
   // Enable/disable Launch button based on mode and state
   useEffect(() => {
@@ -300,7 +300,7 @@ export default function FalseNegatives({
           height: loc.height!,
         }));
     },
-    [client]
+    []
   );
 
   const computeSummary = useCallback(async () => {
@@ -366,7 +366,6 @@ export default function FalseNegatives({
     }
   }, [
     annotationSet.id,
-    client,
     fetchLocationsFromSet,
     samplePercent,
     tiledLocationSetId,
@@ -532,7 +531,6 @@ export default function FalseNegatives({
   }, [
     annotationSet.id,
     annotationSet.name,
-    client,
     fetchLocationsFromSet,
     project.id,
     project.name,
@@ -694,7 +692,7 @@ export default function FalseNegatives({
     } finally {
       setResetting(false);
     }
-  }, [annotationSet.id, client, fnHistory]);
+  }, [annotationSet.id, fnHistory]);
 
   // Show warning if no global tiles exist
   const showNoTilesWarning =

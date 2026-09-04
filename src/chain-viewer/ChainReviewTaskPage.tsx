@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { IndividualIdHarness } from '../individual-id';
 
 /**
@@ -16,7 +17,6 @@ import { IndividualIdHarness } from '../individual-id';
  */
 export function ChainReviewTaskPage() {
   const { annotationSetId, primaryId } = useParams();
-  const { client } = useContext(GlobalContext)!;
   const { cognitoGroups } = useContext(UserContext)!;
   const isSysadmin = cognitoGroups.includes('sysadmin');
 
@@ -73,7 +73,7 @@ export function ChainReviewTaskPage() {
     return () => {
       cancelled = true;
     };
-  }, [client, primaryId, annotationSetId]);
+  }, [primaryId, annotationSetId]);
 
   if (!annotationSetId || !primaryId) {
     return (

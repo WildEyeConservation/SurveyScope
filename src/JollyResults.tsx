@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext, useMemo } from 'react';
 import Select from 'react-select';
 import { useParams } from 'react-router-dom';
-import { GlobalContext, UserContext } from './Context.tsx';
+import { UserContext } from './Context.tsx';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import MyTable from './Table.tsx';
 import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
@@ -22,7 +23,6 @@ export default function JollyResults() {
     surveyId: string;
     annotationSetId: string;
   };
-  const { client } = useContext(GlobalContext)!;
   const { myMembershipHook: myProjectsHook, user: authUser } =
     useContext(UserContext)!;
   const [loading, setLoading] = useState(false);
@@ -355,7 +355,7 @@ export default function JollyResults() {
     return () => {
       mounted = false;
     };
-  }, [client, surveyId, annotationSetId]);
+  }, [surveyId, annotationSetId]);
 
   if (!surveyId || !annotationSetId) {
     return <p>Missing survey or annotation set id.</p>;

@@ -1,9 +1,9 @@
-import { useState, useCallback, useMemo, useRef, useContext, useEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { ImageType } from '../schemaTypes';
 import type { Point } from './ManualHomographyEditor';
 import { MapLibreImageViewer, POINT_COLORS, type MapLibreMenuItem } from '../maplibre-viewer/MapLibreImageViewer';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 import { useParams } from 'react-router-dom';
 
 type Props = {
@@ -164,7 +164,6 @@ export function MapLibrePairViewer({
   onAction,
   annotationSetId: annotationSetIdProp,
 }: Props) {
-  const { client } = useContext(GlobalContext)!;
   const { surveyId, annotationSetId: annotationSetIdParam } = useParams();
   const annotationSetId = annotationSetIdProp || annotationSetIdParam;
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -223,7 +222,7 @@ export function MapLibrePairViewer({
       }
     });
     return () => { cancelled = true; };
-  }, [images[0].id, images[1].id, client]);
+  }, [images[0].id, images[1].id]);
 
   // Map Synchronization
   useEffect(() => {
@@ -364,7 +363,7 @@ export function MapLibrePairViewer({
       if (!cancelled) setNeighbours(result as any);
     });
     return () => { cancelled = true; };
-  }, [images[0].id, images[1].id, client]);
+  }, [images[0].id, images[1].id]);
 
   const buildImageUrl = useCallback(
     (imageId: string) => {

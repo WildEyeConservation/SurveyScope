@@ -1,5 +1,5 @@
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext } from '../../Context';
+import { useEffect, useState } from 'react';
+import { client } from '../../stores/appClient';
 import type { AnnotationImageMeta, Chain } from '../types';
 import {
   selectSourceKeyForImage,
@@ -32,7 +32,6 @@ type ListImageFilesByImageId = (
  * the same chain is instant. Ported from the original ChainViewerHarness.
  */
 export function useChainTileMeta(chain: Chain | null) {
-  const { client } = useContext(GlobalContext)!;
   const [metaByAnnotationId, setMetaByAnnotationId] = useState<
     Map<string, AnnotationImageMeta>
   >(() => new Map());
@@ -122,7 +121,7 @@ export function useChainTileMeta(chain: Chain | null) {
     return () => {
       cancelled = true;
     };
-  }, [chain, client, metaByAnnotationId]);
+  }, [chain, metaByAnnotationId]);
 
   return { metaByAnnotationId, loading };
 }

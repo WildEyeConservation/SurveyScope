@@ -19,7 +19,12 @@ import {
   type Cluster,
 } from '@aws-sdk/client-ecs';
 import { fetchAuthSession } from 'aws-amplify/auth';
-import { GlobalContext, UserContext } from './Context';
+import { UserContext } from './Context';
+import {
+  appRegion as region,
+  backendOutputs as backend,
+  client,
+} from './stores/appClient';
 import type { Schema } from './amplify/client-schema';
 import './AwsServiceHealth.css';
 
@@ -119,9 +124,6 @@ const formatSystemQueueLabel = (key: string): string => {
 
 export default function AwsServiceHealth() {
   const user = useContext(UserContext);
-  const global = useContext(GlobalContext);
-
-  const client = global?.client;
   const getSqsClient = user?.getSqsClient;
 
   const [rows, setRows] = useState<QueueHealthRow[]>([]);
@@ -147,17 +149,16 @@ export default function AwsServiceHealth() {
   const contextsReady = Boolean(client && user && getSqsClient);
 
   const fetchEcsStatus = useCallback(async () => {
-    if (!global?.region) return;
     setEcsState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
       const { credentials } = await fetchAuthSession();
       const ecsClient = new ECSClient({
-        region: global.region,
+        region,
         credentials,
       });
 
       const ourQueueUrls = new Set(
-        Object.entries(global?.backend?.custom ?? {})
+        Object.entries(backend.custom ?? {})
           .filter(
             ([key, value]) =>
               /queueurl$/i.test(key) &&
@@ -216,10 +217,10 @@ export default function AwsServiceHealth() {
         error: err instanceof Error ? err.message : 'Unable to load ECS data.',
       });
     }
-  }, [global?.region, global?.backend?.custom]);
+  }, []);
 
   const systemQueues = useMemo<QueueDescriptor[]>(() => {
-    const custom = global?.backend?.custom;
+    const custom = backend.custom;
     if (!custom) {
       return [];
     }
@@ -234,7 +235,7 @@ export default function AwsServiceHealth() {
         url: value,
         scope: 'system' as const,
       }));
-  }, [global?.backend?.custom]);
+  }, []);
 
   type QueueWithProject = Schema['Queue']['type'] & {
     project?: { name?: string | null } | null;
@@ -265,7 +266,7 @@ export default function AwsServiceHealth() {
       nextToken = response?.nextToken ?? undefined;
     } while (nextToken);
     return allQueues;
-  }, [client]);
+  }, []);
 
   const buildDlqSummary = useCallback(
     async (arn: string, sqsClient: SQSClient) => {
@@ -464,7 +465,6 @@ export default function AwsServiceHealth() {
     }
   }, [
     buildDlqSummary,
-    client,
     contextsReady,
     getSqsClient,
     listAllQueues,

@@ -6,8 +6,9 @@ import {
   ProgressBar,
   Spinner,
 } from 'react-bootstrap';
-import { GlobalContext } from './Context.tsx';
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { client } from './stores/appClient';
+import { showModalAction as showModal, useModalToShow } from './stores/modalStore';
+import { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import { useNavigate } from 'react-router-dom';
@@ -59,8 +60,7 @@ export default function GenerateJollyResults({
   surveyId: string;
   annotationSetId: string;
 }) {
-  const { client, modalToShow, showModal } =
-    useContext(GlobalContext)!;
+  const modalToShow = useModalToShow();
   const navigate = useNavigate();
   const [categoryOptions, setCategoryOptions] = useState<
     { label: string; value: string }[]
@@ -97,7 +97,7 @@ export default function GenerateJollyResults({
     return () => {
       mounted = false;
     };
-  }, [annotationSetId, client]);
+  }, [annotationSetId]);
 
   // Polling is bound to the dialog being open. Closing it stops the poller and
   // suppresses the redirect, so a job finishing in the background can never yank
@@ -175,7 +175,6 @@ export default function GenerateJollyResults({
     activeJob,
     annotationSetId,
     navigate,
-    showModal,
     surveyId,
   ]);
 

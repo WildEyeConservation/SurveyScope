@@ -1,11 +1,11 @@
 import { useContext, useCallback, useState, useEffect, useRef } from 'react';
-import { ProjectContext, GlobalContext } from './Context';
+import { ProjectContext } from './Context';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import type { Identifiable } from './TaskBuffer';
 
 export default function useTesting() {
   const { currentPM, project, categoriesHook } = useContext(ProjectContext)!;
-  const { client } = useContext(GlobalContext)!;
 
   // Use ref for index to prevent race conditions when multiple fetcher calls happen concurrently
   const iRef = useRef(0);
@@ -188,7 +188,7 @@ export default function useTesting() {
     );
     iRef.current = (fallbackIndex + 1) % length;
     return candidateEntries[fallbackIndex];
-  }, [client, categoriesHook.data]);
+  }, [categoriesHook.data]);
 
   const fetcher = useCallback(async (): Promise<Identifiable> => {
     const location = await getTestLocation();

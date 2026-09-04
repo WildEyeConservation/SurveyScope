@@ -1,9 +1,9 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import Form from 'react-bootstrap/Form';
 import Button from 'react-bootstrap/Button';
 import MyTable from './Table';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
 import type { Schema } from './amplify/client-schema';
@@ -11,7 +11,6 @@ import type { Schema } from './amplify/client-schema';
 type Option = { label: string; value: string };
 
 export default function ClientLogs() {
-  const { client } = useContext(GlobalContext)!;
   const { users } = useUsers();
 
   const userOptions: Option[] = useMemo(

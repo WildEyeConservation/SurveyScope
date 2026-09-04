@@ -3,7 +3,8 @@ import type { Dispatch, SetStateAction } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import Select from 'react-select';
 import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { useLaunchTask } from '../useLaunchTask';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import { logAdminAction } from '../utils/adminActionLogger';
@@ -31,7 +32,6 @@ export default function SpeciesLabelling({
     } | null>
   >;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
 
   const [batchSize, setBatchSize] = useState<number>(200);
@@ -120,7 +120,7 @@ export default function SpeciesLabelling({
     return () => {
       mounted = false;
     };
-  }, [client.models.LocationSet, tiledLocationSetId, modelGuided]);
+  }, [tiledLocationSetId, modelGuided]);
 
   // load model options from location sets
   useEffect(() => {
@@ -181,7 +181,7 @@ export default function SpeciesLabelling({
     return () => {
       mounted = false;
     };
-  }, [client.models.LocationSet, project.id]);
+  }, [project.id]);
 
   // Control Launch disabled state based on mode
   useEffect(() => {
@@ -357,7 +357,6 @@ export default function SpeciesLabelling({
       }
     },
     [
-      client,
       user.userId,
       annotationSet.name,
       project.name,
@@ -377,7 +376,7 @@ export default function SpeciesLabelling({
         await performLaunchRef.current(onProgress, onLaunchConfirmed);
       }
     });
-  }, [setSpeciesLaunchHandler, client, user.userId, annotationSet.name, project.name, project.id, modelOptions]);
+  }, [setSpeciesLaunchHandler, user.userId, annotationSet.name, project.name, project.id, modelOptions]);
 
   return (
     <div className='px-3 pb-3 pt-1'>

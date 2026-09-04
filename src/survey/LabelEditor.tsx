@@ -2,8 +2,7 @@ import { Form, Button } from 'react-bootstrap';
 import { useRecordHotkeys } from 'react-hotkeys-hook';
 import MyTable from '../Table';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useContext } from 'react';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 import { useQueryClient } from '@tanstack/react-query';
 import pLimit from 'p-limit';
 import { fetchAllPaginatedResults } from '../utils';
@@ -60,7 +59,6 @@ export default function LabelEditor({
   const [keys, { start, stop, isRecording }] = useRecordHotkeys();
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
   const [labels, setLabels] = useState<Label[]>(defaultLabels);
-  const { client } = useContext(GlobalContext)!;
   const defaultLabelsRef = useRef<Label[]>(defaultLabels);
   const onStatusChangeRef = useRef(onStatusChange);
   useEffect(() => { onStatusChangeRef.current = onStatusChange; }, [onStatusChange]);
@@ -175,7 +173,7 @@ export default function LabelEditor({
         }),
       ]);
     },
-    [client, labels, isEditing, modelName, queryClient]
+    [labels, isEditing, modelName, queryClient]
   );
 
   useEffect(() => {

@@ -1,14 +1,13 @@
 import { Project, Management } from './UserContext';
 import { Outlet } from 'react-router-dom';
 import { UserContext } from './Context';
-import { useAppClient } from './stores/appClient';
+import { client } from './stores/appClient';
 import { useContext } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 export default function ProjectView() {
   const { user } = useContext(UserContext)!;
-  const { client } = useAppClient();
   const { surveyId } = useParams();
 
   // Route-driven membership load. TanStack Query caches per surveyId so

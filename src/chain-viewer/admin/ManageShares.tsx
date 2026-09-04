@@ -1,10 +1,10 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Form, Spinner, Table } from 'react-bootstrap';
 import { RotateCw } from 'lucide-react';
 import Select, { type SingleValue } from 'react-select';
 import './admin.css';
 import { useQueryClient } from '@tanstack/react-query';
-import { GlobalContext } from '../../Context';
+import { client } from '../../stores/appClient';
 import { useUsers } from '../../apiInterface';
 import { fetchAllPaginatedResults } from '../../utils';
 import { useReviewersByShare } from './useReviewersByShare';
@@ -48,7 +48,6 @@ const SELECT_PORTAL_PROPS = {
  * once the snapshot finishes — use Refresh.
  */
 export default function ManageShares() {
-  const { client } = useContext(GlobalContext)!;
   const { users } = useUsers();
   const queryClient = useQueryClient();
 
@@ -95,7 +94,7 @@ export default function ManageShares() {
         console.error('Failed to list surveys', err);
       }
     })();
-  }, [client]);
+  }, []);
 
   // Load annotation sets when a survey is selected.
   useEffect(() => {
@@ -121,7 +120,7 @@ export default function ManageShares() {
         console.error('Failed to list annotation sets', err);
       }
     })();
-  }, [client, selectedSurvey]);
+  }, [selectedSurvey]);
 
   const loadShares = useCallback(async () => {
     setLoading(true);
@@ -143,7 +142,7 @@ export default function ManageShares() {
     } finally {
       setLoading(false);
     }
-  }, [client]);
+  }, []);
 
   useEffect(() => {
     void loadShares();
@@ -177,7 +176,7 @@ export default function ManageShares() {
     } finally {
       setCreating(false);
     }
-  }, [client, loadShares, selectedSet]);
+  }, [loadShares, selectedSet]);
 
   const refreshReviewers = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['reviewers-by-share'] });
@@ -203,7 +202,7 @@ export default function ManageShares() {
         setBusyShare(null);
       }
     },
-    [client, selectedUser, refreshReviewers]
+    [selectedUser, refreshReviewers]
   );
 
   const onRemoveReviewer = useCallback(
@@ -226,7 +225,7 @@ export default function ManageShares() {
         setBusyShare(null);
       }
     },
-    [client, selectedUser, refreshReviewers]
+    [selectedUser, refreshReviewers]
   );
 
   const onRevoke = useCallback(
@@ -250,7 +249,7 @@ export default function ManageShares() {
         setBusyShare(null);
       }
     },
-    [client, loadShares]
+    [loadShares]
   );
 
   return (

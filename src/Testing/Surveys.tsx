@@ -1,7 +1,9 @@
 import MyTable from '../Table';
 import { useState, useContext, useEffect, useRef } from 'react';
 import Select from 'react-select';
-import { TestingContext, GlobalContext } from '../Context';
+import { TestingContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal, useModalToShow } from '../stores/modalStore';
 import { Button } from 'react-bootstrap';
 import { Plus, Settings2, Eye } from 'lucide-react';
 import ConfigModal from './ConfigModal';
@@ -19,7 +21,7 @@ export default function Surveys() {
     organizationProjects: surveys,
     organizationTestPresets: locationPools,
   } = useContext(TestingContext)!;
-  const { client, modalToShow, showModal } = useContext(GlobalContext)!;
+  const modalToShow = useModalToShow();
 
   const [selectedSurvey, setSelectedSurvey] = useState<Option | null>(null);
   const [selectedLocationPools, setSelectedLocationPools] = useState<{

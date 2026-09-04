@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef, useContext } from 'react';
-import { GlobalContext } from '../Context';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
@@ -99,7 +100,6 @@ export default function EditShapeFile({
   projectId: string;
   organizationId: string;
 }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const [polygonCoords, setPolygonCoords] = useState<LatLng[] | null>(null);
   const [shapefileBuffer, setShapefileBuffer] = useState<ArrayBuffer>();
   const [exclusionPolygons, setExclusionPolygons] = useState<LatLng[][]>([]);
@@ -214,7 +214,7 @@ export default function EditShapeFile({
     return () => {
       cancelled = true;
     };
-  }, [client, projectId]);
+  }, [projectId]);
 
   // -----------------------------------------------------------------------
   // Map + Terra Draw initialisation (once).

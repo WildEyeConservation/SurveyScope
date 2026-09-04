@@ -1,7 +1,7 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { Feature, Point, Polygon } from 'geojson';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 
 /** One toggleable location source: its DB `source` value, display label, colour. */
@@ -62,7 +62,6 @@ export function MapLocationOverlay({
   sources,
   locationRows,
 }: Props) {
-  const { client } = useContext(GlobalContext)!;
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
   const [boxesBySource, setBoxesBySource] = useState<
     Record<string, LocationBox[]>
@@ -129,7 +128,7 @@ export function MapLocationOverlay({
     return () => {
       cancelled = true;
     };
-  }, [sources, imageId, client, locationRows]);
+  }, [sources, imageId, locationRows]);
 
   // Only offer sources that actually have boxes on this image.
   const availableSources = sources.filter(

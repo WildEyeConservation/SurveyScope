@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -12,7 +12,7 @@ import {
 } from 'react-bootstrap';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import {
   makeProjection,
   createImageMap,
@@ -166,7 +166,6 @@ function formatDate(value: string | number | Date | null | undefined) {
 }
 
 export default function ImageNeighbourViewer() {
-  const { client } = useContext(GlobalContext)!;
   const [imageIdA, setImageIdA] = useState('');
   const [imageIdB, setImageIdB] = useState('');
   const [loading, setLoading] = useState(false);
@@ -270,7 +269,7 @@ export default function ImageNeighbourViewer() {
         setLoading(false);
       }
     },
-    [client]
+    []
   );
 
   const transformSummary: TransformSummary = useMemo(() => {

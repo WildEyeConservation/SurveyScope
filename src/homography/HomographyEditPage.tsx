@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -9,7 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Matrix } from 'mathjs';
 import { inv, matrix } from 'mathjs';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 import type { ImageType } from '../schemaTypes';
 import { array2Matrix, makeTransform } from '../utils';
 import { HomographyWorkbench } from './HomographyWorkbench';
@@ -32,7 +31,6 @@ import {
 export default function HomographyEditPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { client } = useContext(GlobalContext)!;
   const queryClient = useQueryClient();
 
   const image1Id = searchParams.get('image1Id') ?? undefined;
@@ -90,7 +88,7 @@ export default function HomographyEditPage() {
     return () => {
       cancelled = true;
     };
-  }, [client, image1Id, image2Id]);
+  }, [image1Id, image2Id]);
 
   // Load the existing ImageNeighbour's suggestedPoints as starting state.
   // Mirrors HomographyWorkbenchWorker — the saved homography matrix itself
@@ -148,7 +146,7 @@ export default function HomographyEditPage() {
     return () => {
       cancelled = true;
     };
-  }, [client, image1Id, image2Id]);
+  }, [image1Id, image2Id]);
 
   const handlePointsChange = useCallback(
     (points: { p1: Point[]; p2: Point[] }) => {
@@ -230,7 +228,7 @@ export default function HomographyEditPage() {
       // can retry or fall back to Cancel.
       if (savedOk) goBack();
     },
-    [client, image1Id, image2Id, queryClient, goBack]
+    [image1Id, image2Id, queryClient, goBack]
   );
 
   if (!image1Id || !image2Id) {

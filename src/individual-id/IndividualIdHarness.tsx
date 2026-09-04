@@ -7,7 +7,8 @@ import {
   useState,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { GlobalContext, ProjectContext } from '../Context';
+import { ProjectContext } from '../Context';
+import { client } from '../stores/appClient';
 import { recordWorkflowTask } from '../recordWorkflowTask';
 import { useActiveTimeTracker } from '../useActiveTimeTracker';
 import type {
@@ -232,8 +233,6 @@ export function IndividualIdHarness({
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
-
-  const { client } = useContext(GlobalContext)!;
   const projectCtx = useContext(ProjectContext);
   const queryClient = useQueryClient();
   const transect = useTransectData({
@@ -897,7 +896,7 @@ export function IndividualIdHarness({
         annotationsLinked: linksByPairRef.current.get(pairKey) ?? 0,
       },
     });
-  }, [client, jobId, activeTime]);
+  }, [jobId, activeTime]);
 
   const handleAllAccepted = useCallback(() => {
     // Recorded before the navigation guard below, so the last pair of a
@@ -990,7 +989,7 @@ export function IndividualIdHarness({
         });
       }
     },
-    [localAnnotations, client, patchTransectCache]
+    [localAnnotations, patchTransectCache]
   );
 
   const handleDrag = useCallback(
@@ -1099,7 +1098,6 @@ export function IndividualIdHarness({
       annotationSetId,
       projectCtx?.project?.id,
       projectCtx?.project,
-      client,
       patchTransectCache,
     ]
   );
@@ -1244,7 +1242,7 @@ export function IndividualIdHarness({
         }));
       }
     },
-    [client, localAnnotations, patchTransectCache, transect.data?.imagesById]
+    [localAnnotations, patchTransectCache, transect.data?.imagesById]
   );
 
   /**
@@ -1340,7 +1338,7 @@ export function IndividualIdHarness({
         }));
       }
     },
-    [buildSplitPlan, client, localAnnotations, patchTransectCache]
+    [buildSplitPlan, localAnnotations, patchTransectCache]
   );
 
   const confirmSplitChain = () => {
@@ -1396,7 +1394,7 @@ export function IndividualIdHarness({
         });
       }
     },
-    [localAnnotations, client, patchTransectCache]
+    [localAnnotations, patchTransectCache]
   );
 
   /**
@@ -1557,7 +1555,7 @@ export function IndividualIdHarness({
         });
       }
     },
-    [labelChange, localAnnotations, client, patchTransectCache]
+    [labelChange, localAnnotations, patchTransectCache]
   );
 
   /**
@@ -1771,7 +1769,6 @@ export function IndividualIdHarness({
       projectCtx?.project?.id,
       projectCtx?.project,
       localAnnotations,
-      client,
       patchTransectCache,
     ]
   );

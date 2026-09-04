@@ -1,6 +1,7 @@
 import { useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { GlobalContext, UserContext } from './Context';
+import { UserContext } from './Context';
+import { client } from './stores/appClient';
 import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
@@ -21,7 +22,6 @@ import useUnsavedWorkGuard from './useUnsavedWorkGuard';
 export default function QCReviewTask() {
   const { queueId } = useParams<{ queueId: string }>();
   const { getSqsClient, myMembershipHook } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
   useUnsavedWorkGuard();
@@ -45,7 +45,7 @@ export default function QCReviewTask() {
       if (data?.group) setGroup(data.group);
       if (data?.zoom != null) setQueueZoom(data.zoom);
     });
-  }, [queueId, client]);
+  }, [queueId]);
 
   // Fetch categories for this annotation set (needed by the review component).
   const [categories, setCategories] = useState<
@@ -74,7 +74,7 @@ export default function QCReviewTask() {
     return () => {
       mounted = false;
     };
-  }, [annotationSetId, client]);
+  }, [annotationSetId]);
 
   const fetcher = useCallback(async () => {
     while (true) {

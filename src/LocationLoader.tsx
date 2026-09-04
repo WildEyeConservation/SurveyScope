@@ -1,12 +1,11 @@
 import { useParams } from 'react-router-dom';
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext } from './Context';
+import { useEffect, useState } from 'react';
+import { client } from './stores/appClient';
 import AnnotationWorkspace from './AnnotationWorkspace';
 
 export function LocationLoader() {
   const { locationId, annotationSetId } = useParams();
   const [location, setLocation] = useState<any>(null);
-  const { client } = useContext(GlobalContext)!;
 
   useEffect(() => {
     let cancelled = false;

@@ -12,7 +12,8 @@ import Modal from 'react-bootstrap/Modal';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import Alert from 'react-bootstrap/Alert';
-import { GlobalContext, UserContext } from './Context.tsx';
+import { UserContext } from './Context.tsx';
+import { backendOutputs as backend, client } from './stores/appClient';
 import { uploadOrchestrator } from './upload/core/UploadOrchestrator.ts';
 import { saveDirectoryHandle } from './upload/core/dirHandles.ts';
 import type { UploadBackend } from './upload/core/types.ts';
@@ -187,7 +188,6 @@ export function FileUploadCore({
   summaryDetails,
 }: FilesUploadBaseProps) {
   const [name, setName] = useState('');
-  const { client, backend } = useContext(GlobalContext)!;
   const { cognitoGroups, user } = useContext(UserContext)!;
   const [scannedFiles, setScannedFiles] = useState<File[]>([]);
   const [directoryHandle, setDirectoryHandle] = useState<unknown>(null);
@@ -932,7 +932,7 @@ export function FileUploadCore({
     return () => {
       cancelled = true;
     };
-  }, [client, project?.id]);
+  }, [project?.id]);
 
   useEffect(() => {
     if (newProject || !project?.id) {
@@ -976,7 +976,7 @@ export function FileUploadCore({
     return () => {
       cancelled = true;
     };
-  }, [client, project?.id, newProject]);
+  }, [project?.id, newProject]);
 
   const handleFileInputChange = (files: File[]) => {
     if (files) {
@@ -1902,8 +1902,6 @@ export function FileUploadCore({
       skipImagesWithoutGps,
       cameraSpecs,
       overlaps,
-      client,
-      backend,
       user.userId,
       name,
       model,
@@ -3318,7 +3316,6 @@ export default function FilesUploadComponent({
   project,
   fromStaleUpload,
 }: FilesUploadComponentProps) {
-  const { client } = useContext(GlobalContext)!;
   const [uploadSubmitFn, setUploadSubmitFn] = useState<
     ((projectId: string, fromStaleUpload?: boolean) => Promise<void>) | null
   >(null);

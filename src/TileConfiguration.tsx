@@ -1,5 +1,4 @@
 import {
-  useContext,
   useState,
   useEffect,
   useCallback,
@@ -8,7 +7,7 @@ import {
 } from 'react';
 import Form from 'react-bootstrap/Form';
 import Spinner from 'react-bootstrap/Spinner';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import LabeledToggleSwitch from './LabeledToggleSwitch';
 import type { TiledLaunchRequest } from './types/LaunchTask';
@@ -165,7 +164,6 @@ export default function TileConfiguration({
   setLaunchDisabled,
   disabled = false,
 }: TileConfigurationProps) {
-  const { client } = useContext(GlobalContext)!;
   const [minX, setMinX] = useState<number>(0);
   const [maxX, setMaxX] = useState<number>(0);
   const [minY, setMinY] = useState<number>(0);
@@ -521,7 +519,7 @@ export default function TileConfiguration({
     if (projectId) {
       getAllImages();
     }
-  }, [projectId, client.models.Image]);
+  }, [projectId]);
 
   useEffect(() => {
     if (loadingImages) {
@@ -1198,5 +1196,3 @@ function InputBox({
     </div>
   );
 }
-
-

@@ -4,7 +4,8 @@ import Select from 'react-select';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { uploadData } from 'aws-amplify/storage';
 import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { fetchAllPaginatedResults } from '../utils';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
@@ -123,7 +124,6 @@ export default function HomographyLaunch({
     React.SetStateAction<LaunchHandler | null>
   >;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
 
   // ── Up-front data loading state ──
@@ -263,7 +263,7 @@ export default function HomographyLaunch({
 
     loadAll();
     return () => { cancelled = true; };
-  }, [client, project.id, annotationSet.id]);
+  }, [project.id, annotationSet.id]);
 
   // ── Enrich category options with completion status ──
   const enrichedCategoryOptions = useMemo(() => {
@@ -412,7 +412,6 @@ export default function HomographyLaunch({
     annotationSet.id,
     annotationSet.name,
     categoryOptions.length,
-    client,
     project.id,
     selectedCategories.length,
     setHomographyLaunchHandler,

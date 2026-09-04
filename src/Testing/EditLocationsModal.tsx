@@ -1,7 +1,9 @@
 import { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { GlobalContext, UserContext, TestingContext } from '../Context';
+import { UserContext, TestingContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { fetchAllPaginatedResults } from '../utils';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
 import LightLocationView from './LightLocationView';
@@ -20,7 +22,6 @@ type LocationReferenceTask = TaskPayload & {
 };
 
 export default function EditLocationsModal({ show, preset, surveyId }: Props) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const { currentAnnoCount, setCurrentAnnoCount } = useContext(UserContext)!;
   const { organizationId } = useContext(TestingContext)!;
   const locationsRef = useRef<
@@ -159,7 +160,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
     locationIndexRef.current = 0;
     setIndex(0);
     setLoading(false);
-  }, [client, preset.id, selectedCategoryId, maxAnnotations]);
+  }, [preset.id, selectedCategoryId, maxAnnotations]);
 
   useEffect(() => {
     if (show) refreshLocations();
@@ -393,7 +394,6 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
 }
 
 function CategoryOptions({ annotationSetId }: { annotationSetId: string }) {
-  const { client } = useContext(GlobalContext)!;
   const [cats, setCats] = useState<any[]>([]);
   useEffect(() => {
     let cancelled = false;

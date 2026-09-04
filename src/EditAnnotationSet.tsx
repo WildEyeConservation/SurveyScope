@@ -1,7 +1,7 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
 import { Modal, Body, Header, Footer, Title } from './Modal';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import { Tab, Tabs } from './Tabs';
 import { Schema } from './amplify/client-schema';
 import LabelEditor from './survey/LabelEditor';
@@ -26,7 +26,6 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
   setAnnotationSet,
   project,
 }) => {
-  const { client } = useContext(GlobalContext)!;
   const [newName, setNewName] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');

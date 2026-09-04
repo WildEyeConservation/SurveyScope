@@ -1,6 +1,6 @@
-import { useCallback, useContext, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 import { IndividualIdHarness } from './IndividualIdHarness';
 import { useActivityHeartbeat } from './hooks/useActivityHeartbeat';
 
@@ -25,7 +25,6 @@ type ClaimState = {
 export function IndividualIdTaskPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { client } = useContext(GlobalContext)!;
   const state = (location.state ?? null) as ClaimState | null;
 
   const hasClaim = !!(state && state.transectId && state.categoryId);
@@ -54,7 +53,7 @@ export function IndividualIdTaskPage() {
     } finally {
       goToJobs();
     }
-  }, [client, state, goToJobs]);
+  }, [state, goToJobs]);
 
   useEffect(() => {
     if (!hasClaim) goToJobs();

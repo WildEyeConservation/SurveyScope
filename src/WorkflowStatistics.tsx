@@ -12,7 +12,8 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import exportFromJSON from 'export-from-json';
 import MyTable from './Table';
-import { GlobalContext, UserContext } from './Context';
+import { UserContext } from './Context';
+import { client } from './stores/appClient';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
 import { WORKFLOW_REGISTRY, type WorkflowType } from './workflowRegistry';
@@ -126,7 +127,6 @@ function startOfLocalDay(date: Date): Date {
 }
 
 export default function WorkflowStatistics() {
-  const { client } = useContext(GlobalContext)!;
   const { cognitoGroups } = useContext(UserContext)!;
   const { users: allUsers } = useUsers();
   const isSysadmin = cognitoGroups.includes('sysadmin');
@@ -206,7 +206,7 @@ export default function WorkflowStatistics() {
     return () => {
       cancelled = true;
     };
-  }, [client, isSysadmin]);
+  }, [isSysadmin]);
 
   const projectOptions = useMemo(
     () =>
@@ -294,7 +294,7 @@ export default function WorkflowStatistics() {
       }
     }
     load();
-  }, [client, project, selectedSets]);
+  }, [project, selectedSets]);
 
   useEffect(() => {
     if (!dateRangeIsAuto || !hasLoaded) return;

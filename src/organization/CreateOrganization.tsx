@@ -1,7 +1,7 @@
 import Form from 'react-bootstrap/Form';
 import Button from 'react-bootstrap/Button';
-import { useState, useContext, useEffect } from 'react';
-import { GlobalContext } from '../Context';
+import { useState, useEffect } from 'react';
+import { client } from '../stores/appClient';
 import { Modal, Body, Header, Title } from '../Modal';
 import { Schema } from '../amplify/client-schema';
 
@@ -16,7 +16,6 @@ export default function CreateOrganization({
     requestedByEmail: string;
   };
 }) {
-  const { client } = useContext(GlobalContext);
 
   const [name, setName] = useState<string>('');
   const [description, setDescription] = useState<string>('');

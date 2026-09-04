@@ -1,5 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
-import { GlobalContext, ProjectContext } from './Context';
+import { ProjectContext } from './Context';
+import { client } from './stores/appClient';
 import AnnotationWorkspace from './AnnotationWorkspace';
 import { TaskBuffer } from './TaskBuffer';
 import BufferSource from './BufferSource';
@@ -40,7 +41,6 @@ export default function ReviewCarousel({
   infoTagNames = [],
   imageBased = true,
 }: ReviewCarouselProps) {
-  const { client } = useContext(GlobalContext)!;
   const {
     categoriesHook: { data: categories },
   } = useContext(ProjectContext)!;
@@ -275,7 +275,7 @@ export default function ReviewCarousel({
     return () => {
       cancelled = true;
     };
-  }, [client, selectedAnnotationSet, effectiveCategories, selectedUserIds, imageBased]);
+  }, [selectedAnnotationSet, effectiveCategories, selectedUserIds, imageBased]);
 
   // Applied after fetching (rather than as part of it) so toggling a tag
   // re-slices what is already loaded instead of re-running the queries.

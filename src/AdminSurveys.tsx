@@ -1,7 +1,7 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Form, Spinner } from 'react-bootstrap';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import type { Schema } from './amplify/client-schema';
 import './AdminSurveys.css';
@@ -15,8 +15,6 @@ type GroupedSurveys = {
 };
 
 export default function AdminSurveys() {
-  const global = useContext(GlobalContext);
-  const client = global?.client;
   const [projects, setProjects] = useState<ProjectType[]>([]);
   const [orgNames, setOrgNames] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -74,12 +72,12 @@ export default function AdminSurveys() {
     } finally {
       setIsLoading(false);
     }
-  }, [client]);
+  }, []);
 
   useEffect(() => {
     if (!client) return;
     void loadData();
-  }, [client, loadData]);
+  }, [loadData]);
 
   const groupedSurveys = useMemo<GroupedSurveys[]>(() => {
     if (!projects.length) return [];
@@ -406,4 +404,3 @@ function formatImageCount(project: ProjectType): string {
   const total = sets.reduce((sum, set) => sum + (set.imageCount ?? 0), 0);
   return total.toLocaleString();
 }
-

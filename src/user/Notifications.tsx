@@ -1,5 +1,6 @@
 import { useContext, useState } from 'react';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { Schema } from '../amplify/client-schema';
 import Button from 'react-bootstrap/Button';
 import { Bell, Check, X, RefreshCw } from 'lucide-react';
@@ -9,7 +10,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 export default function Notifications() {
   const [show, setShow] = useState(false);
   const { user } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
   const username = user.username;
 
   const { data: allInvites, isFetching, refetch } = useQuery<Schema['OrganizationInvite']['type'][]>({
@@ -141,7 +141,6 @@ function Invite({
   index: number;
   queryKey: unknown[];
 }) {
-  const { client } = useContext(GlobalContext)!;
   const queryClient = useQueryClient();
   const [responding, setResponding] = useState(false);
 

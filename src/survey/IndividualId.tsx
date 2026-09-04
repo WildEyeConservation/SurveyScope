@@ -3,7 +3,8 @@ import { Alert, Form } from 'react-bootstrap';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { uploadData } from 'aws-amplify/storage';
 import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
@@ -83,7 +84,6 @@ export default function IndividualId({
     React.SetStateAction<LaunchHandler | null>
   >;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
 
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -310,7 +310,7 @@ export default function IndividualId({
     return () => {
       mounted = false;
     };
-  }, [client, annotationSet.id, project.id]);
+  }, [annotationSet.id, project.id]);
 
   useEffect(() => {
     setLaunchDisabled(
@@ -404,7 +404,6 @@ export default function IndividualId({
     annotationSet.id,
     annotationSet.name,
     categories,
-    client,
     project.id,
     setIndividualIdLaunchHandler,
     user.userId,

@@ -1,6 +1,5 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GlobalContext } from '../../Context';
+import { client } from '../../stores/appClient';
 import type { UserType } from '../../../amplify/shared/types';
 
 const PREFIX = 'chainshare-';
@@ -19,7 +18,6 @@ type GroupsResponse = {
  * cached so the Manage Shares table doesn't refetch per render.
  */
 export function useReviewersByShare(users: UserType[]) {
-  const { client } = useContext(GlobalContext)!;
 
   return useQuery<Map<string, UserType[]>>({
     queryKey: ['reviewers-by-share', users.map((u) => u.id).sort()],

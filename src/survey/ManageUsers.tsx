@@ -1,6 +1,7 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button, Modal } from 'react-bootstrap';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { useUsers } from '../apiInterface';
 import { fetchAllPaginatedResults } from '../utils';
 import MyTable from '../Table';
@@ -24,7 +25,6 @@ export default function ManageUsers({
   projectId: string;
   organizationId: string;
 }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const { users } = useUsers();
 
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
@@ -90,7 +90,7 @@ export default function ManageUsers({
     } finally {
       setIsLoading(false);
     }
-  }, [users, client, projectId, organizationId]);
+  }, [users, projectId, organizationId]);
 
   useEffect(() => {
     fetchData();

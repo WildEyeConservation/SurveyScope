@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useContext } from 'react';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import type { UserType } from '../amplify/shared/types';
 
 export const useUsers = () => {
-  const { client } = useContext(GlobalContext)!;
   const [result, setResult] = useState<UserType[]>([]);
   useEffect(() => {
     let isMounted = true;
@@ -29,6 +27,6 @@ export const useUsers = () => {
     return () => {
       isMounted = false;
     };
-  }, [client]);
+  }, []);
   return { users: result };
 };

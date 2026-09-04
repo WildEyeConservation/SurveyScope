@@ -1,8 +1,8 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Spinner } from 'react-bootstrap';
 import { Modal, Body, Header, Footer, Title } from './Modal';
 
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import MyTable from './Table';
 import LabeledToggleSwitch from './LabeledToggleSwitch';
@@ -19,7 +19,6 @@ const AnnotationCountModal: React.FC<Props> = ({
   handleClose,
   setId,
 }) => {
-  const { client } = useContext(GlobalContext)!;
   const [annotations, setAnnotations] = useState<
     Schema['Annotation']['type'][]
   >([]);

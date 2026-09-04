@@ -1,9 +1,9 @@
-import { useState, useEffect, useContext, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import maplibregl, { type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQueries } from '@tanstack/react-query';
 import { fetchAllPaginatedResults } from './utils';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import ImageViewerModal from './ImageViewerModal';
 import AnnotationViewerModal from './AnnotationViewerModal';
 import {
@@ -180,8 +180,6 @@ export default function DensityMap({
   primaryAnnotationSetId,
   onTransectsLoaded,
 }: DensityMapProps) {
-  const { client } = useContext(GlobalContext)!;
-
   // Normalise the legacy single-source props into the `sources` shape.
   const effectiveSources = useMemo<DensitySource[]>(() => {
     if (sources && sources.length) return sources;

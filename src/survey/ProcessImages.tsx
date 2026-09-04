@@ -1,11 +1,11 @@
 import { Form, Spinner, Button } from 'react-bootstrap';
 import { Footer } from '../Modal';
-import { useState, useContext, useEffect, useCallback, useRef } from 'react';
-import { GlobalContext } from '../Context';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { client, backendOutputs as backend } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import Select from 'react-select';
 
 export default function ProcessImages({ projectId, organizationId }: { projectId: string; organizationId: string }) {
-  const { client, backend, showModal } = useContext(GlobalContext)!;
   const [model, setModel] = useState<{ label: string; value: string } | null>(
     null
   );
@@ -55,7 +55,7 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
       } while (nextToken);
       return null;
     },
-    [client.models.LocationSet, projectId]
+    [projectId]
   );
 
   const scanImages = useCallback(async () => {
@@ -93,7 +93,7 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
     setUnprocessedImages(unprocessed);
     setLoading(false);
     setScanned(true);
-  }, [client, projectId, model]);
+  }, [projectId, model]);
 
   useEffect(() => {
     // reset when model changes

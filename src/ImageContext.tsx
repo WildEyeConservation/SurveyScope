@@ -6,7 +6,7 @@ import {
   useRef,
 } from 'react';
 import { ImageContext } from './Context';
-import { useAppClient } from './stores/appClient';
+import { client } from './stores/appClient';
 import {
   setCurrentAnnoCountAction,
   setCurrentTaskTagAction,
@@ -38,7 +38,6 @@ export function ImageContextFromHook({
 }) {
   const [annoCount, setAnnoCount] = useState(0);
   const lastAnnotationTimeRef = useRef<number>(0);
-  const { client } = useAppClient();
   const [startLoadingTimestamp, _] = useState<number>(Date.now());
   const [visibleTimestamp, setVisibleTimestamp] = useState<number | undefined>(
     undefined

@@ -2,7 +2,8 @@ import { useState, useContext, useCallback, useMemo, useEffect } from 'react';
 import { Form, Button, Alert, Spinner, Badge, Card } from 'react-bootstrap';
 import { matrix, inv } from 'mathjs';
 import type { Matrix } from 'mathjs';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { MapLibrePairViewer } from './MapLibrePairViewer';
 import { makeTransform, fetchAllPaginatedResults } from '../utils';
 import type { ImageType } from '../schemaTypes';
@@ -31,7 +32,6 @@ type LoadedPair = {
 };
 
 export default function HomographyViewer() {
-  const { client } = useContext(GlobalContext)!;
   const { cognitoGroups } = useContext(UserContext)!;
   const isSysadmin = cognitoGroups.includes('sysadmin');
 
@@ -94,7 +94,7 @@ export default function HomographyViewer() {
     } finally {
       setCamerasLoading(false);
     }
-  }, [projectIdInput, client]);
+  }, [projectIdInput]);
 
   const fetchPair = useCallback(
     async (id1: string, id2: string, source: LoadedPair['source']) => {
@@ -151,7 +151,7 @@ export default function HomographyViewer() {
         reversedDirection,
       });
     },
-    [client]
+    []
   );
 
   const handleLoadManual = useCallback(async () => {
@@ -231,7 +231,7 @@ export default function HomographyViewer() {
       }
       return Array.from(seen.values());
     },
-    [client]
+    []
   );
 
   const handleLoadRandomPair = useCallback(async () => {

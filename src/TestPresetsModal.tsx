@@ -1,6 +1,6 @@
 import { Button, Modal } from 'react-bootstrap';
-import { useContext, useState, useEffect, useRef } from 'react';
-import { GlobalContext } from './Context';
+import { useState, useEffect, useRef } from 'react';
+import { client } from './stores/appClient';
 import { Form } from 'react-bootstrap';
 import Select from 'react-select';
 import { fetchAllPaginatedResults } from './utils';
@@ -24,7 +24,6 @@ export default function TestPresetsModal({
     { label: string; value: string }[]
   >([]);
   const [annotationAccuracy, setAnnotationAccuracy] = useState(0);
-  const { client } = useContext(GlobalContext)!;
   const [categories, setCategories] = useState<{ name: string; id: string }[]>(
     []
   );

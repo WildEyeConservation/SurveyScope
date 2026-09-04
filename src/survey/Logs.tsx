@@ -1,6 +1,7 @@
-import { useContext, useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Button, Form, Card, Spinner } from 'react-bootstrap';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { Schema } from '../amplify/client-schema';
 import { fetchAllPaginatedResults } from '../utils';
 import { Download } from 'lucide-react';
@@ -10,7 +11,6 @@ import MyTable from '../Table';
 import { Footer } from '../Modal';
 
 export default function Logs({ projectId }: { projectId: string }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const { users } = useUsers();
   const [logs, setLogs] = useState<Schema['AdminActionLog']['type'][]>([]);
   const [loading, setLoading] = useState(false);

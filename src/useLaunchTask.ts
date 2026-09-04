@@ -1,6 +1,6 @@
-import { useContext, useCallback } from 'react';
+import { useCallback } from 'react';
 import { uploadData } from 'aws-amplify/storage';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import type {
   LaunchQueueOptions,
   TiledLaunchRequest,
@@ -57,7 +57,6 @@ type LaunchLambdaPayload = {
 export function useLaunchTask(
   options: LaunchTaskOptions
 ): (args: LaunchTaskArgs) => Promise<void> {
-  const { client } = useContext(GlobalContext)!;
 
   type LocationWithConfidence = {
     id: string;
@@ -494,7 +493,7 @@ export function useLaunchTask(
       sendLaunchLambdaRequest(client, payload);
       onProgress?.('Launch request submitted');
     },
-    [options, client]
+    [options]
   );
 
   return launchTask;

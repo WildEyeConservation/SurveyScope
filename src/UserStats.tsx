@@ -1,6 +1,8 @@
 import MyTable from './Table';
 import { useContext, useEffect, useState } from 'react';
-import { GlobalContext, UserContext } from './Context';
+import { UserContext } from './Context';
+import { client } from './stores/appClient';
+import { showModalAction as showModal, useModalToShow } from './stores/modalStore';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import type { UserStatsType } from './schemaTypes';
@@ -14,8 +16,7 @@ import { fetchAllPaginatedResults } from './utils';
 export default function UserStats() {
   const { myOrganizationHook, myMembershipHook } =
     useContext(UserContext)!;
-  const { client, modalToShow, showModal } =
-    useContext(GlobalContext)!;
+  const modalToShow = useModalToShow();
   const { users: allUsers } = useUsers();
   const [projects, setProjects] = useState<
     {
@@ -234,7 +235,7 @@ export default function UserStats() {
       cancelled = true;
       subs.forEach((sub) => sub.unsubscribe());
     };
-  }, [client, project?.value, selectedSets]);
+  }, [project?.value, selectedSets]);
 
   useEffect(() => {
     // Compute all stats synchronously, then set state once

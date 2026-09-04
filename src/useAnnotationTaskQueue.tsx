@@ -1,5 +1,6 @@
 import { useEffect, useState, useContext, useCallback, useRef } from 'react';
-import { UserContext, ProjectContext, GlobalContext } from './Context';
+import { UserContext, ProjectContext } from './Context';
+import { client } from './stores/appClient';
 import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
@@ -58,7 +59,6 @@ and SQS acknowledgement.
 export default function useAnnotationTaskQueue() {
   const { currentPM } = useContext(ProjectContext)!;
   const { getSqsClient, myOrganizationHook } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
   const [url, setUrl] = useState<string | undefined>(undefined);
   const [backupUrl, setBackupUrl] = useState<string | undefined>(undefined);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
@@ -211,7 +211,7 @@ export default function useAnnotationTaskQueue() {
 
       return hasAnnotationWithinLocation ? null : hydratedTask;
     },
-    [client]
+    []
   );
 
   const fetcher = useCallback(async (): Promise<AnnotationTaskPayload> => {

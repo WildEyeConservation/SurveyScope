@@ -1,8 +1,8 @@
 import { Form, Button, Spinner } from 'react-bootstrap';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import { Schema } from '../amplify/client-schema';
-import { useState, useContext } from 'react';
-import { GlobalContext } from '../Context';
+import { useState } from 'react';
+import { client } from '../stores/appClient';
 import LabelEditor from './LabelEditor';
 
 export default function AddAnnotationSetModal({
@@ -18,7 +18,6 @@ export default function AddAnnotationSetModal({
   addAnnotationSet: (annotationSet: Schema['AnnotationSet']['type']) => void;
   allProjects: Schema['Project']['type'][];
 }) {
-  const { client } = useContext(GlobalContext)!;
   const [name, setName] = useState('');
   const [saveLabels, setSaveLabels] = useState<
     ((annotationSetId: string, projectId: string, group: string) => Promise<void>) | null

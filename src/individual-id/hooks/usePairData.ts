@@ -1,6 +1,7 @@
 import { useContext, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GlobalContext, ProjectContext } from '../../Context';
+import { ProjectContext } from '../../Context';
+import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 import type {
   AnnotationType,
@@ -56,7 +57,6 @@ export interface PairData {
  * stragglers on other images.
  */
 export function usePairData(input: UsePairDataInput) {
-  const { client } = useContext(GlobalContext)!;
   const projectCtx = useContext(ProjectContext);
   const { image1Id, image2Id, categoryId, annotationSetId } = input;
 

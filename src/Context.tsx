@@ -1,13 +1,10 @@
-import { createContext, useCallback, useMemo } from 'react';
+import { createContext } from 'react';
 import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
 import outputs from '../amplify_outputs.json';
 import { AuthUser } from '@aws-amplify/auth';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import type { UserType } from '../amplify/shared/types';
-import { limitedClient } from './limitedClient';
-import { useSelector } from '@tanstack/react-store';
-import { modalStore, showModalAction } from './stores/modalStore';
 
 
 export interface ProgressType {
@@ -21,9 +18,6 @@ export type BackendOutputs = Omit<typeof outputs, 'custom'> & {
   };
 };
 
-// The new custom output is written to amplify_outputs.json on deployment.
-const backendOutputs = outputs as BackendOutputs;
-
 type ModelType = keyof ClientType['models'];
 export type CRUDhook<T extends ModelType> = {
   data: Schema[T]['type'][];
@@ -32,14 +26,6 @@ export type CRUDhook<T extends ModelType> = {
   delete: (arg: Parameters<ClientType['models'][T]['delete']>[0]) => void;
 };
 export type AnnotationsHook = CRUDhook<'Annotation'>;
-
-export interface GlobalContextType {
-  client: DataClient;
-  backend: BackendOutputs;
-  region: string;
-  modalToShow: string | null;
-  showModal: React.Dispatch<React.SetStateAction<string | null>>;
-}
 
 export interface UserContextType {
   user: AuthUser;
@@ -161,39 +147,3 @@ export const ImageContext = createContext<ImageContextType | undefined>(
 export const TestingContext = createContext<TestingContextType | null>(null);
 // export const OrganizationContext =
 //   createContext<OrganizationContextType | null>(null);
-
-export const GlobalContext = createContext<GlobalContextType>({
-  backend: backendOutputs,
-  region: outputs.auth.aws_region,
-  client: limitedClient,
-  showModal: () => {},
-  modalToShow: null,
-});
-
-export function GlobalContextProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  // New code should use modalStore / useModalToShow directly and avoid this
-  // context for modal state. Kept here as a compat shim so existing
-  // useContext(GlobalContext) call sites keep working while they migrate.
-  const modalToShow = useSelector(modalStore, (s) => s.modal);
-  const showModal = useCallback(
-    (value: React.SetStateAction<string | null>) => showModalAction(value),
-    []
-  );
-  const value = useMemo(
-    () => ({
-      backend: backendOutputs,
-      region: outputs.auth.aws_region,
-      client: limitedClient,
-      showModal,
-      modalToShow,
-    }),
-    [showModal, modalToShow]
-  );
-  return (
-    <GlobalContext.Provider value={value}>{children}</GlobalContext.Provider>
-  );
-}

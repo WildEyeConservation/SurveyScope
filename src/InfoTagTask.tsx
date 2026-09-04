@@ -14,7 +14,8 @@ import {
   ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
 import { Badge } from 'react-bootstrap';
-import { GlobalContext, UserContext } from './Context';
+import { UserContext } from './Context';
+import { client } from './stores/appClient';
 import { TaskBuffer } from './TaskBuffer';
 import InfoTagAnnotation from './InfoTagAnnotation';
 import { fetchAllPaginatedResults } from './utils';
@@ -36,7 +37,6 @@ export default function InfoTagTask() {
   useUnsavedWorkGuard();
   const { queueId } = useParams<{ queueId: string }>();
   const { getSqsClient, myMembershipHook } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
   const [queueUrl, setQueueUrl] = useState<string>();
@@ -57,7 +57,7 @@ export default function InfoTagTask() {
       if (data?.group) setGroup(data.group);
       if (data?.zoom != null) setQueueZoom(data.zoom);
     });
-  }, [client, queueId]);
+  }, [queueId]);
 
   const [categories, setCategories] = useState<
     Array<{ id: string; name: string; shortcutKey: string | null }>
@@ -112,7 +112,7 @@ export default function InfoTagTask() {
     return () => {
       mounted = false;
     };
-  }, [annotationSetId, client]);
+  }, [annotationSetId]);
 
   useEffect(
     () => () => {

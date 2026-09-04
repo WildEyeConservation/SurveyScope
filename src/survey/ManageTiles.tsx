@@ -1,7 +1,8 @@
 import { Form, Button, Spinner, Alert, ProgressBar } from 'react-bootstrap';
 import { Footer } from '../Modal';
-import { useState, useContext, useEffect, useCallback, useRef } from 'react';
-import { GlobalContext } from '../Context';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { Schema } from '../amplify/client-schema';
 import TileConfiguration from '../TileConfiguration';
 import type { TiledLaunchRequest } from '../types/LaunchTask';
@@ -17,7 +18,6 @@ export default function ManageTiles({
 }: {
   project: Schema['Project']['type'];
 }) {
-  const { client, showModal } = useContext(GlobalContext)!;
 
   const [launchDisabled, setLaunchDisabled] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -73,7 +73,7 @@ export default function ManageTiles({
       setLoadingTileCount(false);
     }
     loadTileCount();
-  }, [client.models.LocationSet, tiledLocationSetId]);
+  }, [tiledLocationSetId]);
 
   // Check for active tiling tasks on mount
   useEffect(() => {
@@ -118,7 +118,7 @@ export default function ManageTiles({
       }
     }
     checkActiveTilingTask();
-  }, [client.models.TilingTask, project.id, tiledLocationSetId]);
+  }, [project.id, tiledLocationSetId]);
 
   // Check if any annotation sets in this project have FN data
   useEffect(() => {
@@ -156,7 +156,7 @@ export default function ManageTiles({
     return () => {
       mounted = false;
     };
-  }, [client.models.AnnotationSet, project.id]);
+  }, [project.id]);
 
   const startPollingProgress = useCallback(
     (tilingTaskId: string) => {
@@ -221,7 +221,7 @@ export default function ManageTiles({
 
       pollingRef.current = pollInterval;
     },
-    [client.models.TilingTask, client.models.LocationSet, tiledLocationSetId]
+    [tiledLocationSetId]
   );
 
   // Poll for the tiling task to appear and get its ID
@@ -307,8 +307,6 @@ export default function ManageTiles({
 
     pollingRef.current = pollInterval;
   }, [
-    client.models.TilingTask,
-    client.models.LocationSet,
     project.id,
     tiledLocationSetId,
     currentTileCount,

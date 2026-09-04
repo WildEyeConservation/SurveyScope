@@ -1,11 +1,10 @@
-import { useEffect, useState, useContext } from 'react';
-import { GlobalContext } from '../Context';
+import { useEffect, useState } from 'react';
+import { client } from '../stores/appClient';
 import { Schema } from '../amplify/client-schema';
 import { Info as InfoIcon } from 'lucide-react';
 import Spinner from 'react-bootstrap/Spinner';
 
 export default function Info({ organizationId }: { organizationId: string }) {
-  const { client } = useContext(GlobalContext);
 
   const [organization, setOrganization] = useState<
     Schema['Organization']['type'] | null

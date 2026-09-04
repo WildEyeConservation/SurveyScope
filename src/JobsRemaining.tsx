@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
-import { ProjectContext, UserContext, GlobalContext } from './Context';
+import { ProjectContext, UserContext } from './Context';
+import { client } from './stores/appClient';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
 import ProgressBar from 'react-bootstrap/ProgressBar';
@@ -7,7 +8,6 @@ import { Badge } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 
 export function JobsRemaining() {
-  const { client } = useContext(GlobalContext)!;
   const {
     getSqsClient,
     jobsCompleted: sessionJobsCompleted,

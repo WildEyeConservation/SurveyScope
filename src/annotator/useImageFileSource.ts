@@ -1,9 +1,8 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { GlobalContext } from '../Context';
+import { useEffect, useMemo, useState } from 'react';
+import { client } from '../stores/appClient';
 import type { ImageFileType } from '../schemaTypes';
 
 export default function useImageFileSource(imageId: string) {
-  const { client } = useContext(GlobalContext)!;
   const [imageFiles, setImageFiles] = useState<ImageFileType[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +27,7 @@ export default function useImageFileSource(imageId: string) {
     return () => {
       cancelled = true;
     };
-  }, [client, imageId]);
+  }, [imageId]);
 
   const sourceKey = useMemo(
     () => imageFiles.find((file) => file.type === 'image/jpeg')?.key,

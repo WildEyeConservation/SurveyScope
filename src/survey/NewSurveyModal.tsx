@@ -1,7 +1,9 @@
 import { Button, Form } from 'react-bootstrap';
 import { useState } from 'react';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { useContext, useEffect } from 'react';
 import Select from 'react-select';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
@@ -39,7 +41,6 @@ export default function NewSurveyModal({
   projects: string[];
 }) {
   const { myOrganizationHook, user } = useContext(UserContext)!;
-  const { client, showModal } = useContext(GlobalContext)!;
   const { users: allUsers } = useUsers();
 
   const [filesReady, setFilesReady] = useState(false);

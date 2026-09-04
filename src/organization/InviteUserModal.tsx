@@ -1,8 +1,9 @@
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import { Modal } from 'react-bootstrap';
-import { useContext, useState } from 'react';
-import { GlobalContext } from '../Context';
+import { useState } from 'react';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 
 export default function InviteUserModal({
   organization,
@@ -14,7 +15,6 @@ export default function InviteUserModal({
   };
   show: boolean;
 }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {

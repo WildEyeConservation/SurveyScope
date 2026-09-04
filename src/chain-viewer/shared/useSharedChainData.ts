@@ -1,6 +1,5 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GlobalContext } from '../../Context';
+import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 import type { ImageNeighbourType, ImageType } from '../../schemaTypes';
 import type { LocationOverlayRow } from '../../individual-id/MapLocationOverlay';
@@ -84,7 +83,6 @@ type SharedCategoryRow = {
  * `chainshare-<shareId>` group; no Image/ImageFile/Location access is needed.
  */
 export function useSharedChainData(shareId: string | undefined) {
-  const { client } = useContext(GlobalContext)!;
 
   return useQuery<SharedChainData>({
     // Bump when the persisted row shape changes.

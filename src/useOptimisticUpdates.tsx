@@ -46,7 +46,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useContext, useMemo, useCallback } from 'react';
 import type { Schema } from './amplify/client-schema';
 import type { DataModels, SubscriptionOptions } from '../amplify/shared/data-schema.generated';
-import { GlobalContext, ProjectContext } from './Context';
+import { ProjectContext } from './Context';
+import { client } from './stores/appClient';
 import {
   isMissingRow,
   withRowReinstated,
@@ -73,7 +74,6 @@ export function useOptimisticUpdates<
   options?: OptimisticOptions<T>,
   updateFunction?: (progress: number) => Promise<void>
 ) {
-  const { client } = useContext(GlobalContext);
   const queryClient = useQueryClient();
   const queryKey = [modelKey, subscriptionFilter];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,7 +89,7 @@ export function useOptimisticUpdates<
         ? listFunction(nextToken)
         : client.models[modelKey].list({ nextToken });
     },
-    [listFunction, client, modelKey]
+    [listFunction, modelKey]
   );
 
   const { data, ...queryResult } = useQuery({
@@ -275,7 +275,6 @@ export function useOptimisticUpdates<
 }
 
 export const useQueues = () => {
-  const { client } = useContext(GlobalContext)!;
   const { project } = useContext(ProjectContext)!;
   const subscriptionFilter = useMemo(
     () => ({

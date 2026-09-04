@@ -1,6 +1,7 @@
 import { Project, Management } from '../UserContext';
 import { Schema } from '../amplify/client-schema';
-import { UserContext, GlobalContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { useContext, useEffect, useState } from 'react';
 
 export default function ProjectContext({
@@ -11,7 +12,6 @@ export default function ProjectContext({
   surveyId: string;
 }) {
   const { user } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
   const [currentPM, setCurrentPM] = useState<
     Schema['UserProjectMembership']['type'] | null
   >(null);

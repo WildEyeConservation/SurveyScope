@@ -1,7 +1,8 @@
-import { useContext, useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Button } from 'react-bootstrap';
 import { Footer } from '../Modal';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import type {
   Feature as GeoJSONFeature,
   Polygon as GeoJSONPolygon,
@@ -23,7 +24,6 @@ type NeighbourGeoJSON = {
 };
 
 export default function AdvancedOptions({ projectId }: { projectId: string }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const [loading, setLoading] = useState(false);
   const [, setError] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
@@ -205,7 +205,7 @@ export default function AdvancedOptions({ projectId }: { projectId: string }) {
       setLoading(false);
       setLoadingStatus('');
     }
-  }, [client, projectId, buildGeoJSON]);
+  }, [projectId, buildGeoJSON]);
 
   async function exportScoutbotResults() {
     setLoading(true);

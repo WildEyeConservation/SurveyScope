@@ -1,7 +1,7 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Button } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import AnnotationWorkspace from './AnnotationWorkspace';
 
 export default function AnnotationViewerModal({
@@ -19,7 +19,6 @@ export default function AnnotationViewerModal({
   imageIds: string[];
   onNavigate: (imageId: string) => void;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const [imageMeta, setImageMeta] = useState<{
     id: string;
     width: number;
@@ -52,7 +51,7 @@ export default function AnnotationViewerModal({
     return () => {
       cancelled = true;
     };
-  }, [client, imageId]);
+  }, [imageId]);
 
   const currentIndex = useMemo(
     () => (imageId ? imageIds.indexOf(imageId) : -1),

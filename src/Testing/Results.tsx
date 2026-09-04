@@ -1,6 +1,7 @@
 import { Button, Form } from 'react-bootstrap';
 import { useContext, useState, useEffect } from 'react';
-import { GlobalContext, TestingContext } from '../Context';
+import { TestingContext } from '../Context';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import MyTable from '../Table';
 import { BarChart } from '@mui/x-charts/BarChart';
@@ -13,7 +14,6 @@ import Select from 'react-select';
 // removed modal; pass/fail rules are now inline
 
 export default function Results() {
-  const { client } = useContext(GlobalContext)!;
   const { organizationMembershipsHook, organizationProjects } =
     useContext(TestingContext)!;
   const { users: allUsers } = useUsers();
@@ -77,7 +77,7 @@ export default function Results() {
       setIsLoading(false);
     }
     if (!isPurging && selectedUser) setup();
-  }, [isPurging, selectedUser, selectedProject?.value, client]);
+  }, [isPurging, selectedUser, selectedProject?.value]);
 
   const headings = [
     { content: 'Date', sort: true },

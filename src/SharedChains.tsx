@@ -1,7 +1,7 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 
 type ShareRow = {
@@ -17,7 +17,6 @@ type ShareRow = {
  * `chainshare-*` groups). Mirrors SharedResults.
  */
 export default function SharedChains() {
-  const { client } = useContext(GlobalContext)!;
   const navigate = useNavigate();
   const [shares, setShares] = useState<ShareRow[]>([]);
 
@@ -34,7 +33,7 @@ export default function SharedChains() {
       })) as ShareRow[];
       setShares(rows.filter((s) => s.status !== 'revoked'));
     })();
-  }, [client]);
+  }, []);
 
   return (
     <div

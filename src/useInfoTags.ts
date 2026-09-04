@@ -1,6 +1,6 @@
-import { useCallback, useContext, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { GlobalContext } from './Context';
+import { client } from './stores/appClient';
 import {
   fetchInfoTagDataForSet,
   fetchInfoTagNamesForImage,
@@ -23,7 +23,6 @@ const STALE_TIME = 30 * 60 * 1000;
 
 /** The tags defined on a set, id -> name. Cheap; safe to call per component. */
 export function useInfoTagNames(annotationSetId: string | null | undefined) {
-  const { client } = useContext(GlobalContext)!;
   const query = useQuery({
     queryKey: ['info-tag-names', annotationSetId],
     enabled: Boolean(annotationSetId),
@@ -47,7 +46,6 @@ const EMPTY_LIST: string[] = [];
  * only fetches the new one.
  */
 export function useInfoTagData(annotationSetIds: string[]) {
-  const { client } = useContext(GlobalContext)!;
   const idsKey = Array.from(new Set(annotationSetIds.filter(Boolean)))
     .sort()
     .join(',');
@@ -131,7 +129,6 @@ export function useImageInfoTags(
   imageId: string | null | undefined,
   annotationSetId: string | null | undefined
 ) {
-  const { client } = useContext(GlobalContext)!;
   const nameById = useInfoTagNames(annotationSetId);
   const query = useQuery({
     queryKey: ['image-info-tags', annotationSetId, imageId],

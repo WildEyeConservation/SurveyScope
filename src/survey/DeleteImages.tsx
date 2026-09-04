@@ -4,9 +4,9 @@ import {
   useCallback,
   useRef,
   useMemo,
-  useContext,
 } from 'react';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { Footer } from '../Modal';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -261,7 +261,6 @@ async function runPool<T>(
 }
 
 export default function DeleteImages({ projectId }: { projectId: string }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const [images, setImages] = useState<ImageData[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -365,7 +364,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [client, projectId]);
+  }, [projectId]);
 
   // Initial fetch
   useEffect(() => {
@@ -412,7 +411,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [client, projectId]);
+  }, [projectId]);
 
   // Ray-casting point-in-polygon over [lat, lng] ring (shapefile selection).
   const pointInPolygon = useCallback(
@@ -977,7 +976,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
 
       return imageMap;
     },
-    [client, images, projectId]
+    [images, projectId]
   );
 
   // -----------------------------------------------------------------------
@@ -1249,7 +1248,7 @@ This action cannot be undone.`;
         abortRef.current = null;
       }
     },
-    [selectedIds, images, fetchImageData, fetchImages, client, projectId]
+    [selectedIds, images, fetchImageData, fetchImages, projectId]
   );
 
   const cancelDelete = useCallback(() => {

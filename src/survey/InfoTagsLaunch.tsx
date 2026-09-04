@@ -2,7 +2,8 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import type { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
@@ -37,7 +38,6 @@ export default function InfoTagsLaunch({
   setLaunchDisabled: (disabled: boolean) => void;
   setInfoTagsLaunchHandler: (handler: LaunchHandler | null) => void;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [annotations, setAnnotations] = useState<AnnotationSummary[]>([]);
@@ -154,7 +154,7 @@ export default function InfoTagsLaunch({
     return () => {
       mounted = false;
     };
-  }, [annotationSet.id, client]);
+  }, [annotationSet.id]);
 
   const availableCategories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -240,7 +240,6 @@ export default function InfoTagsLaunch({
     annotationSet.id,
     annotationSet.name,
     categories,
-    client,
     project.id,
     project.organizationId,
     setInfoTagsLaunchHandler,

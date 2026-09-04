@@ -1,6 +1,5 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GlobalContext } from '../../Context';
+import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 
 export interface ActiveShare {
@@ -12,7 +11,6 @@ export interface ActiveShare {
 
 /** Non-revoked chain shares, for the Results / Disagreement share pickers. */
 export function useActiveShares() {
-  const { client } = useContext(GlobalContext)!;
   return useQuery<ActiveShare[]>({
     queryKey: ['active-chain-shares'],
     staleTime: 60_000,

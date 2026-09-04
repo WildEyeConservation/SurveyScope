@@ -10,7 +10,8 @@ import {
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { AnnotationSetDropdown } from './AnnotationSetDropDown';
 import Select, { MultiValue, type CSSObjectWithLabel } from 'react-select';
-import { ProjectContext, ManagementContext, GlobalContext } from './Context';
+import { ProjectContext, ManagementContext } from './Context';
+import { client } from './stores/appClient';
 import { Form } from 'react-bootstrap';
 import './Review.css';
 import { Card } from 'react-bootstrap';
@@ -58,7 +59,6 @@ export function Review({ showAnnotationSetDropdown = true }) {
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const { client } = useContext(GlobalContext)!;
   const {
     categoriesHook: { data: categories },
     project,
@@ -115,7 +115,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
     return () => {
       cancelled = true;
     };
-  }, [client, project?.id]);
+  }, [project?.id]);
 
   // Build user options from memberships + users lookup (deduplicated by userId)
   const userOptions = useMemo(() => {

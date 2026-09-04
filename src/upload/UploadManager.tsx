@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import ConfirmationModal from '../ConfirmationModal';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client, backendOutputs as backend } from '../stores/appClient';
 import type { ImageData } from '../types/ImageData';
 import {
   loadFilesFromStoredHandle,
@@ -17,7 +18,6 @@ import {
 
 // Handles resume/delete UI; transfer state lives in ./core.
 export default function UploadManager() {
-  const { client, backend } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
   const snapshot = useUploadStatus();
 
@@ -122,7 +122,7 @@ export default function UploadManager() {
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, user.userId]);
+  }, [user.userId]);
 
   // Warn before closing the tab while an upload is running.
   useEffect(() => {

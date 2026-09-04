@@ -1,12 +1,12 @@
 import {
   useState,
   useEffect,
-  useContext,
   useRef,
   useMemo,
   useCallback,
 } from 'react';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { fetchAllPaginatedResults } from '../utils';
 import { Form, Spinner, Button } from 'react-bootstrap';
 import { Footer } from '../Modal';
@@ -336,7 +336,6 @@ export default function DefineTransects({
   projectId: string;
   organizationId: string;
 }) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const [images, setImages] = useState<any[]>([]);
   const [partsLoading, setPartsLoading] = useState<null | number>(0);
   const [saving, setSaving] = useState(false);
@@ -782,7 +781,7 @@ export default function DefineTransects({
       setPartsLoading((l) => (l === null ? 1 : l + 1));
     }
     loadImages();
-  }, [client, projectId]);
+  }, [projectId]);
 
   // Insert logic to load existing strata and transect assignments
   useEffect(() => {
@@ -872,7 +871,7 @@ export default function DefineTransects({
       setPartsLoading((l) => (l === null ? 1 : l + 1));
     }
     loadExistingData();
-  }, [client, projectId]);
+  }, [projectId]);
 
   // Add effect to load shapefile exclusion polygons
   useEffect(() => {
@@ -897,7 +896,7 @@ export default function DefineTransects({
       setPartsLoading((l) => (l === null ? 1 : l + 1));
     }
     loadExclusions();
-  }, [client, projectId]);
+  }, [projectId]);
 
   // fetch existing shapefile polygon
   useEffect(() => {
@@ -921,7 +920,7 @@ export default function DefineTransects({
       setPartsLoading((l) => (l === null ? 1 : l + 1));
     }
     loadShapefile();
-  }, [client, projectId]);
+  }, [projectId]);
 
   // Modify segmentation to skip calculation if existing data loaded
   useEffect(() => {

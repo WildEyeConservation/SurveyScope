@@ -2,7 +2,9 @@ import { Button } from 'react-bootstrap';
 import MyTable from '../Table';
 import { Schema } from '../amplify/client-schema';
 import { useContext, useState, useEffect } from 'react';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal, useModalToShow } from '../stores/modalStore';
 import { useUsers } from '../apiInterface';
 import InviteUserModal from './InviteUserModal';
 import ExceptionsModal from './ExceptionsModal';
@@ -20,7 +22,7 @@ export default function Users({
   organization: { id: string; name: string };
   setOnClick: (onClick: { name: string; function: () => void }) => void;
 }) {
-  const { client, showModal, modalToShow } = useContext(GlobalContext)!;
+  const modalToShow = useModalToShow();
   const { user: authUser } = useContext(UserContext)!;
   const { users } = useUsers();
 

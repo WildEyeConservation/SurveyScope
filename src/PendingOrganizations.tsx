@@ -1,6 +1,7 @@
 import MyTable from './Table';
-import { useContext, useState } from 'react';
-import { GlobalContext } from './Context';
+import { useState } from 'react';
+import { client } from './stores/appClient';
+import { showModalAction as showModal, useModalToShow } from './stores/modalStore';
 import { useOptimisticUpdates } from './useOptimisticUpdates';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
@@ -8,7 +9,7 @@ import { Button } from 'react-bootstrap';
 import CreateOrganization from './organization/CreateOrganization';
 
 export default function PendingOrganizations() {
-  const { client, showModal, modalToShow } = useContext(GlobalContext);
+  const modalToShow = useModalToShow();
   const { users } = useUsers();
 
   const [selectedRequest, setSelectedRequest] = useState<

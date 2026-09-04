@@ -1,7 +1,8 @@
 import { Button, Form } from 'react-bootstrap';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { useState, useEffect, useContext } from 'react';
-import { GlobalContext } from '../Context';
+import { useState, useEffect } from 'react';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import Tooltip from 'react-bootstrap/Tooltip';
 import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
 
@@ -20,8 +21,6 @@ export default function ConfigModal({
   const [deadzone, setDeadzone] = useState<number>(0);
   const [confirmation, setConfirmation] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
-  const { client, showModal } = useContext(GlobalContext)!;
-
   useEffect(() => {
     const fetchTestConfig = async () => {
       const { data: config } = await client.models.ProjectTestConfig.get({

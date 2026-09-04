@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { Button } from 'react-bootstrap';
 import {
@@ -8,7 +8,7 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 import {
   IndividualIdMap,
   type MapInstanceCallback,
@@ -104,7 +104,6 @@ export function HerdMapPair({
   locationSources = CHAIN_LOCATION_SOURCES,
   locationRowsFor,
 }: Props) {
-  const { client } = useContext(GlobalContext)!;
   const { imageA, imageB } = pair;
 
   // Hovering any marker highlights every marker sharing its chain (objectId)
@@ -182,7 +181,7 @@ export function HerdMapPair({
     return () => {
       cancelled = true;
     };
-  }, [imageA, imageB, client, sourceKeyFor]);
+  }, [imageA, imageB, sourceKeyFor]);
 
   // ---- Linked maps: slave the other map via the homography on move/zoom. ----
   type MapHandle = {

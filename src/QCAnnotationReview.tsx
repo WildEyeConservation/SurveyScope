@@ -11,7 +11,8 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Badge, Button, Card } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight, Undo2, SearchCheck, RotateCcw } from 'lucide-react';
-import { GlobalContext, UserContext } from './Context';
+import { UserContext } from './Context';
+import { client } from './stores/appClient';
 import { applyActiveMarkerStyle } from './activeMarkerStyle';
 import { getTileBlob } from './StorageLayer';
 import type { Schema } from './amplify/client-schema';
@@ -87,7 +88,6 @@ export default function QCAnnotationReview({
   legendCollapsed,
   setLegendCollapsed,
 }: QCReviewProps) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
   const navigate = useNavigate();
 
@@ -230,7 +230,7 @@ export default function QCAnnotationReview({
     return () => {
       mounted = false;
     };
-  }, [annotation.id, annotation.imageId, annotation.annotationSetId, client]);
+  }, [annotation.id, annotation.imageId, annotation.annotationSetId]);
 
   // ── Fetch image + sourceKey ──
   useEffect(() => {
@@ -256,7 +256,7 @@ export default function QCAnnotationReview({
     return () => {
       mounted = false;
     };
-  }, [annotation.imageId, client]);
+  }, [annotation.imageId]);
 
   // ── MapLibre coordinate helpers ──
   const scale = useMemo(
@@ -684,7 +684,7 @@ export default function QCAnnotationReview({
     } catch (err) {
       console.error('Failed to increment observedCount', err);
     }
-  }, [client, queueId]);
+  }, [queueId]);
 
   const fetchExistingReviewer = useCallback(async (): Promise<string | null> => {
     try {
@@ -696,7 +696,7 @@ export default function QCAnnotationReview({
     } catch {
       return null;
     }
-  }, [client, annotation.id]);
+  }, [annotation.id]);
 
   // The SQS message must only be deleted once the review is durably stored.
   // Acknowledging alongside the write meant a failed write still discarded the
@@ -738,7 +738,6 @@ export default function QCAnnotationReview({
       await ack?.();
     },
     [
-      client,
       annotation.id,
       ack,
       user.userId,
@@ -850,7 +849,7 @@ export default function QCAnnotationReview({
       setHasLocalZoom(true);
       setZoomOffset(newOffset);
     }
-  }, [map, hasLocalZoom, adminMemberships, projectId, client, queueId, queueZoom, setQueueZoom]);
+  }, [map, hasLocalZoom, adminMemberships, projectId, queueId, queueZoom, setQueueZoom]);
 
   const handleFalsePositive = useCallback(async () => {
     let fpCatId: string;
@@ -904,7 +903,7 @@ export default function QCAnnotationReview({
     }
   }, [
     existingFpCategory, projectId, annotationSetId, creatingFp,
-    client, group, commitReview, next,
+    group, commitReview, next,
     setCategories, startWaiting,
   ]);
 

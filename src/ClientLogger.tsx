@@ -1,9 +1,7 @@
-import { useEffect, useContext } from 'react';
-import { GlobalContext } from './Context';
+import { useEffect } from 'react';
+import { client } from './stores/appClient';
 
 const ClientLogger = ({ userId }: { userId: string }) => {
-  const { client } = useContext(GlobalContext);
-
   useEffect(() => {
     const logClientData = async () => {
       try {

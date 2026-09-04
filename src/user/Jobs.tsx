@@ -1,6 +1,7 @@
 import { Card } from 'react-bootstrap';
 import { useContext, useEffect, useState } from 'react';
-import { UserContext, GlobalContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { Schema } from '../amplify/client-schema';
 import { Spinner, Button, Form } from 'react-bootstrap';
 import MyTable from '../Table';
@@ -38,7 +39,6 @@ export default function Jobs() {
     myOrganizationHook,
     getSqsClient,
   } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext)!;
   const navigate = useNavigate();
 
   const [displayProjects, setDisplayProjects] = useState<Project[]>([]);

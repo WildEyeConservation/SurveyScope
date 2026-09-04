@@ -2,7 +2,8 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
+import { UserContext } from '../Context';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
@@ -52,7 +53,6 @@ export default function QCReview({
     React.SetStateAction<LaunchHandler | null>
   >;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
 
   // Data loading
@@ -205,7 +205,7 @@ export default function QCReview({
     return () => {
       mounted = false;
     };
-  }, [client, annotationSet.id]);
+  }, [annotationSet.id]);
 
   // Reset annotator filter when category changes
   useEffect(() => {
@@ -303,7 +303,6 @@ export default function QCReview({
     annotationSet.id,
     annotationSet.name,
     categories,
-    client,
     project.id,
     project.name,
     setQCLaunchHandler,

@@ -1,6 +1,6 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Spinner, ProgressBar } from 'react-bootstrap';
-import { GlobalContext } from '../Context';
+import { client } from '../stores/appClient';
 
 /**
  * Surveys-page progress for an Individual ID job. Unlike the SQS workflows
@@ -14,7 +14,6 @@ export default function IndividualIdProgress({
 }: {
   projectId: string;
 }) {
-  const { client } = useContext(GlobalContext)!;
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<{
     total: number;
@@ -67,7 +66,7 @@ export default function IndividualIdProgress({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [projectId, client]);
+  }, [projectId]);
 
   if (loading && !stats) return <Spinner />;
   if (!stats || stats.total <= 0) {

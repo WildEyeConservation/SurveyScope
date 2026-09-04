@@ -1,6 +1,5 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { GlobalContext } from '../../Context';
+import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 import { emptyOverlay, type Overlay } from './shareStats';
 
@@ -34,7 +33,6 @@ export interface FoldedFeedback {
  * Maps with {@link foldFeedbackRows} inside a useMemo. Read-only; never writes.
  */
 export function useAllChainReviewFeedback(shareId: string | undefined) {
-  const { client } = useContext(GlobalContext)!;
 
   return useQuery<FeedbackRow[]>({
     queryKey: ['all-chain-review-feedback', shareId],

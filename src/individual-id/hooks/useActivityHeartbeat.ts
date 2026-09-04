@@ -1,5 +1,5 @@
-import { useContext, useEffect, useRef } from 'react';
-import { GlobalContext } from '../../Context';
+import { useEffect, useRef } from 'react';
+import { client } from '../../stores/appClient';
 
 const PING_MIN_INTERVAL_MS = 60_000;
 // Matches the server-side release window so the user is bounced before the cron frees their transect.
@@ -11,7 +11,6 @@ export function useActivityHeartbeat(params: {
   onLost: () => void;
 }) {
   const { transectRowId, onLost } = params;
-  const { client } = useContext(GlobalContext)!;
   const lastActivityRef = useRef<number>(Date.now());
   const lastPingRef = useRef<number>(0);
   const onLostRef = useRef(onLost);
@@ -69,5 +68,5 @@ export function useActivityHeartbeat(params: {
       window.removeEventListener('keydown', onActivity, true);
       clearInterval(idleTimer);
     };
-  }, [client, transectRowId]);
+  }, [transectRowId]);
 }

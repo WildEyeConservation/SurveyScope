@@ -8,7 +8,9 @@ import {
 } from 'react';
 import { Button, Form, Spinner } from 'react-bootstrap';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { GlobalContext, TestingContext } from '../Context';
+import { TestingContext } from '../Context';
+import { client } from '../stores/appClient';
+import { showModalAction as showModal } from '../stores/modalStore';
 import { fetchAllPaginatedResults } from '../utils';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
 import LightLocationView from './LightLocationView';
@@ -27,7 +29,6 @@ type LocationReferenceTask = TaskPayload & {
 };
 
 export default function AddLocationsModal({ show, preset, surveyId }: Props) {
-  const { client, showModal } = useContext(GlobalContext)!;
   const { organizationId } = useContext(TestingContext)!;
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -243,7 +244,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       setIndex(0);
       setLoading(false);
     },
-    [client, preset.id, surveyId]
+    [preset.id, surveyId]
   );
 
   // Fetch project location sets for tiled sizes / testing set
@@ -267,7 +268,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [show, client, surveyId]);
+  }, [show, surveyId]);
 
   const tiledSizeOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -340,7 +341,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
     });
     setLocationSets((prev) => (created ? [...prev, created] : prev));
     return created?.id as string;
-  }, [client, surveyId, locationSets]);
+  }, [surveyId, locationSets]);
 
   async function saveAnnotations(cand: {
     annotationSetId: string;
@@ -746,7 +747,6 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 }
 
 function CategoryOptions({ annotationSetId }: { annotationSetId: string }) {
-  const { client } = useContext(GlobalContext)!;
   const [cats, setCats] = useState<any[]>([]);
   useEffect(() => {
     let cancelled = false;

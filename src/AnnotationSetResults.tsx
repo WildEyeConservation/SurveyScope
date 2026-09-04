@@ -3,8 +3,9 @@ import { Modal, Body, Header, Footer, Title } from './Modal';
 import { useNavigate } from 'react-router-dom';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import exportFromJSON from 'export-from-json';
-import { GlobalContext } from './Context.tsx';
-import { useContext, useState, useEffect, useMemo } from 'react';
+import { client } from './stores/appClient';
+import { showModalAction as showModal } from './stores/modalStore';
+import { useState, useEffect, useMemo } from 'react';
 import { useUsers } from './apiInterface';
 import GenerateJollyResults from './GenerateJollyResults.tsx';
 import { Spinner } from 'react-bootstrap';
@@ -25,7 +26,6 @@ export default function AnnotationSetResults({
   annotationSet: { id: string; name: string };
 }) {
   const navigate = useNavigate();
-  const { client, showModal } = useContext(GlobalContext)!;
   const [loading, setLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
   const { users } = useUsers();
@@ -65,7 +65,7 @@ export default function AnnotationSetResults({
     return () => {
       mounted = false;
     };
-  }, [client, surveyId, annotationSet.id]);
+  }, [surveyId, annotationSet.id]);
 
   async function exportData(annotationSets: { id: string; name: string }[]) {
     setExportStatus('Exporting data...');

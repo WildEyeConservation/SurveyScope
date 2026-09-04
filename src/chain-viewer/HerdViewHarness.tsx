@@ -2,7 +2,8 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button, Spinner } from 'react-bootstrap';
 import Select, { type SingleValue } from 'react-select';
-import { GlobalContext, ProjectContext } from '../Context';
+import { ProjectContext } from '../Context';
+import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import type { Lane } from '../individual-id/utils/lanes';
 import { buildHerdRuns } from './utils/herdRuns';
@@ -55,7 +56,6 @@ type UpdateAnnotationCategory = (input: {
  * matching, linking or auto-pan.
  */
 export function HerdViewHarness({ annotationSetId }: Props) {
-  const { client } = useContext(GlobalContext)!;
   const {
     categoriesHook: { data: categories },
     project,
@@ -140,7 +140,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [client, annotationSetId]);
+  }, [annotationSetId]);
 
   // ---- Category filter ----
   const [selectedCategory, setSelectedCategory] = useState<{
@@ -326,7 +326,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         setAnnotations(revert);
       }
     },
-    [annotations, client]
+    [annotations]
   );
 
   // ---- Change label (chain-wide, optimistic, reverts on failure). ----
@@ -407,7 +407,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         setAnnotations(rollback);
       }
     },
-    [annotations, client, labelChange]
+    [annotations, labelChange]
   );
 
   // ---- Chain-tiles modal ----
