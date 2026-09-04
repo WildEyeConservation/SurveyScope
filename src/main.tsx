@@ -1,7 +1,7 @@
 import ReactDOM from 'react-dom/client';
 import AppWithAuthenticator from './App.tsx';
 import './index.css';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Progress } from './progress';
 import AnnotationQueuePage from './AnnotationQueuePage';
@@ -27,7 +27,7 @@ import {
 import HomographyTask from './homography/HomographyTask';
 import HomographyViewer from './homography/HomographyViewer';
 import HomographyEditPage from './homography/HomographyEditPage';
-import { persistQueryClient } from '@tanstack/react-query-persist-client';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import Admin from './Admin';
 import JollyResults from './JollyResults';
@@ -62,12 +62,6 @@ export const queryClient = new QueryClient({
   },
 });
 
-persistQueryClient({
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  queryClient: queryClient as any,
-  persister,
-});
-
 // Define global for browser environment
 window.global = window;
 
@@ -76,10 +70,15 @@ const router = createBrowserRouter([
     path: '/',
     element: (
       <Progress>
-        <QueryClientProvider client={queryClient}>
+        {/* The provider restores the persisted cache before children mount, so
+            queries do not start fetching ahead of hydration on reload. */}
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{ persister }}
+        >
           <ReactQueryDevtools initialIsOpen={false} />
           <AppWithAuthenticator />
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </Progress>
     ),
     errorElement: <ErrorPage />,
