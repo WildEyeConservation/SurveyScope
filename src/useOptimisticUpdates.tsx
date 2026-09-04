@@ -62,6 +62,34 @@ export interface OptimisticOptions<T> {
   authMode?: 'apiKey' | 'userPool' | 'iam' | 'identityPool' | 'lambda' | 'none';
 }
 
+type SharedSubscription = { unsubscribe(): void };
+
+interface SharedSubscriptionEntry {
+  count: number;
+  subscriptions: SharedSubscription[];
+}
+
+const sharedSubscriptions = new Map<string, SharedSubscriptionEntry>();
+
+function stableSerialize(value: unknown): string {
+  return JSON.stringify(value, (_key, nestedValue: unknown) => {
+    if (
+      nestedValue !== null &&
+      typeof nestedValue === 'object' &&
+      !Array.isArray(nestedValue)
+    ) {
+      const objectValue = nestedValue as Record<string, unknown>;
+      return Object.keys(objectValue)
+        .sort()
+        .reduce<Record<string, unknown>>((sorted, key) => {
+          sorted[key] = objectValue[key];
+          return sorted;
+        }, {});
+    }
+    return nestedValue;
+  });
+}
+
 export function useOptimisticUpdates<
   T,
   ModelKey extends keyof DataModels
@@ -114,7 +142,24 @@ export function useOptimisticUpdates<
     const subOptions = options?.authMode
       ? ({ ...(subscriptionFilter ?? {}), authMode: options.authMode } as typeof subscriptionFilter)
       : subscriptionFilter;
+    const subscriptionKey = `${String(modelKey)}:${stableSerialize(subOptions ?? {})}`;
+    const existingEntry = sharedSubscriptions.get(subscriptionKey);
 
+    if (existingEntry) {
+      existingEntry.count += 1;
+      return () => {
+        existingEntry.count -= 1;
+        if (existingEntry.count === 0) {
+          existingEntry.subscriptions.forEach((subscription) =>
+            subscription.unsubscribe()
+          );
+          sharedSubscriptions.delete(subscriptionKey);
+        }
+      };
+    }
+
+    // Sharers must use equivalent compositeKey functions; the first callbacks
+    // own getKey and update the common queryKey for every hook instance.
     const createSub = model.onCreate(subOptions).subscribe({
       next: (data: T) => {
         if (data == null) return;
@@ -148,10 +193,20 @@ export function useOptimisticUpdates<
       error: (error: unknown) => console.warn(error),
     });
 
+    const entry: SharedSubscriptionEntry = {
+      count: 1,
+      subscriptions: [createSub, updateSub, deleteSub],
+    };
+    sharedSubscriptions.set(subscriptionKey, entry);
+
     return () => {
-      createSub.unsubscribe();
-      updateSub.unsubscribe();
-      deleteSub.unsubscribe();
+      entry.count -= 1;
+      if (entry.count === 0) {
+        entry.subscriptions.forEach((subscription) =>
+          subscription.unsubscribe()
+        );
+        sharedSubscriptions.delete(subscriptionKey);
+      }
     };
     //eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subscriptionFilter]);
