@@ -21,6 +21,7 @@ import type { MatchCandidate, NeighbourPair, PixelTransform } from './types';
 import { Button } from 'react-bootstrap';
 import { HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { WaitingOverlay } from '../useAckOnTimeout';
 import { OovPanel } from './components/OovPanel';
 import { HelpModal } from './components/HelpModal';
 import { isOov } from './utils/identity';
@@ -33,6 +34,8 @@ interface Props {
   category: CategoryType | null;
   /** Hotkeys are disabled when false. */
   visible: boolean;
+  /** Fires once both images have their first visible tiles on screen. */
+  onImagesReady?: () => void;
 
   onDrag: (
     candidateKey: string,
@@ -141,6 +144,7 @@ export function IndividualIdMapPair(props: Props) {
     candidates,
     category,
     visible,
+    onImagesReady,
     onDrag,
     onAccept,
     onUnfocus,
@@ -395,6 +399,24 @@ export function IndividualIdMapPair(props: Props) {
     conflictHighlightAnnotationIds,
     chainViewerHrefFor,
   ]);
+
+  const [imagesReady, setImagesReady] = useState(false);
+  const readySidesRef = useRef<Set<'A' | 'B'>>(new Set());
+  const onImagesReadyRef = useRef(onImagesReady);
+  onImagesReadyRef.current = onImagesReady;
+  const markSideReady = useCallback((side: 'A' | 'B') => {
+    const sides = readySidesRef.current;
+    if (sides.has(side)) return;
+    sides.add(side);
+    if (sides.size === 2) {
+      setImagesReady(true);
+      onImagesReadyRef.current?.();
+    }
+  }, []);
+  // Linking hotkeys wait for the imagery; pair navigation stays available.
+  const interactive = visible && imagesReady;
+  const handleSideReadyA = useCallback(() => markSideReady('A'), [markSideReady]);
+  const handleSideReadyB = useCallback(() => markSideReady('B'), [markSideReady]);
 
   // Dragging a marker also focuses it — acting on any marker moves the
   // active state to that marker. Informational markers can't be focused, so
@@ -673,14 +695,14 @@ export function IndividualIdMapPair(props: Props) {
     onClearConflictHighlights,
   ]);
 
-  useHotkeys('Space', handleSpace, { enabled: visible, preventDefault: true }, [
+  useHotkeys('Space', handleSpace, { enabled: interactive, preventDefault: true }, [
     handleSpace,
   ]);
-  useHotkeys('Escape', handleEscape, { enabled: visible }, [handleEscape]);
-  useHotkeys('ArrowRight', () => advanceFocus(1), { enabled: visible }, [
+  useHotkeys('Escape', handleEscape, { enabled: interactive }, [handleEscape]);
+  useHotkeys('ArrowRight', () => advanceFocus(1), { enabled: interactive }, [
     advanceFocus,
   ]);
-  useHotkeys('ArrowLeft', () => advanceFocus(-1), { enabled: visible }, [
+  useHotkeys('ArrowLeft', () => advanceFocus(-1), { enabled: interactive }, [
     advanceFocus,
   ]);
   useHotkeys(
@@ -699,7 +721,7 @@ export function IndividualIdMapPair(props: Props) {
   useHotkeys(
     'Tab',
     (e) => setMarkersHidden(e.type === 'keydown'),
-    { enabled: visible, keydown: true, keyup: true, preventDefault: true },
+    { enabled: interactive, keydown: true, keyup: true, preventDefault: true },
     []
   );
   // A keyup can be missed if focus leaves the window mid-hold, or if the
@@ -931,7 +953,22 @@ export function IndividualIdMapPair(props: Props) {
 
   return (
     <div className='w-100 h-100 d-flex flex-column gap-2'>
-      <div className='d-flex flex-row gap-2 w-100' style={{ flex: 1, minHeight: 0 }}>
+      <div
+        className='d-flex flex-row gap-2 w-100'
+        style={{ flex: 1, minHeight: 0, position: 'relative' }}
+      >
+        {!imagesReady && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 1000,
+              backgroundColor: 'rgba(0, 0, 0, 0.35)',
+            }}
+          >
+            <WaitingOverlay message='Loading images…' />
+          </div>
+        )}
         <OovPanel
           side='A'
           candidates={oovCandidatesA}
@@ -966,6 +1003,7 @@ export function IndividualIdMapPair(props: Props) {
             // Side A's overlay traces image B's bounds projected onto A.
             previewTransform={markersHidden ? undefined : pair.backward}
             otherImage={imageB}
+            onInitialTilesLoaded={handleSideReadyA}
           />
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
@@ -991,6 +1029,7 @@ export function IndividualIdMapPair(props: Props) {
             // Side B's overlay traces image A's bounds projected onto B.
             previewTransform={markersHidden ? undefined : pair.forward}
             otherImage={imageA}
+            onInitialTilesLoaded={handleSideReadyB}
           />
         </div>
         <OovPanel
@@ -1006,7 +1045,6 @@ export function IndividualIdMapPair(props: Props) {
         />
       </div>
       <PairToolbar
-        active={activeCandidate}
         // Counts exclude informational markers.
         candidatesCount={
           candidates.filter((c) => !c.informational).length
@@ -1030,7 +1068,6 @@ export function IndividualIdMapPair(props: Props) {
 }
 
 function PairToolbar({
-  active,
   candidatesCount,
   acceptedCount,
   onPrev,
@@ -1042,7 +1079,6 @@ function PairToolbar({
   shareHref,
   editHomographyHref,
 }: {
-  active: MatchCandidate | null;
   candidatesCount: number;
   acceptedCount: number;
   onPrev?: () => void;
@@ -1058,17 +1094,9 @@ function PairToolbar({
   const [helpOpen, setHelpOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
-  const status = active
-    ? active.status === 'pending'
-      ? 'Press Space to accept the link.'
-      : 'Already linked. Use ←/→ to focus another candidate.'
-    : candidatesCount === 0
-    ? 'No matches in this pair.'
-    : 'Click or use ←/→ to focus a candidate, then Space.';
-
   return (
     <div
-      className='d-flex flex-row align-items-center justify-content-between gap-2 px-3 py-3'
+      className='d-flex flex-column gap-2 px-3 py-3'
       style={{
         background: '#4E5D6C',
         color: '#f8f9fa',
@@ -1076,65 +1104,93 @@ function PairToolbar({
         position: 'relative',
       }}
     >
-      <div className='d-flex flex-row gap-2 align-items-center'>
-        <span
-          style={{
-            borderRight: '1px solid rgba(255, 255, 255, 0.25)',
-            paddingRight: 8,
-            marginRight: 4,
-            display: 'flex',
-          }}
-        >
-          <Button
-            size='sm'
-            variant='info'
-            onClick={() => setHelpOpen(true)}
-            title='How ChainLinker works'
+      <div className='d-flex flex-row align-items-center justify-content-between gap-2'>
+        <div className='d-flex flex-row gap-2 align-items-center'>
+          <span
+            style={{
+              borderRight: '1px solid rgba(255, 255, 255, 0.25)',
+              paddingRight: 8,
+              marginRight: 4,
+              display: 'flex',
+            }}
           >
-            <HelpCircle size={16} style={{ verticalAlign: 'middle' }} />
-          </Button>
-        </span>
-        <Button
-          size='sm'
-          variant='outline-light'
-          onClick={() => onCollapsedChange(!collapsed)}
-          title={collapsed ? 'Expand' : 'Collapse'}
-        >
-          {collapsed ? '▴' : '▾'}
-        </Button>
-        {onPrev && (
-          <Button
-            onClick={onPrev}
-            title='Previous image pair (Ctrl+←)'
-            size='sm'
-          >
-            ←
-          </Button>
-        )}
-        {onNext && (
-          <Button
-            size='sm'
-            onClick={onNext}
-            title='Next image pair (Ctrl+→)'
-          >
-            →
-          </Button>
-        )}
-        {!collapsed && (
-          <span style={{ opacity: 0.85 }}>
-            {acceptedCount} / {candidatesCount} accepted
+            <Button
+              size='sm'
+              variant='info'
+              onClick={() => setHelpOpen(true)}
+              title='How ChainLinker works'
+            >
+              <HelpCircle size={16} style={{ verticalAlign: 'middle' }} />
+            </Button>
           </span>
-        )}
+          <Button
+            size='sm'
+            variant='outline-light'
+            onClick={() => onCollapsedChange(!collapsed)}
+            title={collapsed ? 'Expand' : 'Collapse'}
+          >
+            {collapsed ? '▴' : '▾'}
+          </Button>
+          {onPrev && (
+            <Button
+              onClick={onPrev}
+              title='Previous image pair (Ctrl+←)'
+              size='sm'
+            >
+              ←
+            </Button>
+          )}
+          {onNext && (
+            <Button size='sm' onClick={onNext} title='Next image pair (Ctrl+→)'>
+              →
+            </Button>
+          )}
+          {!collapsed && (
+            <span style={{ opacity: 0.85 }}>
+              {acceptedCount} / {candidatesCount} accepted
+            </span>
+          )}
+        </div>
+        <div className='d-flex flex-row gap-2 align-items-center'>
+          {editHomographyHref && (
+            <Button
+              size='sm'
+              variant='outline-light'
+              onClick={() => navigate(editHomographyHref)}
+              title='Edit the homography for this image pair'
+            >
+              Edit homography
+            </Button>
+          )}
+          <Button
+            size='sm'
+            variant='outline-light'
+            onClick={async () => {
+              // shareHref is a route path; expand to an absolute URL so the
+              // clipboard payload is openable outside this tab.
+              const absolute = shareHref
+                ? new URL(shareHref, window.location.origin).toString()
+                : window.location.href;
+              try {
+                await navigator.clipboard.writeText(absolute);
+                setShareCopied(true);
+                window.setTimeout(() => setShareCopied(false), 1500);
+              } catch (err) {
+                console.error('Failed to copy share link', err);
+              }
+            }}
+            title={shareCopied ? 'Link copied' : 'Copy a link to this pair'}
+          >
+            {shareCopied ? 'Copied!' : 'Share'}
+          </Button>
+          <Button size='sm' onClick={() => navigate('/jobs')}>
+            Save & Exit
+          </Button>
+        </div>
       </div>
       <div
-        className='d-flex flex-row gap-2 align-items-center'
+        className='ii-toolbar-centre d-flex flex-row gap-2 align-items-center'
         title='Munkres only proposes a match if the projected distance to a partner is below this many image pixels. The active marker shows a ring at this radius.'
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-        }}
       >
         <label
           htmlFor='ii-leniency'
@@ -1150,7 +1206,7 @@ function PairToolbar({
           step={10}
           value={leniency}
           onChange={(e) => onLeniencyChange(parseInt(e.target.value, 10))}
-          style={{ width: 140 }}
+          className='ii-toolbar-slider'
         />
         <input
           type='number'
@@ -1177,48 +1233,6 @@ function PairToolbar({
         />
         <span style={{ opacity: 0.85, fontSize: 11 }}>px</span>
       </div>
-      {/* Always render the spacer so Share/Save stay right-aligned when collapsed. */}
-      <span style={{ flex: 1, textAlign: 'right' }}>{!collapsed && status}</span>
-      {editHomographyHref && (
-        <Button
-          size='sm'
-          variant='outline-light'
-          onClick={() => navigate(editHomographyHref)}
-          title='Edit the homography for this image pair'
-        >
-          Edit homography
-        </Button>
-      )}
-      <Button
-        size='sm'
-        variant='outline-light'
-        onClick={async () => {
-          // shareHref is a route path; expand to an absolute URL so the
-          // clipboard payload is openable outside this tab.
-          const absolute = shareHref
-            ? new URL(shareHref, window.location.origin).toString()
-            : window.location.href;
-          try {
-            await navigator.clipboard.writeText(absolute);
-            setShareCopied(true);
-            window.setTimeout(() => setShareCopied(false), 1500);
-          } catch (err) {
-            console.error('Failed to copy share link', err);
-          }
-        }}
-        title={shareCopied ? 'Link copied' : 'Copy a link to this pair'}
-      >
-        {shareCopied ? 'Copied!' : 'Share'}
-      </Button>
-      <Button
-        size='sm'
-        onClick={() => {
-          navigate('/jobs');
-          }
-        }
-        >
-        Save & Exit
-      </Button>
       <HelpModal show={helpOpen} onHide={() => setHelpOpen(false)} />
     </div>
   );
