@@ -20,10 +20,10 @@ export function useMyMemberships() {
   >(
     'UserProjectMembership',
     async (nextToken) =>
-      client.models.UserProjectMembership.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
+      client.models.UserProjectMembership.userProjectMembershipsByUserId(
+        { userId: user.username },
+        { nextToken }
+      ),
     subscriptionFilter,
     {
       compositeKey: (membership) =>
@@ -48,10 +48,10 @@ export function useMyOrganizations() {
   >(
     'OrganizationMembership',
     async (nextToken) =>
-      client.models.OrganizationMembership.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
+      client.models.OrganizationMembership.organizationsByUserId(
+        { userId: user.username },
+        { nextToken }
+      ),
     subscriptionFilter,
     {
       compositeKey: (membership) =>

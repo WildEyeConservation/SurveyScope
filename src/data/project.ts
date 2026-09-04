@@ -27,11 +27,10 @@ export function useCategories(projectId: string | undefined) {
   return useOptimisticUpdates<Schema['Category']['type'], 'Category'>(
     'Category',
     async (nextToken) =>
-      client.models.Category.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-        limit: 10000,
-      }),
+      client.models.Category.categoriesByProjectId(
+        { projectId: projectId ?? '' },
+        { nextToken, limit: 10000 }
+      ),
     subscriptionFilter
   );
 }

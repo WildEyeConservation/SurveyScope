@@ -15,10 +15,10 @@ export function useProjectMemberships(projectId: string | undefined) {
   >(
     'UserProjectMembership',
     async (nextToken) =>
-      client.models.UserProjectMembership.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
+      client.models.UserProjectMembership.userProjectMembershipsByProjectId(
+        { projectId: projectId ?? '' },
+        { nextToken }
+      ),
     subscriptionFilter
   );
 }
@@ -32,10 +32,10 @@ export function useImageSets(projectId: string | undefined) {
   return useOptimisticUpdates<Schema['ImageSet']['type'], 'ImageSet'>(
     'ImageSet',
     async (nextToken) =>
-      client.models.ImageSet.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
+      client.models.ImageSet.imageSetsByProjectId(
+        { projectId: projectId ?? '' },
+        { nextToken }
+      ),
     subscriptionFilter
   );
 }
@@ -49,10 +49,10 @@ export function useLocationSets(projectId: string | undefined) {
   return useOptimisticUpdates<Schema['LocationSet']['type'], 'LocationSet'>(
     'LocationSet',
     async (nextToken) =>
-      client.models.LocationSet.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
+      client.models.LocationSet.locationSetsByProjectId(
+        { projectId: projectId ?? '' },
+        { nextToken }
+      ),
     subscriptionFilter
   );
 }
@@ -69,10 +69,10 @@ export function useAnnotationSets(projectId: string | undefined) {
   >(
     'AnnotationSet',
     async (nextToken) =>
-      client.models.AnnotationSet.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
+      client.models.AnnotationSet.annotationSetsByProjectId(
+        { projectId: projectId ?? '' },
+        { nextToken }
+      ),
     subscriptionFilter
   );
 }
@@ -88,10 +88,10 @@ export function useQueues(projectId: string | undefined) {
   >(
     'Queue',
     async (nextToken) =>
-      client.models.Queue.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
+      client.models.Queue.queuesByProjectId(
+        { projectId: projectId ?? '' },
+        { nextToken }
+      ),
     subscriptionFilter
   );
   const remove = ({ id }: { id: string }) => {

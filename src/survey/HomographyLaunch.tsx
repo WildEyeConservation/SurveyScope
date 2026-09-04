@@ -156,11 +156,10 @@ export default function HomographyLaunch({
         const allCategories: Schema['Category']['type'][] = [];
         let nextToken: string | null | undefined = undefined;
         do {
-          const result = await client.models.Category.list({
-            filter: { projectId: { eq: project.id } },
-            nextToken,
-            limit: 10000,
-          });
+          const result = await client.models.Category.categoriesByProjectId(
+            { projectId: project.id },
+            { nextToken, limit: 10000 }
+          );
           allCategories.push(...(result.data ?? []));
           nextToken = result.nextToken;
           if (!cancelled)

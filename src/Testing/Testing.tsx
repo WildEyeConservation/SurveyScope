@@ -38,10 +38,10 @@ export default function Testing() {
   >(
     'TestPreset',
     async (nextToken) =>
-      client.models.TestPreset.list({
-        nextToken,
-        filter: { organizationId: { eq: organization.id } },
-      }),
+      client.models.TestPreset.testPresetsByOrganizationId(
+        { organizationId: organization.id },
+        { nextToken }
+      ),
     {
       filter: { organizationId: { eq: organization.id } },
     }
@@ -53,10 +53,10 @@ export default function Testing() {
   >(
     'OrganizationMembership',
     async (nextToken) =>
-      client.models.OrganizationMembership.list({
-        nextToken,
-        filter: { organizationId: { eq: organization.id } },
-      }),
+      client.models.OrganizationMembership.membershipsByOrganizationId(
+        { organizationId: organization.id },
+        { nextToken }
+      ),
     {
       filter: { organizationId: { eq: organization.id } },
     },
