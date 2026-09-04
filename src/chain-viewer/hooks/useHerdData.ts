@@ -1,12 +1,12 @@
-import { useContext, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ProjectContext } from '../../Context';
 import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 import type {
   ImageNeighbourType,
   ImageType,
 } from '../../schemaTypes';
+import { useCurrentProject } from '../../data/projectScope';
 
 type ImageWithNeighbours = Pick<
   ImageType,
@@ -34,7 +34,7 @@ export interface HerdData {
 }
 
 export function useHerdData() {
-  const { project } = useContext(ProjectContext)!;
+  const project = useCurrentProject();
 
   const [progress, setProgress] = useState<HerdLoadProgress>({
     phase: 'idle',

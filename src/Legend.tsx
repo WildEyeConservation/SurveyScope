@@ -1,8 +1,9 @@
-import { useContext } from 'react';
-import { ProjectContext } from './Context';
 import { Card, Button } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatShortcutKey } from './utils/hotkeys';
+import { useCategories } from './data/project';
+import { useProjectId } from './data/projectScope';
+import { setCurrentCategoryAction } from './stores/annotatorUiStore';
 
 /**
  * SideLegend shows which classes correspond to which colour markers in the
@@ -28,10 +29,9 @@ export function SideLegend({
   collapsed = false,
   onToggleCollapse,
 }: SideLegendProps) {
-  const {
-    categoriesHook: { data: categories },
-    setCurrentCategory,
-  } = useContext(ProjectContext)!;
+  const projectId = useProjectId();
+  const { data: categories } = useCategories(projectId);
+  const setCurrentCategory = setCurrentCategoryAction;
   const cats = categoriesOverride ?? categories;
 
   return (

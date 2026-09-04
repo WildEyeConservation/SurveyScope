@@ -1,11 +1,12 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { ProjectContext } from './Context';
+import { useEffect, useMemo, useState } from 'react';
 import { client } from './stores/appClient';
 import AnnotationWorkspace from './AnnotationWorkspace';
 import { TaskBuffer } from './TaskBuffer';
 import BufferSource from './BufferSource';
 import { Spinner } from 'react-bootstrap';
 import { useInfoTagData } from './useInfoTags';
+import { useCategories } from './data/project';
+import { useProjectId } from './data/projectScope';
 
 type LabeledValue = { label: string; value: string };
 
@@ -41,9 +42,8 @@ export default function ReviewCarousel({
   infoTagNames = [],
   imageBased = true,
 }: ReviewCarouselProps) {
-  const {
-    categoriesHook: { data: categories },
-  } = useContext(ProjectContext)!;
+  const projectId = useProjectId();
+  const { data: categories } = useCategories(projectId);
 
   const [annotations, setAnnotations] = useState<LocationLike[]>([]);
   const [isLoading, setIsLoading] = useState(false);

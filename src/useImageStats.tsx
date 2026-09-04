@@ -1,15 +1,15 @@
-import { useContext, useEffect, useState } from 'react';
-import { ProjectContext } from './Context';
+import { useEffect, useState } from 'react';
 import type { CRUDhook } from './Context';
+import { useCategories } from './data/project';
+import { useProjectId } from './data/projectScope';
 
 export default function useImageStats(
   annotationsHook: CRUDhook<'Annotation'>
 ) {
   const [stats, setStats] = useState<Record<string, number>>({});
   const { data: annotations } = annotationsHook;
-  const {
-    categoriesHook: { data: categories },
-  } = useContext(ProjectContext)!;
+  const projectId = useProjectId();
+  const { data: categories } = useCategories(projectId);
 
   useEffect(() => {
     if (annotations.length > 0 && categories.length > 0) {

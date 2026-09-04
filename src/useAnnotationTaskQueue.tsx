@@ -1,5 +1,5 @@
 import { useEffect, useState, useContext, useCallback, useRef } from 'react';
-import { UserContext, ProjectContext } from './Context';
+import { UserContext } from './Context';
 import { client } from './stores/appClient';
 import {
   ReceiveMessageCommand,
@@ -15,6 +15,7 @@ import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { decideTestCadence } from './testCadence';
 import type { BeforeNextDecision } from './TaskBuffer';
+import { useCurrentMembershipRow } from './data/projectScope';
 
 const LOCATION_SELECTION = [
   'id',
@@ -57,7 +58,7 @@ deduplication, location hydration, skip filtering, visible-time revalidation,
 and SQS acknowledgement.
 */
 export default function useAnnotationTaskQueue() {
-  const { currentPM } = useContext(ProjectContext)!;
+  const currentPM = useCurrentMembershipRow();
   const { getSqsClient, myOrganizationHook } = useContext(UserContext)!;
   const [url, setUrl] = useState<string | undefined>(undefined);
   const [backupUrl, setBackupUrl] = useState<string | undefined>(undefined);

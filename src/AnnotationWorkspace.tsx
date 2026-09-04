@@ -2,7 +2,6 @@ import { useMemo, useContext, useEffect, useRef, useState } from 'react';
 import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
 import { SideLegend } from './Legend';
 import {
-  ProjectContext,
   UserContext,
   ImageContext,
   type AnnotationsHook,
@@ -27,6 +26,12 @@ import {
   publishSharedDefaultZoom,
   subscribeToSharedDefaultZoom,
 } from './defaultZoomEvents';
+import { useCategories } from './data/project';
+import { useProjectId } from './data/projectScope';
+import {
+  setExpandLegendAction,
+  useExpandLegend,
+} from './stores/annotatorUiStore';
 
 interface AnnotationSessionProps {
   location: AnnotationLocation;
@@ -250,11 +255,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     conditions.push({ imageId: { eq: location.image.id } });
     return { filter: { and: conditions } };
   }, [annotationSetId, location.image.id, isTest]);
-  const {
-    categoriesHook: { data: projectCategories },
-    expandLegend,
-    setExpandLegend,
-  } = useContext(ProjectContext)!;
+  const projectId = useProjectId();
+  const { data: projectCategories } = useCategories(projectId);
+  const expandLegend = useExpandLegend();
+  const setExpandLegend = setExpandLegendAction;
   const [legendCategories, setLegendCategories] = useState<
     CategoryType[] | null
   >(null);

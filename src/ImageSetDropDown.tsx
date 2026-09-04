@@ -18,9 +18,9 @@
 // }
 
 import { Form } from 'react-bootstrap';
-import { useContext } from 'react';
-import { ManagementContext } from './Context';
 import Select, { MultiValue, Options } from 'react-select';
+import { useImageSets } from './data/projectSets';
+import { useProjectId } from './data/projectScope';
 
 interface OptionType {
   label: string;
@@ -36,9 +36,8 @@ export function ImageSetDropdown({
   selectedSets,
   setImageSets,
 }: ImageSetDropdownProps) {
-  const {
-    imageSetsHook: { data: imageSets },
-  } = useContext(ManagementContext)!;
+  const projectId = useProjectId();
+  const { data: imageSets } = useImageSets(projectId);
   const options: Options<OptionType> | undefined = imageSets
     ?.map((x) => ({
       label: x.name,

@@ -1,6 +1,5 @@
-import { useContext, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ProjectContext } from '../../Context';
 import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 import type {
@@ -10,6 +9,7 @@ import type {
   ImageType,
 } from '../../schemaTypes';
 import { attachInfoTagsToAnnotations } from '../../infoTags';
+import { useCurrentProject } from '../../data/projectScope';
 
 type ImageWithNeighbours = Pick<
   ImageType,
@@ -57,7 +57,7 @@ export interface PairData {
  * stragglers on other images.
  */
 export function usePairData(input: UsePairDataInput) {
-  const projectCtx = useContext(ProjectContext);
+  const project = useCurrentProject();
   const { image1Id, image2Id, categoryId, annotationSetId } = input;
 
   const enabled = Boolean(
@@ -65,7 +65,7 @@ export function usePairData(input: UsePairDataInput) {
       image2Id &&
       categoryId &&
       annotationSetId &&
-      projectCtx?.project?.id
+      project.id
   );
 
   const [progress, setProgress] = useState<PairLoadProgress>({

@@ -1,14 +1,9 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import { AuthUser, fetchAuthSession } from '@aws-amplify/auth';
-import type { Schema } from './amplify/client-schema';
 import {
-  ProjectContext,
-  ProjectContextType,
   UserContext,
   UserContextType,
-  ManagementContext,
-  ManagementContextType,
   ProgressContext,
   ProgressType,
 } from './Context.tsx';
@@ -18,15 +13,6 @@ import {
   useMyMemberships,
   useMyOrganizations,
 } from './data/memberships';
-import { useCategories, useProject } from './data/project';
-import {
-  useAnnotationSets,
-  useImageSets,
-  useLocationSets,
-  useProjectMemberships,
-  useQueues,
-} from './data/projectSets';
-import { useAllUsers } from './data/users';
 import {
   setCurrentAnnoCountAction,
   setCurrentTaskTagAction,
@@ -41,54 +27,6 @@ import {
   useSessionTestsResults,
   useUnannotatedJobs,
 } from './stores/taskStore';
-
-export function Project({
-  children,
-  currentPM,
-}: {
-  children: React.ReactNode;
-  currentPM: Schema['UserProjectMembership']['type'];
-}) {
-  const [expandLegend, setExpandLegend] = useState<boolean>(
-    () =>
-      localStorage.getItem(`legendCollapsed-${currentPM.projectId}`) !== 'true'
-  );
-  const categoriesHook = useCategories(currentPM.projectId);
-  const [currentCategory, setCurrentCategory] = useState<
-    Schema['Category']['type'] | undefined
-  >(categoriesHook.data?.[0]);
-  const { data: currentProject } = useProject(currentPM.projectId);
-
-  useEffect(() => {
-    setExpandLegend(
-      localStorage.getItem(`legendCollapsed-${currentPM.projectId}`) !== 'true'
-    );
-  }, [currentPM.projectId]);
-
-  useEffect(() => {
-    if (!currentCategory) {
-      setCurrentCategory(categoriesHook.data?.[0]);
-    }
-  }, [categoriesHook.data]);
-
-  return (
-    currentProject && (
-      <ProjectContext.Provider
-        value={{
-          project: currentProject,
-          categoriesHook: categoriesHook as unknown as ProjectContextType['categoriesHook'],
-          currentPM,
-          currentCategory,
-          setCurrentCategory,
-          expandLegend,
-          setExpandLegend,
-        }}
-      >
-        {currentProject && children}
-      </ProjectContext.Provider>
-    )
-  );
-}
 
 export function User({
   user,
@@ -148,31 +86,6 @@ export function User({
     >
       {children}
     </UserContext.Provider>
-  );
-}
-
-export function Management({ children }: { children: React.ReactNode }) {
-  const { project } = useContext(ProjectContext)!;
-  const { users: allUsers } = useAllUsers();
-  const projectMembershipHook = useProjectMemberships(project.id);
-  const imageSetsHook = useImageSets(project.id);
-  const locationSetsHook = useLocationSets(project.id);
-  const annotationSetsHook = useAnnotationSets(project.id);
-  const queuesHook = useQueues(project.id);
-
-  return (
-    <ManagementContext.Provider
-      value={{
-        allUsers,
-        projectMembershipHook: projectMembershipHook as unknown as ManagementContextType['projectMembershipHook'],
-        imageSetsHook: imageSetsHook as unknown as ManagementContextType['imageSetsHook'],
-        locationSetsHook: locationSetsHook as unknown as ManagementContextType['locationSetsHook'],
-        annotationSetsHook: annotationSetsHook as unknown as ManagementContextType['annotationSetsHook'],
-        queuesHook: queuesHook as unknown as ManagementContextType['queuesHook'],
-      }}
-    >
-      {children}
-    </ManagementContext.Provider>
   );
 }
 

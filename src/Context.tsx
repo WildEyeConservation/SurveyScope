@@ -4,7 +4,6 @@ import outputs from '../amplify_outputs.json';
 import { AuthUser } from '@aws-amplify/auth';
 import { SQSClient } from '@aws-sdk/client-sqs';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
-import type { UserType } from '../amplify/shared/types';
 
 
 export interface ProgressType {
@@ -60,37 +59,9 @@ export interface UserContextType {
   >;
 }
 
-export interface ManagementContextType {
-  allUsers: UserType[];
-  projectMembershipHook: CRUDhook<'UserProjectMembership'>;
-  annotationSetsHook: CRUDhook<'AnnotationSet'>;
-  imageSetsHook: CRUDhook<'ImageSet'>;
-  locationSetsHook: CRUDhook<'LocationSet'>;
-  queuesHook: {
-    data: Schema['Queue']['type'][];
-    update: (
-      arg: Parameters<ClientType['models']['Queue']['update']>[0]
-    ) => void;
-    delete: (arg: { id: string }) => void;
-  };
-}
-
 // export interface OrganizationContextType {
 //   organizationHook: CRUDhook<'OrganizationMembership'>;
 // }
-
-export interface ProjectContextType {
-  currentPM: Schema['UserProjectMembership']['type'];
-  annotationsHook?: CRUDhook<'Annotation'>;
-  project: Schema['Project']['type'];
-  categoriesHook: CRUDhook<'Category'>;
-  currentCategory: Schema['Category']['type'] | undefined;
-  setCurrentCategory: React.Dispatch<
-    React.SetStateAction<Schema['Category']['type'] | undefined>
-  >;
-  expandLegend: boolean;
-  setExpandLegend: React.Dispatch<React.SetStateAction<boolean>>;
-}
 
 export interface ProgressContextType {
   progress: ProgressType;
@@ -136,10 +107,6 @@ interface ImageContextType {
 }
 
 export const UserContext = createContext<UserContextType | null>(null);
-export const ProjectContext = createContext<ProjectContextType | null>(null);
-export const ManagementContext = createContext<ManagementContextType | null>(
-  null
-);
 export const ProgressContext = createContext<ProgressContextType | null>(null);
 export const ImageContext = createContext<ImageContextType | undefined>(
   undefined

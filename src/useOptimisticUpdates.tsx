@@ -43,10 +43,8 @@ const { data, create, update, delete } = useOptimisticUpdates(
 );
 */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useContext, useMemo, useCallback } from 'react';
-import type { Schema } from './amplify/client-schema';
+import { useEffect, useMemo, useCallback } from 'react';
 import type { DataModels, SubscriptionOptions } from '../amplify/shared/data-schema.generated';
-import { ProjectContext } from './Context';
 import { client } from './stores/appClient';
 import {
   isMissingRow,
@@ -328,33 +326,6 @@ export function useOptimisticUpdates<
     delete: deleteMutation.mutate,
   };
 }
-
-export const useQueues = () => {
-  const { project } = useContext(ProjectContext)!;
-  const subscriptionFilter = useMemo(
-    () => ({
-      filter: { projectId: { eq: project.id } },
-    }),
-    [project.id]
-  );
-
-  const originalHook = useOptimisticUpdates<Schema['Queue']['type'], 'Queue'>( // eslint-disable-line @typescript-eslint/no-explicit-any
-    'Queue',
-    async (nextToken) =>
-      client.models.Queue.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
-    subscriptionFilter
-  );
-  const remove = ({ id }: { id: string }) => {
-    client.mutations.deleteQueueMutation({ queueId: id }).catch((err: any) =>
-      console.error('deleteQueueMutation failed:', err)
-    );
-    originalHook.delete({ id } as Schema['Queue']['type']);
-  };
-  return { ...originalHook, delete: remove };
-};
 
 // // The byProject versions of the useOptimisticUpdates hook work on all classes except project itself
 // type ModelTypeByProject = Exclude<keyof typeof client.models, 'Project'>;

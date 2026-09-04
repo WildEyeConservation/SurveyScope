@@ -2,7 +2,6 @@ import { useParams } from 'react-router-dom';
 import {
   useEffect,
   useState,
-  useContext,
   useMemo,
   useRef,
   useCallback,
@@ -10,7 +9,6 @@ import {
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { AnnotationSetDropdown } from './AnnotationSetDropDown';
 import Select, { MultiValue, type CSSObjectWithLabel } from 'react-select';
-import { ProjectContext, ManagementContext } from './Context';
 import { client } from './stores/appClient';
 import { Form } from 'react-bootstrap';
 import './Review.css';
@@ -23,6 +21,9 @@ import DensityMap, { type DensitySource } from './DensityMap';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
 import { useInfoTagData } from './useInfoTags';
+import { useCategories } from './data/project';
+import { useAnnotationSets } from './data/projectSets';
+import { useCurrentProject, useProjectId } from './data/projectScope';
 
 type Option = { label: string; value: string };
 
@@ -59,14 +60,11 @@ export function Review({ showAnnotationSetDropdown = true }) {
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const {
-    categoriesHook: { data: categories },
-    project,
-  } = useContext(ProjectContext)!;
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const { data: categories } = useCategories(projectId);
   const { annotationSetId } = useParams();
-  const {
-    annotationSetsHook: { data: annotationSets },
-  } = useContext(ManagementContext)!;
+  const { data: annotationSets } = useAnnotationSets(projectId);
 
   // Fetch users with project membership
   const { users } = useUsers();

@@ -16,7 +16,7 @@ import {
   storedZoomToMapZoom,
   mapZoomToStoredZoom,
 } from './imageTiles';
-import { ImageContext, ManagementContext, ProjectContext } from '../Context';
+import { ImageContext } from '../Context';
 import useImageMenuItems from '../useImageMenuItems';
 import { isWithinLocationBounds, resolveCategoryIdForSet } from '../utils';
 import {
@@ -45,6 +45,13 @@ import {
 } from './AnnotatorOverlays';
 import useImageFileSource from './useImageFileSource';
 import MapRotateControl from './MapRotateControl';
+import { useCategories } from '../data/project';
+import { useCurrentProject, useProjectId } from '../data/projectScope';
+import { useAllUsers } from '../data/users';
+import {
+  setCurrentCategoryAction,
+  useCurrentCategory,
+} from '../stores/annotatorUiStore';
 import {
   addAnnotationMarkerLayers,
   ANNOTATION_MARKER_LAYERS,
@@ -128,13 +135,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     setFullyLoadedTimestamp,
     setZoom,
   } = useContext(ImageContext)!;
-  const { allUsers } = useContext(ManagementContext)!;
-  const {
-    project,
-    currentCategory,
-    setCurrentCategory,
-    categoriesHook: { data: projectCategories },
-  } = useContext(ProjectContext)!;
+  const { users: allUsers } = useAllUsers();
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const currentCategory = useCurrentCategory();
+  const setCurrentCategory = setCurrentCategoryAction;
+  const { data: projectCategories } = useCategories(projectId);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);

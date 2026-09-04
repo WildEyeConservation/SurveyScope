@@ -1,6 +1,7 @@
-import { useContext } from 'react';
-import { ProjectContext, ManagementContext } from './Context';
+import type { CRUDhook } from './Context';
 import Select, { SingleValue } from 'react-select';
+import { useAnnotationSets } from './data/projectSets';
+import { useCurrentProject, useProjectId } from './data/projectScope';
 
 interface AnnotationSetDropdownProps {
   setAnnotationSet: (arg0: string) => void;
@@ -13,11 +14,13 @@ export function AnnotationSetDropdown({
   selectedSet,
   canCreate = true,
 }: AnnotationSetDropdownProps) {
-  // Look into this, UserContext is not passing through items within it
-  const { project } = useContext(ProjectContext)!;
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const annotationSetsHook = useAnnotationSets(projectId) as unknown as CRUDhook<'AnnotationSet'>;
   const {
-    annotationSetsHook: { data: annotationSets, create: createAnnotationSet },
-  } = useContext(ManagementContext)!;
+    data: annotationSets,
+    create: createAnnotationSet,
+  } = annotationSetsHook;
   const onNewAnnotationSet = async () => {
     const name = prompt('Please enter new AnnotationSet name', '');
     if (name) {

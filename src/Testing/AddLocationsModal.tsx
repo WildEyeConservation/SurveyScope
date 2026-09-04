@@ -14,7 +14,7 @@ import { showModalAction as showModal } from '../stores/modalStore';
 import { fetchAllPaginatedResults } from '../utils';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
 import LightLocationView from './LightLocationView';
-import ProjectContext from './ProjectContext';
+import { ProjectScope } from '../data/projectScope';
 
 type Props = {
   show: boolean;
@@ -489,7 +489,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   }, [addedLocations]);
 
   return (
-    <ProjectContext surveyId={surveyId}>
+    <ProjectScope projectId={surveyId}>
       <Modal show={show} strict={true}>
         <Header>
           <Title>Add Locations to {preset.name}</Title>
@@ -742,7 +742,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           </Button>
         </Footer>
       </Modal>
-    </ProjectContext>
+    </ProjectScope>
   );
 }
 

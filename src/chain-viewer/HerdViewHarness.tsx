@@ -1,8 +1,7 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button, Spinner } from 'react-bootstrap';
 import Select, { type SingleValue } from 'react-select';
-import { ProjectContext } from '../Context';
 import { client } from '../stores/appClient';
 import { fetchAllPaginatedResults } from '../utils';
 import type { Lane } from '../individual-id/utils/lanes';
@@ -14,6 +13,8 @@ import { HerdMapPair } from './HerdMapPair';
 import { HerdNavBar } from './HerdNavBar';
 import { ChainTilesModal } from './components/ChainTilesModal';
 import ChangeCategoryModal from '../ChangeCategoryModal';
+import { useCategories } from '../data/project';
+import { useCurrentProject, useProjectId } from '../data/projectScope';
 import type { ChainAnnotation } from './types';
 import './ChainViewer.css';
 import { fetchInfoTagDataForSet, infoTagNamesFor } from '../infoTags';
@@ -56,10 +57,9 @@ type UpdateAnnotationCategory = (input: {
  * matching, linking or auto-pan.
  */
 export function HerdViewHarness({ annotationSetId }: Props) {
-  const {
-    categoriesHook: { data: categories },
-    project,
-  } = useContext(ProjectContext)!;
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const { data: categories } = useCategories(projectId);
   const { surveyId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();

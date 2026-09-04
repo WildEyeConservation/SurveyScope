@@ -1,5 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { ProjectContext } from '../Context';
+import { useEffect, useMemo, useState } from 'react';
 import { client } from '../stores/appClient';
 import { useOptimisticUpdates } from '../useOptimisticUpdates';
 import MapLibreLightViewer, {
@@ -8,6 +7,8 @@ import MapLibreLightViewer, {
 } from '../annotator/MapLibreLightViewer';
 import { buildAnnotationFeatureProperties } from '../annotator/annotationFeatures';
 import type { ExtendedAnnotationType } from '../schemaTypes';
+import { useCategories } from '../data/project';
+import { useProjectId } from '../data/projectScope';
 
 type MinimalLocationRef = { id: string; annotationSetId: string };
 
@@ -40,9 +41,8 @@ export default function LightLocationView({
     offsetY?: number;
   };
 }) {
-  const {
-    categoriesHook: { data: categories },
-  } = useContext(ProjectContext)!;
+  const projectId = useProjectId();
+  const { data: categories } = useCategories(projectId);
   const [loaded, setLoaded] = useState<LoadedLocation | null>(null);
   const [sourceKey, setSourceKey] = useState<string | null>(null);
 

@@ -1,11 +1,19 @@
-import { useContext, useCallback, useState, useEffect, useRef } from 'react';
-import { ProjectContext } from './Context';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { client } from './stores/appClient';
 import { fetchAllPaginatedResults } from './utils';
 import type { Identifiable } from './TaskBuffer';
+import { useCategories } from './data/project';
+import {
+  useCurrentMembershipRow,
+  useCurrentProject,
+  useProjectId,
+} from './data/projectScope';
 
 export default function useTesting() {
-  const { currentPM, project, categoriesHook } = useContext(ProjectContext)!;
+  const currentPM = useCurrentMembershipRow();
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const categoriesHook = useCategories(projectId);
 
   // Use ref for index to prevent race conditions when multiple fetcher calls happen concurrently
   const iRef = useRef(0);

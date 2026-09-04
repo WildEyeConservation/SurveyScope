@@ -1,6 +1,5 @@
-import { useContext, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ProjectContext } from '../../Context';
 import { client } from '../../stores/appClient';
 import { fetchAllPaginatedResults } from '../../utils';
 import type {
@@ -10,6 +9,7 @@ import type {
   ImageType,
 } from '../../schemaTypes';
 import { attachInfoTagsToAnnotations } from '../../infoTags';
+import { useCurrentProject } from '../../data/projectScope';
 
 // Amplify's return type doesn't reflect custom selectionSets, so we type this explicitly.
 type ImageWithNeighbours = Pick<
@@ -53,7 +53,7 @@ export interface TransectData {
 }
 
 export function useTransectData(input: UseTransectDataInput) {
-  const { project } = useContext(ProjectContext)!;
+  const project = useCurrentProject();
   const { transectId, categoryId, annotationSetId, chainObjectId } = input;
 
   const isChainMode = Boolean(chainObjectId);

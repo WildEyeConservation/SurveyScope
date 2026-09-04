@@ -2,11 +2,11 @@ import { useContext, useMemo } from 'react';
 import { getUrl } from 'aws-amplify/storage';
 import {
   ImageContext,
-  ManagementContext,
-  ProjectContext,
   UserContext,
 } from './Context';
 import type { AnnotationImage, AnnotationLocation } from './annotationTypes';
+import { useProjectMemberships } from './data/projectSets';
+import { useCurrentProject, useProjectId } from './data/projectScope';
 
 /** A single entry in the image-level context menu, rendered as a React
  * overlay by the MapLibre viewers. */
@@ -38,10 +38,9 @@ export default function useImageMenuItems({
   stats,
 }: UseImageMenuItemsProps): ImageMenuItem[] {
   const { prevImages, nextImages } = useContext(ImageContext)!;
-  const {
-    projectMembershipHook: { data: projectMemberships },
-  } = useContext(ManagementContext)!;
-  const { project } = useContext(ProjectContext)!;
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const { data: projectMemberships } = useProjectMemberships(projectId);
   const { user } = useContext(UserContext)!;
 
   const belongsToCurrentProject = projectMemberships?.find(

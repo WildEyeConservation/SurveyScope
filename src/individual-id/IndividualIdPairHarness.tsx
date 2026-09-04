@@ -1,13 +1,11 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { ProjectContext } from '../Context';
 import { client } from '../stores/appClient';
 import type { AnnotationType, CategoryType } from '../schemaTypes';
 import { usePairData, type PairData } from './hooks/usePairData';
@@ -30,6 +28,8 @@ import { LoadingCard } from './components/LoadingCard';
 import { LinkAnnotationDialog } from './components/LinkAnnotationDialog';
 import { SplitChainDialog } from './components/SplitChainDialog';
 import ChangeCategoryModal from '../ChangeCategoryModal';
+import { useCategories } from '../data/project';
+import { useCurrentProject, useProjectId } from '../data/projectScope';
 
 const DEFAULT_LENIENCY = 40;
 
@@ -101,7 +101,9 @@ export function IndividualIdPairHarness({
 }: Props) {
   const [leniency, setLeniency] = useState<number>(DEFAULT_LENIENCY);
   const navigate = useNavigate();
-  const projectCtx = useContext(ProjectContext);
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const categoriesHook = useCategories(projectId);
   const queryClient = useQueryClient();
   const pairData = usePairData({
     image1Id,
@@ -267,7 +269,7 @@ export function IndividualIdPairHarness({
       newId: string
     ) => {
       if (!pair) return;
-      const group = (projectCtx?.project as any)?.organizationId ?? undefined;
+      const group = project.organizationId;
       const nowIso = new Date().toISOString();
       const imageId = side === 'A' ? pair.image1Id : pair.image2Id;
       const dbInput = {
@@ -278,7 +280,7 @@ export function IndividualIdPairHarness({
         x: Math.round(pos.x),
         y: Math.round(pos.y),
         source: 'individual-id',
-        projectId: projectCtx?.project?.id,
+        projectId: project.id,
         group,
       };
       const localRow = {
@@ -308,8 +310,8 @@ export function IndividualIdPairHarness({
       pair,
       annotationSetId,
       categoryId,
-      projectCtx?.project?.id,
-      projectCtx?.project,
+      project.id,
+      project,
       patchPairCache,
     ]
   );
@@ -454,8 +456,7 @@ export function IndividualIdPairHarness({
   );
 
   // ---- Change-label flow ----
-  const allCategories: CategoryType[] =
-    (projectCtx as any)?.categoriesHook?.data ?? [];
+  const allCategories: CategoryType[] = categoriesHook.data;
   const setCategories = useMemo(
     () =>
       allCategories.filter(
@@ -649,7 +650,7 @@ export function IndividualIdPairHarness({
     async (actors: LinkActor[], cat: string) => {
       if (actors.length === 0) return false;
       const nowIso = new Date().toISOString();
-      const group = (projectCtx?.project as any)?.organizationId ?? undefined;
+      const group = project.organizationId;
       const imagesById: Record<string, any> =
         pairData.data?.imagesById ?? {};
       const ageOf = (imageId: string) => {
@@ -738,7 +739,7 @@ export function IndividualIdPairHarness({
             y: Math.round(actor.candidatePos.y),
             objectId: rootId,
             source: 'individual-id',
-            projectId: projectCtx?.project?.id,
+            projectId: project.id,
             group,
             ...(actor.obscured ? { obscured: true } : {}),
             ...(actor.oov ? { oov: true } : {}),
@@ -786,8 +787,8 @@ export function IndividualIdPairHarness({
     [
       annotationSetId,
       pairData.data?.imagesById,
-      projectCtx?.project?.id,
-      projectCtx?.project,
+      project.id,
+      project,
       localAnnotations,
       patchPairCache,
     ]
@@ -1004,9 +1005,7 @@ export function IndividualIdPairHarness({
           shareHref={shareHref}
           editHomographyHref={editHomographyHref}
           chainViewerBaseHref={
-            projectCtx?.project?.id
-              ? `/surveys/${projectCtx.project.id}/set/${annotationSetId}/chain-viewer`
-              : undefined
+            `/surveys/${project.id}/set/${annotationSetId}/chain-viewer`
           }
         />
       </div>

@@ -1,13 +1,11 @@
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ProjectContext } from '../Context';
 import { client } from '../stores/appClient';
 import { recordWorkflowTask } from '../recordWorkflowTask';
 import { useActiveTimeTracker } from '../useActiveTimeTracker';
@@ -53,6 +51,8 @@ import { DeleteAnnotationDialog } from './components/DeleteAnnotationDialog';
 import { SplitChainDialog } from './components/SplitChainDialog';
 import ChangeCategoryModal from '../ChangeCategoryModal';
 import type { CategoryType } from '../schemaTypes';
+import { useCategories } from '../data/project';
+import { useCurrentProject, useProjectId } from '../data/projectScope';
 
 /**
  * BFS hop budget for reunion search. We walk the neighbour graph this far
@@ -233,7 +233,9 @@ export function IndividualIdHarness({
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
-  const projectCtx = useContext(ProjectContext);
+  const project = useCurrentProject();
+  const projectId = useProjectId();
+  const categoriesHook = useCategories(projectId);
   const queryClient = useQueryClient();
   const transect = useTransectData({
     transectId,
@@ -1036,7 +1038,7 @@ export function IndividualIdHarness({
       const setId =
         transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
       if (!setId) return;
-      const group = (projectCtx?.project as any)?.organizationId ?? undefined;
+      const group = project.organizationId;
       const nowIso = new Date().toISOString();
       const imageId =
         side === 'A' ? currentPair.image1Id : currentPair.image2Id;
@@ -1050,7 +1052,7 @@ export function IndividualIdHarness({
         x: Math.round(pos.x),
         y: Math.round(pos.y),
         source: 'individual-id',
-        projectId: projectCtx?.project?.id,
+        projectId: project.id,
         group,
       };
       // Local cache still wants the fuller AnnotationType shape so Munkres
@@ -1096,8 +1098,8 @@ export function IndividualIdHarness({
       categoryId,
       transect.data?.category?.annotationSetId,
       annotationSetId,
-      projectCtx?.project?.id,
-      projectCtx?.project,
+      project.id,
+      project,
       patchTransectCache,
     ]
   );
@@ -1419,8 +1421,7 @@ export function IndividualIdHarness({
   // change optimistically + to the persisted cache. Since the harness is
   // filtered to a single category, relabelling makes the row vanish from
   // this view — that's flagged in the modal via the `warning` prop.
-  const allCategories: CategoryType[] =
-    (projectCtx as any)?.categoriesHook?.data ?? [];
+  const allCategories: CategoryType[] = categoriesHook.data;
   const setIdForModal =
     transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
   const setCategories = useMemo(
@@ -1593,8 +1594,7 @@ export function IndividualIdHarness({
       const nowIso = new Date().toISOString();
       const setId =
         transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
-      const group =
-        (projectCtx?.project as any)?.organizationId ?? undefined;
+      const group = project.organizationId;
       const imagesById = transect.data?.imagesById ?? {};
       const ageOf = (imageId: string) => {
         const img: any = imagesById[imageId];
@@ -1687,7 +1687,7 @@ export function IndividualIdHarness({
             y: Math.round(actor.candidatePos.y),
             objectId: rootId,
             source: 'individual-id',
-            projectId: projectCtx?.project?.id,
+            projectId: project.id,
             group,
             ...(actor.obscured ? { obscured: true } : {}),
             ...(actor.oov ? { oov: true } : {}),
@@ -1766,8 +1766,8 @@ export function IndividualIdHarness({
       transect.data?.category?.annotationSetId,
       transect.data?.imagesById,
       annotationSetId,
-      projectCtx?.project?.id,
-      projectCtx?.project,
+      project.id,
+      project,
       localAnnotations,
       patchTransectCache,
     ]
@@ -1955,7 +1955,7 @@ export function IndividualIdHarness({
   // editor below.
   const shareHref = (() => {
     if (reunionMode) return undefined;
-    if (!currentPair || !projectCtx?.project?.id) return undefined;
+    if (!currentPair) return undefined;
     const setId =
       transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
     const params = new URLSearchParams({
@@ -1964,7 +1964,7 @@ export function IndividualIdHarness({
       categoryId,
     });
     if (setId) params.set('annotationSetId', setId);
-    return `/surveys/${projectCtx.project.id}/individual-id-pair?${params.toString()}`;
+    return `/surveys/${project.id}/individual-id-pair?${params.toString()}`;
   })();
 
   // Single-pair homography editor link. No backHref — the editor falls back
@@ -1972,7 +1972,7 @@ export function IndividualIdHarness({
   // (IndividualIdTaskPage relies on it; a URL push would bounce to /jobs).
   const editHomographyHref = (() => {
     if (reunionMode) return undefined;
-    if (!currentPair || !projectCtx?.project?.id) return undefined;
+    if (!currentPair) return undefined;
     const setId =
       transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
     const params = new URLSearchParams({
@@ -1980,15 +1980,14 @@ export function IndividualIdHarness({
       image2Id: currentPair.image2Id,
     });
     if (setId) params.set('annotationSetId', setId);
-    return `/surveys/${projectCtx.project.id}/homography-edit?${params.toString()}`;
+    return `/surveys/${project.id}/homography-edit?${params.toString()}`;
   })();
 
   const chainViewerBaseHref = (() => {
-    if (!projectCtx?.project?.id) return undefined;
     const setId =
       transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
     if (!setId) return undefined;
-    return `/surveys/${projectCtx.project.id}/set/${setId}/chain-viewer`;
+    return `/surveys/${project.id}/set/${setId}/chain-viewer`;
   })();
 
   return (

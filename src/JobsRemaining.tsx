@@ -1,11 +1,12 @@
 import { useContext, useEffect, useState } from 'react';
-import { ProjectContext, UserContext } from './Context';
+import { UserContext } from './Context';
 import { client } from './stores/appClient';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
 import ProgressBar from 'react-bootstrap/ProgressBar';
 import { Badge } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
+import { useCurrentMembershipRow } from './data/projectScope';
 
 export function JobsRemaining() {
   const {
@@ -13,7 +14,7 @@ export function JobsRemaining() {
     jobsCompleted: sessionJobsCompleted,
     setJobsCompleted: setSessionJobsCompleted,
   } = useContext(UserContext)!;
-  const { currentPM } = useContext(ProjectContext)!;
+  const currentPM = useCurrentMembershipRow();
   const [jobsRemaining, setJobsRemaining] = useState<string>('Unknown');
   const [url, setUrl] = useState<string | undefined>(undefined);
   const [backupUrl, setBackupUrl] = useState<string | undefined>(undefined);

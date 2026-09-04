@@ -1,11 +1,12 @@
 import { useCallback, useContext, useRef } from 'react';
-import { ImageContext, ProjectContext } from './Context';
+import { ImageContext } from './Context';
 import { client } from './stores/appClient';
 import useCreateTestResult from './useCreateTestResult';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
 } from './annotationTypes';
+import { useCurrentProject } from './data/projectScope';
 
 /* This hook will take an ack callback as input and create a new ack callback that:
 - Uses the graphQL API to create an Observation entry for the current user.
@@ -58,7 +59,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     visibleTimestamp,
     fullyLoadedTimestamp,
   } = useContext(ImageContext)!;
-  const { project } = useContext(ProjectContext)!;
+  const project = useCurrentProject();
   const completionRef = useRef<Promise<void> | null>(null);
 
   const createTestResult = useCreateTestResult({
