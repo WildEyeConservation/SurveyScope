@@ -21,6 +21,7 @@ import type { MatchCandidate, NeighbourPair, PixelTransform } from './types';
 import { Button } from 'react-bootstrap';
 import { HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { WaitingOverlay } from '../useAckOnTimeout';
 import { OovPanel } from './components/OovPanel';
 import { HelpModal } from './components/HelpModal';
 import { isOov } from './utils/identity';
@@ -399,6 +400,7 @@ export function IndividualIdMapPair(props: Props) {
     chainViewerHrefFor,
   ]);
 
+  const [imagesReady, setImagesReady] = useState(false);
   const readySidesRef = useRef<Set<'A' | 'B'>>(new Set());
   const onImagesReadyRef = useRef(onImagesReady);
   onImagesReadyRef.current = onImagesReady;
@@ -406,8 +408,13 @@ export function IndividualIdMapPair(props: Props) {
     const sides = readySidesRef.current;
     if (sides.has(side)) return;
     sides.add(side);
-    if (sides.size === 2) onImagesReadyRef.current?.();
+    if (sides.size === 2) {
+      setImagesReady(true);
+      onImagesReadyRef.current?.();
+    }
   }, []);
+  // Linking hotkeys wait for the imagery; pair navigation stays available.
+  const interactive = visible && imagesReady;
   const handleSideReadyA = useCallback(() => markSideReady('A'), [markSideReady]);
   const handleSideReadyB = useCallback(() => markSideReady('B'), [markSideReady]);
 
@@ -688,14 +695,14 @@ export function IndividualIdMapPair(props: Props) {
     onClearConflictHighlights,
   ]);
 
-  useHotkeys('Space', handleSpace, { enabled: visible, preventDefault: true }, [
+  useHotkeys('Space', handleSpace, { enabled: interactive, preventDefault: true }, [
     handleSpace,
   ]);
-  useHotkeys('Escape', handleEscape, { enabled: visible }, [handleEscape]);
-  useHotkeys('ArrowRight', () => advanceFocus(1), { enabled: visible }, [
+  useHotkeys('Escape', handleEscape, { enabled: interactive }, [handleEscape]);
+  useHotkeys('ArrowRight', () => advanceFocus(1), { enabled: interactive }, [
     advanceFocus,
   ]);
-  useHotkeys('ArrowLeft', () => advanceFocus(-1), { enabled: visible }, [
+  useHotkeys('ArrowLeft', () => advanceFocus(-1), { enabled: interactive }, [
     advanceFocus,
   ]);
   useHotkeys(
@@ -714,7 +721,7 @@ export function IndividualIdMapPair(props: Props) {
   useHotkeys(
     'Tab',
     (e) => setMarkersHidden(e.type === 'keydown'),
-    { enabled: visible, keydown: true, keyup: true, preventDefault: true },
+    { enabled: interactive, keydown: true, keyup: true, preventDefault: true },
     []
   );
   // A keyup can be missed if focus leaves the window mid-hold, or if the
@@ -946,7 +953,22 @@ export function IndividualIdMapPair(props: Props) {
 
   return (
     <div className='w-100 h-100 d-flex flex-column gap-2'>
-      <div className='d-flex flex-row gap-2 w-100' style={{ flex: 1, minHeight: 0 }}>
+      <div
+        className='d-flex flex-row gap-2 w-100'
+        style={{ flex: 1, minHeight: 0, position: 'relative' }}
+      >
+        {!imagesReady && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 1000,
+              backgroundColor: 'rgba(0, 0, 0, 0.35)',
+            }}
+          >
+            <WaitingOverlay message='Loading images…' />
+          </div>
+        )}
         <OovPanel
           side='A'
           candidates={oovCandidatesA}
