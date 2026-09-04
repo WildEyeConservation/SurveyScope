@@ -32,6 +32,8 @@ type Project = {
   }[];
   createdAt: string;
   queues: Schema['Queue']['type'][];
+  // First queue before the hidden-queue filter; drives the progress bar.
+  progressQueue?: Schema['Queue']['type'];
 };
 
 export default function Jobs() {
@@ -179,6 +181,7 @@ export default function Jobs() {
         )
         .map((project) => ({
           ...project,
+          progressQueue: project.queues[0],
           queues: project.queues.filter(
             (queue) =>
               myOrganizationHook.data?.find(
@@ -497,7 +500,7 @@ export default function Jobs() {
                   style={{ maxWidth: '600px', width: '100%' }}
                 >
                   <ProjectProgress
-                    projectId={project.id}
+                    queue={project.progressQueue}
                     onScanningChange={(isScanning) => {
                       setScanningProjects(prev => {
                         const next = new Set(prev);

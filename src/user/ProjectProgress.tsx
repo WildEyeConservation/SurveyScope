@@ -1,94 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
-import { useSession } from '../session';
-import { client } from '../stores/appClient';
-import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
+import { useEffect, useRef } from 'react';
 import { Spinner, ProgressBar } from 'react-bootstrap';
+import { useQueueMessageCount } from '../data/queueCounts';
 
-type ProjectProgressProps = {
-  projectId: string;
+export default function ProjectProgress({
+  queue,
+  onScanningChange,
+}: {
+  queue?: {
+    url?: string | null;
+    batchSize?: number | null;
+    totalBatches?: number | null;
+    launchedCount?: number | null;
+    observedCount?: number | null;
+    requeuesCompleted?: number | null;
+    emptyQueueTimestamp?: string | null;
+  };
   onScanningChange?: (isScanning: boolean) => void;
-};
-
-export default function ProjectProgress({ projectId, onScanningChange }: ProjectProgressProps) {
-  const { getSqsClient } = useSession();
-  const [isLoading, setIsLoading] = useState(true);
-  const [queueInfo, setQueueInfo] = useState<{
-    url: string;
-    batchSize: number;
-    totalBatches: number;
-    launchedCount: number | null;
-    observedCount: number | null;
-    requeuesCompleted: number | null;
-    emptyQueueTimestamp: string | null;
-  } | null>(null);
-  const [jobsRemaining, setJobsRemaining] = useState<number>(0);
+}) {
+  const queueInfo = queue
+    ? {
+        url: queue.url || '',
+        batchSize: queue.batchSize || 0,
+        totalBatches: queue.totalBatches || 0,
+        launchedCount: queue.launchedCount ?? null,
+        observedCount: queue.observedCount ?? null,
+        requeuesCompleted: queue.requeuesCompleted ?? null,
+        emptyQueueTimestamp: queue.emptyQueueTimestamp ?? null,
+      }
+    : null;
+  const jobsRemaining = useQueueMessageCount(queueInfo?.url || undefined);
 
   const prevScanningRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    let cancelled = false;
-
-    async function fetchQueueAndStartPolling() {
-      setIsLoading(true);
-      const projectData = (
-        await client.models.Project.get(
-          { id: projectId },
-          {
-            selectionSet: [
-              'queues.url',
-              'queues.batchSize',
-              'queues.totalBatches',
-              'queues.launchedCount',
-              'queues.observedCount',
-              'queues.requeuesCompleted',
-              'queues.emptyQueueTimestamp',
-            ],
-          }
-        )
-      ).data;
-
-      if (cancelled || !projectData?.queues?.length) {
-        setIsLoading(false);
-        return;
-      }
-
-      const q = projectData.queues[0];
-      const url = q.url || '';
-      const batchSize = q.batchSize || 0;
-      const totalBatches = q.totalBatches || 0;
-      const launchedCount = q.launchedCount ?? null;
-      const observedCount = q.observedCount ?? null;
-      const requeuesCompleted = q.requeuesCompleted ?? null;
-      const emptyQueueTimestamp = q.emptyQueueTimestamp ?? null;
-      setQueueInfo({ url, batchSize, totalBatches, launchedCount, observedCount, requeuesCompleted, emptyQueueTimestamp });
-      setIsLoading(false);
-
-      async function updateJobsRemaining() {
-        const sqsClient = await getSqsClient();
-        const params = {
-          QueueUrl: url,
-          AttributeNames: ['ApproximateNumberOfMessages'] as any[],
-        };
-        const attrs = await sqsClient.send(
-          new GetQueueAttributesCommand(params)
-        );
-        if (cancelled) return;
-        const num = attrs.Attributes?.ApproximateNumberOfMessages;
-        setJobsRemaining(num ? Number(num) : 0);
-      }
-
-      updateJobsRemaining();
-      interval = setInterval(updateJobsRemaining, 10000);
-    }
-
-    fetchQueueAndStartPolling();
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [projectId, getSqsClient]);
 
   const isScanning = jobsRemaining === 0
     && queueInfo?.launchedCount != null
@@ -107,7 +49,8 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
     }
   }, [shouldDisable, onScanningChange]);
 
-  if (isLoading || !queueInfo) {
+  // Match the old behaviour: spin until the first SQS count has arrived.
+  if (!queueInfo || jobsRemaining === undefined) {
     return <Spinner />;
   }
 

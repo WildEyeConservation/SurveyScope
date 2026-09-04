@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Spinner, ProgressBar } from 'react-bootstrap';
 import { client } from '../stores/appClient';
 
@@ -14,17 +14,9 @@ export default function IndividualIdProgress({
 }: {
   projectId: string;
 }) {
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<{
-    total: number;
-    remaining: number;
-  } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let interval: ReturnType<typeof setInterval>;
-
-    async function load() {
+  const { data: stats, isLoading: loading } = useQuery({
+    queryKey: ['individualIdProgress', projectId],
+    queryFn: async () => {
       try {
         const { data } = await (
           client.models as any
@@ -44,29 +36,23 @@ export default function IndividualIdProgress({
           jobs.find((j: any) => j.status === 'active') ??
           jobs.find((j: any) => j.status === 'launching') ??
           null;
-        if (cancelled) return;
-        setStats(
-          job
-            ? {
-                total: job.totalTransects ?? 0,
-                remaining: job.remainingTransects ?? 0,
-              }
-            : null
-        );
+        return job
+          ? {
+              status: job.status,
+              total: job.totalTransects ?? 0,
+              remaining: job.remainingTransects ?? 0,
+            }
+          : null;
       } catch (e) {
-        if (!cancelled) console.warn('IndividualIdProgress load failed', e);
-      } finally {
-        if (!cancelled) setLoading(false);
+        console.warn('IndividualIdProgress load failed', e);
+        return null;
       }
-    }
-
-    load();
-    interval = setInterval(load, 10000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [projectId]);
+    },
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'active' || status === 'launching' ? 10000 : false;
+    },
+  });
 
   if (loading && !stats) return <Spinner />;
   if (!stats || stats.total <= 0) {

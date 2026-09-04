@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '../session';
 import {
@@ -59,6 +59,12 @@ const PROJECT_SELECTION_SET = [
   'queues.url',
   'queues.name',
   'queues.tag',
+  'queues.batchSize',
+  'queues.totalBatches',
+  'queues.launchedCount',
+  'queues.observedCount',
+  'queues.requeuesCompleted',
+  'queues.emptyQueueTimestamp',
   'individualIdJobs.id',
   'individualIdJobs.status',
   'imageSets.imageCount',
@@ -133,22 +139,40 @@ export default function Surveys() {
     [myProjectsHook.data]
   );
 
-  // Membership records are updated by backend Lambdas (updateProjectMemberships)
-  // whenever server-side project state changes (status, queues, etc.). When those
-  // change, invalidate cached project details so the UI picks up the fresh state —
-  // matching the original "refetch on every membership tick" behaviour.
-  const membershipSignature = useMemo(
-    () =>
-      myProjectsHook.data
-        ?.map((m) => `${m.projectId}:${m.updatedAt}`)
-        .sort()
-        .join('|') ?? '',
-    [myProjectsHook.data]
-  );
+  const membershipUpdatedAtByProjectRef = useRef<Map<
+    string,
+    string | null | undefined
+  > | null>(null);
+
   useEffect(() => {
-    if (!membershipSignature) return;
-    queryClient.invalidateQueries({ queryKey: ['surveys-project-details'] });
-  }, [membershipSignature, queryClient]);
+    if (!myProjectsHook.data) return;
+
+    const currentUpdatedAtByProject = new Map(
+      myProjectsHook.data.map((membership) => [
+        membership.projectId,
+        membership.updatedAt,
+      ] as const)
+    );
+    const previousUpdatedAtByProject = membershipUpdatedAtByProjectRef.current;
+
+    // The detail queries populate alongside the first membership result, so
+    // invalidating that initial population would immediately duplicate them.
+    if (previousUpdatedAtByProject === null) {
+      membershipUpdatedAtByProjectRef.current = currentUpdatedAtByProject;
+      return;
+    }
+
+    currentUpdatedAtByProject.forEach((updatedAt, projectId) => {
+      if (
+        previousUpdatedAtByProject.has(projectId) &&
+        previousUpdatedAtByProject.get(projectId) !== updatedAt
+      ) {
+        queryClient.invalidateQueries({ queryKey: projectQueryKey(projectId) });
+      }
+    });
+
+    membershipUpdatedAtByProjectRef.current = currentUpdatedAtByProject;
+  }, [myProjectsHook.data, queryClient]);
 
   const projectQueries = useQueries({
     queries: adminProjectIds.map((id) => ({
@@ -751,7 +775,7 @@ export default function Surveys() {
             >
               <div className='flex-grow-1'>
                 <ProjectProgress
-                  projectId={project.id}
+                  queue={project.queues[0]}
                   onScanningChange={(isScanning) => {
                     setScanningProjects(prev => {
                       const next = new Set(prev);
@@ -902,7 +926,7 @@ export default function Surveys() {
               >
                 <div className='flex-grow-1'>
                   <ProjectProgress
-                    projectId={project.id}
+                    queue={project.queues[0]}
                     onScanningChange={(isScanning) => {
                       setScanningProjects(prev => {
                         const next = new Set(prev);
