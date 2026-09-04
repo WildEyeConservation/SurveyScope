@@ -84,6 +84,27 @@ code {
   animation: rotate 1s linear infinite;
 }
 
+/* ChainLinker toolbar: on wide screens the pairing radius is pinned to the
+   centre of the single row; below Bootstrap's lg breakpoint it becomes a
+   second, full-width row with the slider stretched. */
+@media (min-width: 992px) {
+  .ii-toolbar-centre {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .ii-toolbar-slider {
+    width: 140px;
+  }
+}
+@media (max-width: 991.98px) {
+  .ii-toolbar-slider {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
 .marker[withnote] {animation-name: throb;
            animation-duration: 1s;
            animation-iteration-count: infinite;

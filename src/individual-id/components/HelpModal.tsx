@@ -278,12 +278,35 @@ export function HelpModal({ show, onHide }: Props) {
               are now linked, and focus advances to the next candidate.
             </li>
           </ol>
-          <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
+          <p style={{ opacity: 0.85, fontSize: 14 }}>
             <strong>Manual linking:</strong> select a marker (orange active
             border), then on the <em>other</em> image{' '}
             <strong>Ctrl/⌘ + left-click</strong> a real marker to link the
             two directly.
           </p>
+          <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 6 }}>
+            <strong>Keyboard shortcuts</strong>
+          </p>
+          <ul style={{ opacity: 0.9, fontSize: 14, paddingLeft: 18, marginBottom: 0 }}>
+            <li>
+              <strong>Space</strong> — focus the next candidate, or accept the
+              focused one.
+            </li>
+            <li>
+              <strong>←/→</strong> — move focus to the previous or next
+              candidate. Clicking a marker focuses it too.
+            </li>
+            <li>
+              <strong>Esc</strong> — clear the focused candidate.
+            </li>
+            <li>
+              <strong>Hold Tab</strong> — hide all markers to see the imagery
+              underneath.
+            </li>
+            <li>
+              <strong>Ctrl+←/→</strong> — previous or next image pair.
+            </li>
+          </ul>
         </Section>
 
         <Section title='Navigating pairs'>

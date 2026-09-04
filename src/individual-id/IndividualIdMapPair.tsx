@@ -1045,7 +1045,6 @@ export function IndividualIdMapPair(props: Props) {
         />
       </div>
       <PairToolbar
-        active={activeCandidate}
         // Counts exclude informational markers.
         candidatesCount={
           candidates.filter((c) => !c.informational).length
@@ -1069,7 +1068,6 @@ export function IndividualIdMapPair(props: Props) {
 }
 
 function PairToolbar({
-  active,
   candidatesCount,
   acceptedCount,
   onPrev,
@@ -1081,7 +1079,6 @@ function PairToolbar({
   shareHref,
   editHomographyHref,
 }: {
-  active: MatchCandidate | null;
   candidatesCount: number;
   acceptedCount: number;
   onPrev?: () => void;
@@ -1097,17 +1094,9 @@ function PairToolbar({
   const [helpOpen, setHelpOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
-  const status = active
-    ? active.status === 'pending'
-      ? 'Press Space to accept the link.'
-      : 'Already linked. Use ←/→ to focus another candidate.'
-    : candidatesCount === 0
-    ? 'No matches in this pair.'
-    : 'Click or use ←/→ to focus a candidate, then Space.';
-
   return (
     <div
-      className='d-flex flex-row align-items-center justify-content-between gap-2 px-3 py-3'
+      className='d-flex flex-column gap-2 px-3 py-3'
       style={{
         background: '#4E5D6C',
         color: '#f8f9fa',
@@ -1115,65 +1104,93 @@ function PairToolbar({
         position: 'relative',
       }}
     >
-      <div className='d-flex flex-row gap-2 align-items-center'>
-        <span
-          style={{
-            borderRight: '1px solid rgba(255, 255, 255, 0.25)',
-            paddingRight: 8,
-            marginRight: 4,
-            display: 'flex',
-          }}
-        >
-          <Button
-            size='sm'
-            variant='info'
-            onClick={() => setHelpOpen(true)}
-            title='How ChainLinker works'
+      <div className='d-flex flex-row align-items-center justify-content-between gap-2'>
+        <div className='d-flex flex-row gap-2 align-items-center'>
+          <span
+            style={{
+              borderRight: '1px solid rgba(255, 255, 255, 0.25)',
+              paddingRight: 8,
+              marginRight: 4,
+              display: 'flex',
+            }}
           >
-            <HelpCircle size={16} style={{ verticalAlign: 'middle' }} />
-          </Button>
-        </span>
-        <Button
-          size='sm'
-          variant='outline-light'
-          onClick={() => onCollapsedChange(!collapsed)}
-          title={collapsed ? 'Expand' : 'Collapse'}
-        >
-          {collapsed ? '▴' : '▾'}
-        </Button>
-        {onPrev && (
-          <Button
-            onClick={onPrev}
-            title='Previous image pair (Ctrl+←)'
-            size='sm'
-          >
-            ←
-          </Button>
-        )}
-        {onNext && (
-          <Button
-            size='sm'
-            onClick={onNext}
-            title='Next image pair (Ctrl+→)'
-          >
-            →
-          </Button>
-        )}
-        {!collapsed && (
-          <span style={{ opacity: 0.85 }}>
-            {acceptedCount} / {candidatesCount} accepted
+            <Button
+              size='sm'
+              variant='info'
+              onClick={() => setHelpOpen(true)}
+              title='How ChainLinker works'
+            >
+              <HelpCircle size={16} style={{ verticalAlign: 'middle' }} />
+            </Button>
           </span>
-        )}
+          <Button
+            size='sm'
+            variant='outline-light'
+            onClick={() => onCollapsedChange(!collapsed)}
+            title={collapsed ? 'Expand' : 'Collapse'}
+          >
+            {collapsed ? '▴' : '▾'}
+          </Button>
+          {onPrev && (
+            <Button
+              onClick={onPrev}
+              title='Previous image pair (Ctrl+←)'
+              size='sm'
+            >
+              ←
+            </Button>
+          )}
+          {onNext && (
+            <Button size='sm' onClick={onNext} title='Next image pair (Ctrl+→)'>
+              →
+            </Button>
+          )}
+          {!collapsed && (
+            <span style={{ opacity: 0.85 }}>
+              {acceptedCount} / {candidatesCount} accepted
+            </span>
+          )}
+        </div>
+        <div className='d-flex flex-row gap-2 align-items-center'>
+          {editHomographyHref && (
+            <Button
+              size='sm'
+              variant='outline-light'
+              onClick={() => navigate(editHomographyHref)}
+              title='Edit the homography for this image pair'
+            >
+              Edit homography
+            </Button>
+          )}
+          <Button
+            size='sm'
+            variant='outline-light'
+            onClick={async () => {
+              // shareHref is a route path; expand to an absolute URL so the
+              // clipboard payload is openable outside this tab.
+              const absolute = shareHref
+                ? new URL(shareHref, window.location.origin).toString()
+                : window.location.href;
+              try {
+                await navigator.clipboard.writeText(absolute);
+                setShareCopied(true);
+                window.setTimeout(() => setShareCopied(false), 1500);
+              } catch (err) {
+                console.error('Failed to copy share link', err);
+              }
+            }}
+            title={shareCopied ? 'Link copied' : 'Copy a link to this pair'}
+          >
+            {shareCopied ? 'Copied!' : 'Share'}
+          </Button>
+          <Button size='sm' onClick={() => navigate('/jobs')}>
+            Save & Exit
+          </Button>
+        </div>
       </div>
       <div
-        className='d-flex flex-row gap-2 align-items-center'
+        className='ii-toolbar-centre d-flex flex-row gap-2 align-items-center'
         title='Munkres only proposes a match if the projected distance to a partner is below this many image pixels. The active marker shows a ring at this radius.'
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -50%)',
-        }}
       >
         <label
           htmlFor='ii-leniency'
@@ -1189,7 +1206,7 @@ function PairToolbar({
           step={10}
           value={leniency}
           onChange={(e) => onLeniencyChange(parseInt(e.target.value, 10))}
-          style={{ width: 140 }}
+          className='ii-toolbar-slider'
         />
         <input
           type='number'
@@ -1216,48 +1233,6 @@ function PairToolbar({
         />
         <span style={{ opacity: 0.85, fontSize: 11 }}>px</span>
       </div>
-      {/* Always render the spacer so Share/Save stay right-aligned when collapsed. */}
-      <span style={{ flex: 1, textAlign: 'right' }}>{!collapsed && status}</span>
-      {editHomographyHref && (
-        <Button
-          size='sm'
-          variant='outline-light'
-          onClick={() => navigate(editHomographyHref)}
-          title='Edit the homography for this image pair'
-        >
-          Edit homography
-        </Button>
-      )}
-      <Button
-        size='sm'
-        variant='outline-light'
-        onClick={async () => {
-          // shareHref is a route path; expand to an absolute URL so the
-          // clipboard payload is openable outside this tab.
-          const absolute = shareHref
-            ? new URL(shareHref, window.location.origin).toString()
-            : window.location.href;
-          try {
-            await navigator.clipboard.writeText(absolute);
-            setShareCopied(true);
-            window.setTimeout(() => setShareCopied(false), 1500);
-          } catch (err) {
-            console.error('Failed to copy share link', err);
-          }
-        }}
-        title={shareCopied ? 'Link copied' : 'Copy a link to this pair'}
-      >
-        {shareCopied ? 'Copied!' : 'Share'}
-      </Button>
-      <Button
-        size='sm'
-        onClick={() => {
-          navigate('/jobs');
-          }
-        }
-        >
-        Save & Exit
-      </Button>
       <HelpModal show={helpOpen} onHide={() => setHelpOpen(false)} />
     </div>
   );
