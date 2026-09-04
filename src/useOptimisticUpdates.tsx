@@ -322,7 +322,12 @@ export function useOptimisticUpdates<
       createMutation.mutate(item);
       return (item as any).id as string;
     },
-    update: updateMutation.mutate,
+    // The cache merge works on any partial that carries the row key, so expose
+    // the model's own update input rather than the full row type inferred from
+    // onMutate; callers should not have to fake a whole row to change a field.
+    update: updateMutation.mutate as (
+      item: Parameters<DataModels[ModelKey]['update']>[0]
+    ) => void,
     delete: deleteMutation.mutate,
   };
 }

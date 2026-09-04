@@ -375,9 +375,10 @@ export default function Jobs() {
       return;
     }
 
-    userProjectMembershipHook.update(
-      { id: currentMembership.id, queueId: job.queueId } as typeof currentMembership
-    );
+    userProjectMembershipHook.update({
+      id: currentMembership.id,
+      queueId: job.queueId,
+    });
     navigate(`/surveys/${job.projectId}/annotate`);
 
     setTakingJob(false);
