@@ -1,4 +1,5 @@
 import { imageAccess } from '../storage/imageAccess/resource';
+import { workflowFiles } from '../storage/workflowFiles/resource';
 import { a, defineData } from '@aws-amplify/backend';
 import { addUserToGroup } from '../functions/add-user-to-group/resource';
 import { createGroup } from '../data/create-group/resource';
@@ -1624,6 +1625,42 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(imageAccess)),
+    // Workflow files in the outputs bucket: keys are derived server-side from
+    // records the caller is authorized to see.
+    falseNegativeFileUrl: a
+      .query()
+      .arguments({
+        annotationSetId: a.id().required(),
+        kind: a.string().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
+    deleteFalseNegativeFiles: a
+      .mutation()
+      .arguments({ annotationSetId: a.id().required() })
+      .returns(a.boolean())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
+    jollyStatusUrl: a
+      .query()
+      .arguments({
+        surveyId: a.id().required(),
+        annotationSetId: a.id().required(),
+        jobId: a.id().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
+    prepareWorkflowUpload: a
+      .mutation()
+      .arguments({
+        kind: a.string().required(),
+        projectId: a.id().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
     generateTile: a
       .query()
       .arguments({

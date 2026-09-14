@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Form } from 'react-bootstrap';
 import Select from 'react-select';
 import { LoadingProgressCard } from './LoadingProgressCard';
-import { uploadData } from 'aws-amplify/storage';
+import { uploadWorkflowFile } from '../storage/workflowFiles';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { logAdminAction } from '../utils/adminActionLogger';
@@ -370,16 +370,11 @@ export default function HomographyLaunch({
 
         onProgress(`Uploading manifest for ${manifestItems.length} pairs...`);
 
-        // Upload manifest to S3
-        const manifestKey = `queue-manifests/${crypto.randomUUID()}.json`;
-        await uploadData({
-          path: manifestKey,
-          data: JSON.stringify({ items: manifestItems }),
-          options: {
-            bucket: 'outputs',
-            contentType: 'application/json',
-          },
-        }).result;
+        const manifestKey = await uploadWorkflowFile(
+          'queue-manifest',
+          project.id,
+          JSON.stringify({ items: manifestItems })
+        );
 
         // Call lambda with manifest reference
         onProgress('Submitting homography launch request...');

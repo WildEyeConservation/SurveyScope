@@ -11,6 +11,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
+import { signingLifetime as sharedSigningLifetime } from '../shared/presign';
 import {
   MAX_TILE_BATCH,
   validTile,
@@ -50,11 +51,6 @@ export interface AppSyncEvent {
   identity: unknown;
   info: { fieldName: string };
   arguments: Args;
-}
-
-interface Lifetime {
-  expiresIn: number;
-  expiresAt: number;
 }
 
 function requireString(args: Args, name: string, maxLength = 1024): string {
@@ -107,21 +103,7 @@ export function createImageAccessHandler(s3 = new S3Client({})) {
   };
 
   const objectKey = (sourceKey: string) => `images/${sourceKey}`;
-
-  async function signingLifetime(): Promise<Lifetime> {
-    const credentials = await s3.config.credentials();
-    const expiresIn = Math.min(
-      3600,
-      credentials.expiration
-        ? Math.floor((credentials.expiration.getTime() - Date.now()) / 1000) -
-            30
-        : 3600
-    );
-    if (expiresIn < 60) {
-      throw new Error('Signing session is expiring; retry shortly');
-    }
-    return { expiresIn, expiresAt: Date.now() + expiresIn * 1000 };
-  }
+  const signingLifetime = () => sharedSigningLifetime(s3);
 
   async function head(
     sourceKey: string

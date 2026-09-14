@@ -1,14 +1,12 @@
-export interface StorageIdentity {
-  sub: string;
-  groups: string[];
-}
+import type { ProjectRow } from '../shared/identity';
 
-export interface ProjectRow {
-  id: string;
-  organizationId: string;
-  group?: string;
-  tags?: string[];
-}
+export {
+  authorizeProject,
+  isSysadmin,
+  requireStorageUser,
+  type ProjectRow,
+  type StorageIdentity,
+} from '../shared/identity';
 
 export interface ImageRow {
   id: string;
@@ -43,47 +41,12 @@ export interface ShareRow {
   status?: string;
 }
 
-const SYSADMIN = 'sysadmin';
-
-export function isSysadmin(user: StorageIdentity): boolean {
-  return user.groups.includes(SYSADMIN);
-}
-
-export function requireStorageUser(identity: unknown): StorageIdentity {
-  const value = identity as Partial<StorageIdentity> | null;
-  if (!value || typeof value.sub !== 'string' || !value.sub) {
-    throw new Error('Unauthorized: sign in to access images');
-  }
-  return {
-    sub: value.sub,
-    groups: Array.isArray(value.groups)
-      ? value.groups.filter((g): g is string => typeof g === 'string')
-      : [],
-  };
-}
-
 export function isLegacyProject(project: ProjectRow): boolean {
   return project.tags?.includes('legacy') ?? false;
 }
 
 export function projectPrefix(project: ProjectRow): string {
   return `${project.organizationId}/${project.id}/`;
-}
-
-export function authorizeProject(
-  user: StorageIdentity,
-  project: ProjectRow | undefined
-): asserts project is ProjectRow {
-  if (
-    !project ||
-    !project.organizationId ||
-    project.group !== project.organizationId
-  ) {
-    throw new Error('Unauthorized: invalid project ownership');
-  }
-  if (!isSysadmin(user) && !user.groups.includes(project.organizationId)) {
-    throw new Error('Unauthorized: image belongs to another organization');
-  }
 }
 
 const hasControlCharacters = (value: string) =>

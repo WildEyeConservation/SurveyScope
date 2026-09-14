@@ -1,4 +1,5 @@
 import { imageAccess } from './storage/imageAccess/resource';
+import { workflowFiles } from './storage/workflowFiles/resource';
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
@@ -89,6 +90,7 @@ const backend = defineBackend({
   inputBucket,
   generateTile,
   imageAccess,
+  workflowFiles,
   handleS3Upload,
   postDeploy,
   updateUserStats,
@@ -470,15 +472,16 @@ authenticatedRole.addToPrincipalPolicy(generalBucketPolicy);
 Object.values(backend.auth.resources.groups).forEach(({ role }) => {
   role.addToPrincipalPolicy(generalBucketPolicy);
   role.addToPrincipalPolicy(sqsAnnotatorStatement);
-  role.addToPrincipalPolicy(groupS3OutputsReadPolicy);
-  role.addToPrincipalPolicy(groupS3LaunchPayloadsPolicy);
-  role.addToPrincipalPolicy(groupS3QueueManifestsPolicy);
 });
 
-// Only sysadmins keep direct S3 access; everyone else goes through imageAccess.
+// Only sysadmins keep direct S3 access; everyone else goes through the
+// imageAccess and workflowFiles functions.
 const sysadminRole = backend.auth.resources.groups['sysadmin'].role;
 sysadminRole.addToPrincipalPolicy(groupS3ListPolicy);
 sysadminRole.addToPrincipalPolicy(groupS3ObjectsPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3OutputsReadPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3LaunchPayloadsPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3QueueManifestsPolicy);
 sysadminRole.addToPrincipalPolicy(sqsSysadminStatement);
 sysadminRole.addToPrincipalPolicy(groupEcsListPolicy);
 
@@ -492,6 +495,7 @@ new iam.Policy(Stack.of(imageInputBucket), 'ImageStorageMissingObjectChecks', {
   roles: [
     backend.imageAccess.resources.lambda.role!,
     backend.generateTile.resources.lambda.role!,
+    backend.workflowFiles.resources.lambda.role!,
   ],
   statements: [
     new iam.PolicyStatement({
@@ -542,6 +546,14 @@ backend.data.resources.tables.ImageFile.grant(
   backend.imageAccess.resources.lambda,
   'dynamodb:PutItem'
 );
+for (const model of ['Project', 'AnnotationSet'] as const) {
+  const table = backend.data.resources.tables[model];
+  backend.workflowFiles.addEnvironment(
+    `WORKFLOW_${model.toUpperCase()}_TABLE`,
+    table.tableName
+  );
+  table.grant(backend.workflowFiles.resources.lambda, 'dynamodb:GetItem');
+}
 backend.data.resources.tables.Image.grant(
   backend.generateTile.resources.lambda,
   'dynamodb:UpdateItem'
@@ -1703,6 +1715,13 @@ if (enableEcs) {
     backend.generateSurveyResults.addEnvironment(
       'JOLLY_JOB_TABLE_NAME',
       jobTableName
+    );
+    backend.workflowFiles.addEnvironment('JOLLY_JOB_TABLE_NAME', jobTableName);
+    backend.workflowFiles.resources.lambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem'],
+        resources: [launcherJobTableArn],
+      })
     );
     backend.generateSurveyResults.addEnvironment(
       'JOLLY_STATE_MACHINE_ARN',

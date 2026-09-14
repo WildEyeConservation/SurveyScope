@@ -1,6 +1,10 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Form, Spinner } from 'react-bootstrap';
-import { uploadData, downloadData, remove } from 'aws-amplify/storage';
+import {
+  deleteFalseNegativeFiles,
+  readFalseNegativeFile,
+  uploadWorkflowFile,
+} from '../storage/workflowFiles';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
@@ -118,33 +122,22 @@ export default function FalseNegatives({
     let mounted = true;
     async function checkForFnManifests() {
       setLoadingManifests(true);
-      const poolKey = `false-negative-pools/${annotationSet.id}.json`;
       try {
-        const poolResult = await downloadData({
-          path: poolKey,
-          options: { bucket: 'outputs' },
-        }).result;
-        const poolText = await poolResult.body.text();
-        const pool = JSON.parse(poolText) as FnPool;
+        const pool = await readFalseNegativeFile<FnPool>(
+          annotationSet.id,
+          'pool'
+        );
         if (!mounted) return;
         setFnPool(pool);
-
-        // Pool exists – try to load history
-        const historyKey = `false-negative-history/${annotationSet.id}.json`;
-        try {
-          const historyResult = await downloadData({
-            path: historyKey,
-            options: { bucket: 'outputs' },
-          }).result;
-          const historyText = await historyResult.body.text();
-          const history = JSON.parse(historyText) as FnHistory;
-          if (mounted) setFnHistory(history);
-        } catch {
-          // Pool exists but no history (edge case)
-          if (mounted) setFnHistory(null);
-        }
+        const history = pool
+          ? await readFalseNegativeFile<FnHistory>(
+              annotationSet.id,
+              'history'
+            ).catch(() => null)
+          : null;
+        if (mounted) setFnHistory(history);
       } catch {
-        // No pool – first launch mode
+        // Treat unreadable manifests as first launch.
         if (mounted) {
           setFnPool(null);
           setFnHistory(null);
@@ -561,18 +554,10 @@ export default function FalseNegatives({
       // Load history if not already in state
       let history = fnHistory;
       if (!history) {
-        const historyKey = `false-negative-history/${annotationSet.id}.json`;
-        try {
-          const historyResult = await downloadData({
-            path: historyKey,
-            options: { bucket: 'outputs' },
-          }).result;
-          const historyText = await historyResult.body.text();
-          history = JSON.parse(historyText) as FnHistory;
-        } catch {
-          // No history exists, nothing to delete
-          history = null;
-        }
+        history = await readFalseNegativeFile<FnHistory>(
+          annotationSet.id,
+          'history'
+        ).catch(() => null);
       }
 
       if (history && history.launches.length > 0) {
@@ -675,14 +660,7 @@ export default function FalseNegatives({
 
       // Delete manifests
       setResetProgress('Removing manifests...');
-      const poolKey = `false-negative-pools/${annotationSet.id}.json`;
-      const historyKey = `false-negative-history/${annotationSet.id}.json`;
-      await remove({ path: poolKey, options: { bucket: 'outputs' } }).catch(
-        () => { }
-      );
-      await remove({ path: historyKey, options: { bucket: 'outputs' } }).catch(
-        () => { }
-      );
+      await deleteFalseNegativeFiles(annotationSet.id);
 
       setFnPool(null);
       setFnHistory(null);
@@ -1207,19 +1185,11 @@ async function sendLaunchFalseNegativesRequest(
 
   if (payloadSize > PAYLOAD_SIZE_THRESHOLD) {
     // Upload large payload to S3 and send only the reference.
-    const s3Key = `launch-payloads/${crypto.randomUUID()}.json`;
-    console.log(
-      `Payload size ${payloadSize} exceeds threshold, uploading to S3`,
-      { key: s3Key }
+    const s3Key = await uploadWorkflowFile(
+      'launch-payload',
+      String(payload.projectId),
+      payloadStr
     );
-    await uploadData({
-      path: s3Key,
-      data: payloadStr,
-      options: {
-        bucket: 'outputs',
-        contentType: 'application/json',
-      },
-    }).result;
     requestPayload = JSON.stringify({ payloadS3Key: s3Key });
   } else {
     requestPayload = payloadStr;

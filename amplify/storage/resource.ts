@@ -1,4 +1,5 @@
 import { imageAccess } from './imageAccess/resource';
+import { workflowFiles } from './workflowFiles/resource';
 import { defineStorage } from "@aws-amplify/backend"
 import { generateTile } from "./generateTile/resource"
 import { handleS3Upload } from "./handleS3Upload/resource"
@@ -36,11 +37,10 @@ export const outputBucket = defineStorage({
     ],
     'heatmaps/*': [
       allow.resource(monitorModelProgress).to(['read']),
-      allow.authenticated.to(['read']),
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     'launch-payloads/*': [
-      allow.authenticated.to(['write', 'read']),
+      allow.resource(workflowFiles).to(['write']),
       allow.resource(launchAnnotationSet).to(['read', 'delete']),
       allow.resource(launchFalseNegatives).to(['read', 'delete']),
       allow.resource(launchIndividualId).to(['read', 'delete']),
@@ -61,7 +61,7 @@ export const outputBucket = defineStorage({
     ],
     // Queue manifests for requeue detection
     'queue-manifests/*': [
-      allow.authenticated.to(['write', 'read']),
+      allow.resource(workflowFiles).to(['write']),
       allow.resource(launchAnnotationSet).to(['read', 'write']),
       allow.resource(launchQCReview).to(['write']),
       allow.resource(launchInfoTags).to(['write']),
@@ -73,7 +73,7 @@ export const outputBucket = defineStorage({
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     'jolly-status/*': [
-      allow.authenticated.to(['read']),
+      allow.resource(workflowFiles).to(['get']),
       allow.resource(generateSurveyResults).to(['write']),
       allow.groups(['sysadmin']).to(['read', 'delete'])
     ],
@@ -91,20 +91,18 @@ export const outputBucket = defineStorage({
     ],
     // QC review manifests for tracking sampled annotations
     'qc-review-manifests/*': [
-      allow.authenticated.to(['read']),
       allow.resource(launchQCReview).to(['write']),
       allow.resource(findAndRequeueMissingLocations).to(['read']),
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     'info-tag-manifests/*': [
-      allow.authenticated.to(['read']),
       allow.resource(launchInfoTags).to(['write']),
       allow.resource(findAndRequeueMissingLocations).to(['read']),
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     // False negative pools for species labelling reconciliation
     'false-negative-pools/*': [
-      allow.authenticated.to(['read', 'delete']),
+      allow.resource(workflowFiles).to(['get', 'delete']),
       allow.resource(launchFalseNegatives).to(['read', 'write']),
       allow.resource(launchAnnotationSet).to(['delete']),
       allow.resource(reconcileFalseNegatives).to(['read', 'write']),
@@ -112,7 +110,7 @@ export const outputBucket = defineStorage({
     ],
     // False negative history tracking
     'false-negative-history/*': [
-      allow.authenticated.to(['read', 'delete']),
+      allow.resource(workflowFiles).to(['get', 'delete']),
       allow.resource(launchFalseNegatives).to(['read', 'write']),
       allow.resource(launchAnnotationSet).to(['delete']),
       allow.resource(reconcileFalseNegatives).to(['read', 'write']),
