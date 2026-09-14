@@ -8,6 +8,8 @@ import { GlobalContext } from '../../Context';
 import { useUsers } from '../../apiInterface';
 import { fetchAllPaginatedResults } from '../../utils';
 import { useReviewersByShare } from './useReviewersByShare';
+import { checkShareResponse } from './shareResponse';
+import { isShareOperationBusy } from '../../../amplify/chain-shares/lifecycle';
 
 type ShareRow = {
   shareId: string;
@@ -16,6 +18,8 @@ type ShareRow = {
   annotationSetId: string;
   status?: string | null;
   createdBy?: string | null;
+  operationStartedAt?: string | null;
+  errorMessage?: string | null;
 };
 
 type Option = { label: string; value: string };
@@ -66,7 +70,7 @@ export default function ManageShares() {
   const [selectedUser, setSelectedUser] = useState<Record<string, Option | null>>({});
   const [busyShare, setBusyShare] = useState<string | null>(null);
 
-  const { data: reviewersByShare } = useReviewersByShare(users);
+  const { data: reviewersByShare, isSuccess: reviewersLoaded, isFetching: reviewersRefreshing, isError: reviewersFailed } = useReviewersByShare(users);
 
   const userOptions: Option[] = users.map((u) => ({
     label: u.name ? `${u.name} (${u.email ?? u.id})` : u.email ?? u.id,
@@ -126,7 +130,11 @@ export default function ManageShares() {
   const loadShares = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = (await fetchAllPaginatedResults(client.models.ChainShare.list, {
+      const rows = (await fetchAllPaginatedResults(async (options?: Parameters<typeof client.models.ChainShare.list>[0]) => {
+        const result = await client.models.ChainShare.list(options);
+        checkShareResponse(result, 'Load shares');
+        return result;
+      }, {
         selectionSet: [
           'shareId',
           'surveyName',
@@ -134,12 +142,15 @@ export default function ManageShares() {
           'annotationSetId',
           'status',
           'createdBy',
+          'operationStartedAt',
+          'errorMessage',
         ] as const,
         limit: 10000,
       })) as ShareRow[];
       setShares(rows.filter((s) => s.status !== 'revoked'));
     } catch (err) {
       console.error('Failed to list chain shares', err);
+      setMessage(`Failed to refresh shares: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -157,25 +168,28 @@ export default function ManageShares() {
     try {
       const shareId = crypto.randomUUID();
       const group = `chainshare-${shareId}`;
-      await client.mutations.createGroup({ groupName: group });
+      checkShareResponse(await client.mutations.createGroup({ groupName: group }), 'Create reviewer group');
       // Fire the snapshot; it may run past the resolver timeout server-side.
       void client.mutations
         .snapshotChainShare({ annotationSetId: setId, shareId })
-        .then(() => loadShares())
-        .catch((err: unknown) =>
-          console.warn('snapshotChainShare returned/aborted (may still be running)', err)
-        );
+        .then((result) => {
+          checkShareResponse(result, 'Create snapshot');
+          setMessage(`Share ${shareId} is ready. You can now add reviewers.`);
+        })
+        .catch((err: unknown) => {
+          setMessage(`Snapshot request: ${err instanceof Error ? err.message : String(err)}. Refresh to check the server status; a timeout does not stop creation.`);
+        })
+        .finally(() => { setCreating(false); void loadShares(); });
       setSelectedSet(null);
       setMessage(
-        `Snapshot started for "${selectedSet?.label}" (share ${shareId}). It will appear below once complete — click Refresh. You can add reviewers now.`
+        `Snapshot started for "${selectedSet?.label}" (share ${shareId}). Its progress will appear below; use Refresh to check again. Add reviewers once its status is active.`
       );
     } catch (err) {
       console.error('Failed to start chain share', err);
+      setCreating(false);
       setMessage(
         `Failed to create share: ${err instanceof Error ? err.message : String(err)}`
       );
-    } finally {
-      setCreating(false);
     }
   }, [client, loadShares, selectedSet]);
 
@@ -189,10 +203,10 @@ export default function ManageShares() {
       if (!user) return;
       setBusyShare(shareId);
       try {
-        await client.mutations.addUserToGroup({
+        checkShareResponse(await client.mutations.addUserToGroup({
           userId: user.value,
           groupName: `chainshare-${shareId}`,
-        });
+        }), 'Update reviewer membership');
         setMessage(`Added ${user.label} to share ${shareId}.`);
         refreshReviewers();
       } catch (err) {
@@ -212,10 +226,10 @@ export default function ManageShares() {
       if (!user) return;
       setBusyShare(shareId);
       try {
-        await client.mutations.removeUserFromGroup({
+        checkShareResponse(await client.mutations.removeUserFromGroup({
           userId: user.value,
           groupName: `chainshare-${shareId}`,
-        });
+        }), 'Update reviewer membership');
         setMessage(`Removed ${user.label} from share ${shareId}.`);
         refreshReviewers();
       } catch (err) {
@@ -240,7 +254,8 @@ export default function ManageShares() {
       }
       setBusyShare(shareId);
       try {
-        await client.mutations.revokeChainShare({ shareId });
+        checkShareResponse(await client.mutations.revokeChainShare({ shareId }), 'Revoke share');
+        setMessage(`Share ${shareId} was revoked. Feedback has been retained.`);
         await loadShares();
       } catch (err) {
         setMessage(
@@ -248,10 +263,18 @@ export default function ManageShares() {
         );
       } finally {
         setBusyShare(null);
+        void loadShares();
       }
     },
     [client, loadShares]
   );
+
+  const operationRunning = creating || shares.some((s) => isShareOperationBusy(s));
+  useEffect(() => {
+    if (!operationRunning) return;
+    const interval = setInterval(() => { void loadShares(); }, 5000);
+    return () => clearInterval(interval);
+  }, [operationRunning, loadShares]);
 
   return (
     <div style={{ width: '100%' }}>
@@ -304,19 +327,20 @@ export default function ManageShares() {
 
       <Card>
         <Card.Header className='d-flex justify-content-between align-items-center'>
-          <h4 className='mb-0'>Active shares</h4>
-          <Button variant='outline-light' size='sm' onClick={() => void loadShares()}>
+          <h4 className='mb-0'>Shares and recovery</h4>
+          <Button variant='outline-light' size='sm' onClick={() => { void loadShares(); refreshReviewers(); }}>
             <RotateCw size={14} className='me-1' />
             Refresh
           </Button>
         </Card.Header>
         <Card.Body className='p-0'>
+          {reviewersFailed && <p className='p-3 text-danger'>Could not load reviewer membership. Refresh before revoking a share.</p>}
           {loading ? (
             <div className='p-3'>
               <Spinner animation='border' size='sm' />
             </div>
           ) : shares.length === 0 ? (
-            <p className='mb-0 p-3'>No active shares.</p>
+            <p className='mb-0 p-3'>No shares to manage.</p>
           ) : (
             <Table
               responsive
@@ -336,7 +360,9 @@ export default function ManageShares() {
               </thead>
               <tbody>
                 {shares.map((share) => {
-                  const assigned = reviewersByShare?.get(share.shareId) ?? [];
+                  const assigned = reviewersByShare?.[share.shareId] ?? [];
+                  const operationBusy = isShareOperationBusy(share);
+                  const recovering = share.status !== 'active';
                   return (
                     <tr key={share.shareId}>
                       <td className='fw-semibold'>{share.surveyName ?? '—'}</td>
@@ -348,6 +374,10 @@ export default function ManageShares() {
                         >
                           {share.status ?? 'unknown'}
                         </Badge>
+                        {share.errorMessage && <div className='small text-danger'>{share.errorMessage}</div>}
+                        {['creating', 'revoking'].includes(share.status ?? '') && !operationBusy && (
+                          <div className='small text-warning'>Operation timed out. Remove reviewers, then clean up.</div>
+                        )}
                       </td>
                       <td style={{ minWidth: 160 }}>
                         {assigned.length === 0 ? (
@@ -384,7 +414,7 @@ export default function ManageShares() {
                             size='sm'
                             variant='warning'
                             disabled={
-                              busyShare === share.shareId ||
+                              busyShare === share.shareId || share.status !== 'active' ||
                               !selectedUser[share.shareId]
                             }
                             onClick={() => void onAddReviewer(share.shareId)}
@@ -416,11 +446,11 @@ export default function ManageShares() {
                             size='sm'
                             variant='danger'
                             disabled={
-                              busyShare === share.shareId || assigned.length > 0
+                              busyShare === share.shareId || operationBusy || assigned.length > 0 || !reviewersLoaded || reviewersRefreshing
                             }
                             onClick={() => void onRevoke(share.shareId)}
                           >
-                            Revoke
+                            {recovering ? 'Clean up' : 'Revoke'}
                           </Button>
                         </span>
                       </td>

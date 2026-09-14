@@ -1,4 +1,7 @@
 import { imageAccess } from './storage/imageAccess/resource';
+import { chainMutationGuard } from './functions/chainMutationGuard/resource';
+import { installMutationGuard } from './chain-shares/installGuard';
+import { revokeChainShare } from './functions/revokeChainShare/resource';
 import { workflowFiles } from './storage/workflowFiles/resource';
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
@@ -90,6 +93,8 @@ const backend = defineBackend({
   inputBucket,
   generateTile,
   imageAccess,
+  chainMutationGuard,
+  revokeChainShare,
   workflowFiles,
   handleS3Upload,
   postDeploy,
@@ -140,6 +145,44 @@ const backend = defineBackend({
   recordWorkflowTask,
   cancelIndividualIdJob,
 });
+
+const guardFunction = backend.chainMutationGuard.resources.lambda;
+const snapshotTables: Record<string, string> = {};
+for (const model of ['SharedChainAnnotation', 'SharedChainImage', 'SharedChainLocation',
+  'SharedChainNeighbour', 'SharedChainCategory'] as const) {
+  const table = backend.data.resources.tables[model];
+  snapshotTables[model] = table.tableName;
+  table.grant(backend.revokeChainShare.resources.lambda, 'dynamodb:Scan');
+}
+backend.revokeChainShare.addEnvironment('SNAPSHOT_TABLES', JSON.stringify(snapshotTables));
+backend.revokeChainShare.addEnvironment('USER_POOL_ID', backend.auth.resources.userPool.userPoolId);
+backend.revokeChainShare.resources.lambda.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['cognito-idp:ListUsersInGroup'],
+  resources: [backend.auth.resources.userPool.userPoolArn],
+}));
+const guardModels = ['ChainReviewFeedback', 'ChainShare', 'SharedChainAnnotation', 'SharedChainCategory'] as const;
+const guardTables: Record<string, string> = {};
+for (const model of guardModels) {
+  const table = backend.data.resources.tables[model];
+  guardTables[model] = table.tableName;
+  guardFunction.addToRolePolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem', 'dynamodb:Query'],
+    resources: [table.tableArn, `${table.tableArn}/index/*`],
+  }));
+}
+backend.chainMutationGuard.addEnvironment('GUARD_TABLES', JSON.stringify(guardTables));
+backend.chainMutationGuard.addEnvironment('GUARD_INDEXES', JSON.stringify({
+  SharedChainAnnotation: 'sharedChainAnnotationsByShareId',
+  SharedChainCategory: 'sharedChainCategoriesByShareId',
+}));
+backend.chainMutationGuard.addEnvironment('USER_POOL_ID', backend.auth.resources.userPool.userPoolId);
+guardFunction.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['cognito-idp:AdminListGroupsForUser'],
+  resources: [backend.auth.resources.userPool.userPoolArn],
+}));
+const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('ChainMutationGuard', guardFunction);
+installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
+  backend.data.resources.graphqlApi.apiId, guardSource);
 
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
 userPoolClient.accessTokenValidity = 24 * 60;

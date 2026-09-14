@@ -1026,6 +1026,8 @@ const schema = a
         surveyName: a.string(),
         annotationSetName: a.string(),
         status: a.string().default('active'),
+        operationStartedAt: a.datetime(),
+        errorMessage: a.string(),
         createdBy: a.string(),
         group: a.string(),
       })
@@ -1116,6 +1118,8 @@ const schema = a
       .secondaryIndexes((index) => [
         index('shareId').queryField('sharedChainCategoriesByShareId'),
       ]),
+    // chainMutationGuard validates current share membership, source IDs and
+    // ownership before the generated owner-authorized mutation can write.
     ChainReviewFeedback: a
       .model({
         shareId: a.id().required(),
