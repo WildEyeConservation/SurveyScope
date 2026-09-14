@@ -46,6 +46,7 @@ type SharedAnnotationRow = {
 };
 
 type SharedImageRow = {
+  id: string;
   sourceImageId: string;
   width: number;
   height: number;
@@ -88,7 +89,7 @@ export function useSharedChainData(shareId: string | undefined) {
 
   return useQuery<SharedChainData>({
     // Bump when the persisted row shape changes.
-    queryKey: ['shared-chain-data', 'v4', shareId],
+    queryKey: ['shared-chain-data', 'v5', shareId],
     enabled: Boolean(shareId),
     staleTime: Infinity,
     queryFn: async () => {
@@ -123,6 +124,7 @@ export function useSharedChainData(shareId: string | undefined) {
           {
             shareId: id,
             selectionSet: [
+              'id',
               'sourceImageId',
               'width',
               'height',
@@ -203,6 +205,7 @@ export function useSharedChainData(shareId: string | undefined) {
         sourceKeyByImageId[img.sourceImageId] = img.sourceKey ?? undefined;
         imagesById[img.sourceImageId] = {
           id: img.sourceImageId,
+          sharedImageId: img.id,
           width: img.width,
           height: img.height,
           originalPath: img.originalPath ?? null,
@@ -251,6 +254,7 @@ export function useSharedChainData(shareId: string | undefined) {
         if (!img) continue;
         metaByAnnotationId[a.id] = {
           imageId: a.imageId,
+          sharedImageId: img.id,
           width: img.width,
           height: img.height,
           originalPath: img.originalPath ?? null,

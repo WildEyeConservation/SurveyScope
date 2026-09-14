@@ -1,3 +1,4 @@
+import { imageAccess } from './imageAccess/resource';
 import { defineStorage } from "@aws-amplify/backend"
 import { generateTile } from "./generateTile/resource"
 import { handleS3Upload } from "./handleS3Upload/resource"
@@ -25,11 +26,12 @@ export const outputBucket = defineStorage({
   isDefault: true,
   access: allow => ({
     'slippymaps/*': [
+      allow.resource(imageAccess).to(['get', 'list']),
       allow.resource(generateTile).to(['write', 'list', 'get']),
       allow.resource(handleS3Upload).to(['write', 'list', 'get', 'delete']),
       allow.resource(pretileImage).to(['write']),
       allow.resource(refreshTiles).to(['list', 'get', 'write']),
-      allow.authenticated.to(['read']),
+
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     'heatmaps/*': [
@@ -132,12 +134,13 @@ export const inputBucket = defineStorage({
   name: "inputs",
   access: allow => ({
     'images/*': [
+      allow.resource(imageAccess).to(['get', 'write', 'list']),
       allow.resource(generateTile).to(['get']),
       // The upload handler replaces images carrying an orientation correction
       // with physically rotated pixels before downstream processing starts.
       allow.resource(handleS3Upload).to(['get', 'write']),
       allow.resource(pretileImage).to(['get']),
-      allow.authenticated.to(['read', 'write', 'delete']),
+
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ]
   }),

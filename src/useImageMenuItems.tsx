@@ -1,5 +1,5 @@
 import { useContext, useMemo } from 'react';
-import { getUrl } from 'aws-amplify/storage';
+import { imageDownloadUrl } from './storage/api';
 import {
   ImageContext,
   ManagementContext,
@@ -83,14 +83,7 @@ export default function useImageMenuItems({
         {
           text: 'Download this image',
           callback: () => {
-            getUrl({
-              path: 'images/' + sourceKey,
-              options: {
-                bucket: 'inputs',
-                validateObjectExistence: true,
-                expiresIn: 300,
-              },
-            }).then(async (url) => {
+            imageDownloadUrl(image.id, sourceKey).then(async (url) => {
               navigator.clipboard.writeText(url.url.toString());
 
               // Fetch the image first

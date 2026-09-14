@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import * as jdenticon from 'jdenticon';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RotateCw, Layers, Copy, Check, EyeOff } from 'lucide-react';
-import { getTileBlob } from '../StorageLayer';
+import { getTileBlob, imageTileContext } from '../StorageLayer';
 import type { ImageType } from '../schemaTypes';
 import type { CandidateStatus, PixelTransform } from './types';
 import { nameFor } from './utils/identity';
@@ -918,7 +918,7 @@ export function IndividualIdMap({
           }
           loadedTilesRef.current.add(sourceId);
           const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
-          const tile = getTileBlob(path)
+          const tile = getTileBlob(path, imageTileContext(image))
             .then((blob) => {
               if (cancelledRef.current) return;
               const url = URL.createObjectURL(blob);

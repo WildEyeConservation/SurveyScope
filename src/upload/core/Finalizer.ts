@@ -1,3 +1,4 @@
+import { registerImageFile } from '../../storage/api';
 import type { CreatedImage } from '../../types/ImageData';
 import { fetchAllPaginatedResults } from '../../utils';
 import { logAdminAction } from '../../utils/adminActionLogger';
@@ -42,7 +43,7 @@ export class Finalizer {
   ): Promise<void> {
     const { client, backend, projectId, imageSetId, keyInfo, store, userId } =
       this.ctx;
-    const { organizationId, makeKey } = keyInfo;
+    const { organizationId } = keyInfo;
 
     // Fetch images with their related memberships and files in one query so
     // duplicate deletion needs no extra round-trips.
@@ -137,17 +138,7 @@ export class Finalizer {
             );
           }
           if ((img.files ?? []).length === 0) {
-            const finalKey = makeKey(img.originalPath);
-            await withRetry(() =>
-              client.models.ImageFile.create({
-                projectId,
-                imageId: img.id,
-                key: finalKey,
-                path: finalKey,
-                type: mimeTypeFromPath(img.originalPath),
-                group: organizationId,
-              })
-            );
+            await withRetry(() => registerImageFile(projectId, img.id, img.originalPath));
           }
         } catch (err) {
           console.error(`Failed to reconcile image ${img.id}:`, err);
@@ -441,12 +432,4 @@ export function computeRegistrationImages(
     ...sessionImages,
     ...allProjectImages.filter((img) => boundaryIds.has(img.id)),
   ].sort((a, b) => a.timestamp - b.timestamp);
-}
-
-function mimeTypeFromPath(path: string): string {
-  const lower = path.toLowerCase();
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.tif') || lower.endsWith('.tiff')) return 'image/tiff';
-  return 'application/octet-stream';
 }

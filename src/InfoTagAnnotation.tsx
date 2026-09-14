@@ -24,7 +24,7 @@ import {
   applyTagBadgeContainerStyle,
   applyTagBadgeStyle,
 } from './activeMarkerStyle';
-import { getTileBlob } from './StorageLayer';
+import { getTileBlob, imageTileContext } from './StorageLayer';
 import type { Schema } from './amplify/client-schema';
 import {
   assertNoGraphqlErrors,
@@ -482,7 +482,7 @@ export default function InfoTagAnnotation({
           if (!isVisible) continue;
           loadedTilesRef.current.add(sourceId);
           pendingTiles.push(getTileBlob(
-            `slippymaps/${sourceKey}/${zoom}/${row}/${column}.png`
+            `slippymaps/${sourceKey}/${zoom}/${row}/${column}.png`, imageTileContext(image)
           )
             .then((blob) => {
               if (cancelledRef.current || instance.getSource(sourceId)) return;

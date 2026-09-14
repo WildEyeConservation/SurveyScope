@@ -42,7 +42,7 @@ export interface LightRect {
 }
 
 interface MapLibreLightViewerProps {
-  image: { width: number; height: number };
+  image: { id: string; width: number; height: number; sharedImageId?: string };
   sourceKey: string;
   annotations?: LightAnnotation[];
   rects?: LightRect[];

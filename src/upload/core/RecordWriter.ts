@@ -1,3 +1,4 @@
+import { registerImageFile } from '../../storage/api';
 import type { CreatedImage, ImageData } from '../../types/ImageData';
 import type { CameraResolver } from './cameras';
 import type { ElevationService } from './elevation';
@@ -21,7 +22,7 @@ export class RecordWriter {
 
   async createImageRecords(
     imageData: ImageData,
-    fileType: string,
+    _fileType: string,
     phash: string | undefined
   ): Promise<CreatedImage> {
     const {
@@ -29,7 +30,6 @@ export class RecordWriter {
       projectId,
       organizationId,
       imageSetId,
-      makeKey,
       elevation,
       cameras,
       signal,
@@ -88,17 +88,8 @@ export class RecordWriter {
       { signal }
     );
 
-    const finalKey = makeKey(img.originalPath!);
     await withRetry(
-      () =>
-        client.models.ImageFile.create({
-          projectId,
-          imageId: img.id,
-          key: finalKey,
-          path: finalKey,
-          type: fileType,
-          group: organizationId,
-        }),
+      () => registerImageFile(projectId, img.id, img.originalPath!),
       { signal }
     );
 

@@ -89,6 +89,8 @@ export function ChainTile({
     const { maxZ } = getCropZoomRange(meta.width, meta.height);
     fetchCenteredCrop({
       sourceKey: meta.sourceKey,
+      imageId: meta.imageId,
+      sharedImageId: meta.sharedImageId,
       imageWidth: meta.width,
       imageHeight: meta.height,
       x: annotation.x,

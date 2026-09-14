@@ -1,172 +1,220 @@
-import { getUrl } from 'aws-amplify/storage';
+import { fetchAuthSession } from 'aws-amplify/auth';
+import { Hub } from 'aws-amplify/utils';
 import localforage from 'localforage';
-import { limitedClient } from './limitedClient';
+import {
+  MAX_GENERATED_TILE_BATCH,
+  type TileCoordinate,
+} from '../shared/imageTiles';
+import { storageOperation, GENERATE_TILE, SIGN_TILES } from './storage/api';
+import { loadAuthorizedTile } from './storage/tileLoader';
+import {
+  TileUrlBatcher,
+  tileImageKey,
+  type TileContext,
+  type SignedTileBatch,
+} from './storage/tileUrlBatcher';
 
-/* Tile fetching for slippy maps stored on S3, accessed via individually
-signed URLs (so a plain URL-template tile layer cannot be used). Missing
-tiles are generated on demand by a Lambda, with concurrent requests batched
-per source image, and everything is cached locally in IndexedDB.
+export type { TileContext } from './storage/tileUrlBatcher';
 
-Consumed by the MapLibre viewers through the `detweb://` protocol registered
-in annotator/imageTiles.ts. */
+// Slippy-map tiles: URLs are signed per image by the imageAccess backend,
+// missing tiles are generated on demand, and bytes are cached in IndexedDB
+// keyed by the signed-in identity. Used via the `detweb://` protocol.
 
-// Configure a dedicated storage instance for tile URLs
+const TILE_CACHE_NAME = 'tileCache';
+const TILE_CACHE_STORE = 'authorizedTilesV1';
+const TILE_CACHE_SCOPE_KEY = 'tileCache.scope';
+
 const tileCache = localforage.createInstance({
-  name: 'tileCache',
-  storeName: 'tiles',
+  name: TILE_CACHE_NAME,
+  storeName: TILE_CACHE_STORE,
 });
 
-/**
- * Tile generation is batched client-side: concurrent Lambda calls for the same
- * source image are coalesced into a single AppSync call so the Lambda amortizes
- * one source fetch+decode across many tiles. We use setTimeout(0) rather than a
- * debounce window — any requests made in the current event-loop tick are swept
- * into the same batch, with no artificial latency.
- */
+// Drop the pre-authorization store, which is never read again.
+void localforage
+  .dropInstance({ name: TILE_CACHE_NAME, storeName: 'tiles' })
+  .catch(() => {});
 
-type PendingTile = {
-  z: number;
-  row: number;
-  col: number;
+const urls = new TileUrlBatcher((context, sourceKey, tiles) =>
+  storageOperation<SignedTileBatch>(
+    SIGN_TILES,
+    {
+      imageId: context.imageId,
+      sharedImageId: context.sharedImageId,
+      sourceKey,
+      tiles: JSON.stringify(tiles),
+    },
+    'signImageTiles'
+  )
+);
+
+// Only a change of user rejects in-flight tiles; token refreshes must not.
+let sessionEpoch = 0;
+let scopePromise: Promise<string> | null = null;
+
+Hub.listen('auth', ({ payload }) => {
+  if (payload.event === 'signedIn' || payload.event === 'signedOut') {
+    sessionEpoch++;
+    scopePromise = null;
+    urls.invalidate();
+  } else if (payload.event === 'tokenRefresh') {
+    scopePromise = null;
+  }
+});
+
+async function resolveScope(): Promise<string> {
+  const session = await fetchAuthSession();
+  const sub = session.tokens?.idToken?.payload.sub;
+  if (typeof sub !== 'string') throw new Error('Sign in to view images');
+  const groups = session.tokens?.idToken?.payload['cognito:groups'];
+  const scope = JSON.stringify([
+    sub,
+    Array.isArray(groups) ? [...groups].sort() : [],
+  ]);
+  // Bytes cached for another identity or group set are never reusable.
+  if (localStorage.getItem(TILE_CACHE_SCOPE_KEY) !== scope) {
+    await tileCache.clear();
+    localStorage.setItem(TILE_CACHE_SCOPE_KEY, scope);
+  }
+  return scope;
+}
+
+function sessionScope(): Promise<string> {
+  if (!scopePromise) {
+    const promise = resolveScope();
+    scopePromise = promise;
+    promise.catch(() => {
+      if (scopePromise === promise) scopePromise = null;
+    });
+  }
+  return scopePromise;
+}
+
+export function imageTileContext(image: {
+  id: string;
+  width: number;
+  height: number;
+  sharedImageId?: string;
+}): TileContext {
+  return {
+    imageId: image.id,
+    width: image.width,
+    height: image.height,
+    sharedImageId: image.sharedImageId,
+  };
+}
+
+type PendingTile = TileCoordinate & {
   resolve: (blob: Blob) => void;
-  reject: (err: Error) => void;
+  reject: (error: unknown) => void;
 };
 
-const pendingByImage = new Map<string, PendingTile[]>();
-const timersByImage = new Map<string, ReturnType<typeof setTimeout>>();
-const imageIdByKey = new Map<string, string>();
-
 function base64ToBlob(b64: string): Blob {
-  const binaryString = atob(b64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return new Blob([bytes], { type: 'image/png' });
-}
-
-async function flushBatch(imageKey: string, batch: PendingTile[]) {
-  try {
-    const { data, errors } = await (limitedClient as any).queries.generateTile({
-      imageKey,
-      imageId: imageIdByKey.get(imageKey),
-      zs: batch.map((t) => t.z),
-      rows: batch.map((t) => t.row),
-      cols: batch.map((t) => t.col),
-    });
-
-    if (errors?.length) throw new Error(errors[0].message);
-    if (!data || !Array.isArray(data)) throw new Error('No tile data returned');
-
-    data.forEach((b64: string | null, i: number) => {
-      if (!b64) {
-        batch[i].reject(new Error('Tile generation returned empty result'));
-        return;
-      }
-      batch[i].resolve(base64ToBlob(b64));
-    });
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    batch.forEach((t) => t.reject(error));
-  }
-}
-
-function generateTileOnDemand(
-  imageKey: string,
-  z: number,
-  row: number,
-  col: number
-): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    let queue = pendingByImage.get(imageKey);
-    if (!queue) {
-      queue = [];
-      pendingByImage.set(imageKey, queue);
-    }
-    queue.push({ z, row, col, resolve, reject });
-
-    if (!timersByImage.has(imageKey)) {
-      const timer = setTimeout(() => {
-        timersByImage.delete(imageKey);
-        const batch = pendingByImage.get(imageKey);
-        pendingByImage.delete(imageKey);
-        if (batch && batch.length > 0) {
-          void flushBatch(imageKey, batch);
-        }
-      }, 0);
-      timersByImage.set(imageKey, timer);
-    }
+  return new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], {
+    type: 'image/png',
   });
 }
 
-/**
- * Parse a slippy map tile path to extract the image key, zoom, row, and col.
- * Path format: slippymaps/{sourceKey}/{z}/{row}/{col}.png
- * Returns the full images/ key needed by the Lambda.
- */
-function parseTilePath(path: string): {
-  imageKey: string;
-  z: number;
-  row: number;
-  col: number;
-} | null {
-  const match = path.match(
-    /^slippymaps\/(.+)\/(\d+)\/(\d+)\/(\d+)\.png$/
-  );
-  if (!match) return null;
-  return {
-    imageKey: `images/${match[1]}`,
-    z: parseInt(match[2], 10),
-    row: parseInt(match[3], 10),
-    col: parseInt(match[4], 10),
-  };
-}
+// Generation requests made in the same tick are coalesced per image so the
+// Lambda decodes the source once.
+const generationQueues = new Map<string, PendingTile[]>();
 
-export async function getTileBlob(path: string): Promise<Blob> {
-  // Try to get from persistent cache first
-  const cached: Blob | null = await tileCache.getItem(path);
-
-  if (cached) {
-    return cached;
-  }
-
-  const attemptFetch = async (getUrlArgs: any): Promise<Blob> => {
-    const signedUrl = await getUrl(getUrlArgs);
-    const response = await fetch(signedUrl.url.toString(), {
-      cache: 'no-store',
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch tile: ${response.status} ${response.statusText}`
+async function flushGeneration(
+  batch: PendingTile[],
+  sourceKey: string,
+  context: TileContext
+) {
+  for (
+    let offset = 0;
+    offset < batch.length;
+    offset += MAX_GENERATED_TILE_BATCH
+  ) {
+    const chunk = batch.slice(offset, offset + MAX_GENERATED_TILE_BATCH);
+    try {
+      const result = await storageOperation<string[]>(
+        GENERATE_TILE,
+        {
+          imageKey: `images/${sourceKey}`,
+          imageId: context.imageId,
+          sharedImageId: context.sharedImageId,
+          zs: chunk.map((t) => t.z),
+          rows: chunk.map((t) => t.row),
+          cols: chunk.map((t) => t.col),
+        },
+        'generateTile'
       );
+      chunk.forEach((entry, i) => {
+        if (result[i]) entry.resolve(base64ToBlob(result[i]));
+        else entry.reject(new Error('Tile generation returned no data'));
+      });
+    } catch (error) {
+      chunk.forEach((entry) => entry.reject(error));
     }
-    const blob = await response.blob();
-    await tileCache.setItem(path, blob);
-    return blob;
-  };
-
-  // Try S3 direct first — for already-tiled images this is the fast path
-  // (one network hop, progressive reveal). On 404, fall through to the
-  // batched Lambda call, which handles generation + write-back.
-  try {
-    return await attemptFetch({ path });
-  } catch (_) {
-    const parsed = parseTilePath(path);
-    if (!parsed) throw new Error(`Cannot parse tile path: ${path}`);
-
-    const blob = await generateTileOnDemand(
-      parsed.imageKey,
-      parsed.z,
-      parsed.row,
-      parsed.col
-    );
-    await tileCache.setItem(path, blob);
-    return blob;
   }
 }
 
-/** Associate an image id with its source key so on-demand tile generation
- * can pass the id to the Lambda (avoids a lookup server-side). */
-export function registerImageIdForSource(sourceKey: string, imageId: string) {
-  imageIdByKey.set(`images/${sourceKey}`, imageId);
+function generateTile(
+  sourceKey: string,
+  context: TileContext,
+  tile: TileCoordinate,
+  scope: string
+): Promise<Blob> {
+  const key = tileImageKey(scope, context, sourceKey);
+  return new Promise((resolve, reject) => {
+    let queue = generationQueues.get(key);
+    if (!queue) {
+      queue = [];
+      generationQueues.set(key, queue);
+      setTimeout(() => {
+        const batch = generationQueues.get(key) ?? [];
+        generationQueues.delete(key);
+        void flushGeneration(batch, sourceKey, context);
+      }, 0);
+    }
+    queue.push({ ...tile, resolve, reject });
+  });
+}
+
+const TILE_PATH = /^slippymaps\/(.+)\/(\d+)\/(\d+)\/(\d+)\.png$/;
+const blobsInFlight = new Map<string, Promise<Blob>>();
+
+export async function getTileBlob(
+  path: string,
+  context: TileContext
+): Promise<Blob> {
+  const match = TILE_PATH.exec(path);
+  if (!match || !context.imageId) {
+    throw new Error('Image identity and tile path are required');
+  }
+  const sourceKey = match[1];
+  const tile = {
+    z: Number(match[2]),
+    row: Number(match[3]),
+    col: Number(match[4]),
+  };
+  const epoch = sessionEpoch;
+  const assertCurrentSession = () => {
+    if (epoch !== sessionEpoch) throw new Error('Image session changed');
+  };
+  const scope = await sessionScope();
+  assertCurrentSession();
+
+  const key = `${tileImageKey(scope, context, sourceKey)}:${path}`;
+  const existing = blobsInFlight.get(key);
+  if (existing) return existing;
+
+  const work = loadAuthorizedTile({
+    sign: () => urls.get(scope, context, sourceKey, tile),
+    evict: () => urls.evict(scope, context, sourceKey, tile),
+    readCache: () => tileCache.getItem<Blob>(key),
+    writeCache: (blob) => tileCache.setItem(key, blob),
+    fetch: (url) => fetch(url, { cache: 'no-store' }),
+    generate: () => generateTile(sourceKey, context, tile, scope),
+    assertCurrentSession,
+  });
+  blobsInFlight.set(key, work);
+  try {
+    return await work;
+  } finally {
+    blobsInFlight.delete(key);
+  }
 }

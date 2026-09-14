@@ -42,6 +42,8 @@ export function getCropZoomRange(width: number, height: number): CropZoomRange {
 
 interface CropParams {
   sourceKey: string;
+  imageId: string;
+  sharedImageId?: string;
   imageWidth: number;
   imageHeight: number;
   x: number;
@@ -122,7 +124,12 @@ export async function fetchCenteredCrop(params: CropParams): Promise<CropResult>
     for (let col = minCol; col <= maxCol; col++) {
       const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
       tilePromises.push(
-        getTileBlob(path).then(
+        getTileBlob(path, {
+          imageId: params.imageId,
+          width: imageWidth,
+          height: imageHeight,
+          sharedImageId: params.sharedImageId,
+        }).then(
           (blob) =>
             new Promise<{
               img: HTMLImageElement;

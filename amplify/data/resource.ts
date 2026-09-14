@@ -1,3 +1,4 @@
+import { imageAccess } from '../storage/imageAccess/resource';
 import { a, defineData } from '@aws-amplify/backend';
 import { addUserToGroup } from '../functions/add-user-to-group/resource';
 import { createGroup } from '../data/create-group/resource';
@@ -217,7 +218,7 @@ const schema = a
         type: a.string().required(),
         group: a.string(),
       })
-      .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
+      .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group').to(['read', 'delete'])])
       .secondaryIndexes((index) => [
         index('imageId').queryField('imagesByimageId'),
         index('path').queryField('imagesByPath'),
@@ -1529,11 +1530,106 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(updateActiveOrganizations)),
+    // Image storage: originals and tiles are only reachable via imageAccess.
+    signImageTiles: a
+      .query()
+      .arguments({
+        imageId: a.id().required(),
+        sourceKey: a.string().required(),
+        sharedImageId: a.id(),
+        tiles: a.json().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    imageDownloadUrl: a
+      .query()
+      .arguments({
+        imageId: a.id().required(),
+        sourceKey: a.string().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    uploadedImagePaths: a
+      .query()
+      .arguments({
+        projectId: a.id().required(),
+        paths: a.string().required().array().required(),
+      })
+      .returns(a.string().array())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    prepareImageUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        contentType: a.string().required(),
+        rotation: a.integer(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    createImageMultipartUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        contentType: a.string().required(),
+        rotation: a.integer(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    signImageUploadParts: a
+      .query()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        uploadId: a.string().required(),
+        partNumbers: a.integer().required().array().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    completeImageMultipartUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        uploadId: a.string().required(),
+        parts: a.json().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    abortImageMultipartUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        uploadId: a.string().required(),
+      })
+      .returns(a.boolean())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    registerImageFile: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        imageId: a.id().required(),
+        originalPath: a.string().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
     generateTile: a
       .query()
       .arguments({
         imageKey: a.string().required(),
-        imageId: a.id(),
+        imageId: a.id().required(),
+        sharedImageId: a.id(),
         zs: a.integer().required().array().required(),
         rows: a.integer().required().array().required(),
         cols: a.integer().required().array().required(),

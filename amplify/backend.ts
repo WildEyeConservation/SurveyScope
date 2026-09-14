@@ -1,9 +1,11 @@
+import { imageAccess } from './storage/imageAccess/resource';
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { addUserToGroup } from './functions/add-user-to-group/resource';
 import { ArnFormat, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import { outputBucket, inputBucket } from './storage/resource';
 import { generateTile } from './storage/generateTile/resource';
 import { handleS3Upload } from './storage/handleS3Upload/resource';
@@ -86,6 +88,7 @@ const backend = defineBackend({
   outputBucket,
   inputBucket,
   generateTile,
+  imageAccess,
   handleS3Upload,
   postDeploy,
   updateUserStats,
@@ -415,11 +418,10 @@ const sqsSysadminStatement = new iam.PolicyStatement({
   ],
   resources: ['*'],
 });
-const generalBucketArn = 'arn:aws:s3:::surveyscope';
-const generalBucketArn2 = 'arn:aws:s3:::surveyscope/*';
+const generalBucketArn2 = 'arn:aws:s3:::surveyscope/SRTM/*';
 const generalBucketPolicy = new iam.PolicyStatement({
-  actions: ['s3:ListBucket', 's3:GetObject'],
-  resources: [generalBucketArn, generalBucketArn2],
+  actions: ['s3:GetObject'],
+  resources: [generalBucketArn2],
 });
 
 // Wildcard ARNs avoid cross-stack storage dependencies.
@@ -436,7 +438,6 @@ const groupS3ObjectsPolicy = new iam.PolicyStatement({
 const groupS3OutputsReadPolicy = new iam.PolicyStatement({
   actions: ['s3:GetObject', 's3:DeleteObject'],
   resources: [
-    'arn:aws:s3:::*/slippymaps/*',
     'arn:aws:s3:::*/heatmaps/*',
     'arn:aws:s3:::*/false-negative-manifests/*',
     'arn:aws:s3:::*/false-negative-pools/*',
@@ -468,20 +469,88 @@ authenticatedRole.addToPrincipalPolicy(generalBucketPolicy);
 // Group roles replace the authenticated Identity Pool role.
 Object.values(backend.auth.resources.groups).forEach(({ role }) => {
   role.addToPrincipalPolicy(generalBucketPolicy);
-  role.addToPrincipalPolicy(groupS3ListPolicy);
-  role.addToPrincipalPolicy(groupS3ObjectsPolicy);
   role.addToPrincipalPolicy(sqsAnnotatorStatement);
   role.addToPrincipalPolicy(groupS3OutputsReadPolicy);
   role.addToPrincipalPolicy(groupS3LaunchPayloadsPolicy);
   role.addToPrincipalPolicy(groupS3QueueManifestsPolicy);
 });
 
-backend.auth.resources.groups['sysadmin'].role.addToPrincipalPolicy(sqsSysadminStatement);
-backend.auth.resources.groups['sysadmin'].role.addToPrincipalPolicy(groupEcsListPolicy);
+// Only sysadmins keep direct S3 access; everyone else goes through imageAccess.
+const sysadminRole = backend.auth.resources.groups['sysadmin'].role;
+sysadminRole.addToPrincipalPolicy(groupS3ListPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3ObjectsPolicy);
+sysadminRole.addToPrincipalPolicy(sqsSysadminStatement);
+sysadminRole.addToPrincipalPolicy(groupEcsListPolicy);
+
+const imageInputBucket = backend.inputBucket.resources.bucket;
+const imageOutputBucket = backend.outputBucket.resources.bucket;
+
+// S3 only reports a missing object as 404 when the signer has unconditional
+// ListBucket; defineStorage's prefix-conditioned grant is not enough. Kept in
+// the storage stack to avoid a reverse dependency on data.
+new iam.Policy(Stack.of(imageInputBucket), 'ImageStorageMissingObjectChecks', {
+  roles: [
+    backend.imageAccess.resources.lambda.role!,
+    backend.generateTile.resources.lambda.role!,
+  ],
+  statements: [
+    new iam.PolicyStatement({
+      actions: ['s3:ListBucket'],
+      resources: [imageInputBucket.bucketArn, imageOutputBucket.bucketArn],
+    }),
+  ],
+});
+new iam.Policy(Stack.of(imageInputBucket), 'ImageStorageMultipartAbort', {
+  roles: [backend.imageAccess.resources.lambda.role!],
+  statements: [
+    new iam.PolicyStatement({
+      actions: ['s3:AbortMultipartUpload'],
+      resources: [imageInputBucket.arnForObjects('images/*')],
+    }),
+  ],
+});
+
+(imageInputBucket as s3.Bucket).addLifecycleRule({
+  id: 'AbortIncompleteImageUploads',
+  prefix: 'images/',
+  abortIncompleteMultipartUploadAfter: Duration.days(7),
+});
+
+const storageModels = [
+  'Image',
+  'ImageFile',
+  'Project',
+  'SharedChainImage',
+  'ChainShare',
+] as const;
+for (const resource of [backend.imageAccess, backend.generateTile]) {
+  for (const model of storageModels) {
+    const table = backend.data.resources.tables[model];
+    resource.addEnvironment(
+      `STORAGE_${model.toUpperCase()}_TABLE`,
+      table.tableName
+    );
+    resource.resources.lambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem', 'dynamodb:Query'],
+        resources: [table.tableArn, `${table.tableArn}/index/*`],
+      })
+    );
+  }
+}
+backend.data.resources.tables.ImageFile.grant(
+  backend.imageAccess.resources.lambda,
+  'dynamodb:PutItem'
+);
+backend.data.resources.tables.Image.grant(
+  backend.generateTile.resources.lambda,
+  'dynamodb:UpdateItem'
+);
 
 const generateTileLambda = backend.generateTile.resources.lambda as lambda.Function;
 const sharpLayer = new lambda.LayerVersion(
-  Stack.of(generateTileLambda),
+  // Stays in the function stack; moving it into data would create a cycle.
+  Stack.of(backend.handleS3Upload.resources.lambda),
   'sharpLayer',
   {
     code: lambda.Code.fromAsset('./amplify/layers/sharp-ph200-x64'),

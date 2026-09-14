@@ -714,6 +714,7 @@ export class UploadOrchestrator {
       keyInfo,
       imageSetId: imageSet.id,
       input: {
+        projectId,
         seedPaths,
         uploadImages,
         fileByPath: session.fileByPath,
@@ -748,6 +749,7 @@ export class UploadOrchestrator {
       projectId: session.projectId,
       keyInfo,
       localPaths,
+      signal: session.controller.signal,
     });
     const uploadedPaths = new Set(
       manifest
