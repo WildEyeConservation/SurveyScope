@@ -135,7 +135,9 @@ export default function UploadProgress() {
       );
       break;
     case 'finalizing':
-      statusContent = <p className='m-0'>Finishing up...</p>;
+      statusContent = (
+        <p className='m-0'>{snapshot.statusMessage ?? 'Finishing up...'}</p>
+      );
       break;
     case 'paused':
       statusContent = <p className='m-0'>Upload paused</p>;

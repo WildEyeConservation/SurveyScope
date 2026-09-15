@@ -26,6 +26,15 @@ const createImageNeighbour = /* GraphQL */ `
   }
 `;
 
+// Per-image marker the upload Finalizer uses to find undispatched images.
+export const REGISTRATION_DISPATCH_SOURCE = 'registration-dispatch';
+
+const createImageProcessedBy = /* GraphQL */ `
+  mutation CreateImageProcessedBy($input: CreateImageProcessedByInput!) {
+    createImageProcessedBy(input: $input) { imageId source }
+  }
+`;
+
 const deleteImageNeighbour = /* GraphQL */ `
   mutation DeleteImageNeighbour($input: DeleteImageNeighbourInput!) {
     deleteImageNeighbour(input: $input) { image1Id image2Id }
@@ -558,6 +567,50 @@ function addStalePairDeletionTasks(
   }
 }
 
+async function markImagesDispatched(
+  images: MinimalImage[],
+  projectId: string,
+  organizationId?: string
+): Promise<void> {
+  const tasks = images.map((img) => async () => {
+    try {
+      await gqlWithRetry(() =>
+        client.graphql({
+          query: createImageProcessedBy,
+          variables: {
+            input: {
+              imageId: img.id,
+              source: REGISTRATION_DISPATCH_SOURCE,
+              projectId,
+              group: organizationId,
+            },
+          },
+        }) as Promise<GraphQLResult<unknown>>
+      );
+    } catch (e: unknown) {
+      if (!isConditionalCheckFailure(e)) {
+        console.error(`Failed to mark image ${img.id} as dispatched:`, e);
+      }
+    }
+  });
+  await withConcurrency(tasks, 10);
+}
+
+function isConditionalCheckFailure(e: unknown): boolean {
+  const errors =
+    typeof e === 'object' && e !== null && Array.isArray((e as { errors?: unknown }).errors)
+      ? ((e as { errors: unknown[] }).errors)
+      : [];
+  return errors.some((x) => {
+    if (typeof x === 'object' && x !== null && 'errorType' in x) {
+      return String((x as { errorType?: unknown }).errorType ?? '').includes(
+        'ConditionalCheckFailedException'
+      );
+    }
+    return false;
+  });
+}
+
 export const handler: RunImageRegistrationHandler = async (event, context) => {
   try {
     context.callbackWaitsForEmptyEventLoop = false;
@@ -801,18 +854,29 @@ export const handler: RunImageRegistrationHandler = async (event, context) => {
       },
     });
 
+    let sqsFailures = 0;
     for (let i = 0; i < messages.length; i += 10) {
       const batch = messages.slice(i, i + 10);
       try {
-        await sqsClient.send(
+        const result = await sqsClient.send(
           new SendMessageBatchCommand({
             QueueUrl: queueUrl,
             Entries: batch,
           })
         );
+        sqsFailures += result.Failed?.length ?? 0;
       } catch (error: unknown) {
+        sqsFailures += batch.length;
         console.error(`Error sending SQS batch at index ${i}:`, error);
       }
+    }
+
+    if (sqsFailures === 0) {
+      await markImagesDispatched(sortedImages, projectId, organizationId);
+    } else {
+      console.error(
+        `${sqsFailures} SQS message(s) failed; leaving ${sortedImages.length} image(s) unmarked for redispatch`
+      );
     }
 
     // Always kickoff so a previously-'done' cycle gets re-evaluated by the
