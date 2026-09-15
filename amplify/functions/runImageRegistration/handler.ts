@@ -342,6 +342,8 @@ async function handlePair(
       }),
     };
   } catch (error: unknown) {
+    // A failed pair must keep its images unmarked so the Finalizer retries.
+    pairBuildFailures += 1;
     console.error(
       `Error in handlePair for ${image1.id} and ${image2.id}:`,
       error
@@ -611,7 +613,11 @@ function isConditionalCheckFailure(e: unknown): boolean {
   });
 }
 
+// Reset per invocation; skipped pairs are not failures, only thrown ones.
+let pairBuildFailures = 0;
+
 export const handler: RunImageRegistrationHandler = async (event, context) => {
+  pairBuildFailures = 0;
   try {
     context.callbackWaitsForEmptyEventLoop = false;
     const projectId = event.arguments.projectId;
@@ -871,11 +877,11 @@ export const handler: RunImageRegistrationHandler = async (event, context) => {
       }
     }
 
-    if (sqsFailures === 0) {
+    if (sqsFailures === 0 && pairBuildFailures === 0) {
       await markImagesDispatched(sortedImages, projectId, organizationId);
     } else {
       console.error(
-        `${sqsFailures} SQS message(s) failed; leaving ${sortedImages.length} image(s) unmarked for redispatch`
+        `${sqsFailures} SQS message(s) and ${pairBuildFailures} pair(s) failed; leaving ${sortedImages.length} image(s) unmarked for redispatch`
       );
     }
 
