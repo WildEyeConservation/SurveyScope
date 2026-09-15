@@ -677,7 +677,7 @@ export function IndividualIdMap({
         ? `<button data-action="comment" style="${btnStyle}background:#5B6977;">Comment</button>`
         : '';
     const infoTagsHtml =
-      data.infoTags !== undefined
+      Array.isArray(data.infoTags)
         ? `<div style="font-size:10px;opacity:0.85;margin-top:3px">Tags: ${escape(
             data.infoTags.length > 0 ? data.infoTags.join(', ') : '—'
           )}</div>`

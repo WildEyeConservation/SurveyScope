@@ -115,10 +115,14 @@ export async function attachInfoTagsToAnnotations<T extends { id: string }>(
   annotationSetId: string
 ): Promise<Array<T & { infoTags?: string[] }>> {
   const data = await fetchInfoTagDataForSet(client, annotationSetId);
-  if (data.nameById.size === 0) return annotations;
+  // Always replace the API relationship field, even for sets without tags.
+  // Raw annotations can carry an infoTags loader function rather than names.
   return annotations.map((annotation) => ({
     ...annotation,
-    infoTags: infoTagNamesFor(data, annotation.id),
+    infoTags:
+      data.nameById.size > 0
+        ? infoTagNamesFor(data, annotation.id)
+        : undefined,
   }));
 }
 
