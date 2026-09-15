@@ -31,8 +31,7 @@ RUN pip3 install -c /tmp/constraints.txt onnxruntime-gpu
 # so `scoutbot fetch` cannot download anything. Instead we pre-seed pooch's
 # download cache with the model files, named <md5(url)>-<filename> exactly as
 # pooch stores them; scoutbot then resolves every fetch() from this cache
-# without touching the network. Populate ./models before building - see
-# README.md for details.
+# without touching the network. Populate ./models before building.
 COPY models/ /root/.cache/pooch/
 WORKDIR /workspace
 COPY code /workspace
