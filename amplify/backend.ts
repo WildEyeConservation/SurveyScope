@@ -1,4 +1,5 @@
 import { imageAccess } from './storage/imageAccess/resource';
+import { infoTagWork } from './functions/infoTagWork/resource';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
@@ -93,6 +94,7 @@ const backend = defineBackend({
   inputBucket,
   generateTile,
   imageAccess,
+  infoTagWork,
   chainMutationGuard,
   revokeChainShare,
   workflowFiles,
@@ -145,6 +147,52 @@ const backend = defineBackend({
   recordWorkflowTask,
   cancelIndividualIdJob,
 });
+
+const infoTagState = new dynamodb.Table(
+  Stack.of(backend.data.resources.graphqlApi),
+  'InfoTagWorkState',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    // Only save receipts carry this TTL. Lease generations and completion records
+    // must survive expiry so old requests cannot regain ownership or count twice.
+    timeToLiveAttribute: 'deleteAfter',
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+infoTagState.grantReadWriteData(backend.infoTagWork.resources.lambda);
+const infoTagTables: Record<string, string> = { work: infoTagState.tableName };
+for (const model of [
+  'Queue',
+  'Project',
+  'AnnotationSet',
+  'Image',
+  'Annotation',
+  'InfoTag',
+  'AnnotationInfoTag',
+] as const) {
+  const table = backend.data.resources.tables[model];
+  infoTagTables[model] = table.tableName;
+  table.grantReadData(backend.infoTagWork.resources.lambda);
+  if (
+    model === 'Queue' ||
+    model === 'Annotation' ||
+    model === 'AnnotationInfoTag'
+  ) {
+    table.grantWriteData(backend.infoTagWork.resources.lambda);
+  }
+}
+backend.infoTagWork.addEnvironment(
+  'INFO_TAG_TABLES',
+  JSON.stringify(infoTagTables)
+);
+backend.infoTagWork.addEnvironment(
+  'OUTPUTS_BUCKET_NAME',
+  backend.outputBucket.resources.bucket.bucketName
+);
 
 const guardFunction = backend.chainMutationGuard.resources.lambda;
 const snapshotTables: Record<string, string> = {};

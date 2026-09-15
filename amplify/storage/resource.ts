@@ -1,4 +1,5 @@
 import { imageAccess } from './imageAccess/resource';
+import { infoTagWork } from '../functions/infoTagWork/resource';
 import { workflowFiles } from './workflowFiles/resource';
 import { defineStorage } from "@aws-amplify/backend"
 import { generateTile } from "./generateTile/resource"
@@ -96,6 +97,7 @@ export const outputBucket = defineStorage({
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     'info-tag-manifests/*': [
+      allow.resource(infoTagWork).to(['get']),
       allow.resource(launchInfoTags).to(['write']),
       allow.resource(findAndRequeueMissingLocations).to(['read']),
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
@@ -146,4 +148,3 @@ export const inputBucket = defineStorage({
     onUpload: handleS3Upload
   }
 })
-

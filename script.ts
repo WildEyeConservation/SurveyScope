@@ -142,6 +142,7 @@ introspection.models.Annotation.fields.infoTaggedBy = scalarField(
   'infoTaggedBy',
   'String'
 );
+introspection.models.Annotation.fields.infoTagRevision = scalarField('infoTagRevision', 'Int');
 introspection.models.Annotation.fields.infoTags = modelField(
   'infoTags',
   'AnnotationInfoTag',
@@ -234,6 +235,10 @@ introspection.mutations.launchInfoTags = {
   arguments: {
     request: scalarField('request', 'String', true)
   }
+};
+introspection.mutations.infoTagWork = {
+  name: 'infoTagWork', isArray: false, type: 'AWSJSON', isRequired: false,
+  arguments: { request: scalarField('request', 'String', true) },
 };
 
 /* -------------------------------------------------------------------------- */

@@ -16,7 +16,8 @@ import {
 import { Badge } from 'react-bootstrap';
 import { GlobalContext, UserContext } from './Context';
 import { TaskBuffer } from './TaskBuffer';
-import InfoTagAnnotation from './InfoTagAnnotation';
+import ClaimedInfoTagImage from './ClaimedInfoTagImage';
+import { createInfoTagDelivery } from './infoTagDelivery';
 import { fetchAllPaginatedResults } from './utils';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
 
@@ -29,7 +30,7 @@ type InfoTagTaskPayload = {
   annotationSetId: string;
   categoryIds: string[];
   ack: () => Promise<void>;
-  stopHeartbeat: () => void;
+  defer: () => Promise<void>;
 };
 
 export default function InfoTagTask() {
@@ -44,7 +45,8 @@ export default function InfoTagTask() {
   const [projectId, setProjectId] = useState<string>();
   const [group, setGroup] = useState<string>();
   const [queueZoom, setQueueZoom] = useState<number | null>(null);
-  const processedRef = useRef(new Set<string>());
+  const receivedRef = useRef(new Set<string>());
+  const mountedRef = useRef(true);
   const heartbeatTimersRef = useRef(new Set<number>());
   const activeMessageReleasesRef = useRef(new Set<() => Promise<void>>());
 
@@ -114,133 +116,111 @@ export default function InfoTagTask() {
     };
   }, [annotationSetId, client]);
 
-  useEffect(
-    () => () => {
-      for (const release of activeMessageReleasesRef.current) {
-        void release();
+  useEffect(() => {
+    mountedRef.current = true;
+    const releases = activeMessageReleasesRef.current;
+    const heartbeats = heartbeatTimersRef.current;
+    const received = receivedRef.current;
+    return () => {
+      mountedRef.current = false;
+      for (const release of releases) {
+        void release().catch((error) =>
+          console.warn('Info Tags message release failed', error)
+        );
       }
-      for (const timer of heartbeatTimersRef.current) {
+      for (const timer of heartbeats) {
         window.clearInterval(timer);
       }
-      activeMessageReleasesRef.current.clear();
-      heartbeatTimersRef.current.clear();
-    },
-    []
-  );
+      releases.clear();
+      heartbeats.clear();
+      received.clear();
+    };
+  }, []);
 
   const fetcher = useCallback(async (): Promise<InfoTagTaskPayload> => {
-    for (;;) {
+    while (mountedRef.current) {
       if (!queueUrl) {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
         continue;
       }
-      const sqsClient = await getSqsClient();
-      const response = await sqsClient.send(
-        new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          MaxNumberOfMessages: 1,
-          MessageAttributeNames: ['All'],
-          VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
-        })
-      );
-      const entity = response.Messages?.[0];
-      if (!entity) {
-        await new Promise((resolve) => window.setTimeout(resolve, 5000));
-        continue;
-      }
-
-      const body = JSON.parse(entity.Body!);
-      body.message_id = crypto.randomUUID();
-      const imageId = body.imageId as string | undefined;
-      if (imageId && processedRef.current.has(imageId)) {
-        await sqsClient
-          .send(
-            new DeleteMessageCommand({
-              QueueUrl: queueUrl,
-              ReceiptHandle: entity.ReceiptHandle,
-            })
-          )
-          .catch(() => undefined);
-        continue;
-      }
-      if (imageId) processedRef.current.add(imageId);
-
-      const heartbeat = window.setInterval(async () => {
-        try {
-          const heartbeatClient = await getSqsClient();
-          await heartbeatClient.send(
+      try {
+        const sqsClient = await getSqsClient();
+        const response = await sqsClient.send(
+          new ReceiveMessageCommand({
+            QueueUrl: queueUrl,
+            MaxNumberOfMessages: 1,
+            VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
+          })
+        );
+        const entity = response.Messages?.[0];
+        if (!entity) {
+          await new Promise((resolve) => window.setTimeout(resolve, 5000));
+          continue;
+        }
+        const changeVisibility = async (seconds: number) => {
+          const currentClient = await getSqsClient();
+          await currentClient.send(
             new ChangeMessageVisibilityCommand({
               QueueUrl: queueUrl,
               ReceiptHandle: entity.ReceiptHandle,
-              VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
+              VisibilityTimeout: seconds,
             })
           );
-        } catch (error) {
-          console.warn('Info Tags visibility heartbeat failed', {
-            imageId,
-            error,
-          });
+        };
+        if (!mountedRef.current) {
+          await changeVisibility(0);
+          break;
         }
-      }, HEARTBEAT_INTERVAL_MS);
-      heartbeatTimersRef.current.add(heartbeat);
-      const stopHeartbeat = () => {
-        window.clearInterval(heartbeat);
-        heartbeatTimersRef.current.delete(heartbeat);
-      };
-      body.stopHeartbeat = stopHeartbeat;
-      let settled = false;
-      let acknowledgePromise: Promise<void> | null = null;
-      let releasePromise: Promise<void> | null = null;
-      const release = async () => {
-        stopHeartbeat();
-        if (acknowledgePromise) await acknowledgePromise;
-        if (settled) return;
-        if (!releasePromise) {
-          releasePromise = (async () => {
-            try {
-              const releaseClient = await getSqsClient();
-              await releaseClient.send(
-                new ChangeMessageVisibilityCommand({
-                  QueueUrl: queueUrl,
-                  ReceiptHandle: entity.ReceiptHandle,
-                  VisibilityTimeout: 0,
-                })
-              );
-              settled = true;
-              activeMessageReleasesRef.current.delete(release);
-            } catch (error) {
-              console.warn('Info Tags message release failed', { imageId, error });
-            }
-          })();
+        const body = JSON.parse(entity.Body!);
+        const imageId = body.imageId as string;
+        if (!imageId || typeof imageId !== 'string')
+          throw new Error('Invalid Info Tags message');
+        if (receivedRef.current.has(imageId)) {
+          // Receipt is not completion. Keep duplicates recoverable until the
+          // backend confirms the image is finished.
+          await changeVisibility(30);
+          continue;
         }
-        await releasePromise;
-      };
-      activeMessageReleasesRef.current.add(release);
-      body.ack = async () => {
-        stopHeartbeat();
-        if (releasePromise) await releasePromise;
-        if (settled) return;
-        if (!acknowledgePromise) {
-          acknowledgePromise = (async () => {
-            try {
-              const ackClient = await getSqsClient();
-              await ackClient.send(
-                new DeleteMessageCommand({
-                  QueueUrl: queueUrl,
-                  ReceiptHandle: entity.ReceiptHandle,
-                })
-              );
-              settled = true;
-              activeMessageReleasesRef.current.delete(release);
-            } catch (error) {
-              console.warn('Info Tags acknowledgement failed', { imageId, error });
-            }
-          })();
-        }
-        await acknowledgePromise;
-      };
-      return body;
+        receivedRef.current.add(imageId);
+        const heartbeat = window.setInterval(() => {
+          void changeVisibility(VISIBILITY_TIMEOUT_SECONDS).catch((error) =>
+            console.warn('Info Tags visibility heartbeat failed', {
+              imageId,
+              error,
+            })
+          );
+        }, HEARTBEAT_INTERVAL_MS);
+        heartbeatTimersRef.current.add(heartbeat);
+        const stopHeartbeat = () => {
+          window.clearInterval(heartbeat);
+          heartbeatTimersRef.current.delete(heartbeat);
+        };
+        const delivery = createInfoTagDelivery({
+          remove: async () => {
+            const currentClient = await getSqsClient();
+            await currentClient.send(
+              new DeleteMessageCommand({
+                QueueUrl: queueUrl,
+                ReceiptHandle: entity.ReceiptHandle,
+              })
+            );
+          },
+          visibility: changeVisibility,
+          stopHeartbeat,
+          onSettled: () => {
+            receivedRef.current.delete(imageId);
+            activeMessageReleasesRef.current.delete(delivery.release);
+          },
+        });
+        activeMessageReleasesRef.current.add(delivery.release);
+        return { ...body, ack: delivery.ack, defer: delivery.defer };
+      } catch (error) {
+        if (!mountedRef.current) break;
+        console.warn('Could not receive Info Tags work; retrying', error);
+        await new Promise((resolve) => window.setTimeout(resolve, 5000));
+      }
     }
+    throw new Error('Info Tags session closed');
   }, [getSqsClient, queueUrl]);
 
   const [imagesRemaining, setImagesRemaining] = useState('Unknown');
@@ -293,7 +273,7 @@ export default function InfoTagTask() {
             preloadN={2}
             historyN={1}
             renderTask={(task) => (
-              <InfoTagAnnotation
+              <ClaimedInfoTagImage
                 {...task}
                 categories={categories}
                 infoTags={infoTags}
@@ -310,7 +290,9 @@ export default function InfoTagTask() {
           />
         ) : (
           <div className='d-flex justify-content-center align-items-center h-100'>
-            <div className='text-muted'>Loading informational tagging queue...</div>
+            <div className='text-muted'>
+              Loading informational tagging queue...
+            </div>
           </div>
         )}
       </div>

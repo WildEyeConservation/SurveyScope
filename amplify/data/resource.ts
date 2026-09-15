@@ -1,4 +1,5 @@
 import { imageAccess } from '../storage/imageAccess/resource';
+import { infoTagWork } from '../functions/infoTagWork/resource';
 import { workflowFiles } from '../storage/workflowFiles/resource';
 import { a, defineData } from '@aws-amplify/backend';
 import { addUserToGroup } from '../functions/add-user-to-group/resource';
@@ -288,6 +289,7 @@ const schema = a
         reviewedBy: a.string(),
         infoTags: a.hasMany('AnnotationInfoTag', 'annotationId'),
         infoTaggedBy: a.string(),
+        infoTagRevision: a.integer(),
         group: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.owner(), allow.groupDefinedIn('group')])
@@ -535,6 +537,7 @@ const schema = a
         confidenceThreshold: a.float(),
         launchedCount: a.integer(),
         observedCount: a.integer().default(0),
+        infoTagProtocolVersion: a.integer(),
         locationManifestS3Key: a.string(),
         emptyQueueTimestamp: a.string(),
         requeuesCompleted: a.integer().default(0),
@@ -1422,6 +1425,12 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(launchInfoTags)),
+    infoTagWork: a
+      .mutation()
+      .arguments({ request: a.string().required() })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(infoTagWork)),
     launchHomography: a
       .mutation()
       .arguments({
