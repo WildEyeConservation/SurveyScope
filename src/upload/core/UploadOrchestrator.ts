@@ -520,7 +520,8 @@ export class UploadOrchestrator {
         session.attempt += 1;
         session.retryDelayMs = backoffDelayMs(session.attempt);
         console.warn(
-          `Upload attempt ${session.attempt - 1} failed (${errorMessage(err)}); retrying in ${Math.round(session.retryDelayMs / 1000)}s`
+          `Upload attempt ${session.attempt - 1} failed (${errorMessage(err)}); retrying in ${Math.round(session.retryDelayMs / 1000)}s`,
+          err
         );
         this.setPhase(session, 'waiting-retry');
         await sleep(session.retryDelayMs, session.controller.signal);

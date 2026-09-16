@@ -20,7 +20,8 @@ export async function listUploadedOriginalPaths(args: {
       path: listPrefix,
       options: { bucket: 'inputs', listAll: true },
     });
-    allItems.push(...items);
+    // Large resumed surveys can exceed the argument limit of push(...items).
+    for (const item of items) allItems.push(item);
   } else {
     // Legacy: keys are raw originalPaths; limit listing to the top-level
     // folders of the selected files to avoid cross-project contamination.
@@ -36,7 +37,7 @@ export async function listUploadedOriginalPaths(args: {
         path: `images/${prefix}/`,
         options: { bucket: 'inputs', listAll: true },
       });
-      allItems.push(...items);
+      for (const item of items) allItems.push(item);
     }
   }
 
