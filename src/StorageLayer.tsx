@@ -122,7 +122,17 @@ function parseTilePath(path: string): {
   };
 }
 
-export async function getTileBlob(path: string): Promise<Blob> {
+const inFlightTiles = new Map<string, Promise<Blob>>();
+
+export function getTileBlob(path: string): Promise<Blob> {
+  const existing = inFlightTiles.get(path);
+  if (existing) return existing;
+  const request = loadTileBlob(path).finally(() => inFlightTiles.delete(path));
+  inFlightTiles.set(path, request);
+  return request;
+}
+
+async function loadTileBlob(path: string): Promise<Blob> {
   // Try to get from persistent cache first
   const cached: Blob | null = await tileCache.getItem(path);
 

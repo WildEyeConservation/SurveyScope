@@ -25,6 +25,9 @@ import { WaitingOverlay } from '../useAckOnTimeout';
 import { OovPanel } from './components/OovPanel';
 import { HelpModal } from './components/HelpModal';
 import { isOov } from './utils/identity';
+import { useQueries } from '@tanstack/react-query';
+import { imageSourceQuery } from './utils/imageSource';
+import { pairTilePoints } from './utils/tiles';
 
 interface Props {
   pair: NeighbourPair;
@@ -34,7 +37,7 @@ interface Props {
   category: CategoryType | null;
   /** Hotkeys are disabled when false. */
   visible: boolean;
-  /** Fires once both images have their first visible tiles on screen. */
+  /** Fires once both images' initial tiles have loaded. */
   onImagesReady?: () => void;
 
   onDrag: (
@@ -213,28 +216,13 @@ export function IndividualIdMapPair(props: Props) {
     [candidates, activeKey]
   );
 
-  const [sourceKeys, setSourceKeys] = useState<
-    [string | undefined, string | undefined]
-  >([undefined, undefined]);
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all(
-      [imageA, imageB].map(async (img) => {
-        const resp = await (client.models.ImageFile as any).imagesByimageId({
-          imageId: img.id,
-        });
-        const jpg = (resp.data ?? []).find(
-          (f: any) => f.type === 'image/jpeg'
-        );
-        return jpg?.key as string | undefined;
-      })
-    ).then((keys) => {
-      if (!cancelled) setSourceKeys(keys as [string | undefined, string | undefined]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [imageA.id, imageB.id, client]);
+  const sourceQueries = useQueries({
+    queries: [
+      imageSourceQuery(client, imageA),
+      imageSourceQuery(client, imageB),
+    ],
+  });
+  const sourceKeys = sourceQueries.map((query) => query.data ?? undefined);
 
   const color = category?.color || DEFAULT_COLOR;
 
@@ -399,6 +387,15 @@ export function IndividualIdMapPair(props: Props) {
     conflictHighlightAnnotationIds,
     chainViewerHrefFor,
   ]);
+
+  const tilePointsA = useMemo(
+    () => pairTilePoints(candidates, 'A', imageA.id, foreignAnnotations),
+    [candidates, imageA.id, foreignAnnotations]
+  );
+  const tilePointsB = useMemo(
+    () => pairTilePoints(candidates, 'B', imageB.id, foreignAnnotations),
+    [candidates, imageB.id, foreignAnnotations]
+  );
 
   const [imagesReady, setImagesReady] = useState(false);
   const readySidesRef = useRef<Set<'A' | 'B'>>(new Set());
@@ -984,6 +981,7 @@ export function IndividualIdMapPair(props: Props) {
           <IndividualIdMap
             image={imageA}
             sourceKey={sourceKeys[0]}
+            priorityTilePoints={tilePointsA}
             markers={markersHidden ? NO_MARKERS : markersA}
             onMarkerDrag={handleDragA}
             onMarkerClick={handleMarkerClick}
@@ -1010,6 +1008,7 @@ export function IndividualIdMapPair(props: Props) {
           <IndividualIdMap
             image={imageB}
             sourceKey={sourceKeys[1]}
+            priorityTilePoints={tilePointsB}
             markers={markersHidden ? NO_MARKERS : markersB}
             onMarkerDrag={handleDragB}
             onMarkerClick={handleMarkerClick}

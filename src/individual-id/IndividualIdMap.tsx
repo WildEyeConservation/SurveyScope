@@ -4,7 +4,19 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import * as jdenticon from 'jdenticon';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RotateCw, Layers, Copy, Check, EyeOff } from 'lucide-react';
-import { getTileBlob } from '../StorageLayer';
+import pLimit from 'p-limit';
+import {
+  annotationTiles,
+  baseTiles,
+  baseZoom,
+  getPyramidInfo,
+  tileMaskKey,
+  TILE_SIZE,
+  type Tile,
+  type TilePoint,
+} from './utils/tiles';
+import { visibleImageTiles, mergeTileRequests } from './utils/viewportTiles';
+import { getZoomRingTile } from './utils/zoomRingTiles';
 import type { ImageType } from '../schemaTypes';
 import type { CandidateStatus, PixelTransform } from './types';
 import { nameFor } from './utils/identity';
@@ -80,6 +92,8 @@ interface Props {
   image: ImageType;
   sourceKey?: string;
   markers: MapMarker[];
+  /** Loaded at full resolution regardless of marker visibility. */
+  priorityTilePoints?: ReadonlyArray<TilePoint>;
   onMarkerDrag: (candidateKey: string, x: number, y: number) => void;
   onMarkerClick: (candidateKey: string) => void;
   /**
@@ -193,11 +207,10 @@ interface Props {
    * view's "hold Tab to peek" gesture.
    */
   markersHidden?: boolean;
-  /** Fires once, when the first batch of visible tiles has finished loading. */
+  /** Fires once the initial tiles finish loading. */
   onInitialTilesLoaded?: () => void;
 }
 
-const TILE_SIZE = 256;
 /** Inactive marker diameter in pixels. Active markers are ~25 (125%). */
 const BASE_MARKER_SIZE = 20;
 /**
@@ -298,15 +311,8 @@ class HomographyControl implements maplibregl.IControl {
   }
 }
 
-
 function getScale(width: number, height: number) {
   return 0.1 / Math.max(width, height);
-}
-function getPyramidInfo(image: ImageType) {
-  const maxDim = Math.max(image.width, image.height);
-  const maxZ = Math.ceil(Math.log2(maxDim / TILE_SIZE));
-  const pyramidSize = TILE_SIZE * Math.pow(2, maxZ);
-  return { maxZ, pyramidSize };
 }
 
 /**
@@ -480,10 +486,20 @@ export function IndividualIdMap({
   locationRows,
   markersHidden,
   onInitialTilesLoaded,
+  priorityTilePoints,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const cancelledRef = useRef(false);
+  const activeTileMapRef = useRef<maplibregl.Map | null>(null);
+  const tileLimit = useMemo(() => pLimit(8), []);
+  const priorityTilePointsRef = useRef(priorityTilePoints);
+  priorityTilePointsRef.current = priorityTilePoints;
+  const pendingTilesRef = useRef(new Map<string, Promise<unknown>>());
+  const desiredTilesRef = useRef(new Map<string, Tile>());
+  const exploredTilesRef = useRef(new Map<string, Tile>());
+  const renderedMasksRef = useRef(new Map<string, string>());
+  const tileUrlsRef = useRef(new Map<string, string>());
   const onInitialTilesLoadedRef = useRef(onInitialTilesLoaded);
   onInitialTilesLoadedRef.current = onInitialTilesLoaded;
   const initialTilesReportedRef = useRef(false);
@@ -871,59 +887,150 @@ export function IndividualIdMap({
   const imageWidth = image.width;
   const imageHeight = image.height;
   const updateVisibleTiles = useCallback(
-    async (m: maplibregl.Map | null) => {
-      if (!m || !sourceKey || cancelledRef.current) return;
+    async (m: maplibregl.Map | null, refineViewport = false) => {
+      if (
+        !m ||
+        !sourceKey ||
+        cancelledRef.current ||
+        activeTileMapRef.current !== m
+      )
+        return;
       const { maxZ, pyramidSize } = getPyramidInfo({
         width: imageWidth,
         height: imageHeight,
-      } as ImageType);
+      });
       const mapZoom = m.getZoom();
       const degPerPxAtZoom0 = 360 / 256;
       const currentDegPerPx = degPerPxAtZoom0 / Math.pow(2, mapZoom);
       const targetTilePxPerDeg = 1 / (currentDegPerPx * 0.75);
       const target2z = (targetTilePxPerDeg * pyramidSize * scale) / TILE_SIZE;
       const z = Math.max(0, Math.min(maxZ, Math.round(Math.log2(target2z))));
-      const tileCoverage = pyramidSize / Math.pow(2, z);
-      const cols = Math.ceil(imageWidth / tileCoverage);
-      const rows = Math.ceil(imageHeight / tileCoverage);
       const bounds = m.getBounds();
-      const pending: Promise<unknown>[] = [];
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-          const sourceId = `tile-${z}-${row}-${col}`;
-          if (loadedTilesRef.current.has(sourceId)) continue;
-          const x0 = col * tileCoverage;
-          const y0 = row * tileCoverage;
-          const x1 = (col + 1) * tileCoverage;
-          const y1 = (row + 1) * tileCoverage;
-          const c1 = px2lngLat(x0, y0);
-          const c2 = px2lngLat(x1, y1);
-          const tileBounds = new maplibregl.LngLatBounds(
-            [Math.min(c1[0], c2[0]), Math.min(c1[1], c2[1])],
-            [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])]
+      const priority = annotationTiles(
+        imageWidth,
+        imageHeight,
+        priorityTilePointsRef.current ?? []
+      );
+      const requests: Tile[] = [...priority];
+      if (priorityTilePointsRef.current !== undefined)
+        requests.push(...baseTiles(imageWidth, imageHeight));
+      // Camera movement loads unmasked tiles at the current zoom.
+      if (refineViewport || priorityTilePointsRef.current === undefined) {
+        const visible = visibleImageTiles(imageWidth, imageHeight, z, {
+          left: bounds.getWest() / scale,
+          right: bounds.getEast() / scale,
+          top: -bounds.getNorth() / scale,
+          bottom: -bounds.getSouth() / scale,
+        });
+        for (const tile of visible) {
+          exploredTilesRef.current.set(
+            `tile-${tile.z}-${tile.row}-${tile.col}`,
+            tile
           );
-          const isVisible =
-            bounds.getWest() <= tileBounds.getEast() &&
-            bounds.getEast() >= tileBounds.getWest() &&
-            bounds.getSouth() <= tileBounds.getNorth() &&
-            bounds.getNorth() >= tileBounds.getSouth();
-          if (!isVisible) continue;
-          // Skip if this tile's area is already painted by higher-res
-          // children we've previously loaded — saves the redundant fetch
-          // when the user zooms back out.
-          if (
-            isCoveredByHigherRes(z, row, col, maxZ, loadedTilesRef.current)
-          ) {
-            continue;
-          }
-          loadedTilesRef.current.add(sourceId);
-          const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
-          const tile = getTileBlob(path)
-            .then((blob) => {
-              if (cancelledRef.current) return;
-              const url = URL.createObjectURL(blob);
+        }
+      }
+      const priorityIds = new Set(
+        priority.map((t) => `tile-${t.z}-${t.row}-${t.col}`)
+      );
+      const desired = mergeTileRequests(
+        requests,
+        exploredTilesRef.current.values()
+      );
+      desiredTilesRef.current = desired;
+      const renderedMasks = renderedMasksRef.current;
+      // Drop ring masks no longer wanted; explored detail stays.
+      if (priorityTilePointsRef.current !== undefined) {
+        for (const sourceId of renderedMasks.keys()) {
+          if (desired.has(sourceId)) continue;
+          const layerId = sourceId.replace('tile-', 'layer-');
+          if (m.getLayer(layerId)) m.removeLayer(layerId);
+          if (m.getSource(sourceId)) m.removeSource(sourceId);
+          const url = tileUrlsRef.current.get(sourceId);
+          if (url) URL.revokeObjectURL(url);
+          tileUrlsRef.current.delete(sourceId);
+          renderedMasks.delete(sourceId);
+          loadedTilesRef.current.delete(sourceId);
+        }
+      }
+      const pending: Promise<unknown>[] = [];
+      const loadedTiles = loadedTilesRef.current;
+      const pendingTiles = pendingTilesRef.current;
+      const isCurrent = () =>
+        !cancelledRef.current && activeTileMapRef.current === m;
+      for (const [sourceId, requestedTile] of desired) {
+        const { z, row, col } = requestedTile;
+        const inFlight = pendingTiles.get(sourceId);
+        if (inFlight) {
+          pending.push(inFlight);
+          continue;
+        }
+        if (renderedMasks.get(sourceId) === tileMaskKey(requestedTile))
+          continue;
+        const tileCoverage = pyramidSize / Math.pow(2, z);
+        const x0 = col * tileCoverage;
+        const y0 = row * tileCoverage;
+        const x1 = (col + 1) * tileCoverage;
+        const y1 = (row + 1) * tileCoverage;
+        const c1 = px2lngLat(x0, y0);
+        const c2 = px2lngLat(x1, y1);
+        const tileBounds = new maplibregl.LngLatBounds(
+          [Math.min(c1[0], c2[0]), Math.min(c1[1], c2[1])],
+          [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])]
+        );
+        const isVisible =
+          bounds.getWest() <= tileBounds.getEast() &&
+          bounds.getEast() >= tileBounds.getWest() &&
+          bounds.getSouth() <= tileBounds.getNorth() &&
+          bounds.getNorth() >= tileBounds.getSouth();
+        if (!isVisible && !priorityIds.has(sourceId)) continue;
+        // Skip if this tile's area is already painted by higher-res
+        // children we've previously loaded — saves the redundant fetch
+        // when the user zooms back out.
+        if (
+          !requestedTile.cells &&
+          isCoveredByHigherRes(z, row, col, maxZ, loadedTiles)
+        ) {
+          continue;
+        }
+        const fetchTile = async () => {
+          if (!isCurrent()) return;
+          return getZoomRingTile(sourceKey, requestedTile, maxZ);
+        };
+        // Base tiles bypass the limit so a cached background appears at once.
+        const tile = (z <= baseZoom(maxZ) ? fetchTile() : tileLimit(fetchTile))
+          .then(async (blob) => {
+            if (!blob) return;
+            // Annotations may have moved during the fetch; apply the latest mask.
+            while (isCurrent()) {
+              const target = desiredTilesRef.current.get(sourceId);
+              if (!target) return;
+              const signature = tileMaskKey(target);
+              const masked =
+                signature === tileMaskKey(requestedTile)
+                  ? blob
+                  : await getZoomRingTile(sourceKey, target, maxZ);
+              if (!isCurrent()) return;
+              const latest = desiredTilesRef.current.get(sourceId);
+              if (!latest) return;
+              if (tileMaskKey(latest) !== signature) continue;
+              const url = URL.createObjectURL(masked);
               blobUrlsRef.current.push(url);
-              if (m.getSource(sourceId)) return;
+              const oldUrl = tileUrlsRef.current.get(sourceId);
+              tileUrlsRef.current.set(sourceId, url);
+              const recordRendered = () => {
+                renderedMasks.set(sourceId, signature);
+                if (!target.cells) loadedTiles.add(sourceId);
+                else loadedTiles.delete(sourceId);
+              };
+              const source = m.getSource(sourceId) as
+                | maplibregl.ImageSource
+                | undefined;
+              if (source) {
+                source.updateImage({ url });
+                recordRendered();
+                if (oldUrl) URL.revokeObjectURL(oldUrl);
+                return;
+              }
               m.addSource(sourceId, {
                 type: 'image',
                 url,
@@ -963,21 +1070,27 @@ export function IndividualIdMap({
                 },
                 beforeId
               );
-            })
-            .catch(() => {
-              loadedTilesRef.current.delete(sourceId);
-            });
-          pending.push(tile);
-        }
+              recordRendered();
+              return;
+            }
+          })
+          .catch(() => {
+            // Retried on the next view update.
+          })
+          .finally(() => {
+            pendingTiles.delete(sourceId);
+          });
+        pendingTiles.set(sourceId, tile);
+        pending.push(tile);
       }
       if (!initialTilesReportedRef.current) {
         initialTilesReportedRef.current = true;
         Promise.allSettled(pending).then(() => {
-          if (!cancelledRef.current) onInitialTilesLoadedRef.current?.();
+          if (isCurrent()) onInitialTilesLoadedRef.current?.();
         });
       }
     },
-    [sourceKey, imageWidth, imageHeight, px2lngLat, scale]
+    [sourceKey, imageWidth, imageHeight, px2lngLat, scale, tileLimit]
   );
 
   // Initialise map.
@@ -985,6 +1098,11 @@ export function IndividualIdMap({
     if (!containerRef.current) return;
     cancelledRef.current = false;
     loadedTilesRef.current = new Set();
+    pendingTilesRef.current = new Map();
+    desiredTilesRef.current = new Map();
+    exploredTilesRef.current = new Map();
+    renderedMasksRef.current = new Map();
+    tileUrlsRef.current = new Map();
     initialTilesReportedRef.current = false;
     blobUrlsRef.current = [];
     markerRefs.current = new Map();
@@ -1007,6 +1125,7 @@ export function IndividualIdMap({
       dragRotate: false,
       pitchWithRotate: false,
     });
+    activeTileMapRef.current = m;
     m.touchZoomRotate.disableRotation();
     m.addControl(
       new maplibregl.NavigationControl({ showCompass: false, showZoom: true }),
@@ -1082,7 +1201,8 @@ export function IndividualIdMap({
     });
 
     const onMoveEnd = () => {
-      updateVisibleTiles(m);
+      // Skip the moveend fired by the initial fitBounds.
+      if (mapForPopupRef.current === m) updateVisibleTiles(m, true);
     };
     m.on('moveend', onMoveEnd);
 
@@ -1117,6 +1237,7 @@ export function IndividualIdMap({
 
     return () => {
       cancelledRef.current = true;
+      activeTileMapRef.current = null;
       for (const mk of markerRefs.current.values()) mk.remove();
       markerRefs.current.clear();
       // Tear down popup state too.
@@ -1134,6 +1255,10 @@ export function IndividualIdMap({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [image.id, sourceKey, px2lngLat, updateVisibleTiles, image.width, image.height]);
+
+  useEffect(() => {
+    if (map && priorityTilePoints !== undefined) void updateVisibleTiles(map);
+  }, [map, priorityTilePoints, updateVisibleTiles]);
 
   useEffect(() => {
     if (!map || Math.abs(map.getBearing() - bearing) < 0.01) return;

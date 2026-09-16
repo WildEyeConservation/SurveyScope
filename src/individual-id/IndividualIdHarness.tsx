@@ -50,6 +50,18 @@ import { TransectCompleteDialog } from './components/TransectCompleteDialog';
 import { LinkAnnotationDialog } from './components/LinkAnnotationDialog';
 import { DeleteAnnotationDialog } from './components/DeleteAnnotationDialog';
 import { SplitChainDialog } from './components/SplitChainDialog';
+import { getZoomRingTile } from './utils/zoomRingTiles';
+import { pairTilePoints } from './utils/tiles';
+import {
+  preloadPairIndices,
+  serializePreloadTargets,
+  type ZoomRingPreloadTarget,
+} from './utils/preloadTargets';
+import { preloadTiles, type TilePreloadPlan } from './utils/preloadTiles';
+import { imageSourceQuery } from './utils/imageSource';
+import { isOlder } from './utils/imageAge';
+import { predictAcceptedPairViews } from './utils/predictAcceptedPairViews';
+import { completionNavigationTarget } from './utils/completionNavigation';
 import ChangeCategoryModal from '../ChangeCategoryModal';
 import type { CategoryType } from '../schemaTypes';
 
@@ -128,25 +140,6 @@ function annotationSignature(annotations: AnnotationType[] | undefined): string 
         }:${isOov(a) ? 1 : 0}`
     )
     .join('|');
-}
-
-function isOlder(
-  a: { timestamp?: number | null; originalPath?: string | null },
-  b: { timestamp?: number | null; originalPath?: string | null }
-): boolean {
-  const at = a.timestamp ?? null;
-  const bt = b.timestamp ?? null;
-  if (at !== null && bt !== null) {
-    if (at !== bt) return at < bt;
-    // tie: fall through to originalPath
-  } else {
-    // at least one missing — treat as same-age
-    return false;
-  }
-  if (a.originalPath && b.originalPath) {
-    return a.originalPath < b.originalPath;
-  }
-  return false;
 }
 
 /**
@@ -801,68 +794,129 @@ export function IndividualIdHarness({
     [lanes, activeLane]
   );
 
-  const completeNavigationTarget = useMemo(() => {
-    const incomplete = (idx: number) =>
-      idx !== currentIndex &&
-      pairViews[idx]?.completion.status === 'incomplete';
+  const completeNavigationTarget = useMemo(
+    () =>
+      completionNavigationTarget(pairViews, lanes, activeLane, currentIndex),
+    [pairViews, lanes, activeLane, currentIndex]
+  );
 
-    const lane = lanes[activeLane];
-    if (lane) {
-      const pos = lane.entries.indexOf(currentIndex);
-      if (pos !== -1) {
-        const earlierInLane = lane.entries
-          .slice(0, pos)
-          .find((idx) => incomplete(idx));
-        if (earlierInLane !== undefined) {
-          return {
-            target: earlierInLane,
-            lane: activeLane,
-            earlier: earlierInLane,
-          };
-        }
+  // Pair views as if the current proposals were accepted, for preloading.
+  const predictedPairViews = useMemo(
+    () =>
+      predictAcceptedPairViews({
+        pairs,
+        views: pairViews,
+        currentIndex,
+        annotations: localAnnotations,
+        imagesById: transect.data?.imagesById ?? {},
+        leniency,
+        categoryId,
+        mergeCandidates: working.mergeCandidates,
+      }),
+    [
+      pairs,
+      pairViews,
+      currentIndex,
+      localAnnotations,
+      transect.data?.imagesById,
+      leniency,
+      categoryId,
+      working.mergeCandidates,
+    ]
+  );
+  const predictedNavigationTarget = useMemo(
+    () =>
+      completionNavigationTarget(
+        predictedPairViews,
+        lanes,
+        activeLane,
+        currentIndex
+      ),
+    [predictedPairViews, lanes, activeLane, currentIndex]
+  );
 
-        const laterInLane = lane.entries
-          .slice(pos + 1)
-          .find((idx) => incomplete(idx));
-        if (laterInLane !== undefined) {
-          return { target: laterInLane, lane: activeLane };
-        }
-      }
-
-      const anyInLane = lane.entries.find((idx) => incomplete(idx));
-      if (anyInLane !== undefined) {
-        return {
-          target: anyInLane,
-          lane: activeLane,
-          earlier: anyInLane < currentIndex ? anyInLane : undefined,
-        };
-      }
-    }
-
-    for (let i = 0; i < currentIndex; i++) {
-      if (incomplete(i)) {
-        return { target: i, lane: laneContainingPair(i), earlier: i };
-      }
-    }
-
-    const nextGlobal = pairViews.findIndex(
-      (_, i) => i > currentIndex && incomplete(i)
+  // Serialized so accepts and refetches do not restart an unchanged preload.
+  const preloadTargetsJson = useMemo(() => {
+    const indices = preloadPairIndices(
+      visibleLanes[activeLane]?.entries ?? [],
+      currentIndex,
+      completeNavigationTarget?.target
     );
-    if (nextGlobal !== -1) {
-      return { target: nextGlobal, lane: laneContainingPair(nextGlobal) };
+    const selections: Array<{ index: number; view: PairView }> = [];
+    if (predictedNavigationTarget) {
+      const index = predictedNavigationTarget.target;
+      selections.push({ index, view: predictedPairViews[index] });
     }
-
-    const anyGlobal = pairViews.findIndex((_, i) => incomplete(i));
-    if (anyGlobal !== -1) {
-      return {
-        target: anyGlobal,
-        lane: laneContainingPair(anyGlobal),
-        earlier: anyGlobal < currentIndex ? anyGlobal : undefined,
-      };
+    for (const index of indices) {
+      selections.push({ index, view: pairViews[index] });
+      if (predictedPairViews[index] !== pairViews[index]) {
+        selections.push({ index, view: predictedPairViews[index] });
+      }
     }
+    const targets: ZoomRingPreloadTarget[] = [];
+    for (const { index, view } of selections) {
+      const pair = pairs[index];
+      if (!pair || !view) continue;
+      for (const side of ['A', 'B'] as const) {
+        const image = side === 'A' ? pair.imageA : pair.imageB;
+        const foreign = (annotationsByImage[image.id] ?? []).filter(
+          (a) => a.categoryId !== categoryId && !isOov(a)
+        );
+        targets.push({
+          image,
+          points: pairTilePoints(view.candidates, side, image.id, foreign),
+        });
+      }
+    }
+    return serializePreloadTargets(targets);
+  }, [
+    visibleLanes,
+    activeLane,
+    currentIndex,
+    completeNavigationTarget?.target,
+    predictedNavigationTarget,
+    predictedPairViews,
+    pairs,
+    pairViews,
+    annotationsByImage,
+    categoryId,
+  ]);
 
-    return undefined;
-  }, [activeLane, currentIndex, lanes, laneContainingPair, pairViews]);
+  useEffect(() => {
+    let cancelled = false;
+    const targets: ZoomRingPreloadTarget[] = JSON.parse(preloadTargetsJson);
+    const timer = setTimeout(async () => {
+      const resolved = await Promise.all(
+        targets.map(
+          async ({ image, points }): Promise<TilePreloadPlan | null> => {
+            try {
+              const sourceKey = await queryClient.fetchQuery(
+                imageSourceQuery(client, image)
+              );
+              if (!sourceKey || cancelled) return null;
+              return {
+                sourceKey,
+                width: image.width,
+                height: image.height,
+                points,
+              };
+            } catch {
+              return null;
+            }
+          }
+        )
+      );
+      if (cancelled) return;
+      const plans = resolved.filter(
+        (plan): plan is TilePreloadPlan => plan !== null
+      );
+      await preloadTiles(plans, getZoomRingTile, () => cancelled);
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [preloadTargetsJson, client, queryClient]);
 
   // ---- Statistics bookkeeping ----
   // Refs rather than state: these are read from callbacks declared before the
