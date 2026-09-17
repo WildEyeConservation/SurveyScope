@@ -133,11 +133,13 @@ export default function ManageUsers({
             });
           }
         } else if (permission.annotationAccess || permission.isAdmin) {
-          const { data: existingRows } =
-            await client.models.UserProjectMembership.userProjectMembershipsByUserId(
-              { userId: permission.userId },
-              { filter: { projectId: { eq: projectId } } }
-            );
+          const existingRows = await fetchAllPaginatedResults(
+            client.models.UserProjectMembership.userProjectMembershipsByUserId,
+            {
+              userId: permission.userId,
+              filter: { projectId: { eq: projectId } },
+            }
+          );
 
           if (existingRows && existingRows.length > 0) {
             if (existingRows.length > 1) {

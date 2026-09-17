@@ -160,11 +160,13 @@ export default function ExceptionsModal({
           });
         }
       } else {
-        const { data: existingRows } =
-          await client.models.UserProjectMembership.userProjectMembershipsByUserId(
-            { userId: user.id },
-            { filter: { projectId: { eq: permission.projectId } } }
-          );
+        const existingRows = await fetchAllPaginatedResults(
+          client.models.UserProjectMembership.userProjectMembershipsByUserId,
+          {
+            userId: user.id,
+            filter: { projectId: { eq: permission.projectId } },
+          }
+        );
 
         if (existingRows && existingRows.length > 0) {
           if (existingRows.length > 1) {

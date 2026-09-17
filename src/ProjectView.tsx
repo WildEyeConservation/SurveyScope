@@ -4,6 +4,7 @@ import { Schema } from './amplify/client-schema';
 import { UserContext, GlobalContext } from './Context';
 import { useContext, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { fetchAllPaginatedResults } from './utils';
 
 export default function ProjectView() {
   const { user } = useContext(UserContext)!;
@@ -19,21 +20,14 @@ export default function ProjectView() {
         return;
       }
 
-      const {
-        data: [currentPM],
-      } =
-        await client.models.UserProjectMembership.userProjectMembershipsByUserId(
-          {
-            userId: user.userId,
-          },
-          {
-            filter: {
-              projectId: {
-                eq: surveyId,
-              },
-            },
-          }
-        );
+      // Filter applies after the page limit, so paginate.
+      const [currentPM] = await fetchAllPaginatedResults(
+        client.models.UserProjectMembership.userProjectMembershipsByUserId,
+        {
+          userId: user.userId,
+          filter: { projectId: { eq: surveyId } },
+        }
+      );
       setCurrentPM(currentPM);
     };
     fetchCurrentPM();
