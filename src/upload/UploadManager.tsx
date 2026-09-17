@@ -31,6 +31,10 @@ export default function UploadManager() {
     snapshot && ACTIVE_PHASES.includes(snapshot.phase)
       ? snapshot.projectId
       : null;
+  // The heartbeat must stop before finalizing: a late 'uploading' ping would
+  // otherwise overwrite the processing status the Finalizer sets.
+  const heartbeatProjectId =
+    snapshot?.phase === 'finalizing' ? null : activeProjectId;
 
   const startUpload = (projectId: string, files: File[]) => {
     uploadOrchestrator.start({
@@ -137,17 +141,26 @@ export default function UploadManager() {
 
   // Keep Project.updatedAt fresh so other admins do not see a stale upload.
   useEffect(() => {
-    if (!activeProjectId) return;
+    if (!heartbeatProjectId) return;
     const pingProject = async () => {
+      // Re-check at fire time; timers can run late while the tab is busy.
+      const current = uploadOrchestrator.getSnapshot();
+      if (
+        current?.projectId !== heartbeatProjectId ||
+        current.phase === 'finalizing' ||
+        !ACTIVE_PHASES.includes(current.phase)
+      ) {
+        return;
+      }
       try {
         const { data, errors } = await client.models.Project.update({
-          id: activeProjectId,
+          id: heartbeatProjectId,
           status: 'uploading',
         });
         if (errors?.length) {
-          console.error(`Ping failed for project ${activeProjectId}:`, errors);
+          console.error(`Ping failed for project ${heartbeatProjectId}:`, errors);
         } else if (!data) {
-          console.error(`Ping returned no data for project ${activeProjectId}`);
+          console.error(`Ping returned no data for project ${heartbeatProjectId}`);
         }
       } catch (error) {
         console.error('Error pinging project:', error);
@@ -156,7 +169,7 @@ export default function UploadManager() {
     const pingInterval = setInterval(pingProject, 60000);
     return () => clearInterval(pingInterval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProjectId]);
+  }, [heartbeatProjectId]);
 
   // Keep the screen awake while an upload is active.
   useEffect(() => {
