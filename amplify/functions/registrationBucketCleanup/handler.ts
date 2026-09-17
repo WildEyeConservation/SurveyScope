@@ -114,6 +114,54 @@ const updateRegistrationProgressStatus = /* GraphQL */ `
   }
 `;
 
+const getRegistrationProgress = /* GraphQL */ `
+  query GetProgress($projectId: ID!) {
+    getRegistrationProgress(projectId: $projectId) {
+      pendingCount
+      lastKickoffAt
+    }
+  }
+`;
+
+const cameraOverlapsByProjectId = /* GraphQL */ `
+  query OverlapsByProject($projectId: ID!, $limit: Int) {
+    cameraOverlapsByProjectId(projectId: $projectId, limit: $limit) {
+      items { cameraAId }
+    }
+  }
+`;
+
+const MAX_DEFER_MS = 24 * 60 * 60 * 1000;
+
+// True when cross-camera work is still pending and no bucket has a success
+// yet: picking a winner now would mark cleanup done with nothing deleted.
+async function shouldDefer(
+  projectId: string,
+  stats: BucketStatRow[]
+): Promise<boolean> {
+  if (stats.some((s) => (s.successCount ?? 0) > 0)) return false;
+  const overlaps = (await client.graphql({
+    query: cameraOverlapsByProjectId,
+    variables: { projectId, limit: 1 },
+  })) as GraphQLResult<{ cameraOverlapsByProjectId: PagedList<unknown> }>;
+  if ((overlaps.data?.cameraOverlapsByProjectId?.items ?? []).length === 0) {
+    return false;
+  }
+  const progress = (await client.graphql({
+    query: getRegistrationProgress,
+    variables: { projectId },
+  })) as GraphQLResult<{
+    getRegistrationProgress: {
+      pendingCount?: number | null;
+      lastKickoffAt?: string | null;
+    } | null;
+  }>;
+  const row = progress.data?.getRegistrationProgress;
+  if (!row || (row.pendingCount ?? 0) <= 0) return false;
+  const kickoffMs = row.lastKickoffAt ? Date.parse(row.lastKickoffAt) : NaN;
+  return Number.isFinite(kickoffMs) && Date.now() - kickoffMs < MAX_DEFER_MS;
+}
+
 async function fetchAllPages<T, K extends string>(
   queryFn: (nextToken?: string) => Promise<GraphQLResult<{ [key in K]: PagedList<T> }>>,
   queryName: K
@@ -173,6 +221,21 @@ export const handler: Handler = async (event, _context) => {
     );
 
     console.log(`Found ${stats.length} RegistrationBucketStat row(s) for ${projectId}`);
+
+    if (await shouldDefer(projectId, stats)) {
+      console.log(
+        `Deferring cleanup for ${projectId}: pairs still pending and no bucket successes yet`
+      );
+      try {
+        await client.graphql({
+          query: updateRegistrationProgressStatus,
+          variables: { projectId, cleanupState: 'pending', expected: 'in-progress' },
+        });
+      } catch (e) {
+        console.log(`Could not re-arm cleanupState for ${projectId}:`, e);
+      }
+      return { statusCode: 200, body: JSON.stringify({ projectId, deferred: true }) };
+    }
 
     const byPair = new Map<string, BucketStatRow[]>();
     for (const row of stats) {

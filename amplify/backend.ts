@@ -1157,6 +1157,7 @@ withStatsAlarmAction(
 );
 
 let lightglueQueueUrl: string | undefined;
+let lightglueQueueArn: string | undefined;
 let scoutbotQueueUrl: string | undefined;
 let madDetectorQueueUrl: string | undefined;
 let stormflyDetectorQueueUrl: string | undefined;
@@ -1213,6 +1214,7 @@ if (enableEcs) {
     );
 
     lightglueQueueUrl = lightGlueAutoProcessor.queue.queueUrl;
+    lightglueQueueArn = lightGlueAutoProcessor.queue.queueArn;
   }
 
   if (enableScoutbot) {
@@ -2295,6 +2297,18 @@ backend.monitorModelProgress.addEnvironment(
   'REGISTRATION_BUCKET_CLEANUP_FUNCTION_NAME',
   backend.registrationBucketCleanup.resources.lambda.functionName
 );
+if (lightglueQueueUrl && lightglueQueueArn) {
+  backend.monitorModelProgress.resources.lambda.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['sqs:GetQueueAttributes'],
+      resources: [lightglueQueueArn],
+    })
+  );
+  backend.monitorModelProgress.addEnvironment(
+    'LIGHTGLUE_QUEUE_URL',
+    lightglueQueueUrl
+  );
+}
 
 const imageNeighbourTable = backend.data.resources.tables['ImageNeighbour'];
 

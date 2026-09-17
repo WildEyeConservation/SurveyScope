@@ -24,6 +24,7 @@ const updateProjectMembershipsMutation = /* GraphQL */ `
 `;
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { GetQueueAttributesCommand, SQSClient } from '@aws-sdk/client-sqs';
 
 Amplify.configure(
   {
@@ -199,6 +200,32 @@ interface RegistrationProgressRow {
 }
 
 const STALE_PROGRESS_MS = 60 * 60 * 1000;
+
+// Null when the depth can't be read; callers then fall back to idle time only.
+async function lightglueQueueDepth(): Promise<number | null> {
+  const queueUrl = process.env.LIGHTGLUE_QUEUE_URL;
+  if (!queueUrl) return null;
+  try {
+    const sqs = new SQSClient({ region: env.AWS_REGION });
+    const resp = await sqs.send(
+      new GetQueueAttributesCommand({
+        QueueUrl: queueUrl,
+        AttributeNames: [
+          'ApproximateNumberOfMessages',
+          'ApproximateNumberOfMessagesNotVisible',
+        ],
+      })
+    );
+    const attrs = resp.Attributes ?? {};
+    return (
+      Number(attrs.ApproximateNumberOfMessages ?? 0) +
+      Number(attrs.ApproximateNumberOfMessagesNotVisible ?? 0)
+    );
+  } catch (e) {
+    console.warn('Could not read LightGlue queue depth:', e);
+    return null;
+  }
+}
 
 // Helper function to handle pagination for GraphQL queries
 async function fetchAllPages<T, K extends string>(
@@ -538,6 +565,7 @@ export const handler: Handler = async (event, context) => {
       });
 
       const now = Date.now();
+      let queueDepth: number | null | undefined;
       for (const row of pendingProgress) {
         const pendingCount = row.pendingCount ?? 0;
         const pairsCreated = row.pairsCreated ?? 0;
@@ -564,6 +592,17 @@ export const handler: Handler = async (event, context) => {
           pendingCount > 0 &&
           idleMs >= STALE_PROGRESS_MS &&
           sinceKickoffMs >= STALE_PROGRESS_MS;
+
+        // A shared queue that is still draining means backlog, not a stall.
+        if (isStale) {
+          if (queueDepth === undefined) queueDepth = await lightglueQueueDepth();
+          if (queueDepth !== null && queueDepth > 0) {
+            console.log(
+              `Project ${row.projectId}: idle ${Math.round(idleMs / 60000)}m but LightGlue queue still has ${queueDepth} message(s); not stale`
+            );
+            continue;
+          }
+        }
 
         if (!isReady && !isStale) {
           console.log(
