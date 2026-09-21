@@ -21,6 +21,7 @@ import {
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import * as turf from '@turf/turf';
+import { detectTransects } from '../../amplify/functions/shared/detectTransects';
 import type {
   Feature as GeoJSONFeature,
   Polygon as GeoJSONPolygon,
@@ -29,9 +30,6 @@ import type {
 import proj4 from 'proj4';
 import { BASE_STYLE, EMPTY_FC } from './surveyMapStyle';
 import './surveyMap.css';
-
-// tolerance in degrees for simplifying the transect line
-const SIMPLIFY_TOLERANCE = 0.002;
 
 // Terra Draw mode names: a polygon "enclose" tool to lasso points into a new
 // transect, a linestring "strata" tool to split the boundary into strata, a
@@ -170,7 +168,8 @@ function imputeLatLngForImages(
 
 // Normalize mixed timestamp units to milliseconds since epoch
 function normalizeToMillis(ts: any): number {
-  const n = typeof ts === 'string' ? Number(ts) : ts ?? 0;
+  // Keep missing timestamps invalid so they cannot create a time-gap split.
+  const n = typeof ts === 'string' ? Number(ts) : ts ?? NaN;
   // If value looks like seconds (10 digits) convert to ms
   return n > 0 && n < 1e12 ? n * 1000 : n;
 }
@@ -279,53 +278,6 @@ function getBaselineBearing(
   const baselineBearing = (avgHeading + 90) % 360;
 
   return baselineBearing;
-}
-
-// merges small segments into closest neighbor based on first/last image GPS
-function mergeSmallSegmentsByBoundary(
-  segImgs: Array<any & { transectId: number }>,
-  threshold: number
-): Array<any & { transectId: number }> {
-  const counts: Record<number, number> = segImgs.reduce((acc, img) => {
-    acc[img.transectId] = (acc[img.transectId] || 0) + 1;
-    return acc;
-  }, {} as Record<number, number>);
-  const segmentGroups: Record<number, typeof segImgs> = {};
-  segImgs.forEach((img) => {
-    segmentGroups[img.transectId] = segmentGroups[img.transectId] || [];
-    segmentGroups[img.transectId].push(img);
-  });
-  Object.entries(counts).forEach(([key, count]) => {
-    const id = Number(key);
-    if (count > threshold) return;
-    const group = segmentGroups[id];
-    if (!group) return;
-    const boundary = [group[0], group[group.length - 1]];
-    const neighbors = [id - 1, id + 1].filter((nbr) => segmentGroups[nbr]);
-    if (neighbors.length === 0) return;
-    const neighborDist = (nbr: number): number => {
-      let minDist = Infinity;
-      segmentGroups[nbr].forEach((nbrImg) => {
-        boundary.forEach((b) => {
-          const d = turf.distance(
-            turf.point([b.longitude, b.latitude]),
-            turf.point([nbrImg.longitude, nbrImg.latitude]),
-            { units: 'kilometers' }
-          );
-          if (d < minDist) minDist = d;
-        });
-      });
-      return minDist;
-    };
-    const bestNeighbor = neighbors.reduce(
-      (best, nbr) => (neighborDist(nbr) < neighborDist(best) ? nbr : best),
-      neighbors[0]
-    );
-    segImgs.forEach((img) => {
-      if (img.transectId === id) img.transectId = bestNeighbor;
-    });
-  });
-  return segImgs;
 }
 
 // define transects and strata
@@ -758,6 +710,7 @@ export default function DefineTransects({
           selectionSet: [
             'id',
             'timestamp',
+            'cameraId',
             'latitude',
             'longitude',
             'transectId',
@@ -931,48 +884,15 @@ export default function DefineTransects({
       const validImgs = images.filter((img) =>
         isValidLatLng(img.latitude, img.longitude)
       );
-      if (validImgs.length <= 1) return;
-      // build lineString in [lng,lat]
-      const coords = validImgs.map(
-        (img) => [img.longitude, img.latitude] as [number, number]
+      if (validImgs.length === 0) return;
+      // Use the same timestamp-gap detector as the Individual ID workflow.
+      const imagesById = new Map(validImgs.map((img) => [img.id, img]));
+      setSegmentedImages(
+        detectTransects(validImgs).map(({ id, transectIndex }) => ({
+          ...imagesById.get(id),
+          transectId: transectIndex,
+        }))
       );
-      const line = turf.lineString(coords);
-      const simplified = turf.simplify(line, { tolerance: SIMPLIFY_TOLERANCE });
-      const anchorCoords = simplified.geometry.coordinates as [
-        number,
-        number
-      ][];
-      // find original indices of anchor points
-      const anchorIndices = anchorCoords
-        .map((pt) => coords.findIndex((c) => c[0] === pt[0] && c[1] === pt[1]))
-        .filter((idx) => idx >= 0)
-        .sort((a, b) => a - b);
-      // assign each image to a transect segment
-      const segImgs = validImgs.map((img, idx) => {
-        let segId = anchorIndices.length - 1;
-        for (let i = 0; i < anchorIndices.length - 1; i++) {
-          if (idx >= anchorIndices[i] && idx < anchorIndices[i + 1]) {
-            segId = i;
-            break;
-          }
-        }
-        return { ...img, transectId: segId };
-      });
-      const mergedSegImgs = mergeSmallSegmentsByBoundary(segImgs, 5);
-      // compact transect ids to be sequential
-      const uniqueIds: number[] = Array.from(
-        new Set(mergedSegImgs.map((img: any) => img.transectId))
-      ).sort((a: number, b: number) => a - b);
-      const idMap: Record<number, number> = uniqueIds.reduce<
-        Record<number, number>
-      >((acc, oldId, index) => {
-        acc[oldId] = index;
-        return acc;
-      }, {});
-      mergedSegImgs.forEach((img: any) => {
-        img.transectId = idMap[img.transectId];
-      });
-      setSegmentedImages(mergedSegImgs);
     }
   }, [images, partsLoading, existingData, segmentedImages]);
 
