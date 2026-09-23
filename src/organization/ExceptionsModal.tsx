@@ -1,8 +1,10 @@
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import MyTable from '../Table';
-import { useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
+import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
+import Alert from 'react-bootstrap/Alert';
 import Button from 'react-bootstrap/Button';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
 
@@ -33,11 +35,14 @@ export default function ExceptionsModal({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [saveResult, setSaveResult] = useState<{
+    variant: 'success' | 'danger';
+    message: string;
+  } | null>(null);
 
-  useEffect(() => {
-    async function fetchProjects() {
-      setIsLoading(true);
-
+  const fetchProjects = useCallback(async () => {
+    setIsLoading(true);
+    try {
       const projects = await fetchAllPaginatedResults(
         client.models.Project.list,
         {
@@ -79,17 +84,42 @@ export default function ExceptionsModal({
         setOriginalPermissions(projectPermissions);
         setPermissions(projectPermissions);
       }
-
+    } finally {
       setIsLoading(false);
     }
+  }, [client, organization.id, user.id]);
 
+  useEffect(() => {
     if (show) {
       fetchProjects();
     } else {
       setPermissions([]);
       setOriginalPermissions([]);
+      setSaveResult(null);
     }
-  }, [show]);
+  }, [show, fetchProjects]);
+
+  const hasChanges = permissions.some(
+    (p) =>
+      !originalPermissions.some(
+        (op) =>
+          op.projectId === p.projectId &&
+          op.annotationAccess === p.annotationAccess &&
+          op.isAdmin === p.isAdmin
+      )
+  );
+
+  const handleClose = () => {
+    if (
+      hasChanges &&
+      !window.confirm(
+        'You have unsaved changes. Close without saving? Click Save first to apply them.'
+      )
+    ) {
+      return;
+    }
+    onClose();
+  };
 
   const tableData = permissions.map((permission) => ({
     id: permission.projectId,
@@ -106,6 +136,7 @@ export default function ExceptionsModal({
             alert('Admins have unrestricted access');
             return;
           }
+          setSaveResult(null);
           setPermissions(
             permissions.map((p) =>
               p.projectId === permission.projectId
@@ -122,6 +153,7 @@ export default function ExceptionsModal({
         checked={permission.isAdmin}
         disabled={isSaving}
         onChange={(checked) => {
+          setSaveResult(null);
           setPermissions(
             permissions.map((p) =>
               p.projectId === permission.projectId
@@ -136,6 +168,7 @@ export default function ExceptionsModal({
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveResult(null);
 
     const permissionsToUpdate = permissions.filter(
       (p) =>
@@ -147,48 +180,43 @@ export default function ExceptionsModal({
         )
     );
 
+    // Keep going past a failed survey so one rejection doesn't silently skip
+    // the rest; report exactly which surveys didn't save.
+    const failed: string[] = [];
     for (const permission of permissionsToUpdate) {
-      if (permission.membershipId) {
-        if (!permission.isAdmin && !permission.annotationAccess) {
-          await client.models.UserProjectMembership.delete({
-            id: permission.membershipId,
-          });
-        } else {
-          await client.models.UserProjectMembership.update({
-            id: permission.membershipId,
-            isAdmin: permission.isAdmin,
-          });
-        }
-      } else {
-        const existingRows = await fetchAllPaginatedResults(
-          client.models.UserProjectMembership.userProjectMembershipsByUserId,
-          {
-            userId: user.id,
-            filter: { projectId: { eq: permission.projectId } },
-          }
+      try {
+        await applyProjectMembershipChange(client, {
+          userId: user.id,
+          projectId: permission.projectId,
+          membershipId: permission.membershipId,
+          annotationAccess: permission.annotationAccess,
+          isAdmin: permission.isAdmin,
+          group: organization.id,
+        });
+      } catch (err) {
+        console.error(
+          `Failed to save access to survey ${permission.projectId} for user ${user.id}`,
+          err
         );
-
-        if (existingRows && existingRows.length > 0) {
-          if (existingRows.length > 1) {
-            console.warn(
-              `Found ${existingRows.length} memberships for user ${user.id} in project ${permission.projectId}`
-            );
-          }
-          await client.models.UserProjectMembership.update({
-            id: existingRows[0].id,
-            isAdmin: permission.isAdmin,
-          });
-        } else {
-          await client.models.UserProjectMembership.create({
-            userId: user.id,
-            projectId: permission.projectId,
-            isAdmin: permission.isAdmin,
-            group: organization.id,
-          });
-        }
+        failed.push(permission.projectName);
       }
     }
 
+    try {
+      // Reload so the toggles show what was actually saved.
+      await fetchProjects();
+    } catch (err) {
+      console.error('Failed to reload survey access', err);
+    }
+
+    setSaveResult(
+      failed.length > 0
+        ? {
+            variant: 'danger',
+            message: `Could not save access for: ${failed.join(', ')}. Please try again.`,
+          }
+        : { variant: 'success', message: 'Access saved.' }
+    );
     setIsSaving(false);
   };
 
@@ -222,14 +250,23 @@ export default function ExceptionsModal({
             pagination={true}
             emptyMessage={isLoading ? 'Loading...' : 'No surveys found'}
           />
+          {saveResult && (
+            <Alert variant={saveResult.variant} className='mt-3 mb-0'>
+              {saveResult.message}
+            </Alert>
+          )}
         </div>
       </Body>
       <Footer>
-        <Button variant='primary' onClick={handleSave} disabled={isSaving}>
+        <Button
+          variant='primary'
+          onClick={handleSave}
+          disabled={isSaving || !hasChanges}
+        >
           {isSaving ? 'Saving...' : 'Save'}
         </Button>
-        <Button variant='dark' onClick={onClose} disabled={isSaving}>
-          Cancel
+        <Button variant='dark' onClick={handleClose} disabled={isSaving}>
+          Close
         </Button>
       </Footer>
     </Modal>

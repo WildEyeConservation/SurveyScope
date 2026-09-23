@@ -145,164 +145,194 @@ export default function Jobs() {
   }, [organizationFilter]);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
+    let countsInterval: ReturnType<typeof setInterval> | undefined;
+    let projectsInterval: ReturnType<typeof setInterval> | undefined;
     let cancelled = false; // cancellation flag
+    let validProjects: Project[] = [];
+    let activeProjects: Project[] = [];
 
-    async function fetchProjectsAndJobs() {
-      if (!userProjectMembershipHook.data) return;
-      setIsLoading(true);
+    // Fetches the member projects and their queues. Only the first load shows
+    // the spinner; later refreshes swap the list in quietly.
+    async function loadProjects(showSpinner: boolean) {
+      const memberships = userProjectMembershipHook.data;
+      if (!memberships) return;
+      if (showSpinner) setIsLoading(true);
 
-      const projectPromises = userProjectMembershipHook.data.map((membership) =>
-        client.models.Project.get(
-          { id: membership.projectId },
-          {
-            selectionSet: [
-              'id',
-              'name',
-              'status',
-              'organization.id',
-              'organization.name',
-              'annotationSets.id',
-              'createdAt',
-              'queues.*',
-            ],
-          }
+      const projectResults = await Promise.all(
+        memberships.map((membership) =>
+          client.models.Project.get(
+            { id: membership.projectId },
+            {
+              selectionSet: [
+                'id',
+                'name',
+                'status',
+                'organization.id',
+                'organization.name',
+                'annotationSets.id',
+                'createdAt',
+                'queues.*',
+              ],
+            }
+          )
         )
       );
 
-      const projectResults = await Promise.all(projectPromises);
-      
-      const validProjects = projectResults
-        .map((result) => (result as { data: Project | null }).data)
-        .filter(
-          (project): project is Project =>
-            project !== null && project.status !== 'launching'
-        )
-        .map((project) => ({
-          ...project,
-          queues: project.queues.filter(
-            (queue) =>
-              myOrganizationHook.data?.find(
-                (membership) =>
-                  membership.organizationId === project.organization.id
-              )?.isAdmin || !queue.hidden
-          ),
-        }));
-
       if (cancelled) return; // stop if unmounted
 
-      setDisplayProjects(validProjects);
-      setIsLoading(false);
-
-      // Individual ID jobs live on their own table (no Queue, no register
-      // flag) so they are scanned separately. Projects still `launching` are
-      // excluded — the project only leaves `launching` once tiling + the
-      // transect-update fanout finish, which is exactly when the job becomes
-      // claimable.
-      const iidScanProjects = projectResults
+      // Projects still `launching` are excluded — the project only leaves
+      // `launching` once tiling + the transect-update fanout finish, which is
+      // exactly when its jobs become claimable.
+      activeProjects = projectResults
         .map((result) => (result as { data: Project | null }).data)
         .filter(
           (project): project is Project =>
             project !== null && project.status !== 'launching'
         );
 
-      async function getIndividualIdJobs() {
-        if (cancelled) return;
-        const entries: {
-          jobId: string;
-          projectId: string;
-          projectName: string;
-          organizationId: string;
-          organizationName: string;
-          name: string;
-        }[] = [];
-        await Promise.all(
-          iidScanProjects.map(async (project) => {
-            try {
-              const { data } = await (
-                client.models as any
-              ).IndividualIdJob.individualIdJobsByProjectId(
-                { projectId: project.id },
-                { selectionSet: ['id', 'name', 'status'] }
-              );
-              for (const job of data || []) {
-                if (job.status === 'active') {
-                  entries.push({
-                    jobId: job.id,
-                    projectId: project.id,
-                    projectName: project.name,
-                    organizationId: project.organization.id,
-                    organizationName: project.organization.name,
-                    name: job.name,
-                  });
-                }
-              }
-            } catch (e) {
-              console.warn(
-                'Failed to load Individual ID jobs',
-                project.id,
-                e
-              );
-            }
-          })
-        );
-        if (cancelled) return;
-        setIndividualIdJobs(entries);
-      }
+      // Hidden jobs are for admins only: organisation admins, plus admins of
+      // the job's own survey.
+      validProjects = activeProjects.map((project) => {
+        const canSeeHidden =
+          !!myOrganizationHook.data?.find(
+            (membership) =>
+              membership.organizationId === project.organization.id
+          )?.isAdmin ||
+          !!memberships.find(
+            (membership) => membership.projectId === project.id
+          )?.isAdmin;
+        return {
+          ...project,
+          queues: project.queues.filter(
+            (queue) => canSeeHidden || !queue.hidden
+          ),
+        };
+      });
 
-      getIndividualIdJobs();
+      setDisplayProjects(validProjects);
+      if (showSpinner) setIsLoading(false);
 
-      async function getJobsRemaining() {
-        if (cancelled) return;
-
-        const queueUrls = validProjects.flatMap((project) =>
-          project.queues.map((queue) => queue.url || '')
-        );
-
-        const jobsRemaining = (
-          await Promise.all(
-            queueUrls.map(async (queueUrl) => {
-              const params: GetQueueAttributesCommandInput = {
-                QueueUrl: queueUrl,
-                AttributeNames: ['ApproximateNumberOfMessages'],
-              };
-              const sqsClient = await getSqsClient();
-              const result = await sqsClient.send(
-                new GetQueueAttributesCommand(params)
-              );
-              return {
-                [queueUrl]:
-                  result.Attributes?.ApproximateNumberOfMessages || 'Unknown',
-              };
-            })
-          )
-        ).reduce((acc, curr) => ({ ...acc, ...curr }), {});
-
-        if (cancelled) return;
-
-        setJobsRemaining(jobsRemaining);
-
-        getIndividualIdJobs();
-
-        setDisplayProjects(validProjects);
-      }
-
-      // Kick off the first polling call immediately
-      getJobsRemaining();
-
-      // Immediately set up the interval (if still mounted)
-      if (!cancelled) {
-        interval = setInterval(getJobsRemaining, 10000);
-      }
+      refreshJobs();
     }
 
-    fetchProjectsAndJobs();
+    async function getIndividualIdJobs() {
+      if (cancelled) return;
+      const entries: {
+        jobId: string;
+        projectId: string;
+        projectName: string;
+        organizationId: string;
+        organizationName: string;
+        name: string;
+      }[] = [];
+      await Promise.all(
+        activeProjects.map(async (project) => {
+          try {
+            const { data } = await (
+              client.models as any
+            ).IndividualIdJob.individualIdJobsByProjectId(
+              { projectId: project.id },
+              { selectionSet: ['id', 'name', 'status'] }
+            );
+            for (const job of data || []) {
+              if (job.status === 'active') {
+                entries.push({
+                  jobId: job.id,
+                  projectId: project.id,
+                  projectName: project.name,
+                  organizationId: project.organization.id,
+                  organizationName: project.organization.name,
+                  name: job.name,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn(
+              'Failed to load Individual ID jobs',
+              project.id,
+              e
+            );
+          }
+        })
+      );
+      if (cancelled) return;
+      setIndividualIdJobs(entries);
+    }
+
+    async function getJobsRemaining() {
+      if (cancelled) return;
+
+      const queueUrls = validProjects.flatMap((project) =>
+        project.queues.map((queue) => queue.url || '')
+      );
+
+      const jobsRemaining = (
+        await Promise.all(
+          queueUrls.map(async (queueUrl) => {
+            const params: GetQueueAttributesCommandInput = {
+              QueueUrl: queueUrl,
+              AttributeNames: ['ApproximateNumberOfMessages'],
+            };
+            const sqsClient = await getSqsClient();
+            const result = await sqsClient.send(
+              new GetQueueAttributesCommand(params)
+            );
+            return {
+              [queueUrl]:
+                result.Attributes?.ApproximateNumberOfMessages || 'Unknown',
+            };
+          })
+        )
+      ).reduce((acc, curr) => ({ ...acc, ...curr }), {});
+
+      if (cancelled) return;
+
+      setJobsRemaining(jobsRemaining);
+    }
+
+    function refreshJobs() {
+      // Individual ID jobs do not use SQS, so a failed or slow queue-count
+      // request must not block their initial load or subsequent refreshes.
+      void getIndividualIdJobs();
+      void getJobsRemaining().catch((e) =>
+        console.warn('Failed to refresh queue counts', e)
+      );
+    }
+
+    function refreshProjects() {
+      loadProjects(false).catch((e) =>
+        console.warn('Failed to refresh jobs', e)
+      );
+    }
+
+    // New jobs normally arrive via the membership nudge that every launch
+    // sends, but a nudge can be missed (connection down, or it landed while
+    // the project was still `launching`). Re-fetching projects periodically
+    // and when the tab becomes visible again means a missed nudge only delays
+    // a job instead of hiding it until the memberships next change.
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') refreshProjects();
+    }
+
+    loadProjects(true)
+      .catch((e) => {
+        console.error('Failed to load jobs', e);
+        if (!cancelled) setIsLoading(false);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        countsInterval = setInterval(refreshJobs, 10000);
+        projectsInterval = setInterval(refreshProjects, 60000);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+      });
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearInterval(countsInterval);
+      clearInterval(projectsInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [userProjectMembershipHook.data]);
+  }, [userProjectMembershipHook.data, myOrganizationHook.data]);
 
   const organizationOptions = Array.from(
     new Map(
@@ -477,18 +507,15 @@ export default function Jobs() {
                       Type: {queue.tag === 'qc-review' ? 'Review' : queue.tag === 'info-tags' ? 'Info Tags' : queue.tag === 'homography' ? 'Homography' : queue.name}
                     </p>
                   </div>
-                  {myOrganizationHook.data?.find(
-                    (membership) =>
-                      membership.organizationId === project.organization.id
-                  )?.isAdmin &&
-                    queue.hidden && (
-                      <span
-                        className='badge bg-secondary'
-                        style={{ fontSize: badgeFontSize }}
-                      >
-                        Hidden
-                      </span>
-                    )}
+                  {/* Only admins receive hidden queues, so this is admin-only. */}
+                  {queue.hidden && (
+                    <span
+                      className='badge bg-secondary'
+                      style={{ fontSize: badgeFontSize }}
+                    >
+                      Hidden
+                    </span>
+                  )}
                 </div>
                 <div
                   className={`d-flex flex-row ${gapClass} align-items-center`}

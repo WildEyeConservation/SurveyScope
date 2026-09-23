@@ -1,8 +1,9 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
-import { Button, Modal } from 'react-bootstrap';
+import { Alert, Button, Modal } from 'react-bootstrap';
 import { GlobalContext } from '../Context';
 import { useUsers } from '../apiInterface';
 import { fetchAllPaginatedResults } from '../utils';
+import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
 import MyTable from '../Table';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import { Footer } from '../Modal';
@@ -34,6 +35,10 @@ export default function ManageUsers({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false);
+  const [saveResult, setSaveResult] = useState<{
+    variant: 'success' | 'danger';
+    message: string;
+  } | null>(null);
 
   const fetchData = useCallback(async function fetchData() {
     if (!users) return;
@@ -106,69 +111,60 @@ export default function ManageUsers({
       )
   );
 
+  // Returns true only when every change was written.
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveResult(null);
+
+    const permissionsToUpdate = permissions.filter(
+      (p) =>
+        !originalPermissions.some(
+          (op) =>
+            op.userId === p.userId &&
+            op.annotationAccess === p.annotationAccess &&
+            op.isAdmin === p.isAdmin
+        )
+    );
+
+    // Keep going past a failed user so one rejection doesn't silently skip
+    // everyone after it; report exactly who didn't save.
+    const failed: string[] = [];
+    for (const permission of permissionsToUpdate) {
+      try {
+        await applyProjectMembershipChange(client, {
+          userId: permission.userId,
+          projectId,
+          membershipId: permission.membershipId,
+          annotationAccess: permission.annotationAccess,
+          isAdmin: permission.isAdmin,
+          group: organizationId,
+        });
+      } catch (err) {
+        console.error(
+          `Failed to save survey access for user ${permission.userId}`,
+          err
+        );
+        failed.push(permission.userName);
+      }
+    }
 
     try {
-      const permissionsToUpdate = permissions.filter(
-        (p) =>
-          !originalPermissions.some(
-            (op) =>
-              op.userId === p.userId &&
-              op.annotationAccess === p.annotationAccess &&
-              op.isAdmin === p.isAdmin
-          )
-      );
-
-      for (const permission of permissionsToUpdate) {
-        if (permission.membershipId) {
-          if (!permission.isAdmin && !permission.annotationAccess) {
-            await client.models.UserProjectMembership.delete({
-              id: permission.membershipId,
-            });
-          } else {
-            await client.models.UserProjectMembership.update({
-              id: permission.membershipId,
-              isAdmin: permission.isAdmin,
-            });
-          }
-        } else if (permission.annotationAccess || permission.isAdmin) {
-          const existingRows = await fetchAllPaginatedResults(
-            client.models.UserProjectMembership.userProjectMembershipsByUserId,
-            {
-              userId: permission.userId,
-              filter: { projectId: { eq: projectId } },
-            }
-          );
-
-          if (existingRows && existingRows.length > 0) {
-            if (existingRows.length > 1) {
-              console.warn(
-                `Found ${existingRows.length} memberships for user ${permission.userId} in project ${projectId}`
-              );
-            }
-            await client.models.UserProjectMembership.update({
-              id: existingRows[0].id,
-              isAdmin: permission.isAdmin,
-            });
-          } else {
-            await client.models.UserProjectMembership.create({
-              userId: permission.userId,
-              projectId,
-              isAdmin: permission.isAdmin,
-              group: organizationId,
-            });
-          }
-        }
-      }
-
-      // Refetch to get correct membershipIds for created/deleted records
+      // Refetch so the toggles show what was actually saved.
       await fetchData();
-    } catch (err: any) {
-      alert(err.message ?? 'Failed to save permissions');
-    } finally {
-      setIsSaving(false);
+    } catch (err) {
+      console.error('Failed to reload survey access', err);
     }
+
+    setSaveResult(
+      failed.length > 0
+        ? {
+            variant: 'danger',
+            message: `Could not save access for: ${failed.join(', ')}. Please try again.`,
+          }
+        : { variant: 'success', message: 'Access saved.' }
+    );
+    setIsSaving(false);
+    return failed.length === 0;
   };
 
   const handleClose = () => {
@@ -181,8 +177,8 @@ export default function ManageUsers({
 
   const handleSaveAndClose = async () => {
     setShowUnsavedPrompt(false);
-    await handleSave();
-    showModal(null);
+    // Stay open on failure so the error is seen.
+    if (await handleSave()) showModal(null);
   };
 
   const handleDiscardAndClose = () => {
@@ -206,6 +202,7 @@ export default function ManageUsers({
             // Can't remove annotation access while admin
             return;
           }
+          setSaveResult(null);
           setPermissions(
             permissions.map((p) =>
               p.userId === permission.userId
@@ -222,6 +219,7 @@ export default function ManageUsers({
         checked={permission.isAdmin}
         disabled={permission.isOrgAdmin || isSaving}
         onChange={(checked) => {
+          setSaveResult(null);
           setPermissions(
             permissions.map((p) =>
               p.userId === permission.userId
@@ -265,6 +263,11 @@ export default function ManageUsers({
           pagination={true}
           emptyMessage={isLoading ? 'Loading...' : 'No users found'}
         />
+        {saveResult && (
+          <Alert variant={saveResult.variant} className='mt-3 mb-0'>
+            {saveResult.message}
+          </Alert>
+        )}
       </div>
       <Footer>
         <Button

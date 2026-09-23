@@ -17,6 +17,9 @@ import {
 import { useOptimisticUpdates, useQueues } from './useOptimisticUpdates.tsx';
 import { useQuery } from '@tanstack/react-query';
 
+// How long the user's own membership lists are trusted before a background refetch.
+const MEMBERSHIP_STALE_TIME = 60_000;
+
 export function Project({
   children,
   currentPM,
@@ -142,20 +145,25 @@ export function User({
   //   async (nextToken) => client.models.UserProjectMembership.list({ filter: { userId: { eq: user!.username } },nextToken}),
   //   subscriptionFilter)
 
+  // Access and the Jobs page are driven by these two lists. They are refetched
+  // (via the userId indexes, not a table scan) whenever they are older than
+  // MEMBERSHIP_STALE_TIME, so access granted while the user was offline shows
+  // up on the next load or tab focus instead of waiting for the cache to expire.
   const myMembershipHook = useOptimisticUpdates<
     Schema['UserProjectMembership']['type'],
     'UserProjectMembership'
   >(
     'UserProjectMembership',
     async (nextToken) =>
-      client.models.UserProjectMembership.list({
-        filter: { userId: { eq: user!.username } },
-        nextToken,
-      }),
+      client.models.UserProjectMembership.userProjectMembershipsByUserId(
+        { userId: user!.username },
+        { nextToken }
+      ),
     subscriptionFilter,
     {
       compositeKey: (m) =>
         m.userId && m.projectId ? `${m.userId}:${m.projectId}` : m.id,
+      staleTime: MEMBERSHIP_STALE_TIME,
     }
   );
 
@@ -165,14 +173,15 @@ export function User({
   >(
     'OrganizationMembership',
     async (nextToken) =>
-      client.models.OrganizationMembership.list({
-        filter: { userId: { eq: user!.username } },
-        nextToken,
-      }),
+      client.models.OrganizationMembership.organizationsByUserId(
+        { userId: user!.username },
+        { nextToken }
+      ),
     subscriptionFilter,
     {
       compositeKey: (membership) =>
         `${membership.organizationId}:${membership.userId}`,
+      staleTime: MEMBERSHIP_STALE_TIME,
     }
   );
 
