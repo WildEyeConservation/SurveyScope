@@ -1,3 +1,4 @@
+import { MaintenanceBanner } from './maintenance/MaintenanceBanner';
 import { useContext, useEffect, useState } from 'react';
 import Navbar from 'react-bootstrap/Navbar';
 import Nav from 'react-bootstrap/Nav';
@@ -137,6 +138,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
       className='App d-flex flex-column'
       style={{ height: '100dvh', overflow: 'hidden' }}
     >
+      <MaintenanceBanner />
       <Navbar
         bg='secondary'
         className='px-3'
@@ -294,7 +296,8 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
       </Navbar>
       <Container
         fluid
-        className='d-flex justify-content-center h-100 overflow-y-auto'
+        className='d-flex justify-content-center flex-grow-1 overflow-y-auto'
+        style={{ minHeight: 0 }}
       >
         {(!belongsToOrganization &&
           location.pathname === '/SSRegisterOrganization') ||

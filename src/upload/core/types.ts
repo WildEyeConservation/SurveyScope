@@ -16,7 +16,7 @@ export type SessionPhase =
   | 'blocked'
   | 'cancelled';
 
-export type PauseReason = 'user' | 'offline' | 'fatal-error';
+export type PauseReason = 'user' | 'offline' | 'availability' | 'fatal-error';
 
 export const ACTIVE_PHASES: SessionPhase[] = [
   'preparing',

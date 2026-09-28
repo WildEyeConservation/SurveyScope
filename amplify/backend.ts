@@ -1,3 +1,10 @@
+import { fileURLToPath } from 'node:url';
+import {
+  AppsyncFunction,
+  Code,
+  FunctionRuntime,
+} from 'aws-cdk-lib/aws-appsync';
+import { attachMaintenanceGuard } from './maintenance/attachGuard';
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
@@ -135,6 +142,49 @@ const backend = defineBackend({
   recordWorkflowTask,
   cancelIndividualIdJob,
 });
+
+// Kept outside model stacks so all API pipelines can depend on the same state.
+const maintenanceTable = new dynamodb.Table(
+  backend.createStack('SystemMaintenance'),
+  'State',
+  {
+    partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+const maintenanceSource = backend.data.addDynamoDbDataSource(
+  'SystemMaintenanceStore',
+  maintenanceTable
+);
+const maintenanceApi = backend.data.resources.cfnResources.cfnGraphqlApi;
+maintenanceApi.environmentVariables = {
+  ...maintenanceApi.environmentVariables,
+  MAINTENANCE_TABLE: maintenanceTable.tableName,
+};
+const maintenanceGuard = new AppsyncFunction(
+  Stack.of(backend.data.resources.graphqlApi),
+  'MaintenanceGuard',
+  {
+    api: backend.data.resources.graphqlApi,
+    name: 'maintenanceGuard',
+    dataSource: maintenanceSource,
+    runtime: FunctionRuntime.JS_1_0_0,
+    code: Code.fromAsset(
+      path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        'maintenance/guard.js'
+      )
+    ),
+  }
+);
+// Custom JS resolvers are siblings of the API and absent from cfnResources.
+attachMaintenanceGuard(
+  Stack.of(backend.data.resources.graphqlApi),
+  [maintenanceGuard.functionId]
+);
 
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
 userPoolClient.accessTokenValidity = 24 * 60;

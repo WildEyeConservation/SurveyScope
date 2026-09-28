@@ -1,3 +1,4 @@
+import { isMaintenanceAccessBlocked } from '../../maintenance/state';
 import type { ImageData } from '../../types/ImageData';
 import {
   orientationCorrectionFor,
@@ -107,10 +108,7 @@ export class UploadOrchestrator {
         }
       });
       window.addEventListener('online', () => {
-        if (this.session?.phase === 'paused' &&
-            this.session.pauseReason === 'offline') {
-          this.resume(this.session.projectId);
-        }
+        this.resumeAfterAvailabilityCheck();
       });
     }
   }
@@ -141,6 +139,7 @@ export class UploadOrchestrator {
   }
 
   start(input: StartInput): void {
+    if (isMaintenanceAccessBlocked()) return;
     if (this.session && ACTIVE_PHASES.includes(this.session.phase)) {
       if (this.session.projectId === input.projectId) return;
       console.warn(
@@ -211,12 +210,30 @@ export class UploadOrchestrator {
   pause(reason: PauseReason = 'user'): void {
     const session = this.session;
     if (!session || !ACTIVE_PHASES.includes(session.phase)) return;
+    // Do not replace an explicit pause while its aborted transfer drains.
+    if (session.controller.signal.aborted) {
+      if (reason === 'user') session.pauseReason = reason;
+      return;
+    }
     session.pauseReason = reason;
     session.controller.abort();
   }
 
+  /** Recover transient pauses only once both connectivity and access are verified. */
+  resumeAfterAvailabilityCheck(): void {
+    const session = this.session;
+    if (
+      isMaintenanceAccessBlocked() ||
+      (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+      session?.phase !== 'paused' ||
+      !['offline', 'availability'].includes(session.pauseReason ?? '')
+    ) return;
+    this.resume(session.projectId);
+  }
+
   /** Resumes a paused/failed/blocked in-memory session. False if none. */
   resume(projectId: string): boolean {
+    if (isMaintenanceAccessBlocked()) return false;
     const session = this.session;
     if (
       !session ||
@@ -236,6 +253,7 @@ export class UploadOrchestrator {
    * bytes which never reached storage. Returns false when nothing is blocked.
    */
   skipBlocked(): boolean {
+    if (isMaintenanceAccessBlocked()) return false;
     const session = this.session;
     if (!session || session.phase !== 'blocked') return false;
     const skipped = session.blockedItems;
@@ -773,6 +791,9 @@ export class UploadOrchestrator {
       return true;
     }
     this.setPhase(session, 'paused');
+    // Recovery may precede completion of the aborted transfer. Retry after
+    // the old run loop has unwound rather than losing that recovery signal.
+    setTimeout(() => this.resumeAfterAvailabilityCheck(), 0);
     return true;
   }
 
