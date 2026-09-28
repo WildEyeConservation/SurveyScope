@@ -176,7 +176,7 @@ export default function LightImageView({
 
   return (
     <MapLibreLightViewer
-      image={imageMeta}
+      image={{ ...imageMeta, id: imageId }}
       sourceKey={sourceKey}
       annotations={lightAnnotations}
       zoomInOnAnnotationClick

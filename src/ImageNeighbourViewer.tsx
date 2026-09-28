@@ -789,7 +789,7 @@ function NeighbourMap({
       [...polygon, polygon[0]].map(([x, y]) => projection.px2lngLat(x, y));
 
     map.on('load', () => {
-      addImageTiles(map, data.sourceKey!, { width, height }, projection);
+      addImageTiles(map, data.sourceKey!, { id: data.image.id, width, height }, projection);
 
       map.addSource('image-bounds', {
         type: 'geojson',

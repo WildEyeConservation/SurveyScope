@@ -1,5 +1,5 @@
 import maplibregl from 'maplibre-gl';
-import { getTileBlob, registerImageIdForSource } from '../StorageLayer';
+import { getTileBlob, imageTileContext } from '../StorageLayer';
 
 /*
 Shared tiling machinery for MapLibre-based image viewers.
@@ -23,8 +23,14 @@ export function ensureTileProtocol() {
   if (protocolRegistered) return;
   protocolRegistered = true;
   maplibregl.addProtocol('detweb', async (params) => {
-    const path = params.url.replace('detweb://', '');
-    const blob = await getTileBlob(path);
+    const [path, query] = params.url.replace('detweb://', '').split('?');
+    const args = new URLSearchParams(query);
+    const blob = await getTileBlob(decodeURIComponent(path), {
+      imageId: args.get('imageId') ?? '',
+      width: Number(args.get('width')),
+      height: Number(args.get('height')),
+      sharedImageId: args.get('sharedImageId') || undefined,
+    });
     return { data: await blob.arrayBuffer() };
   });
 }
@@ -99,16 +105,19 @@ export function createImageMap(
 export function addImageTiles(
   map: maplibregl.Map,
   sourceKey: string,
-  image: { width: number; height: number; id?: string },
+  image: { width: number; height: number; id: string; sharedImageId?: string },
   projection: ImageProjection
 ) {
-  if (image.id) {
-    // Lets on-demand tile generation pass the image id to the Lambda
-    registerImageIdForSource(sourceKey, image.id);
-  }
+  const context = imageTileContext(image);
+  const query = new URLSearchParams(
+    Object.entries(context)
+      .filter(([, value]) => value != null)
+      .map(([key, value]) => [key, String(value)])
+  );
+  const template = `detweb://slippymaps/${encodeURIComponent(sourceKey)}/{z}/{y}/{x}.png?${query}`;
   map.addSource(SOURCE_TILES, {
     type: 'raster',
-    tiles: [`detweb://slippymaps/${sourceKey}/{z}/{y}/{x}.png`],
+    tiles: [template],
     tileSize: 256,
     minzoom: 0,
     maxzoom: projection.maxNativeZoom,

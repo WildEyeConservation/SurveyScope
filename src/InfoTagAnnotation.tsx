@@ -17,25 +17,30 @@ import {
   SearchCheck,
   Undo2,
 } from 'lucide-react';
-import { GlobalContext, UserContext } from './Context';
+import { GlobalContext } from './Context';
+import type { InfoTagSession } from './infoTagWork';
+import {
+  MAX_INFO_TAGS_PER_ANNOTATION,
+  type InfoTagResponse,
+} from '../shared/infoTagProtocol';
 import {
   ACTIVE_MARKER_SIZE,
   applyActiveMarkerStyle,
   applyTagBadgeContainerStyle,
   applyTagBadgeStyle,
 } from './activeMarkerStyle';
-import { getTileBlob } from './StorageLayer';
+import { getTileBlob, imageTileContext } from './StorageLayer';
 import type { Schema } from './amplify/client-schema';
 import {
-  assertNoGraphqlErrors,
-  commitInfoTagsForAnnotation,
   fetchImageAnnotationsWithTags,
-  finalizeInfoTagImage,
   formatInfoTagsForDisplay,
-  type InfoTagImageProgress,
+  type ImageAnnotationRow,
 } from './infoTags';
 import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
-import { recordWorkflowTask, type RecordWorkflowTaskInput } from './recordWorkflowTask';
+import {
+  recordWorkflowTask,
+  type RecordWorkflowTaskInput,
+} from './recordWorkflowTask';
 import { infoTagWorkflowMetrics } from './infoTagWorkflowStats';
 import { useActiveTimeTracker } from './useActiveTimeTracker';
 
@@ -69,20 +74,15 @@ type AnnotationRow = {
   infoTaggedBy: string | null;
 };
 
-// Kept so a save that failed mid-image can be retried without re-tagging.
-type CommitRecord = {
-  run: () => Promise<void>;
-  promise: Promise<void>;
-  failed: boolean;
-};
-
 type Props = {
+  session?: InfoTagSession;
+  snapshot?: InfoTagResponse;
+  disabled: boolean;
   imageId: string;
   annotationSetId: string;
   categoryIds: string[];
   queueId: string;
   ack?: () => Promise<void>;
-  stopHeartbeat?: () => void;
   next?: () => void;
   prev?: () => void;
   visible: boolean;
@@ -128,19 +128,20 @@ function buildTargetTour(
 }
 
 export default function InfoTagAnnotation({
+  session,
+  snapshot,
+  disabled: claimDisabled,
   imageId,
   annotationSetId,
   categoryIds,
   queueId,
   ack,
-  stopHeartbeat,
   next,
   prev,
   visible,
   categories,
   infoTags,
   projectId,
-  group,
   queueZoom,
   setQueueZoom,
   adminMemberships,
@@ -148,10 +149,14 @@ export default function InfoTagAnnotation({
   setLegendCollapsed,
 }: Props) {
   const { client } = useContext(GlobalContext)!;
-  const { user } = useContext(UserContext)!;
   const navigate = useNavigate();
   const [image, setImage] = useState<Schema['Image']['type'] | null>(null);
   const [sourceKey, setSourceKey] = useState<string>();
+  const [preloadedAnnotations, setPreloadedAnnotations] = useState<
+    ImageAnnotationRow[]
+  >([]);
+  const [appliedSnapshot, setAppliedSnapshot] = useState<InfoTagResponse>();
+  const disabled = claimDisabled || !snapshot || appliedSnapshot !== snapshot;
   const [annotations, setAnnotations] = useState<AnnotationRow[]>([]);
   const [targets, setTargets] = useState<AnnotationRow[]>([]);
   const targetsRef = useRef<AnnotationRow[]>([]);
@@ -163,7 +168,10 @@ export default function InfoTagAnnotation({
   const persistedPositionsRef = useRef(
     new Map<string, { x: number; y: number }>()
   );
-  const commitsRef = useRef<CommitRecord[]>([]);
+  const revisionsRef = useRef(new Map<string, number>());
+  const retryRef = useRef<(() => Promise<void>) | null>(null);
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [markerPosition, setMarkerPosition] = useState({ x: 0, y: 0 });
@@ -176,37 +184,23 @@ export default function InfoTagAnnotation({
   const [imageReadyAt, setImageReadyAt] = useState<number | null>(null);
   const statsMapRef = useRef<maplibregl.Map | null>(null);
   const activeTime = useActiveTimeTracker({
-    enabled: visible && !loading && imageReadyAt !== null && !imageComplete,
+    enabled:
+      visible &&
+      !disabled &&
+      !saving &&
+      !loading &&
+      imageReadyAt !== null &&
+      !imageComplete,
   });
   useEffect(() => {
-    if (visible && visibleAtRef.current === null) visibleAtRef.current = Date.now();
+    if (visible && visibleAtRef.current === null)
+      visibleAtRef.current = Date.now();
   }, [visible]);
-  const progressRef = useRef<InfoTagImageProgress>({
-    counted: false,
-    acknowledged: false,
-  });
   const advancedRef = useRef(false);
   const [waiting, setWaiting] = useState(false);
   const [secondsRemaining, setSecondsRemaining] = useState(60);
   const waitingTimerRef = useRef<number>();
   const countdownRef = useRef<number>();
-  const wasVisibleRef = useRef(visible);
-  useEffect(() => {
-    if (
-      visible &&
-      !wasVisibleRef.current &&
-      progressRef.current.counted &&
-      targets.length > 0
-    ) {
-      finishedRef.current = false;
-      advancedRef.current = false;
-      setImageComplete(false);
-      setReadyToAdvance(false);
-      setCurrentIndex(targets.length - 1);
-    }
-    wasVisibleRef.current = visible;
-  }, [targets.length, visible]);
-
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<maplibregl.Map | null>(null);
   const loadedTilesRef = useRef(new Set<string>());
@@ -223,8 +217,6 @@ export default function InfoTagAnnotation({
   const [hasLocalZoom, setHasLocalZoom] = useState(
     () => localStorage.getItem(`infoTagsDefaultZoom-${queueId}`) != null
   );
-
-  useEffect(() => () => stopHeartbeat?.(), [stopHeartbeat]);
 
   const clearWaitingTimers = useCallback(() => {
     if (waitingTimerRef.current !== undefined) {
@@ -257,38 +249,9 @@ export default function InfoTagAnnotation({
           (file) => file.type === 'image/jpeg'
         );
         if (!jpeg) throw new Error(`No JPEG source found for image ${imageId}`);
-        const categorySet = new Set(categoryIds);
-        const work = rows.filter(
-          (annotation) =>
-            categorySet.has(annotation.categoryId) &&
-            !annotation.infoTaggedBy
-        );
-        const persisted = new Map(
-          rows.map((annotation) => [annotation.id, new Set(annotation.tagIds)])
-        );
-        const ordered = buildTargetTour(
-          work,
-          imageResponse.data.width,
-          imageResponse.data.height
-        );
-        persistedTagIdsRef.current = persisted;
-        persistedPositionsRef.current = new Map(
-          ordered.map((annotation) => [
-            annotation.id,
-            { x: annotation.x, y: annotation.y },
-          ])
-        );
         setImage(imageResponse.data);
         setSourceKey(jpeg.key);
-        setAnnotations(rows);
-        setTargets(ordered);
-        targetsRef.current = ordered;
-        setCurrentIndex(0);
-        const first = ordered[0];
-        if (first) {
-          setMarkerPosition({ x: first.x, y: first.y });
-          setSelectedTagIds(new Set(persisted.get(first.id) ?? []));
-        }
+        setPreloadedAnnotations(rows);
       })
       .catch((error) => {
         console.error('Failed to load informational tagging image', error);
@@ -304,7 +267,47 @@ export default function InfoTagAnnotation({
     return () => {
       mounted = false;
     };
-  }, [annotationSetId, categoryIds, client, imageId]);
+  }, [annotationSetId, client, imageId]);
+
+  useEffect(() => {
+    if (!image) return;
+    // A claim may arrive before or after preloading. Apply it to the annotation
+    // state without replacing image metadata, restarting loading or losing tiles.
+    const merged = new Map(preloadedAnnotations.map((row) => [row.id, row]));
+    for (const row of snapshot?.annotations ?? []) merged.set(row.id, row);
+    const rows = [...merged.values()];
+    const targetIds = new Set(snapshot?.targetIds);
+    const work = snapshot
+      ? rows.filter((row) => targetIds.has(row.id))
+      : rows.filter(
+          (row) => categoryIds.includes(row.categoryId) && !row.infoTaggedBy
+        );
+    revisionsRef.current = new Map(
+      (snapshot?.annotations ?? []).map((row) => [row.id, row.infoTagRevision])
+    );
+    const persisted = new Map(rows.map((row) => [row.id, new Set(row.tagIds)]));
+    const ordered = buildTargetTour(work, image.width, image.height);
+    persistedTagIdsRef.current = persisted;
+    persistedPositionsRef.current = new Map(
+      ordered.map((row) => [row.id, { x: row.x, y: row.y }])
+    );
+    setAnnotations(rows);
+    setTargets(ordered);
+    targetsRef.current = ordered;
+    const startIndex =
+      work.length && work.every((row) => row.infoTaggedBy)
+        ? ordered.length - 1
+        : 0;
+    setCurrentIndex(startIndex);
+    const first = ordered[startIndex];
+    if (first) {
+      setMarkerPosition({ x: first.x, y: first.y });
+      setSelectedTagIds(new Set(persisted.get(first.id) ?? []));
+    }
+    // Do not enable edits or empty-image completion until this snapshot's
+    // targets, revisions and persisted values have all been installed.
+    setAppliedSnapshot(snapshot);
+  }, [categoryIds, image, preloadedAnnotations, snapshot]);
 
   const currentTarget = targets[currentIndex];
   useEffect(() => {
@@ -351,8 +354,7 @@ export default function InfoTagAnnotation({
   }, [currentTarget, map, image?.width, image?.height]);
 
   const scale = useMemo(
-    () =>
-      image ? 0.1 / Math.max(image.width, image.height) : undefined,
+    () => (image ? 0.1 / Math.max(image.width, image.height) : undefined),
     [image]
   );
   const toLngLat = useCallback(
@@ -385,13 +387,7 @@ export default function InfoTagAnnotation({
     tagBadgeMarkerRef.current?.setLngLat(
       toLngLat(markerPosition.x, markerPosition.y)
     );
-  }, [
-    currentCategory?.name,
-    currentTarget,
-    map,
-    markerPosition,
-    toLngLat,
-  ]);
+  }, [currentCategory?.name, currentTarget, map, markerPosition, toLngLat]);
 
   useEffect(() => {
     if (!map) return;
@@ -411,8 +407,8 @@ export default function InfoTagAnnotation({
           state: completedIds.has(annotation.id)
             ? 'completed'
             : targetIds.has(annotation.id)
-              ? 'pending'
-              : 'context',
+            ? 'pending'
+            : 'context',
           infoTags: JSON.stringify(namesForAnnotation(annotation.id)),
         },
         geometry: {
@@ -465,14 +461,8 @@ export default function InfoTagAnnotation({
           const first = toLngLat(x0, y0);
           const second = toLngLat(x1, y1);
           const tileBounds = new maplibregl.LngLatBounds(
-            [
-              Math.min(first[0], second[0]),
-              Math.min(first[1], second[1]),
-            ],
-            [
-              Math.max(first[0], second[0]),
-              Math.max(first[1], second[1]),
-            ]
+            [Math.min(first[0], second[0]), Math.min(first[1], second[1])],
+            [Math.max(first[0], second[0]), Math.max(first[1], second[1])]
           );
           const isVisible =
             bounds.getWest() <= tileBounds.getEast() &&
@@ -481,35 +471,41 @@ export default function InfoTagAnnotation({
             bounds.getNorth() >= tileBounds.getSouth();
           if (!isVisible) continue;
           loadedTilesRef.current.add(sourceId);
-          pendingTiles.push(getTileBlob(
-            `slippymaps/${sourceKey}/${zoom}/${row}/${column}.png`
-          )
-            .then((blob) => {
-              if (cancelledRef.current || instance.getSource(sourceId)) return;
-              const url = URL.createObjectURL(blob);
-              blobUrlsRef.current.push(url);
-              instance.addSource(sourceId, {
-                type: 'image',
-                url,
-                coordinates: [
-                  toLngLat(x0, y0),
-                  toLngLat(x1, y0),
-                  toLngLat(x1, y1),
-                  toLngLat(x0, y1),
-                ],
-              });
-              instance.addLayer(
-                {
-                  id: `info-tag-layer-${zoom}-${row}-${column}`,
-                  type: 'raster',
-                  source: sourceId,
-                  paint: { 'raster-fade-duration': 0 },
-                },
-                LAYER_ANNOTATIONS
-              );
-              addedTiles += 1;
-            })
-            .catch(() => { loadedTilesRef.current.delete(sourceId); }));
+          pendingTiles.push(
+            getTileBlob(
+              `slippymaps/${sourceKey}/${zoom}/${row}/${column}.png`,
+              imageTileContext(image)
+            )
+              .then((blob) => {
+                if (cancelledRef.current || instance.getSource(sourceId))
+                  return;
+                const url = URL.createObjectURL(blob);
+                blobUrlsRef.current.push(url);
+                instance.addSource(sourceId, {
+                  type: 'image',
+                  url,
+                  coordinates: [
+                    toLngLat(x0, y0),
+                    toLngLat(x1, y0),
+                    toLngLat(x1, y1),
+                    toLngLat(x0, y1),
+                  ],
+                });
+                instance.addLayer(
+                  {
+                    id: `info-tag-layer-${zoom}-${row}-${column}`,
+                    type: 'raster',
+                    source: sourceId,
+                    paint: { 'raster-fade-duration': 0 },
+                  },
+                  LAYER_ANNOTATIONS
+                );
+                addedTiles += 1;
+              })
+              .catch(() => {
+                loadedTilesRef.current.delete(sourceId);
+              })
+          );
         }
       }
       void Promise.all(pendingTiles).then(() => {
@@ -526,7 +522,8 @@ export default function InfoTagAnnotation({
   );
 
   useEffect(() => {
-    if (!containerRef.current || !image || !sourceKey || !scale) return;
+    if (loading || !containerRef.current || !image || !sourceKey || !scale)
+      return;
     cancelledRef.current = false;
     loadedTilesRef.current = new Set();
     blobUrlsRef.current = [];
@@ -615,7 +612,9 @@ export default function InfoTagAnnotation({
         instance.getCanvas().style.cursor = 'pointer';
         const feature = event.features?.[0];
         if (!feature || feature.geometry.type !== 'Point') return;
-        const label = escapeHtml(String(feature.properties?.label ?? 'Unknown'));
+        const label = escapeHtml(
+          String(feature.properties?.label ?? 'Unknown')
+        );
         const state = String(feature.properties?.state ?? 'context');
         let names: string[] = [];
         try {
@@ -628,7 +627,9 @@ export default function InfoTagAnnotation({
           .setLngLat(feature.geometry.coordinates as [number, number])
           .setHTML(
             `<div style="color:#000"><div>${label}</div>` +
-              `<div style="font-size:11px;font-weight:600">${escapeHtml(state)}</div>` +
+              `<div style="font-size:11px;font-weight:600">${escapeHtml(
+                state
+              )}</div>` +
               `<div style="font-size:11px">Tags: ${tags}</div></div>`
           )
           .addTo(instance);
@@ -712,6 +713,7 @@ export default function InfoTagAnnotation({
       for (const url of blobUrlsRef.current) URL.revokeObjectURL(url);
     };
   }, [
+    loading,
     image,
     scale,
     sourceKey,
@@ -788,7 +790,8 @@ export default function InfoTagAnnotation({
     setSelectedTagIds((current) => {
       const nextSelection = new Set(current);
       if (nextSelection.has(tagId)) nextSelection.delete(tagId);
-      else nextSelection.add(tagId);
+      else if (nextSelection.size < MAX_INFO_TAGS_PER_ANNOTATION)
+        nextSelection.add(tagId);
       return nextSelection;
     });
   }, []);
@@ -811,10 +814,7 @@ export default function InfoTagAnnotation({
           return;
         }
       }
-      localStorage.setItem(
-        `infoTagsDefaultZoom-${queueId}`,
-        String(newOffset)
-      );
+      localStorage.setItem(`infoTagsDefaultZoom-${queueId}`, String(newOffset));
       setHasLocalZoom(true);
       setZoomOffset(newOffset);
       return;
@@ -833,52 +833,34 @@ export default function InfoTagAnnotation({
     setQueueZoom,
   ]);
 
-  // Nothing is acknowledged until every tag write for the image has landed, so
-  // a save that failed leaves the message on the queue to be handed out again.
-  const countCompletionRef = useRef(true);
-  const finishImage = useCallback(
-    (countCompletion = true) => {
-      if (finishedRef.current) return;
-      finishedRef.current = true;
-      countCompletionRef.current = countCompletion;
-      setImageComplete(true);
-      finalizeInfoTagImage({
-        commits: commitsRef.current.map((record) => record.promise),
-        progress: progressRef.current,
-        countCompletion,
-        incrementCount: async () =>
-          assertNoGraphqlErrors(
-            await client.mutations.incrementQueueCount({ id: queueId }),
-            'Failed to record queue progress'
-          ),
-        acknowledge: async () => {
-          await ack?.();
-        },
-      })
-        .then(() => {
-          setSaveError(null);
-          setReadyToAdvance(true);
-        })
-        .catch((error) => {
-          console.error('Failed to finish informational tagging image', error);
-          finishedRef.current = false;
-          setImageComplete(false);
-          setSaveError(
-            error?.message ?? 'Failed to save informational tags for this image'
-          );
-        });
-    },
-    [ack, client, queueId]
-  );
-
-  // An image whose annotations are all tagged already is acknowledged without
-  // being counted - but only once it is known to have loaded, otherwise a
-  // failed load would look like finished work and drop the queue message.
-  useEffect(() => {
-    if (!loading && !loadError && image && targets.length === 0) {
-      finishImage(false);
+  const finishImage = useCallback(async (): Promise<void> => {
+    if (finishedRef.current || disabled || !visible || !session) return;
+    finishedRef.current = true;
+    savingRef.current = true;
+    setSaving(true);
+    setImageComplete(true);
+    retryRef.current = finishImage;
+    try {
+      await session.complete();
+      await ack?.();
+      retryRef.current = null;
+      setSaveError(null);
+      setReadyToAdvance(true);
+    } catch (error) {
+      finishedRef.current = false;
+      setImageComplete(false);
+      setSaveError((error as Error).message);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
-  }, [finishImage, image, loadError, loading, targets.length]);
+  }, [ack, disabled, session, visible]);
+
+  useEffect(() => {
+    if (!loading && !loadError && image && targets.length === 0 && !saveError) {
+      void finishImage();
+    }
+  }, [finishImage, image, loadError, loading, targets.length, saveError]);
 
   useEffect(() => {
     if (!readyToAdvance || advancedRef.current) return;
@@ -908,30 +890,26 @@ export default function InfoTagAnnotation({
     }, 60000);
   }, [clearWaitingTimers, navigate, next, readyToAdvance]);
 
-  const startCommit = useCallback((record: CommitRecord) => {
-    record.failed = false;
-    record.promise = record.run().catch((error) => {
-      record.failed = true;
-      throw error;
-    });
-    // The outcome is inspected when the image is finished; this only keeps the
-    // rejection from being reported as unhandled in the meantime.
-    record.promise.catch(() => undefined);
-  }, []);
-
   const commitAndAdvance = useCallback(() => {
-    if (!currentTarget || finishedRef.current) return;
+    if (
+      !currentTarget ||
+      !session ||
+      finishedRef.current ||
+      savingRef.current ||
+      disabled ||
+      !visible ||
+      retryRef.current
+    )
+      return;
     const target = currentTarget;
-    const before = persistedTagIdsRef.current.get(target.id) ?? new Set<string>();
+    const before =
+      persistedTagIdsRef.current.get(target.id) ?? new Set<string>();
     const after = new Set(selectedTagIds);
-    const position = markerPosition;
-    // Capture at the annotation decision, not at image completion. Each retry
-    // reuses the first payload so time and initial tag state remain unchanged.
+    const position = { ...markerPosition };
     const activeTimeMs = activeTime.reset();
     let task = annotationStatsRef.current.get(target.id);
     if (!task) {
       const now = Date.now();
-      const visibleAt = visibleAtRef.current ?? now;
       task = {
         workflowRunId: queueId,
         workItemType: 'annotation',
@@ -939,84 +917,89 @@ export default function InfoTagAnnotation({
         idempotencyKey: `annotation:${target.id}`,
         outcome: 'tagged',
         activeTimeMs,
-        waitingTimeMs: waitingAssignedRef.current ? 0
-          : Math.min(600_000, Math.max(0, (imageReadyAt ?? now) - visibleAt)),
-        metrics: infoTagWorkflowMetrics([{ beforeTags: before, afterTags: after }]),
+        waitingTimeMs: waitingAssignedRef.current
+          ? 0
+          : Math.min(
+              600_000,
+              Math.max(0, (imageReadyAt ?? now) - (visibleAtRef.current ?? now))
+            ),
+        metrics: infoTagWorkflowMetrics([
+          { beforeTags: before, afterTags: after },
+        ]),
       };
       annotationStatsRef.current.set(target.id, task);
       waitingAssignedRef.current = true;
     }
-    persistedTagIdsRef.current.set(target.id, after);
-    persistedPositionsRef.current.set(target.id, position);
-    setAnnotations((current) =>
-      current.map((annotation) =>
-        annotation.id === target.id
-          ? { ...annotation, ...position }
-          : annotation
-      )
-    );
-
-    const record: CommitRecord = {
-      run: () =>
-        commitInfoTagsForAnnotation(client, {
-          annotationId: target.id,
-          annotationSetId,
-          projectId: target.projectId || projectId!,
-          group: group ?? target.group ?? undefined,
-          before,
-          after,
-          position,
-          taggedBy: user.userId,
-          recordStatistics: () => recordWorkflowTask(client, task),
-        }),
-      promise: Promise.resolve(),
-      failed: false,
+    // Retries reuse this exact operation. Undo creates a new operation/revision.
+    const input = {
+      annotationId: target.id,
+      expectedRevision: revisionsRef.current.get(target.id) ?? 0,
+      operationId: crypto.randomUUID(),
+      tagIds: [...after],
+      x: position.x,
+      y: position.y,
     };
-    commitsRef.current.push(record);
-    startCommit(record);
-
-    setCompletedIds((current) => new Set(current).add(target.id));
-    if (currentIndex + 1 < targets.length) {
-      setCurrentIndex((index) => index + 1);
-    } else {
-      finishImage();
-    }
+    const run = async () => {
+      if (savingRef.current || disabled) return;
+      savingRef.current = true;
+      setSaving(true);
+      retryRef.current = run;
+      try {
+        const revision = await session.save(input);
+        revisionsRef.current.set(target.id, revision);
+        persistedTagIdsRef.current.set(target.id, after);
+        persistedPositionsRef.current.set(target.id, position);
+        setAnnotations((rows) =>
+          rows.map((row) =>
+            row.id === target.id ? { ...row, ...position } : row
+          )
+        );
+        setCompletedIds((ids) => new Set(ids).add(target.id));
+        await recordWorkflowTask(client, task!);
+        retryRef.current = null;
+        setSaveError(null);
+        if (currentIndex + 1 < targets.length)
+          setCurrentIndex((index) => index + 1);
+        else await finishImage();
+      } catch (error) {
+        setSaveError((error as Error).message);
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+      }
+    };
+    void run();
   }, [
     activeTime,
-    imageReadyAt,
-    queueId,
-    annotationSetId,
     client,
     currentIndex,
     currentTarget,
+    disabled,
     finishImage,
-    group,
+    imageReadyAt,
     markerPosition,
-    projectId,
+    queueId,
     selectedTagIds,
-    startCommit,
+    session,
     targets.length,
-    user.userId,
+    visible,
   ]);
 
   const retrySave = useCallback(() => {
-    setSaveError(null);
-    for (const record of commitsRef.current) {
-      if (record.failed) startCommit(record);
-    }
-    finishImage(countCompletionRef.current);
-  }, [finishImage, startCommit]);
+    if (!disabled && !savingRef.current) void retryRef.current?.();
+  }, [disabled]);
 
   const undo = useCallback(() => {
+    if (disabled || savingRef.current || retryRef.current) return;
     if (currentIndex > 0) {
       setCurrentIndex((index) => index - 1);
       return;
     }
     prev?.();
-  }, [currentIndex, prev]);
+  }, [currentIndex, disabled, prev]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || disabled || saving || saveError) return;
     const keyDown = (event: KeyboardEvent) => {
       if (
         event.repeat ||
@@ -1049,7 +1032,16 @@ export default function InfoTagAnnotation({
     };
     window.addEventListener('keydown', keyDown);
     return () => window.removeEventListener('keydown', keyDown);
-  }, [commitAndAdvance, infoTags, toggleTag, undo, visible]);
+  }, [
+    commitAndAdvance,
+    disabled,
+    infoTags,
+    saveError,
+    saving,
+    toggleTag,
+    undo,
+    visible,
+  ]);
 
   if (loading || !image || !sourceKey) {
     return (
@@ -1067,7 +1059,13 @@ export default function InfoTagAnnotation({
   }
 
   return (
-    <div className='d-flex flex-column w-100 h-100'>
+    <div
+      className='d-flex flex-column w-100 h-100'
+      style={{
+        pointerEvents: disabled || saving ? 'none' : undefined,
+        opacity: disabled ? 0.65 : 1,
+      }}
+    >
       <div
         className='d-flex align-items-center justify-content-between py-2'
         style={{ backgroundColor: '#2b3e50', flexShrink: 0 }}
@@ -1102,10 +1100,15 @@ export default function InfoTagAnnotation({
           style={{ flexShrink: 0 }}
         >
           <span>
-            {saveError}. Your tags are not saved yet - this image stays on the
-            queue until they are.
+            {saveError}. Saving or completion could not be confirmed. Retry
+            before leaving.
           </span>
-          <Button variant='light' size='sm' onClick={retrySave}>
+          <Button
+            variant='light'
+            size='sm'
+            onClick={retrySave}
+            disabled={saving || disabled}
+          >
             Retry save
           </Button>
         </Alert>
@@ -1153,9 +1156,7 @@ export default function InfoTagAnnotation({
                 }}
               />
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-              <div
-                style={{ color: '#fff', fontSize: 14, textAlign: 'center' }}
-              >
+              <div style={{ color: '#fff', fontSize: 14, textAlign: 'center' }}>
                 Waiting for new work... ({secondsRemaining}s remaining)
               </div>
             </div>
@@ -1213,7 +1214,8 @@ export default function InfoTagAnnotation({
               <Card.Header>
                 <Card.Title className='mb-1'>Info Tags</Card.Title>
                 <span className='text-muted' style={{ fontSize: 13 }}>
-                  Toggle any number, then press Space
+                  Toggle up to {MAX_INFO_TAGS_PER_ANNOTATION} tags, then press
+                  Space
                 </span>
               </Card.Header>
               <Card.Body className='d-flex flex-column gap-2 overflow-auto'>
@@ -1225,6 +1227,7 @@ export default function InfoTagAnnotation({
                       key={tag.id}
                       variant={selectedTagIds.has(tag.id) ? 'info' : 'primary'}
                       className='d-flex align-items-center justify-content-between gap-2'
+                      disabled={saving || disabled || Boolean(saveError)}
                       onClick={() => toggleTag(tag.id)}
                     >
                       <span>{tag.name}</span>
@@ -1248,7 +1251,12 @@ export default function InfoTagAnnotation({
           variant='primary'
           style={{ width: 160 }}
           onClick={undo}
-          disabled={!prev && currentIndex === 0}
+          disabled={
+            disabled ||
+            saving ||
+            Boolean(saveError) ||
+            (!prev && currentIndex === 0)
+          }
         >
           <Undo2 size={16} />
           Undo
@@ -1257,13 +1265,20 @@ export default function InfoTagAnnotation({
           variant='success'
           style={{ width: 190 }}
           onClick={commitAndAdvance}
-          disabled={!currentTarget || imageComplete}
+          disabled={
+            disabled ||
+            saving ||
+            Boolean(saveError) ||
+            !currentTarget ||
+            imageComplete
+          }
         >
-          Continue (Space)
+          {saving ? 'Saving…' : 'Continue (Space)'}
         </Button>
         <Button
           variant='primary'
           style={{ width: 160 }}
+          disabled={saving}
           onClick={() => navigate('/jobs')}
         >
           Save &amp; Exit
@@ -1293,6 +1308,6 @@ function escapeHtml(value: string) {
         '>': '&gt;',
         '"': '&quot;',
         "'": '&#39;',
-      })[character]!
+      }[character]!)
   );
 }

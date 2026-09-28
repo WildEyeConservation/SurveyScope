@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import { LoadingProgressCard } from './LoadingProgressCard';
-import { uploadData } from 'aws-amplify/storage';
+import { uploadWorkflowFile } from '../storage/workflowFiles';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
@@ -594,12 +594,11 @@ async function sendLaunchIndividualIdRequest(
   let requestPayload: string;
 
   if (payloadStr.length > PAYLOAD_SIZE_THRESHOLD) {
-    const s3Key = `launch-payloads/${crypto.randomUUID()}.json`;
-    await uploadData({
-      path: s3Key,
-      data: payloadStr,
-      options: { bucket: 'outputs', contentType: 'application/json' },
-    }).result;
+    const s3Key = await uploadWorkflowFile(
+      'launch-payload',
+      String(payload.projectId),
+      payloadStr
+    );
     requestPayload = JSON.stringify({ payloadS3Key: s3Key });
   } else {
     requestPayload = payloadStr;

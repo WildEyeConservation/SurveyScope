@@ -34,7 +34,7 @@ export function useActiveShares() {
         status?: string | null;
       }>;
       return rows
-        .filter((s) => s.status !== 'revoked')
+        .filter((s) => s.status === 'active')
         .map((s) => ({
           shareId: s.shareId,
           surveyName: s.surveyName ?? null,

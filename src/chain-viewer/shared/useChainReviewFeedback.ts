@@ -1,3 +1,4 @@
+import toast from 'react-hot-toast';
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext, UserContext } from '../../Context';
 import { fetchAllPaginatedResults } from '../../utils';
@@ -135,6 +136,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
           res.errors.map((e: { message: string }) => e.message).join('; ')
         );
       }
+      if (!res?.data) throw new Error('Feedback was not saved');
       setExistingIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     },
     [client, existingIds, rowId, shareId]
@@ -147,6 +149,18 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       chainId: string | null,
       proposedObscured: boolean
     ) => {
+      try {
+        await persist(sharedAnnotationId, chainId, 'obscured', {
+          proposedObscured,
+        });
+      } catch (error) {
+        toast.error(
+          `Feedback was not saved: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        return;
+      }
       setOverlay((prev) => {
         const next = new Map(prev);
         next.set(sharedAnnotationId, {
@@ -154,9 +168,6 @@ export function useChainReviewFeedback(shareId: string | undefined) {
           obscured: proposedObscured,
         });
         return next;
-      });
-      await persist(sharedAnnotationId, chainId, 'obscured', {
-        proposedObscured,
       });
     },
     [persist]
@@ -169,6 +180,18 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       chainId: string | null,
       proposedCategoryId: string
     ) => {
+      try {
+        await persist(sharedAnnotationId, chainId, 'relabel', {
+          proposedCategoryId,
+        });
+      } catch (error) {
+        toast.error(
+          `Feedback was not saved: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        return;
+      }
       setOverlay((prev) => {
         const next = new Map(prev);
         next.set(sharedAnnotationId, {
@@ -176,9 +199,6 @@ export function useChainReviewFeedback(shareId: string | undefined) {
           categoryId: proposedCategoryId,
         });
         return next;
-      });
-      await persist(sharedAnnotationId, chainId, 'relabel', {
-        proposedCategoryId,
       });
     },
     [persist]
@@ -191,6 +211,16 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       chainId: string | null,
       comment: string
     ) => {
+      try {
+        await persist(sharedAnnotationId, chainId, 'comment', { comment });
+      } catch (error) {
+        toast.error(
+          `Feedback was not saved: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+        return;
+      }
       setOverlay((prev) => {
         const next = new Map(prev);
         next.set(sharedAnnotationId, {
@@ -199,7 +229,6 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         });
         return next;
       });
-      await persist(sharedAnnotationId, chainId, 'comment', { comment });
     },
     [persist]
   );

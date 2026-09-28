@@ -50,6 +50,7 @@ import { TransectCompleteDialog } from './components/TransectCompleteDialog';
 import { LinkAnnotationDialog } from './components/LinkAnnotationDialog';
 import { DeleteAnnotationDialog } from './components/DeleteAnnotationDialog';
 import { SplitChainDialog } from './components/SplitChainDialog';
+import { imageTileContext } from '../StorageLayer';
 import { getZoomRingTile } from './utils/zoomRingTiles';
 import { pairTilePoints } from './utils/tiles';
 import {
@@ -895,9 +896,8 @@ export function IndividualIdHarness({
               );
               if (!sourceKey || cancelled) return null;
               return {
+                context: imageTileContext(image),
                 sourceKey,
-                width: image.width,
-                height: image.height,
                 points,
               };
             } catch {

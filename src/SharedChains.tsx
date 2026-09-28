@@ -32,7 +32,7 @@ export default function SharedChains() {
         ] as const,
         limit: 10000,
       })) as ShareRow[];
-      setShares(rows.filter((s) => s.status !== 'revoked'));
+      setShares(rows.filter((s) => s.status === 'active'));
     })();
   }, [client]);
 

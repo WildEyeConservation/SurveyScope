@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RotateCw, MoreVertical, Copy, Check } from 'lucide-react';
-import { getTileBlob } from '../StorageLayer';
+import { getTileBlob, imageTileContext } from '../StorageLayer';
 import type { ImageType } from '../schemaTypes';
 import type { Point } from '../homography/ManualHomographyEditor';
 
@@ -202,7 +202,7 @@ export function MapLibreImageViewer({
         if (isVisible && !isCoveredByHigherRes(z, row, col, maxZ, loadedTilesRef.current)) {
           loadedTilesRef.current.add(sourceId);
           const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
-          pendingTiles.push(getTileBlob(path).then((blob) => {
+          pendingTiles.push(getTileBlob(path, imageTileContext(image)).then((blob) => {
             if (cancelledRef.current) return;
             const url = URL.createObjectURL(blob);
             blobUrlsRef.current.push(url);
