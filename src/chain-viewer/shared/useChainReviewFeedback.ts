@@ -150,9 +150,15 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       proposedObscured: boolean
     ) => {
       try {
-        await persist(sharedAnnotationId, chainId, 'obscured', { proposedObscured });
+        await persist(sharedAnnotationId, chainId, 'obscured', {
+          proposedObscured,
+        });
       } catch (error) {
-        toast.error(`Feedback was not saved: ${error instanceof Error ? error.message : String(error)}`);
+        toast.error(
+          `Feedback was not saved: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
         return;
       }
       setOverlay((prev) => {
@@ -163,7 +169,6 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         });
         return next;
       });
-
     },
     [persist]
   );
@@ -176,9 +181,15 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       proposedCategoryId: string
     ) => {
       try {
-        await persist(sharedAnnotationId, chainId, 'relabel', { proposedCategoryId });
+        await persist(sharedAnnotationId, chainId, 'relabel', {
+          proposedCategoryId,
+        });
       } catch (error) {
-        toast.error(`Feedback was not saved: ${error instanceof Error ? error.message : String(error)}`);
+        toast.error(
+          `Feedback was not saved: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
         return;
       }
       setOverlay((prev) => {
@@ -189,7 +200,6 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         });
         return next;
       });
-
     },
     [persist]
   );
@@ -204,7 +214,11 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       try {
         await persist(sharedAnnotationId, chainId, 'comment', { comment });
       } catch (error) {
-        toast.error(`Feedback was not saved: ${error instanceof Error ? error.message : String(error)}`);
+        toast.error(
+          `Feedback was not saved: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
         return;
       }
       setOverlay((prev) => {
@@ -215,7 +229,6 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         });
         return next;
       });
-
     },
     [persist]
   );

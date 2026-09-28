@@ -4,8 +4,8 @@ import {
   CREATE_IMAGE_MULTIPART_UPLOAD,
   PREPARE_IMAGE_UPLOAD,
   SIGN_IMAGE_UPLOAD_PARTS,
-  storageOperation,
-} from './api';
+  type StorageOperation,
+} from './operations';
 
 // Originals up to one part use a single presigned PUT; larger files use S3
 // multipart with the same part size, concurrency and retry that
@@ -34,7 +34,7 @@ export type PutRequest = (args: {
 }) => Promise<PutResult>;
 
 export interface UploadDependencies {
-  operation: typeof storageOperation;
+  operation: StorageOperation;
   put: PutRequest;
   sleep: (ms: number) => Promise<void>;
 }
@@ -328,7 +328,9 @@ async function uploadMultipart(
 }
 
 export const defaultUploadDependencies: UploadDependencies = {
-  operation: storageOperation,
+  // Loaded on demand so importing this module does not configure Amplify.
+  operation: async (query, variables, field) =>
+    (await import('./api')).storageOperation(query, variables, field),
   put: xhrPut,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };

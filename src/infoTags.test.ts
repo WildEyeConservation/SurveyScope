@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
-import {
-  attachInfoTagsToAnnotations,
-  infoTagIdsFromLinks,
-} from './infoTags';
+import { attachInfoTagsToAnnotations, infoTagIdsFromLinks } from './infoTags';
 
 test('untagged sets strip API relationship loaders before annotations reach map popups', async () => {
   const relationship = async (_options: unknown) => ({ data: [] });
@@ -26,7 +23,11 @@ test('untagged sets strip API relationship loaders before annotations reach map 
     },
   } as unknown as DataClient;
 
-  const result = await attachInfoTagsToAnnotations(client, annotations, 'set-1');
+  const result = await attachInfoTagsToAnnotations(
+    client,
+    annotations,
+    'set-1'
+  );
   assert.deepEqual(result, [
     { id: 'a', infoTags: undefined },
     { id: 'b', infoTags: undefined },
@@ -39,24 +40,32 @@ test('tagged sets resolve sorted names and retain empty arrays for untagged anno
   const client = {
     models: {
       InfoTag: {
-        infoTagsByAnnotationSetId: async () => ({ data: [
-          { id: 'z', name: 'Zebra' },
-          { id: 'a', name: 'Adult' },
-        ] }),
+        infoTagsByAnnotationSetId: async () => ({
+          data: [
+            { id: 'z', name: 'Zebra' },
+            { id: 'a', name: 'Adult' },
+          ],
+        }),
       },
       AnnotationInfoTag: {
-        annotationInfoTagsByAnnotationSetId: async () => ({ data: [
-          { annotationId: 'tagged', infoTagId: 'z' },
-          { annotationId: 'tagged', infoTagId: 'a' },
-        ] }),
+        annotationInfoTagsByAnnotationSetId: async () => ({
+          data: [
+            { annotationId: 'tagged', infoTagId: 'z' },
+            { annotationId: 'tagged', infoTagId: 'a' },
+          ],
+        }),
       },
     },
   } as unknown as DataClient;
 
-  const result = await attachInfoTagsToAnnotations(client, [
-    { id: 'tagged', infoTags: async () => ({ data: [] }) },
-    { id: 'untagged' },
-  ], 'set-1');
+  const result = await attachInfoTagsToAnnotations(
+    client,
+    [
+      { id: 'tagged', infoTags: async () => ({ data: [] }) },
+      { id: 'untagged' },
+    ],
+    'set-1'
+  );
   assert.deepEqual(result, [
     { id: 'tagged', infoTags: ['Adult', 'Zebra'] },
     { id: 'untagged', infoTags: [] },

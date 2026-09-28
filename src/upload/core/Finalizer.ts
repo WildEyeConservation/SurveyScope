@@ -313,7 +313,14 @@ export class Finalizer {
       const result = await client.mutations.runImageRegistration(
         {
           projectId,
-          metadata: JSON.stringify({ masks, images: payload, sessionIds }),
+          // Redispatch (retries, legacy projects without markers) must not
+          // requeue pairs LightGlue has already processed.
+          metadata: JSON.stringify({
+            masks,
+            images: payload,
+            sessionIds,
+            skipExistingSuggestions: true,
+          }),
           queueUrl: backend.custom.lightglueTaskQueueUrl,
         },
         { retry: false }

@@ -8,13 +8,11 @@ import type { SendMessageBatchRequestEntry } from '@aws-sdk/client-sqs';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import {
   cameraOverlapsByProjectId,
-  getImageNeighbour,
   imagesByProjectId,
   getProject,
 } from './graphql/queries';
 import {
   CameraOverlap,
-  GetImageNeighbourQuery,
   GetProjectQuery,
 } from '../runImageRegistration/graphql/API';
 
@@ -34,6 +32,23 @@ const createImageProcessedBy = /* GraphQL */ `
     createImageProcessedBy(input: $input) { imageId source }
   }
 `;
+
+// The generated query omits the fields skipExistingSuggestions needs.
+const getImageNeighbour = /* GraphQL */ `
+  query GetImageNeighbour($image1Id: ID!, $image2Id: ID!) {
+    getImageNeighbour(image1Id: $image1Id, image2Id: $image2Id) {
+      image1Id image2Id homography suggestedPoints1 registrationProcessedAt
+    }
+  }
+`;
+
+type NeighbourLookup = GraphQLResult<{
+  getImageNeighbour?: {
+    homography?: number[] | null;
+    suggestedPoints1?: number[] | null;
+    registrationProcessedAt?: string | null;
+  } | null;
+}>;
 
 const deleteImageNeighbour = /* GraphQL */ `
   mutation DeleteImageNeighbour($input: DeleteImageNeighbourInput!) {
@@ -222,7 +237,8 @@ async function handlePair(
   // Same-camera pairs leave these null to stay out of the bucket-cleanup GSI.
   cameraPairKey?: string,
   bucketIndex?: number,
-  // Re-runs skip pairs LightGlue already tried and failed (suggestedPoints1 set).
+  // Re-runs skip pairs LightGlue already processed (suggestions or a
+  // processed mark, which no-match pairs get without suggestions).
   skipExistingSuggestions?: boolean,
   // Re-runs against an established winner skip the RegistrationBucketStat
   // increment to keep the lock-in stable.
@@ -245,8 +261,8 @@ async function handlePair(
           image1Id: image1.id,
           image2Id: image2.id,
         },
-      })
-    )) as GraphQLResult<GetImageNeighbourQuery>;
+      }) as Promise<NeighbourLookup>
+    )) as NeighbourLookup;
     const existingNeighbour = neighbourResp.data?.getImageNeighbour;
 
     if (existingNeighbour?.homography) {
@@ -257,11 +273,13 @@ async function handlePair(
     }
 
     if (skipExistingSuggestions) {
-      // Untyped cast — suggestedPoints1 may be missing from stale codegen.
-      const suggested = (existingNeighbour as { suggestedPoints1?: number[] | null } | null | undefined)?.suggestedPoints1;
-      if (Array.isArray(suggested) && suggested.length > 0) {
+      const suggested = existingNeighbour?.suggestedPoints1;
+      if (
+        (Array.isArray(suggested) && suggested.length > 0) ||
+        existingNeighbour?.registrationProcessedAt
+      ) {
         console.log(
-          `Suggestions already exist for pair ${image1.id} and ${image2.id}; skipping (skipExistingSuggestions)`
+          `Pair ${image1.id} and ${image2.id} already processed; skipping (skipExistingSuggestions)`
         );
         return null;
       }
@@ -550,8 +568,8 @@ function addStalePairDeletionTasks(
             client.graphql({
               query: getImageNeighbour,
               variables: { image1Id: lb.id, image2Id: rb.id },
-            })
-          )) as GraphQLResult<GetImageNeighbourQuery>;
+            }) as Promise<NeighbourLookup>
+          )) as NeighbourLookup;
           if (resp.data?.getImageNeighbour) {
             await gqlWithRetry(() =>
               client.graphql({
