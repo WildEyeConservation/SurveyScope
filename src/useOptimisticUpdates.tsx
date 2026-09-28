@@ -59,6 +59,11 @@ import {
 export interface OptimisticOptions<T> {
   compositeKey?: (item: T) => string;
   authMode?: 'apiKey' | 'userPool' | 'iam' | 'identityPool' | 'lambda' | 'none';
+  // Overrides the app-wide staleTime of Infinity. With a finite value the list
+  // is refetched on mount, window focus and reconnect once it is older than
+  // this, so a subscription event missed while offline doesn't leave the
+  // (localStorage-persisted) list stale indefinitely.
+  staleTime?: number;
 }
 
 export function useOptimisticUpdates<
@@ -94,6 +99,7 @@ export function useOptimisticUpdates<
 
   const { data, ...queryResult } = useQuery({
     queryKey,
+    ...(options?.staleTime !== undefined && { staleTime: options.staleTime }),
     queryFn: async () => {
       let nextToken: string | undefined = undefined;
       const allResults: T[] = [];

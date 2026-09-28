@@ -49,7 +49,7 @@ const transectsByProjectIdQuery = /* GraphQL */ `
 const imagesByProjectIdQuery = /* GraphQL */ `
   query ImagesByProjectId($projectId: ID!, $limit: Int, $nextToken: String) {
     imagesByProjectId(projectId: $projectId, limit: $limit, nextToken: $nextToken) {
-      items { id timestamp transectId }
+      items { id timestamp latitude longitude cameraId transectId }
       nextToken
     }
   }
@@ -163,6 +163,9 @@ type LaunchIndividualIdPayload = {
 type ProjectImageRow = {
   id: string;
   timestamp: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  cameraId: string | null;
   transectId: string | null;
 };
 
@@ -302,9 +305,7 @@ async function handleLaunch(
     // transect rows, then queue the per-image transectId writes for the SQS
     // fanout consumer (a single lambda would time out on large surveys).
     const images = await fetchAllProjectImages(projectId);
-    const assignments = detectTransects(
-      images.map((i) => ({ id: i.id, timestamp: i.timestamp }))
-    );
+    const assignments = detectTransects(images);
     const transectIndexes = Array.from(
       new Set(assignments.map((a) => a.transectIndex))
     ).sort((a, b) => a - b);

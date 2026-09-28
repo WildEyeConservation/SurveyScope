@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button, Form } from 'react-bootstrap';
 
 interface FolderStructureProps {
@@ -12,6 +12,7 @@ export default function FolderStructure({
 }: FolderStructureProps) {
   const [segments, setSegments] = useState<string[]>([]);
   const [selectedLevel, setSelectedLevel] = useState<number>(0);
+  const userLevelRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (files && files.length > 0) {
@@ -26,7 +27,10 @@ export default function FolderStructure({
         [] as string[]
       );
       setSegments(deepest);
-      const initialIdx = deepest.length - 1;
+      const initialIdx =
+        userLevelRef.current !== null && userLevelRef.current < deepest.length
+          ? userLevelRef.current
+          : deepest.length - 1;
       setSelectedLevel(initialIdx);
       const cameras = dirArrays
         .filter((arr) => arr.length > initialIdx)
@@ -41,6 +45,7 @@ export default function FolderStructure({
   }, [files, onCameraLevelChange]);
 
   const handleClick = (idx: number) => {
+    userLevelRef.current = idx;
     setSelectedLevel(idx);
     const dirArrays = files.map((f) => {
       const parts = f.webkitRelativePath.split('/');

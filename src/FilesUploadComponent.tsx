@@ -404,6 +404,48 @@ export function FileUploadCore({
     [fullCsvData]
   );
 
+  // Files that will actually be uploaded, after all filters.
+  const finalUploadFiles = useMemo(() => {
+    const failedFilePaths = new Set(failedFiles.map((f) => f.path));
+
+    return filteredImageFiles.filter((file) => {
+      if (failedFilePaths.has(file.webkitRelativePath)) {
+        return false;
+      }
+
+      const exifMeta = exifData[file.webkitRelativePath];
+
+      if (!exifMeta) {
+        return false;
+      }
+
+      if (exifMeta.gpsData) {
+        return csvIndex.byTimestamp.has(exifMeta.timestamp);
+      } else {
+        if (associateByTimestamp) {
+          if (csvIndex.byTimestamp.has(exifMeta.timestamp)) {
+            return true;
+          }
+          const bracket = bracketTimestamp(csvIndex, exifMeta.timestamp);
+          if (!bracket) {
+            return false;
+          }
+          const intervalGap =
+            (bracket.next.timestamp as number) -
+            (bracket.prev.timestamp as number);
+          // Treat much larger gaps than the mean sampling interval as
+          // dropped GPS data.
+          const thresholdFactor = 2;
+          return !(intervalGap > csvIndex.avgInterval * thresholdFactor);
+        } else {
+          return csvIndex.byFilepath.has(
+            file.webkitRelativePath.toLowerCase()
+          );
+        }
+      }
+    });
+  }, [filteredImageFiles, failedFiles, exifData, csvIndex, associateByTimestamp]);
+
   // One landscape/portrait group per camera. Grouping uses the source image's
   // displayed dimensions after its existing EXIF orientation is respected.
   const orientationCameraGroups = useMemo<OrientationCameraGroup[]>(() => {
@@ -428,9 +470,9 @@ export function FileUploadCore({
         }));
     };
 
-    if (filteredImageFiles.length === 0) return [];
+    if (finalUploadFiles.length === 0) return [];
     if (!multipleCameras || !cameraSelection || cameraSelection[1].length === 0) {
-      return makeGroups('Survey Camera', filteredImageFiles);
+      return makeGroups('Survey Camera', finalUploadFiles);
     }
 
     const filesByCamera = new Map<string, File[]>();
@@ -438,7 +480,7 @@ export function FileUploadCore({
       const effectiveName =
         (useFolderCameraMapping && folderCameraMapping[folderName]) ||
         folderName;
-      const files = filteredImageFiles.filter((file) => {
+      const files = finalUploadFiles.filter((file) => {
         const segments = file.webkitRelativePath.split('/');
         segments.pop(); // filename
         return segments.includes(folderName);
@@ -452,7 +494,7 @@ export function FileUploadCore({
       ([cameraName, files]) => makeGroups(cameraName, files)
     );
   }, [
-    filteredImageFiles,
+    finalUploadFiles,
     exifData,
     multipleCameras,
     cameraSelection,
@@ -1725,44 +1767,7 @@ export function FileUploadCore({
         });
       }
 
-      const failedFilePaths = new Set(failedFiles.map((f) => f.path));
-
-      const gpsFilteredImageFiles = filteredImageFiles.filter((file) => {
-        if (failedFilePaths.has(file.webkitRelativePath)) {
-          return false;
-        }
-
-        const exifMeta = exifData[file.webkitRelativePath];
-
-        if (!exifMeta) {
-          return false;
-        }
-
-        if (exifMeta.gpsData) {
-          return csvIndex.byTimestamp.has(exifMeta.timestamp);
-        } else {
-          if (associateByTimestamp) {
-            if (csvIndex.byTimestamp.has(exifMeta.timestamp)) {
-              return true;
-            }
-            const bracket = bracketTimestamp(csvIndex, exifMeta.timestamp);
-            if (!bracket) {
-              return false;
-            }
-            const intervalGap =
-              (bracket.next.timestamp as number) -
-              (bracket.prev.timestamp as number);
-            // Treat much larger gaps than the mean sampling interval as
-            // dropped GPS data.
-            const thresholdFactor = 2;
-            return !(intervalGap > csvIndex.avgInterval * thresholdFactor);
-          } else {
-            return csvIndex.byFilepath.has(
-              file.webkitRelativePath.toLowerCase()
-            );
-          }
-        }
-      });
+      const gpsFilteredImageFiles = finalUploadFiles;
 
       const images = [] as {
         width: number;
@@ -1890,6 +1895,7 @@ export function FileUploadCore({
       });
     },
     [
+      finalUploadFiles,
       filteredImageFiles,
       imageFiles,
       exifData,
@@ -3024,7 +3030,7 @@ export function FileUploadCore({
             {multipleCameras && (
               <>
                 <FolderStructure
-                  files={scannedFiles}
+                  files={finalUploadFiles}
                   onCameraLevelChange={setCameraSelection}
                 />
                 {cameraSelection && (

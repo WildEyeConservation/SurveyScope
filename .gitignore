@@ -45,3 +45,4 @@ containerImages/scoutbot/models/
 
 # Heatmapper4 AMI extraction (legacy TF1 worker code + 170MB model checkpoint)
 .heatmapper-ami/
+scripts/clone-project/clone-*.json

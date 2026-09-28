@@ -446,6 +446,8 @@ const backfillFn = new NodejsFunction(backfillStack, 'BackfillLocationGroupFn', 
   entry: path.join(__dirname, 'functions/backfillLocationGroup/handler.ts'),
   handler: 'handler',
   runtime: lambda.Runtime.NODEJS_20_X,
+  timeout: Duration.seconds(60),
+  memorySize: 512,
   environment: {
     LOCATION_TABLE_NAME: locationTable.tableName,
     PROJECT_TABLE_NAME: projectTable.tableName,
@@ -481,11 +483,71 @@ backfillFn.addToRolePolicy(
   })
 );
 
+// Receives shard/sequence ranges of records that exhausted their retries.
+const backfillFailureQueue = new sqs.Queue(
+  backfillStack,
+  'LocationGroupBackfillFailures',
+  {
+    encryption: sqs.QueueEncryption.SQS_MANAGED,
+    enforceSSL: true,
+    retentionPeriod: Duration.days(14),
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+
+// Only invoked for INSERTs without a group; writers normally set it.
 new EventSourceMapping(backfillStack, 'LocationEventStreamMapping', {
   target: backfillFn,
   eventSourceArn: locationTable.tableStreamArn,
   startingPosition: StartingPosition.LATEST,
+  batchSize: 100,
+  bisectBatchOnError: true,
+  reportBatchItemFailures: true,
+  retryAttempts: 5,
+  maxRecordAge: Duration.hours(6),
+  onFailure: new SqsDlq(backfillFailureQueue),
+  filters: [
+    lambda.FilterCriteria.filter({
+      eventName: lambda.FilterRule.isEqual('INSERT'),
+      dynamodb: { NewImage: { group: { S: lambda.FilterRule.notExists() } } },
+    }),
+    lambda.FilterCriteria.filter({
+      eventName: lambda.FilterRule.isEqual('INSERT'),
+      dynamodb: { NewImage: { group: { S: lambda.FilterRule.isEqual('') } } },
+    }),
+  ],
 });
+
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillErrors', {
+    metric: backfillFn.metricErrors({ period: Duration.minutes(5) }),
+    threshold: 1,
+    evaluationPeriods: 2,
+    datapointsToAlarm: 2,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillIteratorAge', {
+    metric: backfillFn.metric('IteratorAge', {
+      period: Duration.minutes(5),
+      statistic: 'Maximum',
+    }),
+    threshold: 15 * 60 * 1000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillFailuresVisible', {
+    metric: backfillFailureQueue.metricApproximateNumberOfMessagesVisible({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 const authenticatedRole = backend.auth.resources.authenticatedUserIamRole;
 

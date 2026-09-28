@@ -72,6 +72,7 @@ export const handler: RunStormflyDetectorHandler = async (event) => {
           projectId,
           bucket: event.arguments.bucket,
           setId: event.arguments.setId,
+          ...(organizationId ? { group: organizationId } : {}),
           ...(rotation !== undefined ? { rotation } : {}),
           ...(landscape !== undefined ? { landscape } : {}),
         }),

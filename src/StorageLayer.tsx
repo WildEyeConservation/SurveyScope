@@ -50,12 +50,20 @@ const urls = new TileUrlBatcher((context, sourceKey, tiles) =>
 // Only a change of user rejects in-flight tiles; token refreshes must not.
 let sessionEpoch = 0;
 let scopePromise: Promise<string> | null = null;
+const sessionListeners = new Set<() => void>();
+
+/** Runs `listener` whenever the signed-in user changes. */
+export function onImageSessionChange(listener: () => void): () => void {
+  sessionListeners.add(listener);
+  return () => sessionListeners.delete(listener);
+}
 
 Hub.listen('auth', ({ payload }) => {
   if (payload.event === 'signedIn' || payload.event === 'signedOut') {
     sessionEpoch++;
     scopePromise = null;
     urls.invalidate();
+    sessionListeners.forEach((listener) => listener());
   } else if (payload.event === 'tokenRefresh') {
     scopePromise = null;
   }

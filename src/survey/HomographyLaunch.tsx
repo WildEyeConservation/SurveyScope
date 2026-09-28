@@ -564,8 +564,8 @@ export default function HomographyLaunch({
                     className='text-muted d-block'
                     style={{ fontSize: '12px' }}
                   >
-                    When enabled, only admin users will see this job on the Jobs
-                    page.
+                    When enabled, only organisation admins and admins of this
+                    survey will see this job on the Jobs page.
                   </span>
                 </Form.Group>
 

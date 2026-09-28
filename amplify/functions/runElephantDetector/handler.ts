@@ -87,6 +87,7 @@ export const handler: RunElephantDetectorHandler = async (event) => {
             projectId,
             bucket,
             setId,
+            ...(organizationId ? { group: organizationId } : {}),
             ...(rotation !== undefined ? { rotation } : {}),
             ...(landscape !== undefined ? { landscape } : {}),
           }),

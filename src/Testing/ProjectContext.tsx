@@ -2,6 +2,7 @@ import { Project, Management } from '../UserContext';
 import { Schema } from '../amplify/client-schema';
 import { UserContext, GlobalContext } from '../Context';
 import { useContext, useEffect, useState } from 'react';
+import { fetchAllPaginatedResults } from '../utils';
 
 export default function ProjectContext({
   children,
@@ -22,21 +23,14 @@ export default function ProjectContext({
         return;
       }
 
-      const {
-        data: [currentPM],
-      } =
-        await client.models.UserProjectMembership.userProjectMembershipsByUserId(
-          {
-            userId: user.userId,
-          },
-          {
-            filter: {
-              projectId: {
-                eq: surveyId,
-              },
-            },
-          }
-        );
+      // Filter applies after the page limit, so paginate.
+      const [currentPM] = await fetchAllPaginatedResults(
+        client.models.UserProjectMembership.userProjectMembershipsByUserId,
+        {
+          userId: user.userId,
+          filter: { projectId: { eq: surveyId } },
+        }
+      );
       setCurrentPM(currentPM);
     };
     fetchCurrentPM();
