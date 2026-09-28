@@ -206,14 +206,22 @@ backend.revokeChainShare.resources.lambda.addToRolePolicy(new iam.PolicyStatemen
   actions: ['cognito-idp:ListUsersInGroup'],
   resources: [backend.auth.resources.userPool.userPoolArn],
 }));
+// The guarded resolvers live in the model nested stacks and reference this
+// function, so it must not reference those stacks' table outputs back. Derive
+// the <Model>-<apiId>-NONE names from the API instead.
 const guardModels = ['ChainReviewFeedback', 'ChainShare', 'SharedChainAnnotation', 'SharedChainCategory'] as const;
 const guardTables: Record<string, string> = {};
 for (const model of guardModels) {
-  const table = backend.data.resources.tables[model];
-  guardTables[model] = table.tableName;
+  const tableName = `${model}-${backend.data.resources.graphqlApi.apiId}-NONE`;
+  const tableArn = Stack.of(guardFunction).formatArn({
+    service: 'dynamodb',
+    resource: 'table',
+    resourceName: tableName,
+  });
+  guardTables[model] = tableName;
   guardFunction.addToRolePolicy(new iam.PolicyStatement({
     actions: ['dynamodb:GetItem', 'dynamodb:Query'],
-    resources: [table.tableArn, `${table.tableArn}/index/*`],
+    resources: [tableArn, `${tableArn}/index/*`],
   }));
 }
 backend.chainMutationGuard.addEnvironment('GUARD_TABLES', JSON.stringify(guardTables));
