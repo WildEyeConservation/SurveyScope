@@ -352,8 +352,6 @@ const backfillFn = new NodejsFunction(backfillStack, 'BackfillLocationGroupFn', 
   entry: path.join(__dirname, 'functions/backfillLocationGroup/handler.ts'),
   handler: 'handler',
   runtime: lambda.Runtime.NODEJS_20_X,
-  // The 3 s / 128 MB defaults timed out on every bulk-insert batch, which with
-  // unbounded retries blocked the shard until records aged out ungrouped.
   timeout: Duration.seconds(60),
   memorySize: 512,
   environment: {
@@ -391,8 +389,7 @@ backfillFn.addToRolePolicy(
   })
 );
 
-// Records that exhaust their retries land here as shard/sequence metadata, not
-// the records themselves; they identify ranges of Locations to repair by hand.
+// Receives shard/sequence ranges of records that exhausted their retries.
 const backfillFailureQueue = new sqs.Queue(
   backfillStack,
   'LocationGroupBackfillFailures',
@@ -404,10 +401,7 @@ const backfillFailureQueue = new sqs.Queue(
   }
 );
 
-// Writers set group at creation, so the filter keeps this a no-op in steady
-// state: only INSERTs whose NewImage has no (or an empty) string group invoke
-// the function. Bisection and the retry bound stop one bad batch from blocking
-// the shard for the 24-hour stream retention, as the unbounded defaults did.
+// Only invoked for INSERTs without a group; writers normally set it.
 new EventSourceMapping(backfillStack, 'LocationEventStreamMapping', {
   target: backfillFn,
   eventSourceArn: locationTable.tableStreamArn,

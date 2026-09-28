@@ -11,9 +11,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 
-// Safety net for Locations inserted without a group. Every known writer now sets
-// group at creation, and the event source mapping filter only invokes this for
-// INSERTs whose NewImage lacks one, so in steady state it should not run at all.
+// Safety net for Locations inserted without a group.
 
 const logger = new Logger({
   logLevel: 'INFO',
@@ -25,12 +23,9 @@ const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const LOCATION_TABLE = process.env.LOCATION_TABLE_NAME!;
 const PROJECT_TABLE = process.env.PROJECT_TABLE_NAME!;
 
-// Bounds in-flight UpdateItems so a full batch cannot burst the table.
 const UPDATE_CONCURRENCY = 10;
 
-// Warm-container cache: projectId → organizationId lookup. Caching the promise
-// lets concurrent workers share one GetItem; misses and failures are evicted so
-// they are looked up again rather than remembered.
+// projectId → organizationId; misses and failures are not cached.
 const organizationIdCache = new Map<string, Promise<string | undefined>>();
 
 function getOrganizationId(projectId: string): Promise<string | undefined> {
@@ -66,8 +61,7 @@ async function setGroup(
         TableName: LOCATION_TABLE,
         Key: { id: locationId },
         UpdateExpression: 'SET #g = :g',
-        // attribute_exists(id) stops UpdateItem from creating a stub item when the
-        // location was deleted before this event was processed.
+        // attribute_exists(id): don't recreate deleted locations as stubs.
         ConditionExpression:
           'attribute_exists(id) AND (attribute_not_exists(#g) OR #g = :empty OR attribute_type(#g, :null))',
         ExpressionAttributeNames: { '#g': 'group' },
@@ -79,7 +73,6 @@ async function setGroup(
       })
     );
   } catch (error) {
-    // Location deleted, or group already set by someone else: nothing to do.
     if ((error as Error)?.name === 'ConditionalCheckFailedException') {
       logger.info(
         `Location ${locationId} no longer exists or already has a group, skipping`
@@ -122,7 +115,6 @@ export const handler: DynamoDBStreamHandler = async (event) => {
       try {
         const organizationId = await getOrganizationId(projectId);
         if (!organizationId) {
-          // Retrying cannot help: the project is gone or has no organization.
           logger.warn(
             'No organizationId found for project, skipping location',
             {

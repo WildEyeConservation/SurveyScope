@@ -25,8 +25,7 @@ let send: Send = async () => ({});
   command
 ) => send(command);
 
-// Loaded after the stub so the handler's client uses it (amplify/ is CommonJS,
-// so there is no top-level await).
+// Imported after the stub so the handler's client uses it.
 const handlerModule = import('./handler');
 
 const insert = (

@@ -72,7 +72,6 @@ export const handler: RunStormflyDetectorHandler = async (event) => {
           projectId,
           bucket: event.arguments.bucket,
           setId: event.arguments.setId,
-          // Stamped as Location.group on every detection the worker writes.
           ...(organizationId ? { group: organizationId } : {}),
           ...(rotation !== undefined ? { rotation } : {}),
           ...(landscape !== undefined ? { landscape } : {}),

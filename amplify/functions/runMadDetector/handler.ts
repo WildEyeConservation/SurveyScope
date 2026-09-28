@@ -103,7 +103,6 @@ export const handler: RunMadDetectorHandler = async (event, context) => {
               projectId,
               bucket,
               setId,
-              // Stamped as Location.group on every detection the worker writes.
               ...(organizationId ? { group: organizationId } : {}),
             }),
           })

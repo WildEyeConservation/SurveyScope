@@ -83,9 +83,7 @@ query GetProjectOrganization($id: ID!) {
 """)
 
 _detector = None
-# Location auth is groupDefinedIn('group'): a Location without the project's
-# organizationId as its group is invisible to every annotator. runOwlDDetector
-# sends the group in the message; messages queued before it did are resolved here.
+# organizationId per project, for messages sent without 'group'.
 _organization_ids = {}
 
 
