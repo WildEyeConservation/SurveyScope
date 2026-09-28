@@ -80,6 +80,8 @@ export const handler: RunOwlDDetectorHandler = async (event) => {
           projectId,
           bucket,
           setId,
+          // Stamped as Location.group on every detection the worker writes.
+          ...(organizationId ? { group: organizationId } : {}),
           ...(rotation !== undefined ? { rotation } : {}),
           ...(landscape !== undefined ? { landscape } : {}),
         }),

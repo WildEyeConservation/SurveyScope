@@ -98,13 +98,45 @@ class OwlDWorkerTests(unittest.TestCase):
         with patch.object(worker, 'LOCATION_BATCH', 2), patch.object(
             worker, '_execute', side_effect=lambda document, variables: calls.append((document, variables))
         ):
-            worker._write_locations(self.body, 'image-1', points, 64)
+            worker._write_locations(self.body, 'image-1', points, 64, 'org-1')
         self.assertEqual(len(calls), 2)
         self.assertIn('id: $id0', calls[0][0])
         ids = [calls[0][1]['id0'], calls[0][1]['id1'], calls[1][1]['id0']]
         self.assertEqual(len(set(ids)), 3)
         self.assertEqual(ids[2], worker._location_id(self.body, 'image-1', 2))
         self.assertEqual((calls[0][1]['x0'], calls[0][1]['y0']), (1, 3))
+
+    def test_write_locations_sets_group_on_every_location(self):
+        calls = []
+        with patch.object(
+            worker, '_execute', side_effect=lambda document, variables: calls.append((document, variables))
+        ):
+            worker._write_locations(self.body, 'image-1', [(1, 2, 0.5), (3, 4, 0.6)], 64, 'org-1')
+        document, variables = calls[0]
+        self.assertIn('$group: String!', document)
+        self.assertEqual(document.count('group: $group'), 2)
+        self.assertEqual(variables['group'], 'org-1')
+
+    def test_location_group_prefers_message_group(self):
+        with patch.object(worker, '_execute') as execute:
+            self.assertEqual(worker._location_group({**self.body, 'group': 'org-msg'}), 'org-msg')
+        execute.assert_not_called()
+
+    def test_location_group_falls_back_to_cached_project_lookup(self):
+        response = {'getProject': {'organizationId': 'org-project'}}
+        with patch.dict(worker._organization_ids, clear=True), patch.object(
+            worker, '_execute', return_value=response
+        ) as execute:
+            self.assertEqual(worker._location_group(self.body), 'org-project')
+            self.assertEqual(worker._location_group(self.body), 'org-project')
+        execute.assert_called_once_with(worker.get_project_organization, {'id': 'project-1'})
+
+    def test_location_group_raises_when_project_has_no_organization(self):
+        with patch.dict(worker._organization_ids, clear=True), patch.object(
+            worker, '_execute', return_value={'getProject': None}
+        ):
+            with self.assertRaises(RuntimeError):
+                worker._location_group(self.body)
 
     def test_concurrent_duplicate_write_is_idempotent(self):
         stored_ids = set()
@@ -120,15 +152,15 @@ class OwlDWorkerTests(unittest.TestCase):
             stored_ids.update(ids)
         points = [(10, 20, 0.9), (30, 40, 0.8)]
         with patch.object(worker, '_execute', side_effect=persist):
-            worker._write_locations(self.body, 'image-1', points, 64)
-            worker._write_locations(self.body, 'image-1', points, 64)
+            worker._write_locations(self.body, 'image-1', points, 64, 'org-1')
+            worker._write_locations(self.body, 'image-1', points, 64, 'org-1')
         self.assertEqual(len(stored_ids), len(points))
 
     def test_non_duplicate_graphql_errors_are_not_suppressed(self):
         error = DuplicateCreateError([{'message': 'Unauthorized', 'errorType': 'UnauthorizedException'}])
         with patch.object(worker, '_execute', side_effect=error):
             with self.assertRaises(DuplicateCreateError):
-                worker._write_locations(self.body, 'image-1', [(1, 2, 0.5)], 64)
+                worker._write_locations(self.body, 'image-1', [(1, 2, 0.5)], 64, 'org-1')
 
     def test_mixed_graphql_errors_are_not_suppressed(self):
         error = DuplicateCreateError([
@@ -138,7 +170,7 @@ class OwlDWorkerTests(unittest.TestCase):
         ])
         with patch.object(worker, '_execute', side_effect=error):
             with self.assertRaises(DuplicateCreateError):
-                worker._write_locations(self.body, 'image-1', [(1, 2, 0.5)], 64)
+                worker._write_locations(self.body, 'image-1', [(1, 2, 0.5)], 64, 'org-1')
 
 
 if __name__ == '__main__':

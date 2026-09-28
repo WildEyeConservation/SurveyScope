@@ -41,14 +41,41 @@ client = Client(
 )
 
 create_location = gql("""
-mutation CreateLocation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID!, $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!) {
-  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width}) {
+mutation CreateLocation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID!, $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!, $group: String!) {
+  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width, group: $group}) {
     id
+    group
   }
 }
 """)
 
+get_project_organization = gql("""
+query GetProjectOrganization($id: ID!) {
+  getProject(id: $id) { organizationId }
+}
+""")
+
 detector = None
+# Location auth is groupDefinedIn('group'): a Location without the project's
+# organizationId as its group is invisible to every annotator. runStormflyDetector
+# sends the group in the message; messages queued before it did are resolved here.
+_organization_ids = {}
+
+
+def _location_group(body):
+    if body.get('group'):
+        return body['group']
+    project_id = body['projectId']
+    if project_id not in _organization_ids:
+        response = client.execute(
+            get_project_organization,
+            variable_values=json.dumps({'id': project_id}),
+        )
+        organization_id = (response.get('getProject') or {}).get('organizationId')
+        if not organization_id:
+            raise RuntimeError(f'No organizationId found for project {project_id}')
+        _organization_ids[project_id] = organization_id
+    return _organization_ids[project_id]
 
 
 def _download_s3_object(bucket, key, destination, object_label):
@@ -86,7 +113,7 @@ def _get_detector():
     return detector
 
 
-def _write_location(body, image_id, x, y, confidence, size):
+def _write_location(body, image_id, x, y, confidence, size, group):
     client.execute(
         create_location,
         variable_values=json.dumps({
@@ -99,6 +126,7 @@ def _write_location(body, image_id, x, y, confidence, size):
             'setId': body['setId'],
             'confidence': confidence,
             'source': 'stormfly-testing',
+            'group': group,
         }),
     )
 
@@ -106,11 +134,11 @@ def _write_location(body, image_id, x, y, confidence, size):
 LOCATION_BATCH = 25
 
 
-def _write_locations(body, image_id, points, size):
+def _write_locations(body, image_id, points, size, group):
     for start in range(0, len(points), LOCATION_BATCH):
         chunk = points[start:start + LOCATION_BATCH]
         var_defs = ['$imageId: ID!', '$projectId: ID!', '$setId: ID!',
-                    '$source: String!', '$size: Int']
+                    '$source: String!', '$size: Int', '$group: String!']
         fields = []
         variables = {
             'imageId': image_id,
@@ -118,6 +146,7 @@ def _write_locations(body, image_id, points, size):
             'setId': body['setId'],
             'source': 'stormfly-testing',
             'size': size,
+            'group': group,
         }
         for i, (x, y, confidence) in enumerate(chunk):
             var_defs += [f'$x{i}: Int!', f'$y{i}: Int!', f'$c{i}: Float']
@@ -125,7 +154,7 @@ def _write_locations(body, image_id, points, size):
                 f'p{i}: createLocation(input: {{imageId: $imageId, '
                 f'projectId: $projectId, setId: $setId, source: $source, '
                 f'width: $size, height: $size, x: $x{i}, y: $y{i}, '
-                f'confidence: $c{i}}}) {{ id }}'
+                f'confidence: $c{i}, group: $group}}) {{ id group }}'
             )
             variables[f'x{i}'] = x
             variables[f'y{i}'] = y
@@ -232,6 +261,7 @@ def _map_point_to_original(x, y, rotation_info):
 
 def handle_message(body):
     model = _get_detector()
+    group = _location_group(body)
     for image in body['images']:
         key = image['key']
         suffix = os.path.splitext(key)[1] or '.jpg'
@@ -251,7 +281,7 @@ def handle_message(body):
                 detections = model.detect(inference_image)
 
         if not detections:
-            _write_location(body, image['imageId'], 0, 0, 0.0, 0)
+            _write_location(body, image['imageId'], 0, 0, 0.0, 0, group)
             continue
 
         points = [
@@ -259,7 +289,7 @@ def handle_message(body):
              detection.score)
             for detection in detections
         ]
-        _write_locations(body, image['imageId'], points, BOX_SIZE)
+        _write_locations(body, image['imageId'], points, BOX_SIZE, group)
 
 
 def main():

@@ -29,10 +29,17 @@ single_image_failure_visibility_seconds = int(
 )
 
 createLocation=gql("""
-mutation MyMutation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!) {
-  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width}){
+mutation MyMutation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!, $group: String!) {
+  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width, group: $group}){
     id
+    group
   }
+}
+""")
+
+getProjectOrganization=gql("""
+query GetProjectOrganization($id: ID!) {
+  getProject(id: $id) { organizationId }
 }
 """)
 
@@ -106,6 +113,23 @@ def _cleanup_files(files):
 
 def _error_summary(error):
     return f'{type(error).__name__}: {error}'
+
+# Location auth is groupDefinedIn('group'): a Location without the project's
+# organizationId as its group is invisible to every annotator. runScoutbot sends
+# the group in the message; messages queued before it did are resolved here.
+_organization_ids = {}
+
+def _location_group(body):
+    if body.get('group'):
+        return body['group']
+    project_id = body['projectId']
+    if project_id not in _organization_ids:
+        resp = client.execute(getProjectOrganization, variable_values=json.dumps({'id': project_id}))
+        organization_id = (resp.get('getProject') or {}).get('organizationId')
+        if not organization_id:
+            raise ValueError(f'No organizationId found for project {project_id}')
+        _organization_ids[project_id] = organization_id
+    return _organization_ids[project_id]
 
 # Optional rotation support.
 #
@@ -307,6 +331,7 @@ def process_output(output_queue):
         image_ids = []
         try:
             body, message_id, image_ids, receive_count = _message_context(message)
+            group = _location_group(body)
             for detects, image in zip(detects_list, body['images']):
                 detection_count = len(detects) if detects else 0
                 logging.info(
@@ -325,7 +350,8 @@ def process_output(output_queue):
                         'width': 0,
                         'setId': body['setId'],
                         'confidence': 0,
-                        'source': 'scoutbotv3'
+                        'source': 'scoutbotv3',
+                        'group': group
                     }))
                 else:
                     for detect in detects:
@@ -338,7 +364,8 @@ def process_output(output_queue):
                             'width': round(detect['w']),
                             'setId': body['setId'],
                             'confidence': detect['c'],
-                            'source': 'scoutbotv3'
+                            'source': 'scoutbotv3',
+                            'group': group
                         }))
             sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
             logging.info(

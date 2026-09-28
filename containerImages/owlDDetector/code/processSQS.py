@@ -76,7 +76,17 @@ mutation DeleteImageProcessedBy($imageId: ID!, $source: String!) {
 }
 """)
 
+get_project_organization = gql("""
+query GetProjectOrganization($id: ID!) {
+  getProject(id: $id) { organizationId }
+}
+""")
+
 _detector = None
+# Location auth is groupDefinedIn('group'): a Location without the project's
+# organizationId as its group is invisible to every annotator. runOwlDDetector
+# sends the group in the message; messages queued before it did are resolved here.
+_organization_ids = {}
 
 
 def _error_summary(error):
@@ -143,6 +153,19 @@ def _execute(document, variables):
     return client.execute(document, variable_values=variables)
 
 
+def _location_group(body):
+    if body.get('group'):
+        return body['group']
+    project_id = body['projectId']
+    if project_id not in _organization_ids:
+        response = _execute(get_project_organization, {'id': project_id})
+        organization_id = (response.get('getProject') or {}).get('organizationId')
+        if not organization_id:
+            raise RuntimeError(f'No organizationId found for project {project_id}')
+        _organization_ids[project_id] = organization_id
+    return _organization_ids[project_id]
+
+
 def _delete_processed_marker(image_id):
     try:
         _execute(delete_image_processed_by, {'imageId': image_id, 'source': SOURCE})
@@ -203,10 +226,10 @@ def _is_duplicate_create_error(error):
     )
 
 
-def _write_locations(body, image_id, points, size):
+def _write_locations(body, image_id, points, size, group):
     for start in range(0, len(points), LOCATION_BATCH):
         chunk = points[start:start + LOCATION_BATCH]
-        var_defs = ['$imageId: ID!', '$projectId: ID!', '$setId: ID!', '$source: String!', '$size: Int']
+        var_defs = ['$imageId: ID!', '$projectId: ID!', '$setId: ID!', '$source: String!', '$size: Int', '$group: String!']
         fields = []
         variables = {
             'imageId': image_id,
@@ -214,6 +237,7 @@ def _write_locations(body, image_id, points, size):
             'setId': body['setId'],
             'source': SOURCE,
             'size': int(size),
+            'group': group,
         }
         for index, (x, y, confidence) in enumerate(chunk):
             point_index = start + index
@@ -222,7 +246,7 @@ def _write_locations(body, image_id, points, size):
                 f'p{index}: createLocation(input: {{id: $id{index}, imageId: $imageId, '
                 f'projectId: $projectId, setId: $setId, source: $source, '
                 f'width: $size, height: $size, x: $x{index}, y: $y{index}, '
-                f'confidence: $c{index}}}) {{ id }}'
+                f'confidence: $c{index}, group: $group}}) {{ id group }}'
             )
             variables[f'id{index}'] = _location_id(body, image_id, point_index)
             variables[f'x{index}'] = int(round(x))
@@ -344,6 +368,7 @@ def _receive_count(message):
 
 def handle_message(body, message):
     model = _get_detector()
+    group = _location_group(body)
     for image in _message_images(body):
         image_id = image['imageId']
         key = image['key']
@@ -377,9 +402,9 @@ def handle_message(body, message):
         _delete_processed_marker(image_id)
         _delete_existing_locations(body, image_id)
         if points:
-            _write_locations(body, image_id, points, BOX_SIZE)
+            _write_locations(body, image_id, points, BOX_SIZE, group)
         else:
-            _write_locations(body, image_id, [(0, 0, 0.0)], 0)
+            _write_locations(body, image_id, [(0, 0, 0.0)], 0, group)
         write_seconds = time.time() - write_start
         print(
             f'OWL-D image {image_id} attempt {attempt}: '
