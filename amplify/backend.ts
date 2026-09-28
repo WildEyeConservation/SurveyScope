@@ -189,10 +189,8 @@ backend.infoTagWork.addEnvironment(
   'INFO_TAG_TABLES',
   JSON.stringify(infoTagTables)
 );
-backend.infoTagWork.addEnvironment(
-  'OUTPUTS_BUCKET_NAME',
-  backend.outputBucket.resources.bucket.bucketName
-);
+// OUTPUTS_BUCKET_NAME comes from the storage access grant (resolved via SSM at
+// runtime); referencing the bucket here would make data depend on storage.
 
 const guardFunction = backend.chainMutationGuard.resources.lambda;
 const snapshotTables: Record<string, string> = {};
@@ -1157,7 +1155,6 @@ withStatsAlarmAction(
 );
 
 let lightglueQueueUrl: string | undefined;
-let lightglueQueueArn: string | undefined;
 let scoutbotQueueUrl: string | undefined;
 let madDetectorQueueUrl: string | undefined;
 let stormflyDetectorQueueUrl: string | undefined;
@@ -1214,7 +1211,36 @@ if (enableEcs) {
     );
 
     lightglueQueueUrl = lightGlueAutoProcessor.queue.queueUrl;
-    lightglueQueueArn = lightGlueAutoProcessor.queue.queueArn;
+
+    // The registration monitor reads the queue depth. The URL goes through SSM
+    // and the grant lives in this stack, because a direct reference from the
+    // monitor's stack would close a function -> ECS -> data -> function cycle.
+    const lightglueQueueUrlParameterName = `/${envName}/monitorModelProgress/LightGlueQueueUrl`;
+    const lightglueQueueUrlParameter = new ssm.StringParameter(
+      ecsStack,
+      'LightGlueQueueUrlParameter',
+      {
+        parameterName: lightglueQueueUrlParameterName,
+        stringValue: lightGlueAutoProcessor.queue.queueUrl,
+      }
+    );
+    new iam.Policy(ecsStack, 'MonitorLightGlueQueueDepth', {
+      roles: [backend.monitorModelProgress.resources.lambda.role!],
+      statements: [
+        new iam.PolicyStatement({
+          actions: ['sqs:GetQueueAttributes'],
+          resources: [lightGlueAutoProcessor.queue.queueArn],
+        }),
+        new iam.PolicyStatement({
+          actions: ['ssm:GetParameter'],
+          resources: [lightglueQueueUrlParameter.parameterArn],
+        }),
+      ],
+    });
+    backend.monitorModelProgress.addEnvironment(
+      'LIGHTGLUE_QUEUE_URL_PARAM',
+      lightglueQueueUrlParameterName
+    );
   }
 
   if (enableScoutbot) {
@@ -2297,18 +2323,6 @@ backend.monitorModelProgress.addEnvironment(
   'REGISTRATION_BUCKET_CLEANUP_FUNCTION_NAME',
   backend.registrationBucketCleanup.resources.lambda.functionName
 );
-if (lightglueQueueUrl && lightglueQueueArn) {
-  backend.monitorModelProgress.resources.lambda.addToRolePolicy(
-    new iam.PolicyStatement({
-      actions: ['sqs:GetQueueAttributes'],
-      resources: [lightglueQueueArn],
-    })
-  );
-  backend.monitorModelProgress.addEnvironment(
-    'LIGHTGLUE_QUEUE_URL',
-    lightglueQueueUrl
-  );
-}
 
 const imageNeighbourTable = backend.data.resources.tables['ImageNeighbour'];
 

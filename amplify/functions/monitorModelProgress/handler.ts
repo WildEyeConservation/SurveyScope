@@ -25,6 +25,7 @@ const updateProjectMembershipsMutation = /* GraphQL */ `
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { GetQueueAttributesCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 
 Amplify.configure(
   {
@@ -203,9 +204,14 @@ const STALE_PROGRESS_MS = 60 * 60 * 1000;
 
 // Null when the depth can't be read; callers then fall back to idle time only.
 async function lightglueQueueDepth(): Promise<number | null> {
-  const queueUrl = process.env.LIGHTGLUE_QUEUE_URL;
-  if (!queueUrl) return null;
+  const parameterName = process.env.LIGHTGLUE_QUEUE_URL_PARAM;
+  if (!parameterName) return null;
   try {
+    const parameter = await new SSMClient({ region: env.AWS_REGION }).send(
+      new GetParameterCommand({ Name: parameterName })
+    );
+    const queueUrl = parameter.Parameter?.Value;
+    if (!queueUrl) throw new Error(`SSM parameter ${parameterName} is empty`);
     const sqs = new SQSClient({ region: env.AWS_REGION });
     const resp = await sqs.send(
       new GetQueueAttributesCommand({
