@@ -78,9 +78,9 @@ async function setGroup(
         },
       })
     );
-  } catch (error: any) {
+  } catch (error) {
     // Location deleted, or group already set by someone else: nothing to do.
-    if (error?.name === 'ConditionalCheckFailedException') {
+    if ((error as Error)?.name === 'ConditionalCheckFailedException') {
       logger.info(
         `Location ${locationId} no longer exists or already has a group, skipping`
       );

@@ -1,18 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { DynamoDBRecord, DynamoDBStreamEvent } from 'aws-lambda';
+import type {
+  Context,
+  DynamoDBBatchResponse,
+  DynamoDBRecord,
+  DynamoDBStreamEvent,
+} from 'aws-lambda';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 process.env.LOCATION_TABLE_NAME = 'Location-test';
 process.env.PROJECT_TABLE_NAME = 'Project-test';
 
+type CommandInput = {
+  Key: { id: string };
+  ConditionExpression?: string;
+  ExpressionAttributeValues?: Record<string, unknown>;
+};
 type Send = (command: {
   constructor: { name: string };
-  input: any;
+  input: CommandInput;
 }) => Promise<unknown>;
 let send: Send = async () => ({});
-(DynamoDBDocumentClient.prototype as any).send = (command: any) =>
-  send(command);
+(DynamoDBDocumentClient.prototype as unknown as { send: Send }).send = (
+  command
+) => send(command);
 
 // Loaded after the stub so the handler's client uses it (amplify/ is CommonJS,
 // so there is no top-level await).
@@ -36,11 +47,13 @@ const insert = (
 });
 
 const run = async (records: DynamoDBRecord[]) =>
-  (await ((await handlerModule).handler as any)(
+  (await (
+    await handlerModule
+  ).handler(
     { Records: records } as DynamoDBStreamEvent,
-    {},
+    {} as Context,
     () => undefined
-  )) as { batchItemFailures: { itemIdentifier: string }[] };
+  )) as DynamoDBBatchResponse;
 
 const conditionalCheckFailed = () =>
   Object.assign(new Error('The conditional request failed'), {
@@ -48,7 +61,7 @@ const conditionalCheckFailed = () =>
   });
 
 test('sets group only on ungrouped inserts, never creating missing items', async () => {
-  const updates: any[] = [];
+  const updates: CommandInput[] = [];
   send = async ({ constructor, input }) => {
     if (constructor.name === 'GetCommand') {
       return { Item: { organizationId: 'org-a' } };
@@ -72,8 +85,11 @@ test('sets group only on ungrouped inserts, never creating missing items', async
     'loc-4',
   ]);
   for (const input of updates) {
-    assert.match(input.ConditionExpression, /^attribute_exists\(id\) AND /);
-    assert.equal(input.ExpressionAttributeValues[':g'], 'org-a');
+    assert.match(
+      input.ConditionExpression ?? '',
+      /^attribute_exists\(id\) AND /
+    );
+    assert.equal(input.ExpressionAttributeValues?.[':g'], 'org-a');
   }
 });
 
