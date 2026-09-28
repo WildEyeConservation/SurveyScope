@@ -47,9 +47,11 @@ const ROTATIONS = [0, 90, 180, 270];
 
 type Args = Record<string, unknown>;
 
+// Payload of an Amplify a.handler.function resolver, which sends the field
+// name at the top level rather than an AppSync `info` object.
 export interface AppSyncEvent {
   identity: unknown;
-  info: { fieldName: string };
+  fieldName: string;
   arguments: Args;
 }
 
@@ -522,7 +524,7 @@ export function createImageAccessHandler(s3 = new S3Client({})) {
 
   return async function handler(event: AppSyncEvent): Promise<unknown> {
     const user = requireStorageUser(event.identity);
-    const { fieldName } = event.info;
+    const { fieldName } = event;
     if (fieldName === 'signImageTiles') return signImageTiles(event);
     if (fieldName === 'imageDownloadUrl') return imageDownloadUrl(event);
     const operation = projectOperations[fieldName];

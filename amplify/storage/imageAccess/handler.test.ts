@@ -137,7 +137,7 @@ function event(
   args: Record<string, unknown>,
   identity: unknown = user
 ): AppSyncEvent {
-  return { identity, info: { fieldName }, arguments: args };
+  return { identity, fieldName, arguments: args };
 }
 
 test('signs exact legacy tiles using bounded indexed file reads', async (t) => {

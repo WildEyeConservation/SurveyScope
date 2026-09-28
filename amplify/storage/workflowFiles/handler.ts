@@ -26,9 +26,11 @@ never names a key and cannot reach another organization's files.
 
 type Args = Record<string, unknown>;
 
+// Payload of an Amplify a.handler.function resolver, which sends the field
+// name at the top level rather than an AppSync `info` object.
 export interface AppSyncEvent {
   identity: unknown;
-  info: { fieldName: string };
+  fieldName: string;
   arguments: Args;
 }
 
@@ -224,7 +226,7 @@ export function createWorkflowFilesHandler(s3 = new S3Client({})) {
 
   return async function handler(event: AppSyncEvent): Promise<unknown> {
     const user = requireStorageUser(event.identity);
-    const operation = operations[event.info.fieldName];
+    const operation = operations[event.fieldName];
     if (!operation) throw new Error('Unsupported workflow file operation');
     return operation(user, event.arguments);
   };

@@ -72,7 +72,7 @@ function event(
   args: Record<string, unknown>,
   identity: unknown = user
 ): AppSyncEvent {
-  return { identity, info: { fieldName }, arguments: args };
+  return { identity, fieldName, arguments: args };
 }
 
 test('false-negative files are keyed by annotation set and scoped to its organization', async (t) => {
