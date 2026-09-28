@@ -61,12 +61,34 @@ transport = RequestsHTTPTransport(url=API_ENDPOINT, headers={'Accept': 'applicat
 client = Client(transport=transport, fetch_schema_from_transport=False)
 
 createLocation = gql("""
-mutation CreateLocation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!) {
-  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width}) {
+mutation CreateLocation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!, $group: String!) {
+  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width, group: $group}) {
     id
+    group
   }
 }
 """)
+
+getProjectOrganization = gql("""
+query GetProjectOrganization($id: ID!) {
+  getProject(id: $id) { organizationId }
+}
+""")
+
+# organizationId per project, for messages sent without 'group'.
+_organization_ids = {}
+
+def _location_group(body: dict) -> str:
+    if body.get('group'):
+        return body['group']
+    project_id = body['projectId']
+    if project_id not in _organization_ids:
+        resp = client.execute(getProjectOrganization, variable_values={'id': project_id})
+        organization_id = (resp.get('getProject') or {}).get('organizationId')
+        if not organization_id:
+            raise ValueError(f'No organizationId found for project {project_id}')
+        _organization_ids[project_id] = organization_id
+    return _organization_ids[project_id]
 
 _model = None
 _device = None
@@ -219,7 +241,8 @@ def _run_mad_on_image(pil_image: Image.Image, min_score_thresh: float = 0.7, iou
     return detections
 
 def handle_message(body: dict):
-    # Expected body: {'bucket': str, 'setId': str, 'projectId': str, 'images': [{ 'imageId': str, 'key': str }]}
+    # Expected body: {'bucket': str, 'setId': str, 'projectId': str, 'group'?: str, 'images': [{ 'imageId': str, 'key': str }]}
+    group = _location_group(body)
     for image in body['images']:
         key = image['key']
         with NamedTemporaryFile(suffix=os.path.splitext(key)[1]) as tmp:
@@ -236,7 +259,8 @@ def handle_message(body: dict):
                 'width': 0,
                 'setId': body['setId'],
                 'confidence': 0.0,
-                'source': 'mad-v2'
+                'source': 'mad-v2',
+                'group': group
             }))
         else:
             for d in detects:
@@ -249,7 +273,8 @@ def handle_message(body: dict):
                     'width': round(d['w']),
                     'setId': body['setId'],
                     'confidence': d['c'],
-                    'source': 'mad-v2'
+                    'source': 'mad-v2',
+                    'group': group
                 }))
 
 def main():

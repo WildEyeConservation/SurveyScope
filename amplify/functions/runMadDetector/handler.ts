@@ -103,6 +103,7 @@ export const handler: RunMadDetectorHandler = async (event, context) => {
               projectId,
               bucket,
               setId,
+              ...(organizationId ? { group: organizationId } : {}),
             }),
           })
         );
