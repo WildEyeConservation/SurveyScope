@@ -124,7 +124,7 @@ def _location_group(body):
         return body['group']
     project_id = body['projectId']
     if project_id not in _organization_ids:
-        resp = client.execute(getProjectOrganization, variable_values=json.dumps({'id': project_id}))
+        resp = client.execute(getProjectOrganization, variable_values={'id': project_id})
         organization_id = (resp.get('getProject') or {}).get('organizationId')
         if not organization_id:
             raise ValueError(f'No organizationId found for project {project_id}')

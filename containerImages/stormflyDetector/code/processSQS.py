@@ -69,7 +69,7 @@ def _location_group(body):
     if project_id not in _organization_ids:
         response = client.execute(
             get_project_organization,
-            variable_values=json.dumps({'id': project_id}),
+            variable_values={'id': project_id},
         )
         organization_id = (response.get('getProject') or {}).get('organizationId')
         if not organization_id:
