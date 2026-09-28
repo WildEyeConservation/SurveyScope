@@ -8,11 +8,26 @@ export type GraphRequest = { query: string; variables?: Record<string, unknown> 
 export type GraphResponse = { data?: Record<string, unknown> | null; errors?: ReadonlyArray<{ message: string }> };
 export type GraphRun = (request: GraphRequest) => Promise<GraphResponse>;
 
+function errorsMessage(errors: ReadonlyArray<{ message: string }>): string {
+  return errors.map((e) => e.message).join('; ');
+}
+
+// A null mutation result means the write did not happen; a null query result
+// is a legitimate "not found" that callers handle themselves.
 export function checkedGraph(run: GraphRun): GraphRun {
   return async (request) => {
-    const response = await run(request);
-    if (response.errors?.length) throw new Error(response.errors.map((e) => e.message).join('; '));
-    if (!response.data || Object.values(response.data).some((value) => value == null)) {
+    let response: GraphResponse;
+    try {
+      response = await run(request);
+    } catch (error) {
+      // The Amplify client throws the raw { data, errors } response.
+      const errors = (error as GraphResponse | null)?.errors;
+      if (!(error instanceof Error) && errors?.length) throw new Error(errorsMessage(errors));
+      throw error;
+    }
+    if (response.errors?.length) throw new Error(errorsMessage(response.errors));
+    const isMutation = /^\s*mutation\b/.test(request.query);
+    if (!response.data || (isMutation && Object.values(response.data).some((value) => value == null))) {
       throw new Error('Share operation returned no data');
     }
     return response;
