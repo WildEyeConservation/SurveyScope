@@ -352,6 +352,10 @@ const backfillFn = new NodejsFunction(backfillStack, 'BackfillLocationGroupFn', 
   entry: path.join(__dirname, 'functions/backfillLocationGroup/handler.ts'),
   handler: 'handler',
   runtime: lambda.Runtime.NODEJS_20_X,
+  // The 3 s / 128 MB defaults timed out on every bulk-insert batch, which with
+  // unbounded retries blocked the shard until records aged out ungrouped.
+  timeout: Duration.seconds(60),
+  memorySize: 512,
   environment: {
     LOCATION_TABLE_NAME: locationTable.tableName,
     PROJECT_TABLE_NAME: projectTable.tableName,
@@ -387,11 +391,75 @@ backfillFn.addToRolePolicy(
   })
 );
 
+// Records that exhaust their retries land here as shard/sequence metadata, not
+// the records themselves; they identify ranges of Locations to repair by hand.
+const backfillFailureQueue = new sqs.Queue(
+  backfillStack,
+  'LocationGroupBackfillFailures',
+  {
+    encryption: sqs.QueueEncryption.SQS_MANAGED,
+    enforceSSL: true,
+    retentionPeriod: Duration.days(14),
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+
+// Writers set group at creation, so the filter keeps this a no-op in steady
+// state: only INSERTs whose NewImage has no (or an empty) string group invoke
+// the function. Bisection and the retry bound stop one bad batch from blocking
+// the shard for the 24-hour stream retention, as the unbounded defaults did.
 new EventSourceMapping(backfillStack, 'LocationEventStreamMapping', {
   target: backfillFn,
   eventSourceArn: locationTable.tableStreamArn,
   startingPosition: StartingPosition.LATEST,
+  batchSize: 100,
+  bisectBatchOnError: true,
+  reportBatchItemFailures: true,
+  retryAttempts: 5,
+  maxRecordAge: Duration.hours(6),
+  onFailure: new SqsDlq(backfillFailureQueue),
+  filters: [
+    lambda.FilterCriteria.filter({
+      eventName: lambda.FilterRule.isEqual('INSERT'),
+      dynamodb: { NewImage: { group: { S: lambda.FilterRule.notExists() } } },
+    }),
+    lambda.FilterCriteria.filter({
+      eventName: lambda.FilterRule.isEqual('INSERT'),
+      dynamodb: { NewImage: { group: { S: lambda.FilterRule.isEqual('') } } },
+    }),
+  ],
 });
+
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillErrors', {
+    metric: backfillFn.metricErrors({ period: Duration.minutes(5) }),
+    threshold: 1,
+    evaluationPeriods: 2,
+    datapointsToAlarm: 2,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillIteratorAge', {
+    metric: backfillFn.metric('IteratorAge', {
+      period: Duration.minutes(5),
+      statistic: 'Maximum',
+    }),
+    threshold: 15 * 60 * 1000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillFailuresVisible', {
+    metric: backfillFailureQueue.metricApproximateNumberOfMessagesVisible({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 const authenticatedRole = backend.auth.resources.authenticatedUserIamRole;
 
