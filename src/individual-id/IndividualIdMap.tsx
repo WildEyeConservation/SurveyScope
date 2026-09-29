@@ -888,6 +888,9 @@ export function IndividualIdMap({
   const imageId = image.id;
   const imageWidth = image.width;
   const imageHeight = image.height;
+  // Set only for chain-share snapshots; lets reviewers outside the
+  // organisation sign tiles through the share.
+  const sharedImageId = (image as { sharedImageId?: string }).sharedImageId;
   const updateVisibleTiles = useCallback(
     async (m: maplibregl.Map | null, refineViewport = false) => {
       if (
@@ -901,6 +904,7 @@ export function IndividualIdMap({
         id: imageId,
         width: imageWidth,
         height: imageHeight,
+        sharedImageId,
       });
       const { maxZ, pyramidSize } = getPyramidInfo({
         width: imageWidth,
@@ -1097,7 +1101,16 @@ export function IndividualIdMap({
         });
       }
     },
-    [sourceKey, imageId, imageWidth, imageHeight, px2lngLat, scale, tileLimit]
+    [
+      sourceKey,
+      imageId,
+      sharedImageId,
+      imageWidth,
+      imageHeight,
+      px2lngLat,
+      scale,
+      tileLimit,
+    ]
   );
 
   // Initialise map.
