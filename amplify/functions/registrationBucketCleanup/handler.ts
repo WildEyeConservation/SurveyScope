@@ -283,19 +283,19 @@ export const handler: Handler = async (event, _context) => {
     };
 
     for (const [pairKey, winner] of winners) {
-      const rows = byPair.get(pairKey) ?? [];
-      const losers = rows
-        .map((r) => r.bucketIndex)
-        .filter((idx) => idx !== winner);
-      for (const loserBucket of losers) {
-        console.log(`Enumerating losers in pair ${pairKey} bucket ${loserBucket}`);
+      // Range over the GSI instead of the stat rows: a bucket with no
+      // successes has no RegistrationBucketStat row but still has neighbours.
+      for (const loserRange of [{ lt: winner }, { gt: winner }]) {
+        console.log(
+          `Enumerating losers in pair ${pairKey} with bucketIndex ${JSON.stringify(loserRange)}`
+        );
         let nextToken: string | undefined;
         do {
           const resp = (await client.graphql({
             query: imageNeighboursByCameraPairAndBucket,
             variables: {
               cameraPairKey: pairKey,
-              bucketIndex: { eq: loserBucket },
+              bucketIndex: loserRange,
               limit: 1000,
               nextToken,
             },
