@@ -1,6 +1,5 @@
 import { generateClient } from 'aws-amplify/api';
-// Importing this module configures Amplify, which the error page cannot rely on
-// the crashed application having done.
+// Configures Amplify.
 import './limitedClient';
 import {
   createReportBudget,
@@ -28,15 +27,9 @@ const reportClientErrorMutation = /* GraphQL */ `
   }
 `;
 
-// Per page load; the server enforces its own per-user limits as well.
 const shouldReport = createReportBudget(5);
 
-/**
- * Sends a crash that reached the error page to the sysadmins. Never throws:
- * the error page is the last thing standing, so a failed report is only logged.
- */
 export async function reportClientError(error: unknown): Promise<void> {
-  // Local development crashes are the developer's own and already on screen.
   if (process.env.NODE_ENV === 'development') return;
 
   const details = describeError(error);

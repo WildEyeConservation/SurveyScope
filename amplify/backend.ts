@@ -282,7 +282,6 @@ backend.updateUserStats.addEnvironment(
 // create a nested-stack cycle.
 const statsReliabilityStack = backend.createStack('DetwebStatsReliability');
 
-// Reads a comma-separated list of alert recipients from a build-time variable.
 function alertEmailsFrom(variable: string): string[] {
   const addresses = [
     ...new Set(
@@ -763,18 +762,12 @@ const enableJollyFargate =
 const envName =
   process.env.AMPLIFY_ENV ?? process.env.AWS_BRANCH ?? 'production';
 
-// Crashes that reach the browser's error page are saved by reportClientError
-// and emailed here. Set CLIENT_ERROR_EMAIL in the Amplify branch environment
-// (comma-separated for several recipients); unset, the reports go to the
-// STATS_ALARM_EMAIL recipients, and with neither set they are only saved.
+// Client error report recipients: CLIENT_ERROR_EMAIL, else STATS_ALARM_EMAIL.
 const clientErrorEmails = alertEmailsFrom('CLIENT_ERROR_EMAIL');
 const clientErrorRecipients = clientErrorEmails.length
   ? clientErrorEmails
   : statsAlarmEmails;
 backend.reportClientError.addEnvironment('ENVIRONMENT_NAME', envName);
-// Per-user counters behind the function's rate limit and duplicate
-// suppression. Every record expires within two hours, so the table holds
-// nothing worth retaining.
 const clientErrorLimitsTable = new dynamodb.Table(
   Stack.of(backend.reportClientError.resources.lambda),
   'ClientErrorLimits',
@@ -796,7 +789,6 @@ backend.reportClientError.addEnvironment(
   clientErrorLimitsTable.tableName
 );
 if (clientErrorRecipients.length) {
-  // Lives in the function's own stack so nothing else has to reference it.
   const clientErrorTopic = new sns.Topic(
     Stack.of(backend.reportClientError.resources.lambda),
     'ClientErrorTopic',

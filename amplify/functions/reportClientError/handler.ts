@@ -23,15 +23,6 @@ import {
   type ClientErrorReport,
 } from './core';
 
-/**
- * Records a crash that reached the browser's error page and emails the
- * sysadmins about it.
- *
- * The reporting user comes from the request identity, never from the payload.
- * Everything else is supplied by the browser, so it is treated as untrusted
- * text: bounded in length, stored as-is and never interpreted.
- */
-
 const createClientErrorReportMutation = /* GraphQL */ `
   mutation CreateClientErrorReport($input: CreateClientErrorReportInput!) {
     createClientErrorReport(input: $input) {
@@ -73,7 +64,6 @@ const cognitoClient = new CognitoIdentityProviderClient();
 const snsClient = new SNSClient();
 const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient());
 
-// Resolves to false when the write's condition fails.
 async function conditionalWrite(command: UpdateCommand): Promise<boolean> {
   try {
     await documentClient.send(command);
@@ -137,7 +127,7 @@ async function save(report: ClientErrorReport): Promise<string | undefined> {
       variables: { input: report },
     })) as typeof response;
   } catch (error) {
-    // Amplify rejects with the raw response when GraphQL reports errors.
+    // Amplify rejects with the raw response on GraphQL errors.
     const errors = (error as { errors?: { message: string }[] } | null)?.errors;
     if (!Array.isArray(errors)) throw error;
     response = { errors } as typeof response;

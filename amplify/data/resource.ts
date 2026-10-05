@@ -886,9 +886,6 @@ const schema = a
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(respondToInvite))
       .returns(a.json()),
-    // A crash that reached the browser's error page. Rows are written only by
-    // the reportClientError function, which takes the user from the request
-    // identity; the remaining fields are whatever the browser sent.
     ClientErrorReport: a
       .model({
         message: a.string().required(),
@@ -900,7 +897,6 @@ const schema = a
         userEmail: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin')]),
-    // Called automatically by the error page, so any signed-in user may report.
     reportClientError: a
       .mutation()
       .arguments({

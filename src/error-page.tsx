@@ -16,7 +16,6 @@ export default function ErrorPage() {
   const [copySuccess, setCopySuccess] = useState(false);
   console.error(error);
 
-  // Report the crash without waiting for the user to send the details.
   useEffect(() => {
     void reportClientError(error);
   }, [error]);

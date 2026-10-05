@@ -6,8 +6,6 @@ import MyTable from './Table';
 import { useUsers } from './apiInterface';
 import { graphqlErrorMessage } from './reportClientErrorCore';
 
-// Queried with plain GraphQL: the reports are sysadmin-only and nothing else in
-// the application reads them.
 const client = generateClient({ authMode: 'userPool' });
 
 const listClientErrorReportsQuery = /* GraphQL */ `
@@ -80,7 +78,6 @@ async function fetchAllReports(): Promise<ErrorReport[]> {
   return reports;
 }
 
-// The path is what identifies the screen; the origin is the same for every row.
 function pathOf(url?: string | null): string {
   if (!url) return '';
   try {

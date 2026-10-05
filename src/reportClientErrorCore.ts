@@ -13,9 +13,7 @@ interface ErrorWithDetails {
   stack?: string;
 }
 
-/** What to report for a value caught by the error page, or null for nothing. */
 export function describeError(error: unknown): ClientErrorDetails | null {
-  // A mistyped or stale URL is not a crash.
   if (isRouteErrorResponse(error) && error.status === 404) return null;
 
   const details = (error ?? {}) as ErrorWithDetails;
@@ -29,11 +27,6 @@ export function describeError(error: unknown): ClientErrorDetails | null {
   };
 }
 
-/**
- * Decides which errors are worth sending. A crash that re-renders the error
- * page, or a crash loop, must not turn into a stream of identical reports, so
- * each distinct error is allowed once, up to `maxReports` in total.
- */
 export function createReportBudget(
   maxReports: number
 ): (details: ClientErrorDetails) => boolean {
@@ -46,10 +39,6 @@ export function createReportBudget(
   };
 }
 
-/**
- * Amplify rejects with the raw `{ data, errors }` response when GraphQL reports
- * errors. Turns that, or anything else thrown, into a readable message.
- */
 export function graphqlErrorMessage(error: unknown): string {
   const errors = (error as { errors?: { message?: string }[] } | null)?.errors;
   if (Array.isArray(errors) && errors.length > 0) {

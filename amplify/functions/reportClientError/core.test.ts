@@ -139,7 +139,6 @@ test('a failed save still emails the report and then rejects', async () => {
     /save failed/
   );
   assert.match(deps.emails[0], /Report ID: not saved/);
-  // The email went out, so a repeat of this error is still a duplicate.
   assert.equal(deps.released.length, 0);
 });
 

@@ -1,21 +1,11 @@
 import { createHash } from 'node:crypto';
 
-/**
- * Side-effect-free logic for reportClientError: what a report may contain, how
- * often one user may file them, and how saving and emailing stay independent.
- */
-
-// Any signed-in user can call this mutation, so cap what one call can store
-// and email. The stack limit keeps the whole item far below DynamoDB's 400 KB.
 export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_STACK_LENGTH = 20000;
 export const MAX_FIELD_LENGTH = 2000;
-// SNS rejects subjects over 100 characters.
+// SNS subject limit.
 export const MAX_SUBJECT_LENGTH = 100;
 
-// A genuine crash produces a handful of reports. These bounds exist so that a
-// crash loop, or someone calling the mutation directly, cannot flood the
-// sysadmins' inboxes or the table.
 export const MAX_REPORTS_PER_USER_PER_WINDOW = 10;
 export const LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
@@ -65,11 +55,6 @@ export function buildReport(
   };
 }
 
-/**
- * Keys of the two limiter records one report has to claim: `duplicate` is
- * claimed once per user, error and window; `rate` counts the user's reports in
- * the window. `expiresAt` is the TTL, in epoch seconds, for both.
- */
 export function limiterKeys(
   userId: string,
   args: ClientErrorArguments,
@@ -92,7 +77,7 @@ export function buildNotification(
   reportId: string | undefined
 ): { subject: string; message: string } {
   return {
-    // SNS subjects must be printable ASCII without line breaks.
+    // SNS subjects must be single-line printable ASCII.
     subject: `[SurveyScope ${environment}] Client error: ${report.message}`
       .replace(/[^\x20-\x7E]+/g, ' ')
       .slice(0, MAX_SUBJECT_LENGTH),
@@ -114,16 +99,10 @@ export function buildNotification(
   };
 }
 
-/** A claimed place within the user's limits. */
 export type Reservation = {
-  /** Gives the duplicate claim back so the same error can be retried. */
   release: () => Promise<void>;
 };
 
-/**
- * The limiter's storage. Both claims are conditional writes that resolve to
- * false when the condition fails, so concurrent invocations cannot slip past.
- */
 export type LimiterStore = {
   claimDuplicate: (key: string, expiresAt: number) => Promise<boolean>;
   incrementRate: (
@@ -148,8 +127,7 @@ export function createReserve(
       }
     };
     try {
-      // The duplicate claim comes first so that a crash loop on one error does
-      // not use up the budget a different error would need.
+      // Duplicate first, so a crash loop on one error leaves the rate budget.
       if (!(await store.claimDuplicate(keys.duplicate, keys.expiresAt))) {
         return null;
       }
@@ -163,7 +141,7 @@ export function createReserve(
         return null;
       }
     } catch (error) {
-      // A broken limiter must not silence real crashes.
+      // Fail open.
       console.error('Client error limiter failed; accepting the report', error);
     }
     return { release };
@@ -171,15 +149,12 @@ export function createReserve(
 }
 
 export type ReportDependencies = {
-  /** Claims this report against the user's limits; null means drop it. */
   reserve: (
     userId: string,
     args: ClientErrorArguments
   ) => Promise<Reservation | null>;
   lookUpEmail: (userId: string) => Promise<string | undefined>;
-  /** Saves the report and resolves to its id. */
   save: (report: ClientErrorReport) => Promise<string | undefined>;
-  /** Absent when no alert recipients are configured. */
   notify?: (subject: string, message: string) => Promise<void>;
 };
 
@@ -200,8 +175,6 @@ export async function processClientError(
     return { notified: false, throttled: true };
   }
 
-  // The email is only there to make the report readable, so a failed lookup
-  // must not cost us the report itself.
   let userEmail: string | undefined;
   try {
     userEmail = await dependencies.lookUpEmail(userId);
@@ -210,8 +183,6 @@ export async function processClientError(
   }
   const report = buildReport(args, userId, userEmail);
 
-  // Saving and emailing are independent: a failure in one must not hide the
-  // crash from the other channel.
   let id: string | undefined;
   let saveError: unknown;
   try {
@@ -232,7 +203,6 @@ export async function processClientError(
     }
   }
 
-  // Nothing was delivered, so the claim must not suppress the next attempt.
   if (saveError && !notified) await reservation.release();
   if (saveError) throw saveError;
   return { id, notified, throttled: false };
