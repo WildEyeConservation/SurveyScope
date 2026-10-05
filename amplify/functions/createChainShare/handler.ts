@@ -2,7 +2,7 @@ import { env } from '$amplify/env/createChainShare';
 import { Amplify } from 'aws-amplify';
 import { generateClient, GraphQLResult } from 'aws-amplify/data';
 import type { CreateChainShareHandler } from '../../data/resource';
-import { authorizeRequest } from '../shared/authorizeRequest';
+import { checkedGraph, shareLifecycle, mapWithConcurrency } from '../../chain-shares/lifecycle';
 
 /**
  * Snapshot one annotation set's chain-viewer data into the read-only
@@ -140,12 +140,6 @@ const createSharedChainCategory = /* GraphQL */ `
     createSharedChainCategory(input: $input) { id }
   }
 `;
-const createChainShare = /* GraphQL */ `
-  mutation CreateChainShare($input: CreateChainShareInput!) {
-    createChainShare(input: $input) { shareId }
-  }
-`;
-
 // --- selectSourceKeyForImage (kept in sync with -------------------------------
 // --- src/chain-viewer/utils/imageSourceKey.ts; src cannot be imported here) ---
 
@@ -224,6 +218,8 @@ Amplify.configure(
 );
 
 const client = generateClient({ authMode: 'iam' });
+const graphql = checkedGraph((request) => client.graphql(request) as Promise<GraphQLResult<Record<string, unknown>>>);
+const lifecycle = shareLifecycle(graphql);
 
 const CHAIN_LOCATION_SOURCES = new Set([
   'scoutbotv3',
@@ -253,22 +249,6 @@ async function fetchAllPages<T, K extends string>(
     nextToken = page?.nextToken ?? undefined;
   } while (nextToken);
   return all;
-}
-
-/** Run `fn` over `items` with bounded concurrency. */
-async function mapWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>
-): Promise<void> {
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      await fn(items[index]);
-    }
-  });
-  await Promise.all(workers);
 }
 
 // --- Row shapes we read ------------------------------------------------------
@@ -325,12 +305,16 @@ interface NeighbourRow {
 }
 
 export const handler: CreateChainShareHandler = async (event) => {
+  let started: string | undefined;
+  const { annotationSetId, shareId } = event.arguments;
   try {
-    const { annotationSetId, shareId } = event.arguments;
+    if (!event.identity?.sub || !event.identity.groups?.includes('sysadmin')) {
+      throw new Error('Unauthorized: sysadmin required');
+    }
     const group = `chainshare-${shareId}`;
 
     // Resolve the set + project (no nested resolvers).
-    const setResp = await client.graphql({
+    const setResp = await graphql({
       query: getAnnotationSet,
       variables: { id: annotationSetId },
     });
@@ -341,7 +325,7 @@ export const handler: CreateChainShareHandler = async (event) => {
     ).data?.getAnnotationSet;
     if (!annotationSet) throw new Error(`AnnotationSet ${annotationSetId} not found`);
 
-    const projectResp = await client.graphql({
+    const projectResp = await graphql({
       query: getProject,
       variables: { id: annotationSet.projectId },
     });
@@ -352,17 +336,21 @@ export const handler: CreateChainShareHandler = async (event) => {
     ).data?.getProject;
     if (!project) throw new Error(`Project ${annotationSet.projectId} not found`);
 
-    authorizeRequest(event.identity, project.organizationId);
 
     const createdBy =
       (event.identity && 'username' in event.identity
         ? (event.identity as { username?: string }).username
         : undefined) ?? '';
 
+    started = await lifecycle.create({
+      shareId, surveyId: project.id, annotationSetId,
+      surveyName: project.name, annotationSetName: annotationSet.name, createdBy,
+    });
+
     // --- Read source data ----------------------------------------------------
     const annotations = await fetchAllPages<AnnotationRow, 'annotationsByAnnotationSetId'>(
       (nextToken) =>
-        client.graphql({
+        graphql({
           query: annotationsByAnnotationSetId,
           variables: { setId: annotationSetId, nextToken },
         }) as Promise<GraphQLResult<{ annotationsByAnnotationSetId: PagedList<AnnotationRow> }>>,
@@ -371,7 +359,7 @@ export const handler: CreateChainShareHandler = async (event) => {
 
     const categories = await fetchAllPages<CategoryRow, 'categoriesByAnnotationSetId'>(
       (nextToken) =>
-        client.graphql({
+        graphql({
           query: categoriesByAnnotationSetId,
           variables: { annotationSetId, nextToken },
         }) as Promise<GraphQLResult<{ categoriesByAnnotationSetId: PagedList<CategoryRow> }>>,
@@ -384,7 +372,7 @@ export const handler: CreateChainShareHandler = async (event) => {
         'annotationInfoTagsByAnnotationSetId'
       >(
         (nextToken) =>
-          client.graphql({
+          graphql({
             query: annotationInfoTagsByAnnotationSetId,
             variables: { annotationSetId, nextToken },
           }) as Promise<
@@ -396,7 +384,7 @@ export const handler: CreateChainShareHandler = async (event) => {
       ),
       fetchAllPages<InfoTagRow, 'infoTagsByAnnotationSetId'>(
         (nextToken) =>
-          client.graphql({
+          graphql({
             query: infoTagsByAnnotationSetId,
             variables: { annotationSetId, nextToken },
           }) as Promise<
@@ -422,7 +410,7 @@ export const handler: CreateChainShareHandler = async (event) => {
 
     const cameras = await fetchAllPages<{ id: string; name: string }, 'camerasByProjectId'>(
       (nextToken) =>
-        client.graphql({
+        graphql({
           query: camerasByProjectId,
           variables: { projectId: project.id, nextToken },
         }) as Promise<GraphQLResult<{ camerasByProjectId: PagedList<{ id: string; name: string }> }>>,
@@ -439,7 +427,7 @@ export const handler: CreateChainShareHandler = async (event) => {
     const locations: LocationRow[] = [];
 
     await mapWithConcurrency(annotatedImageIds, 20, async (imageId) => {
-      const imgResp = await client.graphql({
+      const imgResp = await graphql({
         query: getImage,
         variables: { id: imageId },
       });
@@ -450,7 +438,7 @@ export const handler: CreateChainShareHandler = async (event) => {
 
       const files = await fetchAllPages<ImageFileRow, 'imagesByimageId'>(
         (nextToken) =>
-          client.graphql({
+          graphql({
             query: imageFilesByImageId,
             variables: { imageId, nextToken },
           }) as Promise<GraphQLResult<{ imagesByimageId: PagedList<ImageFileRow> }>>,
@@ -460,7 +448,7 @@ export const handler: CreateChainShareHandler = async (event) => {
 
       const imageLocations = await fetchAllPages<LocationRow, 'locationsByImageKey'>(
         (nextToken) =>
-          client.graphql({
+          graphql({
             query: locationsByImageId,
             variables: { imageId, nextToken },
           }) as Promise<GraphQLResult<{ locationsByImageKey: PagedList<LocationRow> }>>,
@@ -472,7 +460,7 @@ export const handler: CreateChainShareHandler = async (event) => {
       const incident = [
         ...(await fetchAllPages<NeighbourRow, 'imageNeighboursByImage1key'>(
           (nextToken) =>
-            client.graphql({
+            graphql({
               query: neighboursByImage1,
               variables: { image1Id: imageId, nextToken },
             }) as Promise<GraphQLResult<{ imageNeighboursByImage1key: PagedList<NeighbourRow> }>>,
@@ -480,7 +468,7 @@ export const handler: CreateChainShareHandler = async (event) => {
         )),
         ...(await fetchAllPages<NeighbourRow, 'imageNeighboursByImage2key'>(
           (nextToken) =>
-            client.graphql({
+            graphql({
               query: neighboursByImage2,
               variables: { image2Id: imageId, nextToken },
             }) as Promise<GraphQLResult<{ imageNeighboursByImage2key: PagedList<NeighbourRow> }>>,
@@ -495,7 +483,7 @@ export const handler: CreateChainShareHandler = async (event) => {
 
     // --- Write snapshot rows -------------------------------------------------
     await mapWithConcurrency(Array.from(imagesById.values()), 20, async (image) => {
-      await client.graphql({
+      await graphql({
         query: createSharedChainImage,
         variables: {
           input: {
@@ -516,7 +504,7 @@ export const handler: CreateChainShareHandler = async (event) => {
     });
 
     await mapWithConcurrency(locations, 20, async (loc) => {
-      await client.graphql({
+      await graphql({
         query: createSharedChainLocation,
         variables: {
           input: {
@@ -537,7 +525,7 @@ export const handler: CreateChainShareHandler = async (event) => {
 
     await mapWithConcurrency(annotations, 20, async (a) => {
       const image = imagesById.get(a.imageId);
-      await client.graphql({
+      await graphql({
         query: createSharedChainAnnotation,
         variables: {
           input: {
@@ -559,7 +547,7 @@ export const handler: CreateChainShareHandler = async (event) => {
     });
 
     await mapWithConcurrency(Array.from(neighbourByPair.values()), 20, async (n) => {
-      await client.graphql({
+      await graphql({
         query: createSharedChainNeighbour,
         variables: {
           input: {
@@ -576,7 +564,7 @@ export const handler: CreateChainShareHandler = async (event) => {
     });
 
     await mapWithConcurrency(categories, 20, async (c) => {
-      await client.graphql({
+      await graphql({
         query: createSharedChainCategory,
         variables: {
           input: {
@@ -591,21 +579,7 @@ export const handler: CreateChainShareHandler = async (event) => {
       });
     });
 
-    await client.graphql({
-      query: createChainShare,
-      variables: {
-        input: {
-          shareId,
-          surveyId: project.id,
-          annotationSetId,
-          surveyName: project.name,
-          annotationSetName: annotationSet.name,
-          status: 'active',
-          createdBy,
-          group,
-        },
-      },
-    });
+    await lifecycle.activate(shareId, started);
 
     return {
       statusCode: 200,
@@ -623,6 +597,10 @@ export const handler: CreateChainShareHandler = async (event) => {
     };
   } catch (error) {
     console.error('createChainShare error:', error);
+    if (started) {
+      await lifecycle.failCreation(shareId, started, error).catch((failure) =>
+        console.error('Could not record snapshot failure; recover after operation timeout', failure));
+    }
     return {
       statusCode: 500,
       body: JSON.stringify({

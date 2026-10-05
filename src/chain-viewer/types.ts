@@ -38,6 +38,7 @@ export interface Chain {
  * chain becomes the current view. Keyed by annotation id.
  */
 export interface AnnotationImageMeta {
+  sharedImageId?: string;
   imageId: string;
   width: number;
   height: number;

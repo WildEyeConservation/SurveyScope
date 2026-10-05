@@ -13,6 +13,7 @@ S3, then a separate CPU point-finder container). Here a single GPU container:
 
 Message body (JSON):
   imageId, projectId, setId, bucket, key            (required)
+  group                Location.group (organizationId)(optional; resolved from the project)
   width, height        block size / Location box     (optional; env defaults)
   threshold            heatmap threshold             (optional; env default)
   rotation             CCW degrees 90/180/270        (optional)
@@ -68,14 +69,23 @@ _auth = AWS4Auth(
 )
 
 CREATE_LOCATION = """
-mutation CreateLocation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!) {
-  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width}) {
+mutation CreateLocation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!, $group: String!) {
+  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width, group: $group}) {
     id
+    group
   }
 }
 """
 
+GET_PROJECT_ORGANIZATION = """
+query GetProjectOrganization($id: ID!) {
+  getProject(id: $id) { organizationId }
+}
+"""
+
 heatmapper = None
+# organizationId per project, for messages sent without 'group'.
+_organization_ids = {}
 
 
 # ── optional rotation support (mirrors the scoutbot / stormfly workers) ──────────
@@ -161,10 +171,10 @@ def _load_image_array(path, rotation, landscape):
     return arr, rotation, orig_width, orig_height
 
 
-def _post_location(variables):
+def _post_graphql(query, variables, label):
     response = requests.post(
         API_ENDPOINT,
-        json={'query': CREATE_LOCATION, 'variables': variables},
+        json={'query': query, 'variables': variables},
         auth=_auth,
         headers={'Accept': 'application/json', 'Content-Type': 'application/json'},
         timeout=30,
@@ -172,12 +182,25 @@ def _post_location(variables):
     response.raise_for_status()
     payload = response.json()
     if payload.get('errors'):
-        raise RuntimeError(f'createLocation errors: {payload["errors"]}')
+        raise RuntimeError(f'{label} errors: {payload["errors"]}')
     return payload
 
 
-def _write_location(body, x, y, confidence, width, height):
-    _post_location({
+def _location_group(body):
+    if body.get('group'):
+        return body['group']
+    project_id = body['projectId']
+    if project_id not in _organization_ids:
+        payload = _post_graphql(GET_PROJECT_ORGANIZATION, {'id': project_id}, 'getProject')
+        project = (payload.get('data') or {}).get('getProject') or {}
+        if not project.get('organizationId'):
+            raise RuntimeError(f'No organizationId found for project {project_id}')
+        _organization_ids[project_id] = project['organizationId']
+    return _organization_ids[project_id]
+
+
+def _write_location(body, x, y, confidence, width, height, group):
+    _post_graphql(CREATE_LOCATION, {
         'height': int(round(height)),
         'imageId': body['imageId'],
         'projectId': body['projectId'],
@@ -187,7 +210,8 @@ def _write_location(body, x, y, confidence, width, height):
         'setId': body['setId'],
         'confidence': float(confidence),
         'source': SOURCE,
-    })
+        'group': group,
+    }, 'createLocation')
 
 
 def _get_detector():
@@ -314,8 +338,9 @@ def _poster(post_queue):
         try:
             body = result['body']
             points = result['points']
+            group = _location_group(body)
             if not points:
-                _write_location(body, 0, 0, 0.0, 0, 0)
+                _write_location(body, 0, 0, 0.0, 0, 0, group)
             else:
                 for vis_x, vis_y, confidence in points:
                     _write_location(
@@ -325,6 +350,7 @@ def _poster(post_queue):
                         confidence,
                         result['block_width'],
                         result['block_height'],
+                        group,
                     )
             sqs.delete_message(
                 QueueUrl=QUEUE_URL, ReceiptHandle=message['ReceiptHandle']

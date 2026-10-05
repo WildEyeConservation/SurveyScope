@@ -80,6 +80,7 @@ export const handler: RunOwlDDetectorHandler = async (event) => {
           projectId,
           bucket,
           setId,
+          ...(organizationId ? { group: organizationId } : {}),
           ...(rotation !== undefined ? { rotation } : {}),
           ...(landscape !== undefined ? { landscape } : {}),
         }),

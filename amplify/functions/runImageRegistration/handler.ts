@@ -8,13 +8,11 @@ import type { SendMessageBatchRequestEntry } from '@aws-sdk/client-sqs';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import {
   cameraOverlapsByProjectId,
-  getImageNeighbour,
   imagesByProjectId,
   getProject,
 } from './graphql/queries';
 import {
   CameraOverlap,
-  GetImageNeighbourQuery,
   GetProjectQuery,
 } from '../runImageRegistration/graphql/API';
 
@@ -25,6 +23,32 @@ const createImageNeighbour = /* GraphQL */ `
     createImageNeighbour(input: $input) { image1Id image2Id group cameraPairKey bucketIndex }
   }
 `;
+
+// Per-image marker the upload Finalizer uses to find undispatched images.
+export const REGISTRATION_DISPATCH_SOURCE = 'registration-dispatch';
+
+const createImageProcessedBy = /* GraphQL */ `
+  mutation CreateImageProcessedBy($input: CreateImageProcessedByInput!) {
+    createImageProcessedBy(input: $input) { imageId source }
+  }
+`;
+
+// The generated query omits the fields skipExistingSuggestions needs.
+const getImageNeighbour = /* GraphQL */ `
+  query GetImageNeighbour($image1Id: ID!, $image2Id: ID!) {
+    getImageNeighbour(image1Id: $image1Id, image2Id: $image2Id) {
+      image1Id image2Id homography suggestedPoints1 registrationProcessedAt
+    }
+  }
+`;
+
+type NeighbourLookup = GraphQLResult<{
+  getImageNeighbour?: {
+    homography?: number[] | null;
+    suggestedPoints1?: number[] | null;
+    registrationProcessedAt?: string | null;
+  } | null;
+}>;
 
 const deleteImageNeighbour = /* GraphQL */ `
   mutation DeleteImageNeighbour($input: DeleteImageNeighbourInput!) {
@@ -213,7 +237,8 @@ async function handlePair(
   // Same-camera pairs leave these null to stay out of the bucket-cleanup GSI.
   cameraPairKey?: string,
   bucketIndex?: number,
-  // Re-runs skip pairs LightGlue already tried and failed (suggestedPoints1 set).
+  // Re-runs skip pairs LightGlue already processed (suggestions or a
+  // processed mark, which no-match pairs get without suggestions).
   skipExistingSuggestions?: boolean,
   // Re-runs against an established winner skip the RegistrationBucketStat
   // increment to keep the lock-in stable.
@@ -236,8 +261,8 @@ async function handlePair(
           image1Id: image1.id,
           image2Id: image2.id,
         },
-      })
-    )) as GraphQLResult<GetImageNeighbourQuery>;
+      }) as Promise<NeighbourLookup>
+    )) as NeighbourLookup;
     const existingNeighbour = neighbourResp.data?.getImageNeighbour;
 
     if (existingNeighbour?.homography) {
@@ -248,11 +273,13 @@ async function handlePair(
     }
 
     if (skipExistingSuggestions) {
-      // Untyped cast — suggestedPoints1 may be missing from stale codegen.
-      const suggested = (existingNeighbour as { suggestedPoints1?: number[] | null } | null | undefined)?.suggestedPoints1;
-      if (Array.isArray(suggested) && suggested.length > 0) {
+      const suggested = existingNeighbour?.suggestedPoints1;
+      if (
+        (Array.isArray(suggested) && suggested.length > 0) ||
+        existingNeighbour?.registrationProcessedAt
+      ) {
         console.log(
-          `Suggestions already exist for pair ${image1.id} and ${image2.id}; skipping (skipExistingSuggestions)`
+          `Pair ${image1.id} and ${image2.id} already processed; skipping (skipExistingSuggestions)`
         );
         return null;
       }
@@ -333,6 +360,8 @@ async function handlePair(
       }),
     };
   } catch (error: unknown) {
+    // A failed pair must keep its images unmarked so the Finalizer retries.
+    pairBuildFailures += 1;
     console.error(
       `Error in handlePair for ${image1.id} and ${image2.id}:`,
       error
@@ -539,8 +568,8 @@ function addStalePairDeletionTasks(
             client.graphql({
               query: getImageNeighbour,
               variables: { image1Id: lb.id, image2Id: rb.id },
-            })
-          )) as GraphQLResult<GetImageNeighbourQuery>;
+            }) as Promise<NeighbourLookup>
+          )) as NeighbourLookup;
           if (resp.data?.getImageNeighbour) {
             await gqlWithRetry(() =>
               client.graphql({
@@ -558,7 +587,55 @@ function addStalePairDeletionTasks(
   }
 }
 
+async function markImagesDispatched(
+  images: MinimalImage[],
+  projectId: string,
+  organizationId?: string
+): Promise<void> {
+  const tasks = images.map((img) => async () => {
+    try {
+      await gqlWithRetry(() =>
+        client.graphql({
+          query: createImageProcessedBy,
+          variables: {
+            input: {
+              imageId: img.id,
+              source: REGISTRATION_DISPATCH_SOURCE,
+              projectId,
+              group: organizationId,
+            },
+          },
+        }) as Promise<GraphQLResult<unknown>>
+      );
+    } catch (e: unknown) {
+      if (!isConditionalCheckFailure(e)) {
+        console.error(`Failed to mark image ${img.id} as dispatched:`, e);
+      }
+    }
+  });
+  await withConcurrency(tasks, 10);
+}
+
+function isConditionalCheckFailure(e: unknown): boolean {
+  const errors =
+    typeof e === 'object' && e !== null && Array.isArray((e as { errors?: unknown }).errors)
+      ? ((e as { errors: unknown[] }).errors)
+      : [];
+  return errors.some((x) => {
+    if (typeof x === 'object' && x !== null && 'errorType' in x) {
+      return String((x as { errorType?: unknown }).errorType ?? '').includes(
+        'ConditionalCheckFailedException'
+      );
+    }
+    return false;
+  });
+}
+
+// Reset per invocation; skipped pairs are not failures, only thrown ones.
+let pairBuildFailures = 0;
+
 export const handler: RunImageRegistrationHandler = async (event, context) => {
+  pairBuildFailures = 0;
   try {
     context.callbackWaitsForEmptyEventLoop = false;
     const projectId = event.arguments.projectId;
@@ -801,18 +878,29 @@ export const handler: RunImageRegistrationHandler = async (event, context) => {
       },
     });
 
+    let sqsFailures = 0;
     for (let i = 0; i < messages.length; i += 10) {
       const batch = messages.slice(i, i + 10);
       try {
-        await sqsClient.send(
+        const result = await sqsClient.send(
           new SendMessageBatchCommand({
             QueueUrl: queueUrl,
             Entries: batch,
           })
         );
+        sqsFailures += result.Failed?.length ?? 0;
       } catch (error: unknown) {
+        sqsFailures += batch.length;
         console.error(`Error sending SQS batch at index ${i}:`, error);
       }
+    }
+
+    if (sqsFailures === 0 && pairBuildFailures === 0) {
+      await markImagesDispatched(sortedImages, projectId, organizationId);
+    } else {
+      console.error(
+        `${sqsFailures} SQS message(s) and ${pairBuildFailures} pair(s) failed; leaving ${sortedImages.length} image(s) unmarked for redispatch`
+      );
     }
 
     // Always kickoff so a previously-'done' cycle gets re-evaluated by the

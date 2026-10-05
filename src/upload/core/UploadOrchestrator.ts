@@ -81,6 +81,7 @@ interface InternalSession {
   noProgressAttempts: number;
   /** Files awaiting a retry-or-skip decision. */
   blockedItems: BlockedItem[];
+  statusMessage?: string;
   releaseLock: () => void;
 }
 
@@ -455,8 +456,7 @@ export class UploadOrchestrator {
         await this.pruneDuplicates(session);
 
         // Verify every manifest item is on S3 before finalizing.
-        const { remainingPaths, uploadedPaths } =
-          await this.verify(session, plan.keyInfo);
+        const { remainingPaths } = await this.verify(session, plan.keyInfo);
         const remainingCount = remainingPaths.length;
         if (remainingCount > 0 || failures.length > 0) {
           // Missing local files cannot recover without user action. Otherwise,
@@ -500,6 +500,7 @@ export class UploadOrchestrator {
         }
         session.lastRemainingCount = null;
 
+        session.statusMessage = undefined;
         this.setPhase(session, 'finalizing');
         const finalizer = new Finalizer({
           client: session.client,
@@ -509,8 +510,15 @@ export class UploadOrchestrator {
           keyInfo: plan.keyInfo,
           store: session.store,
           userId: session.userId,
+          signal: session.controller.signal,
+          onProgress: (message) => {
+            session.statusMessage = message;
+            this.emit(session);
+          },
         });
-        await finalizer.run(uploadedPaths, session.duplicates);
+        await finalizer.run(session.duplicates);
+        session.statusMessage = undefined;
+        if (await this.handleInterrupt(session)) return;
 
         await session.store.clearProject();
         await removeDirectoryHandle(session.projectId).catch(() => {});
@@ -733,6 +741,7 @@ export class UploadOrchestrator {
       keyInfo,
       imageSetId: imageSet.id,
       input: {
+        projectId,
         seedPaths,
         uploadImages,
         fileByPath: session.fileByPath,
@@ -767,6 +776,7 @@ export class UploadOrchestrator {
       projectId: session.projectId,
       keyInfo,
       localPaths,
+      signal: session.controller.signal,
     });
     const uploadedPaths = new Set(
       manifest
@@ -831,6 +841,7 @@ function snapshotOf(session: InternalSession): SessionSnapshot {
     blocked: session.blockedItems,
     retryDelayMs: session.retryDelayMs,
     attempt: session.attempt,
+    statusMessage: session.statusMessage,
   };
 }
 

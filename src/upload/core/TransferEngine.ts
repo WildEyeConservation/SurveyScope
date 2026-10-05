@@ -1,4 +1,4 @@
-import { isCancelError, uploadData } from 'aws-amplify/storage';
+import { isAbortError, uploadOriginal } from '../../storage/upload';
 import type { ImageData } from '../../types/ImageData';
 import { PhashIndex } from '../phashDedup';
 import { PhashService } from '../phashService';
@@ -15,6 +15,7 @@ const BYTES_REPORT_INTERVAL_MS = 300;
 export type { ItemFailure };
 
 export interface TransferInput {
+  projectId: string;
   /** Files already on S3 that are missing DB records. */
   seedPaths: string[];
   /** Files that still need uploading to S3. */
@@ -135,7 +136,7 @@ export class TransferEngine {
   }
 
   private handleItemError(originalPath: string, err: unknown): void {
-    if (isCancelError(err) || this.signal.aborted) return;
+    if (isAbortError(err) || this.signal.aborted) return;
     console.error(`Error processing image ${originalPath}:`, err);
     if (classifyError(err) === 'fatal') {
       // Fatal errors should surface immediately, not retry in the pool.
@@ -224,26 +225,14 @@ export class TransferEngine {
         return;
       }
 
-      const s3Key = input.makeKey(image.originalPath);
-      const rotation = input.rotationForPath(image.originalPath);
-      const task = uploadData({
-        path: 'images/' + s3Key,
-        data: file,
-        options: {
-          bucket: 'inputs',
-          contentType: file.type,
-          ...(rotation !== 0
-            ? {
-                metadata: {
-                  'orientation-correction-ccw': String(rotation),
-                  'orientation-normalized': 'false',
-                },
-              }
-            : {}),
-          onProgress: ({ transferredBytes }) => {
-            this.inFlightBytes.set(image.originalPath, transferredBytes);
-            this.reportBytes();
-          },
+      const task = uploadOriginal({
+        projectId: input.projectId,
+        originalPath: image.originalPath,
+        file,
+        rotation: input.rotationForPath(image.originalPath),
+        onProgress: (transferredBytes) => {
+          this.inFlightBytes.set(image.originalPath, transferredBytes);
+          this.reportBytes();
         },
       });
       this.inFlight.add(task);
@@ -251,7 +240,7 @@ export class TransferEngine {
         await task.result;
         this.completedBytes += file.size;
       } catch (err) {
-        if (isCancelError(err)) {
+        if (isAbortError(err)) {
           cancelled = true;
           return;
         }

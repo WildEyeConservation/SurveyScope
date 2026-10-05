@@ -26,6 +26,7 @@
     "@aws-sdk/client-sqs": "^3.635.0",
     "@aws-sdk/credential-provider-node": "^3.972.6",
     "@aws-sdk/lib-dynamodb": "^3.658.0",
+    "@aws-sdk/s3-request-presigner": "3.669.0",
     "@aws-sdk/util-dynamodb": "^3.648.0",
     "@dotenvx/dotenvx": "^1.48.4",
     "@emotion/react": "^11.14.0",
@@ -95,6 +96,7 @@
   "devDependencies": {
     "@aws-amplify/backend": "^1.4.0",
     "@aws-amplify/backend-cli": "^1.1.1",
+    "@aws-amplify/backend-function": "1.8.0",
     "@aws-lambda-powertools/logger": "^2.10.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.651.1",
     "@types/aws-lambda": "^8.10.145",
@@ -123,6 +125,7 @@
     "vite": "^5.2.0"
   },
   "overrides": {
-    "@parcel/watcher": "2.4.1"
+    "@parcel/watcher": "2.4.1",
+    "@aws-amplify/plugin-types": "1.5.0"
   }
 }

@@ -1,11 +1,21 @@
-import type { DynamoDBStreamHandler } from "aws-lambda";
-import { Logger } from "@aws-lambda-powertools/logger";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import type {
+  DynamoDBBatchItemFailure,
+  DynamoDBRecord,
+  DynamoDBStreamHandler,
+} from 'aws-lambda';
+import { Logger } from '@aws-lambda-powertools/logger';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  UpdateCommand,
+} from '@aws-sdk/lib-dynamodb';
+
+// Safety net for Locations inserted without a group.
 
 const logger = new Logger({
-  logLevel: "INFO",
-  serviceName: "backfill-location-group",
+  logLevel: 'INFO',
+  serviceName: 'backfill-location-group',
 });
 
 const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -13,104 +23,128 @@ const ddbClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const LOCATION_TABLE = process.env.LOCATION_TABLE_NAME!;
 const PROJECT_TABLE = process.env.PROJECT_TABLE_NAME!;
 
-// Warm-container cache: projectId → organizationId
-const organizationIdCache: Record<string, string | undefined> = {};
+const UPDATE_CONCURRENCY = 10;
 
-async function getOrganizationId(projectId: string): Promise<string | undefined> {
-  if (projectId in organizationIdCache) return organizationIdCache[projectId];
+// projectId → organizationId; misses and failures are not cached.
+const organizationIdCache = new Map<string, Promise<string | undefined>>();
 
-  try {
-    const result = await ddbClient.send(
+function getOrganizationId(projectId: string): Promise<string | undefined> {
+  const cached = organizationIdCache.get(projectId);
+  if (cached) return cached;
+
+  const lookup = ddbClient
+    .send(
       new GetCommand({
         TableName: PROJECT_TABLE,
         Key: { id: projectId },
-        ProjectionExpression: "organizationId",
+        ProjectionExpression: 'organizationId',
+      })
+    )
+    .then((result) => result.Item?.organizationId as string | undefined);
+  organizationIdCache.set(projectId, lookup);
+  lookup.then(
+    (organizationId) => {
+      if (!organizationId) organizationIdCache.delete(projectId);
+    },
+    () => organizationIdCache.delete(projectId)
+  );
+  return lookup;
+}
+
+async function setGroup(
+  locationId: string,
+  organizationId: string
+): Promise<void> {
+  try {
+    await ddbClient.send(
+      new UpdateCommand({
+        TableName: LOCATION_TABLE,
+        Key: { id: locationId },
+        UpdateExpression: 'SET #g = :g',
+        // attribute_exists(id): don't recreate deleted locations as stubs.
+        ConditionExpression:
+          'attribute_exists(id) AND (attribute_not_exists(#g) OR #g = :empty OR attribute_type(#g, :null))',
+        ExpressionAttributeNames: { '#g': 'group' },
+        ExpressionAttributeValues: {
+          ':g': organizationId,
+          ':empty': '',
+          ':null': 'NULL',
+        },
       })
     );
-    const organizationId = result.Item?.organizationId as string | undefined;
-    organizationIdCache[projectId] = organizationId;
-    return organizationId;
   } catch (error) {
-    logger.error("Failed to fetch organizationId for project", {
-      projectId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return undefined;
+    if ((error as Error)?.name === 'ConditionalCheckFailedException') {
+      logger.info(
+        `Location ${locationId} no longer exists or already has a group, skipping`
+      );
+      return;
+    }
+    throw error;
   }
 }
 
+function needsBackfill(record: DynamoDBRecord): boolean {
+  if (record.eventName !== 'INSERT') return false;
+  const group = record.dynamodb?.NewImage?.group;
+  return !group?.S;
+}
+
 export const handler: DynamoDBStreamHandler = async (event) => {
-  logger.info(`Processing ${event.Records.length} records`);
+  const records = event.Records.filter(needsBackfill);
+  logger.info(
+    `Processing ${records.length} of ${event.Records.length} records`
+  );
 
-  // Collect INSERTs that need backfilling, grouped by projectId
-  const toBackfill = new Map<string, string[]>(); // projectId → locationId[]
+  const batchItemFailures: DynamoDBBatchItemFailure[] = [];
 
-  for (const record of event.Records) {
-    if (record.eventName !== "INSERT") continue;
+  let next = 0;
+  const worker = async () => {
+    while (next < records.length) {
+      const record = records[next++];
+      const newImage = record.dynamodb?.NewImage;
+      const locationId = newImage?.id?.S;
+      const projectId = newImage?.projectId?.S;
+      if (!locationId || !projectId) {
+        logger.warn('INSERT missing id or projectId', {
+          locationId,
+          projectId,
+        });
+        continue;
+      }
 
-    const newImage = record.dynamodb?.NewImage;
-    if (!newImage) continue;
-
-    // Skip if group is already set
-    const existingGroup = newImage.group?.S;
-    if (existingGroup && existingGroup.length > 0) continue;
-
-    const locationId = newImage.id?.S;
-    const projectId = newImage.projectId?.S;
-    if (!locationId || !projectId) {
-      logger.warn("INSERT missing id or projectId", { locationId, projectId });
-      continue;
-    }
-
-    const ids = toBackfill.get(projectId) ?? [];
-    ids.push(locationId);
-    toBackfill.set(projectId, ids);
-  }
-
-  if (toBackfill.size === 0) {
-    logger.info("No locations to backfill");
-    return { batchItemFailures: [] };
-  }
-
-  for (const [projectId, locationIds] of toBackfill) {
-    const organizationId = await getOrganizationId(projectId);
-    if (!organizationId) {
-      logger.warn("No organizationId found for project, skipping locations", {
-        projectId,
-        locationCount: locationIds.length,
-      });
-      continue;
-    }
-
-    logger.info(`Backfilling ${locationIds.length} locations for project ${projectId} with group ${organizationId}`);
-
-    await Promise.all(
-      locationIds.map(async (locationId) => {
-        try {
-          await ddbClient.send(
-            new UpdateCommand({
-              TableName: LOCATION_TABLE,
-              Key: { id: locationId },
-              UpdateExpression: "SET #g = :g",
-              ConditionExpression: "attribute_not_exists(#g) OR #g = :empty",
-              ExpressionAttributeNames: { "#g": "group" },
-              ExpressionAttributeValues: { ":g": organizationId, ":empty": "" },
-            })
+      try {
+        const organizationId = await getOrganizationId(projectId);
+        if (!organizationId) {
+          logger.warn(
+            'No organizationId found for project, skipping location',
+            {
+              projectId,
+              locationId,
+            }
           );
-          logger.info(`Set group for location ${locationId}`);
-        } catch (error: any) {
-          // ConditionalCheckFailedException means group was already set (race condition) — safe to ignore
-          if (error.name === "ConditionalCheckFailedException") {
-            logger.info(`Location ${locationId} already has group set, skipping`);
-          } else {
-            logger.error(`Failed to update location ${locationId}`, {
-              error: error instanceof Error ? error.message : String(error),
-            });
-          }
+          continue;
         }
-      })
+        await setGroup(locationId, organizationId);
+      } catch (error) {
+        logger.error(`Failed to backfill group for location ${locationId}`, {
+          projectId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        const sequenceNumber = record.dynamodb?.SequenceNumber;
+        if (!sequenceNumber) throw error;
+        batchItemFailures.push({ itemIdentifier: sequenceNumber });
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(UPDATE_CONCURRENCY, records.length) }, worker)
+  );
+
+  if (batchItemFailures.length > 0) {
+    logger.warn(
+      `Reporting ${batchItemFailures.length} failed records for retry`
     );
   }
-
-  return { batchItemFailures: [] };
+  return { batchItemFailures };
 };

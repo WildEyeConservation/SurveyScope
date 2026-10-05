@@ -101,7 +101,11 @@ export async function fetchAllInfoTagsForSet(
   annotationSetId: string,
   onProgress?: (count: number) => void
 ): Promise<Map<string, string[]>> {
-  const data = await fetchInfoTagDataForSet(client, annotationSetId, onProgress);
+  const data = await fetchInfoTagDataForSet(
+    client,
+    annotationSetId,
+    onProgress
+  );
   const result = new Map<string, string[]>();
   for (const annotationId of data.tagIdsByAnnotation.keys()) {
     result.set(annotationId, infoTagNamesFor(data, annotationId));
@@ -163,18 +167,6 @@ export function infoTagIdsFromLinks(value: unknown): string[] {
   return items
     .map((item) => (item as { infoTagId?: unknown } | null)?.infoTagId)
     .filter((id): id is string => typeof id === 'string');
-}
-
-export function planInfoTagLinkChanges(
-  before: Iterable<string>,
-  after: Iterable<string>
-): { added: string[]; removed: string[] } {
-  const beforeIds = new Set(before);
-  const afterIds = new Set(after);
-  return {
-    added: Array.from(afterIds).filter((id) => !beforeIds.has(id)),
-    removed: Array.from(beforeIds).filter((id) => !afterIds.has(id)),
-  };
 }
 
 export type ImageAnnotationRow = {
@@ -272,90 +264,6 @@ export async function fetchInfoTagNamesForImage(
     if (names.length) result.set(row.id, names);
   }
   return result;
-}
-
-export type InfoTagCommit = {
-  annotationId: string;
-  annotationSetId: string;
-  projectId: string;
-  group?: string;
-  before: Iterable<string>;
-  after: Iterable<string>;
-  position: { x: number; y: number };
-  taggedBy: string;
-  recordStatistics?: () => Promise<void>;
-};
-
-// The links are written first and `infoTaggedBy` only once they all succeed:
-// stamping the annotation earlier would let the requeue check treat a partial
-// save as finished work, and the missing tags would never be written again.
-export async function commitInfoTagsForAnnotation(
-  client: DataClient,
-  commit: InfoTagCommit
-): Promise<void> {
-  const { added, removed } = planInfoTagLinkChanges(commit.before, commit.after);
-
-  await Promise.all([
-    ...added.map(async (infoTagId) =>
-      assertLinkWriteSucceeded(
-        await client.models.AnnotationInfoTag.create({
-          annotationId: commit.annotationId,
-          infoTagId,
-          annotationSetId: commit.annotationSetId,
-          projectId: commit.projectId,
-          group: commit.group,
-        }),
-        `Failed to add info tag ${infoTagId}`
-      )
-    ),
-    ...removed.map(async (infoTagId) =>
-      assertLinkWriteSucceeded(
-        await client.models.AnnotationInfoTag.delete({
-          annotationId: commit.annotationId,
-          infoTagId,
-        }),
-        `Failed to remove info tag ${infoTagId}`
-      )
-    ),
-  ]);
-
-  const saved = await client.models.Annotation.update({
-      id: commit.annotationId,
-      infoTaggedBy: commit.taggedBy,
-      x: commit.position.x,
-      y: commit.position.y,
-    });
-  assertNoGraphqlErrors(saved, 'Failed to record informational tagging');
-  if (!saved.data) throw new Error('Failed to record informational tagging: no annotation returned');
-  await commit.recordStatistics?.();
-}
-
-export type InfoTagImageProgress = { counted: boolean; acknowledged: boolean };
-
-// Queue progress is only recorded and the SQS message only deleted once every
-// tag write for the image has landed, so a failed save is redelivered instead
-// of being dropped.
-export async function finalizeInfoTagImage(options: {
-  commits: ReadonlyArray<Promise<unknown>>;
-  progress: InfoTagImageProgress;
-  countCompletion: boolean;
-  incrementCount: () => Promise<void>;
-  acknowledge: () => Promise<void>;
-}): Promise<void> {
-  const results = await Promise.allSettled(options.commits);
-  const failure = results.find(
-    (result): result is PromiseRejectedResult => result.status === 'rejected'
-  );
-  if (failure) throw failure.reason;
-
-  if (options.countCompletion && !options.progress.counted) {
-    await options.incrementCount();
-    options.progress.counted = true;
-  }
-  if (!options.progress.acknowledged) {
-    await options.acknowledge();
-    options.progress.acknowledged = true;
-  }
 }
 
 // Links reference their tag, so they have to go first.

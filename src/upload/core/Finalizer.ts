@@ -1,16 +1,26 @@
+import { registerImageFile } from '../../storage/api';
 import type { CreatedImage } from '../../types/ImageData';
 import { fetchAllPaginatedResults } from '../../utils';
 import { logAdminAction } from '../../utils/adminActionLogger';
 import { DETECTOR_DISPATCH } from './modelDispatch';
 import type { UploadStateStore } from './persistence';
-import { runPool } from './pool';
+import { runPool, sleep } from './pool';
 import type { ProjectKeyInfo } from './projectKeys';
 import { FatalUploadError, withRetry } from './retry';
 import type { DuplicateRecord, UploadBackend, UploadClient } from './types';
 
 const BATCH_SIZE = 500;
+const BATCH_OVERLAP = 10;
 const DUP_CONCURRENCY = 10;
 const RECONCILE_CONCURRENCY = 5;
+
+// Written by runImageRegistration for every image it has queued.
+export const REGISTRATION_DISPATCH_SOURCE = 'registration-dispatch';
+const REGISTRATION_CONCURRENCY = 4;
+const REGISTRATION_ROUNDS = 3;
+// AppSync times out at 30 s while the Lambda may still be running.
+const MARKER_POLL_INTERVAL_MS = 5_000;
+const MARKER_POLL_TIMEOUT_MS = 5 * 60_000;
 
 interface DbImage {
   id: string;
@@ -30,19 +40,23 @@ export interface FinalizerContext {
   keyInfo: ProjectKeyInfo;
   store: UploadStateStore;
   userId: string;
+  signal?: AbortSignal;
+  onProgress?: (message: string) => void;
+}
+
+export interface RegistrationBatch {
+  payload: CreatedImage[];
+  /** First and last non-overlap image; both marked means the batch landed. */
+  probeIds: string[];
 }
 
 // Post-transfer completion: dedupe, reconcile, dispatch, and audit.
 export class Finalizer {
   constructor(private ctx: FinalizerContext) {}
 
-  async run(
-    sessionUploadedPaths: Set<string>,
-    duplicates: DuplicateRecord[]
-  ): Promise<void> {
-    const { client, backend, projectId, imageSetId, keyInfo, store, userId } =
-      this.ctx;
-    const { organizationId, makeKey } = keyInfo;
+  async run(duplicates: DuplicateRecord[]): Promise<void> {
+    const { client, projectId, imageSetId, keyInfo, store, userId } = this.ctx;
+    const { organizationId } = keyInfo;
 
     // Fetch images with their related memberships and files in one query so
     // duplicate deletion needs no extra round-trips.
@@ -137,17 +151,7 @@ export class Finalizer {
             );
           }
           if ((img.files ?? []).length === 0) {
-            const finalKey = makeKey(img.originalPath);
-            await withRetry(() =>
-              client.models.ImageFile.create({
-                projectId,
-                imageId: img.id,
-                key: finalKey,
-                path: finalKey,
-                type: mimeTypeFromPath(img.originalPath),
-                group: organizationId,
-              })
-            );
+            await withRetry(() => registerImageFile(projectId, img.id, img.originalPath));
           }
         } catch (err) {
           console.error(`Failed to reconcile image ${img.id}:`, err);
@@ -165,17 +169,6 @@ export class Finalizer {
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
 
-    // Uploaded-session subset for registration work.
-    const sessionImages = allProjectImages.filter((img) =>
-      sessionUploadedPaths.has(img.originalPath)
-    );
-
-    const registrationImages = computeRegistrationImages(
-      allProjectImages,
-      sessionImages
-    );
-    const sessionIdsForReg = new Set(sessionImages.map((img) => img.id));
-
     // Set image count from authoritative deduplicated DB records.
     await client.models.ImageSet.update({
       id: imageSetId,
@@ -186,38 +179,9 @@ export class Finalizer {
     const model = metadata?.model ?? 'manual';
     const masks = metadata?.masks ?? [];
 
-    for (let i = 0; i < registrationImages.length; i += BATCH_SIZE) {
-      const batch = registrationImages.slice(i, i + BATCH_SIZE);
-      // Include 10 prior images to enable adjacency linking across batch
-      // boundaries (and across cameras).
-      const overlapCount = 10;
-      const overlapStart = Math.max(0, i - overlapCount);
-      const overlap: CreatedImage[] =
-        i > 0 ? registrationImages.slice(overlapStart, i) : [];
-      const payload = overlap.concat(batch).map((img) => ({
-        id: img.id,
-        originalPath: img.originalPath,
-        timestamp: img.timestamp,
-        cameraId: img.cameraId,
-      }));
-
-      const payloadSessionIds = payload
-        .filter((img) => sessionIdsForReg.has(img.id))
-        .map((img) => img.id);
-
-      client.mutations.runImageRegistration(
-        {
-          projectId,
-          metadata: JSON.stringify({
-            masks,
-            images: payload,
-            sessionIds: payloadSessionIds,
-          }),
-          queueUrl: backend.custom.lightglueTaskQueueUrl,
-        },
-        { retry: false }
-      );
-    }
+    // Whole-project, marker-driven: not limited to this session's files.
+    await this.dispatchRegistration(allProjectImages, masks);
+    if (this.ctx.signal?.aborted) return;
 
     if (model === 'manual') {
       await client.models.Project.update({
@@ -244,6 +208,159 @@ export class Finalizer {
     }
 
     client.mutations.updateProjectMemberships({ projectId });
+  }
+
+  /** Dispatches unmarked images, confirms via markers, retries the rest. */
+  private async dispatchRegistration(
+    allProjectImages: CreatedImage[],
+    masks: number[][][]
+  ): Promise<void> {
+    const { signal, onProgress } = this.ctx;
+
+    for (let round = 1; round <= REGISTRATION_ROUNDS; round++) {
+      if (signal?.aborted) return;
+      onProgress?.('Checking image registration...');
+      const dispatched = await this.fetchDispatchedImageIds();
+      const candidates = allProjectImages.filter(
+        (img) => !dispatched.has(img.id)
+      );
+      if (candidates.length === 0) return;
+
+      const registrationImages = computeRegistrationImages(
+        allProjectImages,
+        candidates
+      );
+      const candidateIds = new Set(candidates.map((img) => img.id));
+      const batches = buildRegistrationBatches(registrationImages);
+      console.info(
+        `Registration round ${round}: ${candidates.length} image(s) not yet dispatched in ${batches.length} batch(es)`
+      );
+
+      let done = 0;
+      const unconfirmed: RegistrationBatch[] = [];
+      onProgress?.(
+        `Starting image registration (0/${batches.length} batches)...`
+      );
+      await runPool(
+        batches,
+        REGISTRATION_CONCURRENCY,
+        async (batch) => {
+          const ok = await this.invokeRegistration(batch, candidateIds, masks);
+          if (!ok) unconfirmed.push(batch);
+          done += 1;
+          onProgress?.(
+            `Starting image registration (${done}/${batches.length} batches)...`
+          );
+        },
+        signal
+      );
+      if (signal?.aborted) return;
+
+      if (unconfirmed.length > 0) {
+        onProgress?.(
+          `Waiting for ${unconfirmed.length} registration batch(es) to confirm...`
+        );
+        await this.awaitBatchMarkers(unconfirmed);
+      }
+    }
+
+    if (signal?.aborted) return;
+    const dispatched = await this.fetchDispatchedImageIds();
+    const remaining = allProjectImages.filter(
+      (img) => !dispatched.has(img.id)
+    ).length;
+    if (remaining > 0) {
+      throw new Error(
+        `All images are uploaded, but image registration could not be started for ${remaining} image${
+          remaining === 1 ? '' : 's'
+        }. Resume the upload to retry.`
+      );
+    }
+  }
+
+  private async fetchDispatchedImageIds(): Promise<Set<string>> {
+    const { client, projectId } = this.ctx;
+    const rows = (await fetchAllPaginatedResults(
+      client.models.ImageProcessedBy.processedByProjectIdAndSource,
+      {
+        projectId,
+        source: { eq: REGISTRATION_DISPATCH_SOURCE },
+        selectionSet: ['imageId'],
+        limit: 10000,
+      }
+    )) as { imageId: string }[];
+    return new Set(rows.map((r) => r.imageId));
+  }
+
+  /** False means unconfirmed, not failed. */
+  private async invokeRegistration(
+    batch: RegistrationBatch,
+    candidateIds: Set<string>,
+    masks: number[][][]
+  ): Promise<boolean> {
+    const { client, backend, projectId } = this.ctx;
+    const payload = batch.payload.map((img) => ({
+      id: img.id,
+      originalPath: img.originalPath,
+      timestamp: img.timestamp,
+      cameraId: img.cameraId,
+    }));
+    // Lets the handler drop stale bridge pairs across newly inserted images.
+    const sessionIds = payload
+      .filter((img) => candidateIds.has(img.id))
+      .map((img) => img.id);
+    try {
+      const result = await client.mutations.runImageRegistration(
+        {
+          projectId,
+          // Redispatch (retries, legacy projects without markers) must not
+          // requeue pairs LightGlue has already processed.
+          metadata: JSON.stringify({
+            masks,
+            images: payload,
+            sessionIds,
+            skipExistingSuggestions: true,
+          }),
+          queueUrl: backend.custom.lightglueTaskQueueUrl,
+        },
+        { retry: false }
+      );
+      return isRegistrationSuccess(result?.data);
+    } catch (err) {
+      console.warn(
+        `runImageRegistration batch did not confirm (${batch.payload.length} images):`,
+        err
+      );
+      return false;
+    }
+  }
+
+  private async awaitBatchMarkers(batches: RegistrationBatch[]): Promise<void> {
+    const { client, signal } = this.ctx;
+    const pending = new Set(batches);
+    const deadline = Date.now() + MARKER_POLL_TIMEOUT_MS;
+    while (pending.size > 0 && Date.now() < deadline && !signal?.aborted) {
+      await sleep(MARKER_POLL_INTERVAL_MS, signal);
+      for (const batch of Array.from(pending)) {
+        let marked = true;
+        for (const imageId of batch.probeIds) {
+          const { data } = await client.models.ImageProcessedBy.get(
+            { imageId, source: REGISTRATION_DISPATCH_SOURCE },
+            { selectionSet: ['imageId'] }
+          );
+          if (!data) {
+            marked = false;
+            break;
+          }
+        }
+        if (marked) pending.delete(batch);
+      }
+    }
+    if (pending.size > 0) {
+      console.warn(
+        `${pending.size} registration batch(es) still unconfirmed after ${MARKER_POLL_TIMEOUT_MS / 1000}s`
+      );
+    }
   }
 
   private async dispatchDetector(
@@ -375,7 +492,39 @@ export class Finalizer {
   }
 }
 
-// Include adjacent non-session images so registration bridges upload batches.
+function isRegistrationSuccess(data: unknown): boolean {
+  let body: unknown = data;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return false;
+    }
+  }
+  if (!body || typeof body !== 'object') return false;
+  const statusCode = (body as { statusCode?: unknown }).statusCode;
+  return statusCode === undefined || statusCode === 200;
+}
+
+export function buildRegistrationBatches(
+  registrationImages: CreatedImage[],
+  batchSize = BATCH_SIZE,
+  overlapCount = BATCH_OVERLAP
+): RegistrationBatch[] {
+  const batches: RegistrationBatch[] = [];
+  for (let i = 0; i < registrationImages.length; i += batchSize) {
+    const fresh = registrationImages.slice(i, i + batchSize);
+    const overlap =
+      i > 0 ? registrationImages.slice(Math.max(0, i - overlapCount), i) : [];
+    const probeIds = Array.from(
+      new Set([fresh[0].id, fresh[fresh.length - 1].id])
+    );
+    batches.push({ payload: overlap.concat(fresh), probeIds });
+  }
+  return batches;
+}
+
+// Adds adjacent already-dispatched images so pairs bridge dispatch batches.
 export function computeRegistrationImages(
   allProjectImages: CreatedImage[],
   sessionImages: CreatedImage[]
@@ -441,12 +590,4 @@ export function computeRegistrationImages(
     ...sessionImages,
     ...allProjectImages.filter((img) => boundaryIds.has(img.id)),
   ].sort((a, b) => a.timestamp - b.timestamp);
-}
-
-function mimeTypeFromPath(path: string): string {
-  const lower = path.toLowerCase();
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.tif') || lower.endsWith('.tiff')) return 'image/tiff';
-  return 'application/octet-stream';
 }

@@ -1,55 +1,30 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import sharp from 'sharp';
 import { env } from '$amplify/env/generateTile';
-import { Amplify } from 'aws-amplify';
-import { generateClient } from 'aws-amplify/data';
+import { resolveImageAccess, db, table } from '../imageAccess/repository';
+import {
+  validTile,
+  MAX_GENERATED_TILE_BATCH,
+} from '../../../shared/imageTiles';
 
 const s3 = new S3Client();
 
-Amplify.configure(
-  {
-    API: {
-      GraphQL: {
-        endpoint: env.AMPLIFY_DATA_GRAPHQL_ENDPOINT,
-        region: env.AWS_REGION,
-        defaultAuthMode: 'iam',
-      },
-    },
-  },
-  {
-    Auth: {
-      credentialsProvider: {
-        getCredentialsAndIdentityId: async () => ({
-          credentials: {
-            accessKeyId: env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-            sessionToken: env.AWS_SESSION_TOKEN,
-          },
-        }),
-        clearCredentialsAndIdentityId: () => {},
-      },
-    },
-  }
-);
-
-const gqlClient = generateClient({ authMode: 'iam' });
-
-const updateImageMutation = /* GraphQL */ `
-  mutation UpdateImage($input: UpdateImageInput!) {
-    updateImage(input: $input) {
-      id
-    }
-  }
-`;
-
 async function stampTiledAt(imageId) {
   try {
-    await gqlClient.graphql({
-      query: updateImageMutation,
-      variables: { input: { id: imageId, tiledAt: new Date().toISOString() } },
-    });
+    await db.send(
+      new UpdateCommand({
+        TableName: table('Image'),
+        Key: { id: imageId },
+        UpdateExpression: 'SET tiledAt = :now',
+        ConditionExpression: 'attribute_exists(id)',
+        ExpressionAttributeValues: { ':now': new Date().toISOString() },
+      })
+    );
   } catch (err) {
-    console.log(JSON.stringify({ msg: 'stamp_tiled_at_failed', imageId, error: err.message }));
+    console.log(
+      JSON.stringify({ msg: 'stamp_tiled_at_failed', imageId, error: err.message })
+    );
   }
 }
 
@@ -80,7 +55,7 @@ function sourceCacheSet(imageKey, entry) {
 }
 
 function getMaxZoom(width, height) {
-  return Math.ceil(Math.log2(Math.max(width, height) / 256));
+  return Math.max(0, Math.ceil(Math.log2(Math.max(width, height) / 256)));
 }
 
 async function streamToBuffer(stream) {
@@ -215,20 +190,33 @@ async function uploadTile(tileBuffer, outputKey) {
  *      them cheaply.
  */
 export async function handler(event) {
-  const { imageKey, imageId, zs, rows, cols } = event.arguments;
-
-  if (!imageKey || !zs || !rows || !cols) {
-    throw new Error('Missing required parameters: imageKey, zs, rows, cols');
+  const { imageId, sharedImageId, zs, rows, cols } = event.arguments;
+  const requestedKey = event.arguments.imageKey?.replace(/^images\//, '');
+  if (!imageId || !requestedKey) {
+    throw new Error('Image id and source key are required');
+  }
+  if (!Array.isArray(zs) || !Array.isArray(rows) || !Array.isArray(cols)) {
+    throw new Error('Missing required parameters: zs, rows, cols');
   }
   if (zs.length !== rows.length || zs.length !== cols.length) {
     throw new Error('zs, rows, cols must all be the same length');
   }
+  if (zs.length > MAX_GENERATED_TILE_BATCH) {
+    throw new Error(`At most ${MAX_GENERATED_TILE_BATCH} tiles per request`);
+  }
   if (zs.length === 0) {
     return [];
   }
+
+  const access = await resolveImageAccess(event.identity, {
+    imageId,
+    sourceKey: requestedKey,
+    sharedImageId,
+  });
+  const imageKey = `images/${access.sourceKey}`;
   for (let i = 0; i < zs.length; i++) {
-    if (zs[i] == null || rows[i] == null || cols[i] == null) {
-      throw new Error(`Null tile coordinate at index ${i}`);
+    if (!validTile({ z: zs[i], row: rows[i], col: cols[i] }, access.image)) {
+      throw new Error(`Invalid tile coordinate at index ${i}`);
     }
   }
 
@@ -305,7 +293,7 @@ export async function handler(event) {
       timings.uploadTilesMs = performance.now() - uploadStart;
       timings.uploadFailures = uploadFailures;
 
-      if (imageId) {
+      if (!access.shared) {
         await stampTiledAt(imageId);
       }
     }

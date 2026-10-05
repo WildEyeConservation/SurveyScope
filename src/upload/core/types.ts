@@ -63,6 +63,8 @@ export interface SessionSnapshot {
   /** > 0 while in waiting-retry; the delay currently being waited out. */
   retryDelayMs: number;
   attempt: number;
+  /** Finalizing-phase progress detail. */
+  statusMessage?: string;
 }
 
 export interface DuplicateRecord {

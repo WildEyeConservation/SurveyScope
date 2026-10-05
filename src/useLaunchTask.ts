@@ -1,5 +1,5 @@
 import { useContext, useCallback } from 'react';
-import { uploadData } from 'aws-amplify/storage';
+import { uploadWorkflowFile } from './storage/workflowFiles';
 import { GlobalContext } from './Context';
 import type {
   LaunchQueueOptions,
@@ -419,7 +419,6 @@ export function useLaunchTask(
         collectedLocations = allLocationIds;
 
         onProgress?.('Uploading location manifest...');
-        const manifestKey = `queue-manifests/${crypto.randomUUID()}.json`;
 
         // Map back to the full location objects for the manifest
         const locationsMap = new Map(allLocationsWithConfidence.map((l) => [l.id, l]));
@@ -435,18 +434,11 @@ export function useLaunchTask(
           };
         });
 
-        await uploadData({
-          path: manifestKey,
-          data: JSON.stringify({ items: manifestItems }),
-          options: {
-            bucket: 'outputs',
-            contentType: 'application/json',
-          },
-        }).result;
-
-        // Note: we can't update payload directly here if it's defined later, 
-        // but we can store these in variables.
-        const locationManifestS3Key = manifestKey;
+        const locationManifestS3Key = await uploadWorkflowFile(
+          'queue-manifest',
+          options.projectId,
+          JSON.stringify({ items: manifestItems })
+        );
         const launchedCount = manifestItems.length;
 
         const payload: LaunchLambdaPayload = {
@@ -515,19 +507,11 @@ async function sendLaunchLambdaRequest(
 
   if (payloadSize > PAYLOAD_SIZE_THRESHOLD) {
     // Upload large payload to S3 and send only the reference.
-    const s3Key = `launch-payloads/${crypto.randomUUID()}.json`;
-    console.log(
-      `Payload size ${payloadSize} exceeds threshold, uploading to S3`,
-      { key: s3Key }
+    const s3Key = await uploadWorkflowFile(
+      'launch-payload',
+      payload.projectId,
+      payloadStr
     );
-    await uploadData({
-      path: s3Key,
-      data: payloadStr,
-      options: {
-        bucket: 'outputs',
-        contentType: 'application/json',
-      },
-    }).result;
     requestPayload = JSON.stringify({ payloadS3Key: s3Key });
   } else {
     requestPayload = payloadStr;

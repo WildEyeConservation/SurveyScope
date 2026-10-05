@@ -1,3 +1,6 @@
+import { imageAccess } from '../storage/imageAccess/resource';
+import { infoTagWork } from '../functions/infoTagWork/resource';
+import { workflowFiles } from '../storage/workflowFiles/resource';
 import { a, defineData } from '@aws-amplify/backend';
 import { addUserToGroup } from '../functions/add-user-to-group/resource';
 import { createGroup } from '../data/create-group/resource';
@@ -217,7 +220,7 @@ const schema = a
         type: a.string().required(),
         group: a.string(),
       })
-      .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
+      .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group').to(['read', 'delete'])])
       .secondaryIndexes((index) => [
         index('imageId').queryField('imagesByimageId'),
         index('path').queryField('imagesByPath'),
@@ -286,6 +289,7 @@ const schema = a
         reviewedBy: a.string(),
         infoTags: a.hasMany('AnnotationInfoTag', 'annotationId'),
         infoTaggedBy: a.string(),
+        infoTagRevision: a.integer(),
         group: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.owner(), allow.groupDefinedIn('group')])
@@ -533,6 +537,7 @@ const schema = a
         confidenceThreshold: a.float(),
         launchedCount: a.integer(),
         observedCount: a.integer().default(0),
+        infoTagProtocolVersion: a.integer(),
         locationManifestS3Key: a.string(),
         emptyQueueTimestamp: a.string(),
         requeuesCompleted: a.integer().default(0),
@@ -1109,6 +1114,8 @@ const schema = a
         surveyName: a.string(),
         annotationSetName: a.string(),
         status: a.string().default('active'),
+        operationStartedAt: a.datetime(),
+        errorMessage: a.string(),
         createdBy: a.string(),
         group: a.string(),
       })
@@ -1199,6 +1206,8 @@ const schema = a
       .secondaryIndexes((index) => [
         index('shareId').queryField('sharedChainCategoriesByShareId'),
       ]),
+    // chainMutationGuard validates current share membership, source IDs and
+    // ownership before the generated owner-authorized mutation can write.
     ChainReviewFeedback: a
       .model({
         shareId: a.id().required(),
@@ -1501,6 +1510,12 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(launchInfoTags)),
+    infoTagWork: a
+      .mutation()
+      .arguments({ request: a.string().required() })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(infoTagWork)),
     launchHomography: a
       .mutation()
       .arguments({
@@ -1614,11 +1629,142 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(updateActiveOrganizations)),
+    // Image storage: originals and tiles are only reachable via imageAccess.
+    signImageTiles: a
+      .query()
+      .arguments({
+        imageId: a.id().required(),
+        sourceKey: a.string().required(),
+        sharedImageId: a.id(),
+        tiles: a.json().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    imageDownloadUrl: a
+      .query()
+      .arguments({
+        imageId: a.id().required(),
+        sourceKey: a.string().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    uploadedImagePaths: a
+      .query()
+      .arguments({
+        projectId: a.id().required(),
+        paths: a.string().required().array().required(),
+      })
+      .returns(a.string().array())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    prepareImageUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        contentType: a.string().required(),
+        rotation: a.integer(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    createImageMultipartUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        contentType: a.string().required(),
+        rotation: a.integer(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    signImageUploadParts: a
+      .query()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        uploadId: a.string().required(),
+        partNumbers: a.integer().required().array().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    completeImageMultipartUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        uploadId: a.string().required(),
+        parts: a.json().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    abortImageMultipartUpload: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        originalPath: a.string().required(),
+        uploadId: a.string().required(),
+      })
+      .returns(a.boolean())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    registerImageFile: a
+      .mutation()
+      .arguments({
+        projectId: a.id().required(),
+        imageId: a.id().required(),
+        originalPath: a.string().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
+    // Workflow files in the outputs bucket: keys are derived server-side from
+    // records the caller is authorized to see.
+    falseNegativeFileUrl: a
+      .query()
+      .arguments({
+        annotationSetId: a.id().required(),
+        kind: a.string().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
+    deleteFalseNegativeFiles: a
+      .mutation()
+      .arguments({ annotationSetId: a.id().required() })
+      .returns(a.boolean())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
+    jollyStatusUrl: a
+      .query()
+      .arguments({
+        surveyId: a.id().required(),
+        annotationSetId: a.id().required(),
+        jobId: a.id().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
+    prepareWorkflowUpload: a
+      .mutation()
+      .arguments({
+        kind: a.string().required(),
+        projectId: a.id().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(workflowFiles)),
     generateTile: a
       .query()
       .arguments({
         imageKey: a.string().required(),
-        imageId: a.id(),
+        imageId: a.id().required(),
+        sharedImageId: a.id(),
         zs: a.integer().required().array().required(),
         rows: a.integer().required().array().required(),
         cols: a.integer().required().array().required(),

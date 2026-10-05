@@ -5,7 +5,10 @@ import { GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
 import TileConfiguration from '../TileConfiguration';
 import type { TiledLaunchRequest } from '../types/LaunchTask';
-import { uploadData, downloadData } from 'aws-amplify/storage';
+import {
+  readFalseNegativeFile,
+  uploadWorkflowFile,
+} from '../storage/workflowFiles';
 
 // Threshold in bytes above which we upload the payload to S3.
 const PAYLOAD_SIZE_THRESHOLD = 200 * 1024; // 200KB
@@ -134,16 +137,12 @@ export default function ManageTiles({
         if (!annotationSets?.length || !mounted) return;
 
         for (const as of annotationSets) {
-          try {
-            await downloadData({
-              path: `false-negative-pools/${as.id}.json`,
-              options: { bucket: 'outputs' },
-            }).result;
-            // If download succeeds, FN data exists
+          const pool = await readFalseNegativeFile(as.id, 'pool').catch(
+            () => null
+          );
+          if (pool) {
             if (mounted) setHasFnData(true);
             return;
-          } catch {
-            // No pool for this annotation set, continue checking
           }
         }
       } catch (err) {
@@ -375,17 +374,12 @@ export default function ManageTiles({
       let requestPayload: string;
 
       if (payloadSize > PAYLOAD_SIZE_THRESHOLD) {
-        // Upload large payload to S3
-        const s3Key = `launch-payloads/${crypto.randomUUID()}.json`;
         setStatusMessage('Uploading tile configuration...');
-        await uploadData({
-          path: s3Key,
-          data: payloadStr,
-          options: {
-            bucket: 'outputs',
-            contentType: 'application/json',
-          },
-        }).result;
+        const s3Key = await uploadWorkflowFile(
+          'launch-payload',
+          project.id,
+          payloadStr
+        );
         requestPayload = JSON.stringify({ payloadS3Key: s3Key });
       } else {
         requestPayload = payloadStr;

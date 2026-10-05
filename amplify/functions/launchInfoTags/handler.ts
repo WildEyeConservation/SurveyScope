@@ -6,13 +6,13 @@ import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { authorizeRequest } from '../shared/authorizeRequest';
 import {
   CreateQueueCommand,
-  SendMessageBatchCommand,
   SQSClient,
 } from '@aws-sdk/client-sqs';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import { enqueuePretile } from '../shared/enqueuePretile';
+import { enqueueInfoTagImages } from './enqueueImages';
 import { createShadowWorkflowRun, workflowLaunchUserId } from '../workflowStats/runWriter';
 import {
   assertInputsBelongToProject,
@@ -328,12 +328,9 @@ async function handleLaunch(
     { userId: launchedBy, organizationId }
   );
 
-  await enqueueImages(
-    queue.url,
-    queue.id,
-    annotationSetId,
-    categoryIds,
-    items
+  await enqueueInfoTagImages(
+    { queueUrl: queue.url, queueId: queue.id, annotationSetId, categoryIds, items },
+    (command) => sqsClient.send(command)
   );
 
   if (!env.PRETILE_QUEUE_URL) throw new Error('PRETILE_QUEUE_URL not set');
@@ -439,6 +436,7 @@ async function createQueue(
       annotationSetId: tracking.annotationSetId,
       launchedCount: tracking.launchedCount,
       observedCount: 0,
+      infoTagProtocolVersion: 1,
       locationManifestS3Key: tracking.manifestKey,
       requeuesCompleted: 0,
       group: organizationId,
@@ -455,39 +453,6 @@ async function findExistingQueue(projectId: string) {
     queuesByProjectId?: { items: Array<{ id: string }> };
   }>(queuesByProjectIdQuery, { projectId, limit: 1 });
   return data.queuesByProjectId?.items?.[0] ?? null;
-}
-
-async function enqueueImages(
-  queueUrl: string,
-  queueId: string,
-  annotationSetId: string,
-  categoryIds: string[],
-  items: ImageWorkItem[]
-) {
-  const limit = pLimit(10);
-  const tasks: Array<Promise<void>> = [];
-  for (let offset = 0; offset < items.length; offset += 10) {
-    const batch = items.slice(offset, offset + 10);
-    tasks.push(
-      limit(async () => {
-        await sqsClient.send(
-          new SendMessageBatchCommand({
-            QueueUrl: queueUrl,
-            Entries: batch.map((item, index) => ({
-              Id: `msg-${offset + index}`,
-              MessageBody: JSON.stringify({
-                imageId: item.imageId,
-                annotationSetId,
-                categoryIds,
-                queueId,
-              }),
-            })),
-          })
-        );
-      })
-    );
-  }
-  await Promise.all(tasks);
 }
 
 async function assertPayloadOwnership(payload: LaunchInfoTagsPayload) {

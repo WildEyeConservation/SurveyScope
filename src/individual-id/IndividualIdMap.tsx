@@ -5,6 +5,7 @@ import * as jdenticon from 'jdenticon';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RotateCw, Layers, Copy, Check, EyeOff } from 'lucide-react';
 import pLimit from 'p-limit';
+import { imageTileContext } from '../StorageLayer';
 import {
   annotationTiles,
   baseTiles,
@@ -884,8 +885,12 @@ export function IndividualIdMap({
   // image object reference. Parents recompute the `image` prop on every
   // refetch even when nothing about the image changed; an unstable callback
   // would cascade into the init effect and tear down the map mid-commit.
+  const imageId = image.id;
   const imageWidth = image.width;
   const imageHeight = image.height;
+  // Set only for chain-share snapshots; lets reviewers outside the
+  // organisation sign tiles through the share.
+  const sharedImageId = (image as { sharedImageId?: string }).sharedImageId;
   const updateVisibleTiles = useCallback(
     async (m: maplibregl.Map | null, refineViewport = false) => {
       if (
@@ -895,6 +900,12 @@ export function IndividualIdMap({
         activeTileMapRef.current !== m
       )
         return;
+      const tileContext = imageTileContext({
+        id: imageId,
+        width: imageWidth,
+        height: imageHeight,
+        sharedImageId,
+      });
       const { maxZ, pyramidSize } = getPyramidInfo({
         width: imageWidth,
         height: imageHeight,
@@ -994,7 +1005,7 @@ export function IndividualIdMap({
         }
         const fetchTile = async () => {
           if (!isCurrent()) return;
-          return getZoomRingTile(sourceKey, requestedTile, maxZ);
+          return getZoomRingTile(tileContext, sourceKey, requestedTile, maxZ);
         };
         // Base tiles bypass the limit so a cached background appears at once.
         const tile = (z <= baseZoom(maxZ) ? fetchTile() : tileLimit(fetchTile))
@@ -1008,7 +1019,7 @@ export function IndividualIdMap({
               const masked =
                 signature === tileMaskKey(requestedTile)
                   ? blob
-                  : await getZoomRingTile(sourceKey, target, maxZ);
+                  : await getZoomRingTile(tileContext, sourceKey, target, maxZ);
               if (!isCurrent()) return;
               const latest = desiredTilesRef.current.get(sourceId);
               if (!latest) return;
@@ -1090,7 +1101,16 @@ export function IndividualIdMap({
         });
       }
     },
-    [sourceKey, imageWidth, imageHeight, px2lngLat, scale, tileLimit]
+    [
+      sourceKey,
+      imageId,
+      sharedImageId,
+      imageWidth,
+      imageHeight,
+      px2lngLat,
+      scale,
+      tileLimit,
+    ]
   );
 
   // Initialise map.

@@ -11,7 +11,7 @@ import { useContext, useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import { useNavigate } from 'react-router-dom';
-import { downloadData } from 'aws-amplify/storage';
+import { readJollyStatus } from './storage/workflowFiles';
 
 interface LaunchResponse {
   jobId: string;
@@ -122,13 +122,11 @@ export default function GenerateJollyResults({
       }
       pollInFlight = true;
       try {
-        const result = await downloadData({
-          path: activeJob.statusKey,
-          options: { bucket: 'outputs' },
-        }).result;
-        const status = JSON.parse(
-          await result.body.text()
-        ) as JollyJobStatus;
+        const status = await readJollyStatus<JollyJobStatus>(
+          surveyId,
+          annotationSetId,
+          activeJob.jobId
+        );
         if (cancelled) return;
         if (status.jobId !== activeJob.jobId) {
           throw new Error('The status artifact belongs to another job');

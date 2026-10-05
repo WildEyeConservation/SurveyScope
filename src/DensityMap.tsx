@@ -340,6 +340,33 @@ export default function DensityMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyDataSig]);
 
+  // Match the transect map's ~5m circle for images sharing coordinates.
+  // Build before filtering so an image keeps its position as filters change.
+  const adjustedPositions = useMemo(() => {
+    const groups = new Map<string, string[]>();
+    const positions = new Map<string, { lat: number; lng: number }>();
+    for (const [id, img] of imageById) {
+      const key = `${img.lat},${img.lng}`;
+      const group = groups.get(key) ?? [];
+      group.push(id);
+      groups.set(key, group);
+    }
+    for (const group of groups.values()) {
+      group.sort();
+      group.forEach((id, index) => {
+        const img = imageById.get(id)!;
+        const angle = (2 * Math.PI * index) / group.length;
+        const radius = group.length > 1 ? 0.00005 : 0;
+        positions.set(id, {
+          lat: img.lat + radius * Math.sin(angle),
+          lng: img.lng + (radius * Math.cos(angle)) /
+            Math.max(Math.cos((img.lat * Math.PI) / 180), 1e-6),
+        });
+      });
+    }
+    return positions;
+  }, [imageById]);
+
   // Ordered list of image ids (by capture time) for in-modal navigation.
   const orderedImageIds = useMemo(
     () =>
@@ -445,6 +472,7 @@ export default function DensityMap({
 
         // Small deterministic jitter (~3m) so co-located sightings separate.
         const h = hashString(a.id);
+        const position = adjustedPositions.get(a.imageId)!;
         const radius = 0.00003;
         const angle = ((h % 360) * Math.PI) / 180;
         const dLat = radius * Math.sin(angle);
@@ -456,7 +484,7 @@ export default function DensityMap({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [img.lng + dLng, img.lat + dLat],
+            coordinates: [position.lng + dLng, position.lat + dLat],
           },
           properties: {
             id: a.id,
@@ -473,6 +501,7 @@ export default function DensityMap({
   }, [
     annotationDataSig,
     imageById,
+    adjustedPositions,
     primaryOnly,
     dropFalseNegatives,
     selectedUserKey,
@@ -494,14 +523,17 @@ export default function DensityMap({
         const t = img.transectId;
         if (transectIdSet.size && (!t || !transectIdSet.has(t))) continue;
         const info = t ? transectInfo.lookup.get(t) : undefined;
+        const position = adjustedPositions.get(img.id)!;
         features.push({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [img.longitude, img.latitude],
+            coordinates: [position.lng, position.lat],
           },
           properties: {
             imageId: img.id,
+            latitude: img.latitude,
+            longitude: img.longitude,
             color: info?.color ?? '#999999',
             transect: info?.number ?? 0,
           },
@@ -510,7 +542,7 @@ export default function DensityMap({
     }
     return { type: 'FeatureCollection', features };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surveyDataSig, transectInfo, transectKey]);
+  }, [surveyDataSig, adjustedPositions, transectInfo, transectKey]);
 
   const strataFC = useMemo<FeatureCollection>(() => {
     const features: any[] = [];
@@ -760,7 +792,7 @@ export default function DensityMap({
         pointPopup(
           [lng, lat],
           `Transect ${p.transect}`,
-          `<div><strong>Coordinates:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}</div>`,
+          `<div><strong>Coordinates:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>`,
           p.imageId,
           ''
         );

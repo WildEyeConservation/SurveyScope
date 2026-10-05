@@ -5,12 +5,19 @@ import {
   FunctionRuntime,
 } from 'aws-cdk-lib/aws-appsync';
 import { attachMaintenanceGuard } from './maintenance/attachGuard';
+import { imageAccess } from './storage/imageAccess/resource';
+import { infoTagWork } from './functions/infoTagWork/resource';
+import { chainMutationGuard } from './functions/chainMutationGuard/resource';
+import { installMutationGuard } from './chain-shares/installGuard';
+import { revokeChainShare } from './functions/revokeChainShare/resource';
+import { workflowFiles } from './storage/workflowFiles/resource';
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { addUserToGroup } from './functions/add-user-to-group/resource';
 import { ArnFormat, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import { outputBucket, inputBucket } from './storage/resource';
 import { generateTile } from './storage/generateTile/resource';
 import { handleS3Upload } from './storage/handleS3Upload/resource';
@@ -93,6 +100,11 @@ const backend = defineBackend({
   outputBucket,
   inputBucket,
   generateTile,
+  imageAccess,
+  infoTagWork,
+  chainMutationGuard,
+  revokeChainShare,
+  workflowFiles,
   handleS3Upload,
   postDeploy,
   updateUserStats,
@@ -142,6 +154,96 @@ const backend = defineBackend({
   recordWorkflowTask,
   cancelIndividualIdJob,
 });
+
+const infoTagState = new dynamodb.Table(
+  Stack.of(backend.data.resources.graphqlApi),
+  'InfoTagWorkState',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    // Only save receipts carry this TTL. Lease generations and completion records
+    // must survive expiry so old requests cannot regain ownership or count twice.
+    timeToLiveAttribute: 'deleteAfter',
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+infoTagState.grantReadWriteData(backend.infoTagWork.resources.lambda);
+const infoTagTables: Record<string, string> = { work: infoTagState.tableName };
+for (const model of [
+  'Queue',
+  'Project',
+  'AnnotationSet',
+  'Image',
+  'Annotation',
+  'InfoTag',
+  'AnnotationInfoTag',
+] as const) {
+  const table = backend.data.resources.tables[model];
+  infoTagTables[model] = table.tableName;
+  table.grantReadData(backend.infoTagWork.resources.lambda);
+  if (
+    model === 'Queue' ||
+    model === 'Annotation' ||
+    model === 'AnnotationInfoTag'
+  ) {
+    table.grantWriteData(backend.infoTagWork.resources.lambda);
+  }
+}
+backend.infoTagWork.addEnvironment(
+  'INFO_TAG_TABLES',
+  JSON.stringify(infoTagTables)
+);
+// OUTPUTS_BUCKET_NAME comes from the storage access grant (resolved via SSM at
+// runtime); referencing the bucket here would make data depend on storage.
+
+const guardFunction = backend.chainMutationGuard.resources.lambda;
+const snapshotTables: Record<string, string> = {};
+for (const model of ['SharedChainAnnotation', 'SharedChainImage', 'SharedChainLocation',
+  'SharedChainNeighbour', 'SharedChainCategory'] as const) {
+  const table = backend.data.resources.tables[model];
+  snapshotTables[model] = table.tableName;
+  table.grant(backend.revokeChainShare.resources.lambda, 'dynamodb:Scan');
+}
+backend.revokeChainShare.addEnvironment('SNAPSHOT_TABLES', JSON.stringify(snapshotTables));
+backend.revokeChainShare.addEnvironment('USER_POOL_ID', backend.auth.resources.userPool.userPoolId);
+backend.revokeChainShare.resources.lambda.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['cognito-idp:ListUsersInGroup'],
+  resources: [backend.auth.resources.userPool.userPoolArn],
+}));
+// The guarded resolvers live in the model nested stacks and reference this
+// function, so it must not reference those stacks' table outputs back. Derive
+// the <Model>-<apiId>-NONE names from the API instead.
+const guardModels = ['ChainReviewFeedback', 'ChainShare', 'SharedChainAnnotation', 'SharedChainCategory'] as const;
+const guardTables: Record<string, string> = {};
+for (const model of guardModels) {
+  const tableName = `${model}-${backend.data.resources.graphqlApi.apiId}-NONE`;
+  const tableArn = Stack.of(guardFunction).formatArn({
+    service: 'dynamodb',
+    resource: 'table',
+    resourceName: tableName,
+  });
+  guardTables[model] = tableName;
+  guardFunction.addToRolePolicy(new iam.PolicyStatement({
+    actions: ['dynamodb:GetItem', 'dynamodb:Query'],
+    resources: [tableArn, `${tableArn}/index/*`],
+  }));
+}
+backend.chainMutationGuard.addEnvironment('GUARD_TABLES', JSON.stringify(guardTables));
+backend.chainMutationGuard.addEnvironment('GUARD_INDEXES', JSON.stringify({
+  SharedChainAnnotation: 'sharedChainAnnotationsByShareId',
+  SharedChainCategory: 'sharedChainCategoriesByShareId',
+}));
+backend.chainMutationGuard.addEnvironment('USER_POOL_ID', backend.auth.resources.userPool.userPoolId);
+guardFunction.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['cognito-idp:AdminListGroupsForUser'],
+  resources: [backend.auth.resources.userPool.userPoolArn],
+}));
+const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('ChainMutationGuard', guardFunction);
+installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
+  backend.data.resources.graphqlApi.apiId, guardSource);
 
 // Kept outside model stacks so all API pipelines can depend on the same state.
 const maintenanceTable = new dynamodb.Table(
@@ -402,6 +504,8 @@ const backfillFn = new NodejsFunction(backfillStack, 'BackfillLocationGroupFn', 
   entry: path.join(__dirname, 'functions/backfillLocationGroup/handler.ts'),
   handler: 'handler',
   runtime: lambda.Runtime.NODEJS_20_X,
+  timeout: Duration.seconds(60),
+  memorySize: 512,
   environment: {
     LOCATION_TABLE_NAME: locationTable.tableName,
     PROJECT_TABLE_NAME: projectTable.tableName,
@@ -437,11 +541,71 @@ backfillFn.addToRolePolicy(
   })
 );
 
+// Receives shard/sequence ranges of records that exhausted their retries.
+const backfillFailureQueue = new sqs.Queue(
+  backfillStack,
+  'LocationGroupBackfillFailures',
+  {
+    encryption: sqs.QueueEncryption.SQS_MANAGED,
+    enforceSSL: true,
+    retentionPeriod: Duration.days(14),
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+
+// Only invoked for INSERTs without a group; writers normally set it.
 new EventSourceMapping(backfillStack, 'LocationEventStreamMapping', {
   target: backfillFn,
   eventSourceArn: locationTable.tableStreamArn,
   startingPosition: StartingPosition.LATEST,
+  batchSize: 100,
+  bisectBatchOnError: true,
+  reportBatchItemFailures: true,
+  retryAttempts: 5,
+  maxRecordAge: Duration.hours(6),
+  onFailure: new SqsDlq(backfillFailureQueue),
+  filters: [
+    lambda.FilterCriteria.filter({
+      eventName: lambda.FilterRule.isEqual('INSERT'),
+      dynamodb: { NewImage: { group: { S: lambda.FilterRule.notExists() } } },
+    }),
+    lambda.FilterCriteria.filter({
+      eventName: lambda.FilterRule.isEqual('INSERT'),
+      dynamodb: { NewImage: { group: { S: lambda.FilterRule.isEqual('') } } },
+    }),
+  ],
 });
+
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillErrors', {
+    metric: backfillFn.metricErrors({ period: Duration.minutes(5) }),
+    threshold: 1,
+    evaluationPeriods: 2,
+    datapointsToAlarm: 2,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillIteratorAge', {
+    metric: backfillFn.metric('IteratorAge', {
+      period: Duration.minutes(5),
+      statistic: 'Maximum',
+    }),
+    threshold: 15 * 60 * 1000,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(backfillStack, 'LocationGroupBackfillFailuresVisible', {
+    metric: backfillFailureQueue.metricApproximateNumberOfMessagesVisible({
+      period: Duration.minutes(5),
+    }),
+    threshold: 1,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
 
 const authenticatedRole = backend.auth.resources.authenticatedUserIamRole;
 
@@ -465,11 +629,10 @@ const sqsSysadminStatement = new iam.PolicyStatement({
   ],
   resources: ['*'],
 });
-const generalBucketArn = 'arn:aws:s3:::surveyscope';
-const generalBucketArn2 = 'arn:aws:s3:::surveyscope/*';
+const generalBucketArn2 = 'arn:aws:s3:::surveyscope/SRTM/*';
 const generalBucketPolicy = new iam.PolicyStatement({
-  actions: ['s3:ListBucket', 's3:GetObject'],
-  resources: [generalBucketArn, generalBucketArn2],
+  actions: ['s3:GetObject'],
+  resources: [generalBucketArn2],
 });
 
 // Wildcard ARNs avoid cross-stack storage dependencies.
@@ -486,7 +649,6 @@ const groupS3ObjectsPolicy = new iam.PolicyStatement({
 const groupS3OutputsReadPolicy = new iam.PolicyStatement({
   actions: ['s3:GetObject', 's3:DeleteObject'],
   resources: [
-    'arn:aws:s3:::*/slippymaps/*',
     'arn:aws:s3:::*/heatmaps/*',
     'arn:aws:s3:::*/false-negative-manifests/*',
     'arn:aws:s3:::*/false-negative-pools/*',
@@ -518,20 +680,98 @@ authenticatedRole.addToPrincipalPolicy(generalBucketPolicy);
 // Group roles replace the authenticated Identity Pool role.
 Object.values(backend.auth.resources.groups).forEach(({ role }) => {
   role.addToPrincipalPolicy(generalBucketPolicy);
-  role.addToPrincipalPolicy(groupS3ListPolicy);
-  role.addToPrincipalPolicy(groupS3ObjectsPolicy);
   role.addToPrincipalPolicy(sqsAnnotatorStatement);
-  role.addToPrincipalPolicy(groupS3OutputsReadPolicy);
-  role.addToPrincipalPolicy(groupS3LaunchPayloadsPolicy);
-  role.addToPrincipalPolicy(groupS3QueueManifestsPolicy);
 });
 
-backend.auth.resources.groups['sysadmin'].role.addToPrincipalPolicy(sqsSysadminStatement);
-backend.auth.resources.groups['sysadmin'].role.addToPrincipalPolicy(groupEcsListPolicy);
+// Only sysadmins keep direct S3 access; everyone else goes through the
+// imageAccess and workflowFiles functions.
+const sysadminRole = backend.auth.resources.groups['sysadmin'].role;
+sysadminRole.addToPrincipalPolicy(groupS3ListPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3ObjectsPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3OutputsReadPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3LaunchPayloadsPolicy);
+sysadminRole.addToPrincipalPolicy(groupS3QueueManifestsPolicy);
+sysadminRole.addToPrincipalPolicy(sqsSysadminStatement);
+sysadminRole.addToPrincipalPolicy(groupEcsListPolicy);
+
+const imageInputBucket = backend.inputBucket.resources.bucket;
+const imageOutputBucket = backend.outputBucket.resources.bucket;
+
+// S3 only reports a missing object as 404 when the signer has unconditional
+// ListBucket; defineStorage's prefix-conditioned grant is not enough. Kept in
+// the storage stack to avoid a reverse dependency on data.
+new iam.Policy(Stack.of(imageInputBucket), 'ImageStorageMissingObjectChecks', {
+  roles: [
+    backend.imageAccess.resources.lambda.role!,
+    backend.generateTile.resources.lambda.role!,
+    backend.workflowFiles.resources.lambda.role!,
+  ],
+  statements: [
+    new iam.PolicyStatement({
+      actions: ['s3:ListBucket'],
+      resources: [imageInputBucket.bucketArn, imageOutputBucket.bucketArn],
+    }),
+  ],
+});
+new iam.Policy(Stack.of(imageInputBucket), 'ImageStorageMultipartAbort', {
+  roles: [backend.imageAccess.resources.lambda.role!],
+  statements: [
+    new iam.PolicyStatement({
+      actions: ['s3:AbortMultipartUpload'],
+      resources: [imageInputBucket.arnForObjects('images/*')],
+    }),
+  ],
+});
+
+(imageInputBucket as s3.Bucket).addLifecycleRule({
+  id: 'AbortIncompleteImageUploads',
+  prefix: 'images/',
+  abortIncompleteMultipartUploadAfter: Duration.days(7),
+});
+
+const storageModels = [
+  'Image',
+  'ImageFile',
+  'Project',
+  'SharedChainImage',
+  'ChainShare',
+] as const;
+for (const resource of [backend.imageAccess, backend.generateTile]) {
+  for (const model of storageModels) {
+    const table = backend.data.resources.tables[model];
+    resource.addEnvironment(
+      `STORAGE_${model.toUpperCase()}_TABLE`,
+      table.tableName
+    );
+    resource.resources.lambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem', 'dynamodb:Query'],
+        resources: [table.tableArn, `${table.tableArn}/index/*`],
+      })
+    );
+  }
+}
+backend.data.resources.tables.ImageFile.grant(
+  backend.imageAccess.resources.lambda,
+  'dynamodb:PutItem'
+);
+for (const model of ['Project', 'AnnotationSet'] as const) {
+  const table = backend.data.resources.tables[model];
+  backend.workflowFiles.addEnvironment(
+    `WORKFLOW_${model.toUpperCase()}_TABLE`,
+    table.tableName
+  );
+  table.grant(backend.workflowFiles.resources.lambda, 'dynamodb:GetItem');
+}
+backend.data.resources.tables.Image.grant(
+  backend.generateTile.resources.lambda,
+  'dynamodb:UpdateItem'
+);
 
 const generateTileLambda = backend.generateTile.resources.lambda as lambda.Function;
 const sharpLayer = new lambda.LayerVersion(
-  Stack.of(generateTileLambda),
+  // Stays in the function stack; moving it into data would create a cycle.
+  Stack.of(backend.handleS3Upload.resources.lambda),
   'sharpLayer',
   {
     code: lambda.Code.fromAsset('./amplify/layers/sharp-ph200-x64'),
@@ -1091,6 +1331,36 @@ if (enableEcs) {
     );
 
     lightglueQueueUrl = lightGlueAutoProcessor.queue.queueUrl;
+
+    // The registration monitor reads the queue depth. The URL goes through SSM
+    // and the grant lives in this stack, because a direct reference from the
+    // monitor's stack would close a function -> ECS -> data -> function cycle.
+    const lightglueQueueUrlParameterName = `/${envName}/monitorModelProgress/LightGlueQueueUrl`;
+    const lightglueQueueUrlParameter = new ssm.StringParameter(
+      ecsStack,
+      'LightGlueQueueUrlParameter',
+      {
+        parameterName: lightglueQueueUrlParameterName,
+        stringValue: lightGlueAutoProcessor.queue.queueUrl,
+      }
+    );
+    new iam.Policy(ecsStack, 'MonitorLightGlueQueueDepth', {
+      roles: [backend.monitorModelProgress.resources.lambda.role!],
+      statements: [
+        new iam.PolicyStatement({
+          actions: ['sqs:GetQueueAttributes'],
+          resources: [lightGlueAutoProcessor.queue.queueArn],
+        }),
+        new iam.PolicyStatement({
+          actions: ['ssm:GetParameter'],
+          resources: [lightglueQueueUrlParameter.parameterArn],
+        }),
+      ],
+    });
+    backend.monitorModelProgress.addEnvironment(
+      'LIGHTGLUE_QUEUE_URL_PARAM',
+      lightglueQueueUrlParameterName
+    );
   }
 
   if (enableScoutbot) {
@@ -1684,6 +1954,13 @@ if (enableEcs) {
     backend.generateSurveyResults.addEnvironment(
       'JOLLY_JOB_TABLE_NAME',
       jobTableName
+    );
+    backend.workflowFiles.addEnvironment('JOLLY_JOB_TABLE_NAME', jobTableName);
+    backend.workflowFiles.resources.lambda.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:GetItem'],
+        resources: [launcherJobTableArn],
+      })
     );
     backend.generateSurveyResults.addEnvironment(
       'JOLLY_STATE_MACHINE_ARN',

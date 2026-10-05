@@ -1,8 +1,11 @@
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { CognitoIdentityProviderClient, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { env } from '$amplify/env/revokeChainShare';
 import { Amplify } from 'aws-amplify';
 import { generateClient, GraphQLResult } from 'aws-amplify/data';
 import type { RevokeChainShareHandler } from '../../data/resource';
-import { assertSysadmin } from '../shared/authorizeRequest';
+import { checkedGraph, shareLifecycle, mapWithConcurrency } from '../../chain-shares/lifecycle';
 
 /**
  * Tear down a chain share's snapshot: delete every SharedChain* row for the
@@ -11,46 +14,6 @@ import { assertSysadmin } from '../shared/authorizeRequest';
  * ChainReviewFeedback is intentionally left intact as study output.
  */
 
-const sharedChainAnnotationsByShareId = /* GraphQL */ `
-  query AnnByShare($shareId: ID!, $nextToken: String) {
-    sharedChainAnnotationsByShareId(shareId: $shareId, nextToken: $nextToken, limit: 1000) {
-      items { id }
-      nextToken
-    }
-  }
-`;
-const sharedChainImagesByShareId = /* GraphQL */ `
-  query ImgByShare($shareId: ID!, $nextToken: String) {
-    sharedChainImagesByShareId(shareId: $shareId, nextToken: $nextToken, limit: 1000) {
-      items { id }
-      nextToken
-    }
-  }
-`;
-const sharedChainLocationsByShareId = /* GraphQL */ `
-  query LocByShare($shareId: ID!, $nextToken: String) {
-    sharedChainLocationsByShareId(shareId: $shareId, nextToken: $nextToken, limit: 1000) {
-      items { id }
-      nextToken
-    }
-  }
-`;
-const sharedChainNeighboursByShareId = /* GraphQL */ `
-  query NbrByShare($shareId: ID!, $nextToken: String) {
-    sharedChainNeighboursByShareId(shareId: $shareId, nextToken: $nextToken, limit: 1000) {
-      items { id }
-      nextToken
-    }
-  }
-`;
-const sharedChainCategoriesByShareId = /* GraphQL */ `
-  query CatByShare($shareId: ID!, $nextToken: String) {
-    sharedChainCategoriesByShareId(shareId: $shareId, nextToken: $nextToken, limit: 1000) {
-      items { id }
-      nextToken
-    }
-  }
-`;
 const deleteSharedChainAnnotation = /* GraphQL */ `
   mutation Del($input: DeleteSharedChainAnnotationInput!) {
     deleteSharedChainAnnotation(input: $input) { id }
@@ -76,12 +39,6 @@ const deleteSharedChainCategory = /* GraphQL */ `
     deleteSharedChainCategory(input: $input) { id }
   }
 `;
-const updateChainShare = /* GraphQL */ `
-  mutation UpdateChainShare($input: UpdateChainShareInput!) {
-    updateChainShare(input: $input) { shareId status }
-  }
-`;
-
 Amplify.configure(
   {
     API: {
@@ -111,30 +68,28 @@ Amplify.configure(
 );
 
 const client = generateClient({ authMode: 'iam' });
+const graphql = checkedGraph((request) => client.graphql(request) as Promise<GraphQLResult<Record<string, unknown>>>);
+const lifecycle = shareLifecycle(graphql);
 
-interface PagedList<T> {
-  items: T[];
-  nextToken: string | null | undefined;
-}
+const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const cognito = new CognitoIdentityProviderClient({});
+const snapshotTables: Record<string, string> = JSON.parse(process.env.SNAPSHOT_TABLES!);
 
-async function fetchAllIds(
-  query: string,
-  queryName: string,
-  shareId: string
-): Promise<string[]> {
+// Cleanup runs only after writers finish (or their Lambda timeout has elapsed).
+// Strong base-table reads avoid declaring success while a GSI still omits rows.
+async function fetchAllIds(model: string, shareId: string): Promise<string[]> {
   const ids: string[] = [];
-  let nextToken: string | undefined;
+  let cursor: Record<string, unknown> | undefined;
   do {
-    // Concrete (non-generic) result type: a generic in the cast target defers
-    // Amplify's variables conditional type and breaks the `variables` check.
-    const response = await (client.graphql({
-      query,
-      variables: { shareId, nextToken },
-    }) as Promise<GraphQLResult<Record<string, PagedList<{ id: string }>>>>);
-    const page = response.data?.[queryName];
-    ids.push(...((page?.items ?? []).map((i) => i.id)));
-    nextToken = page?.nextToken ?? undefined;
-  } while (nextToken);
+    const page = await db.send(new ScanCommand({
+      TableName: snapshotTables[model], ConsistentRead: true,
+      FilterExpression: 'shareId = :shareId',
+      ExpressionAttributeValues: { ':shareId': shareId },
+      ProjectionExpression: 'id', ExclusiveStartKey: cursor,
+    }));
+    for (const item of page.Items ?? []) ids.push(item.id as string);
+    cursor = page.LastEvaluatedKey;
+  } while (cursor);
   return ids;
 }
 
@@ -143,27 +98,37 @@ async function deleteAll(
   mutation: string,
   limit = 20
 ): Promise<void> {
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, ids.length) }, async () => {
-    while (cursor < ids.length) {
-      const id = ids[cursor++];
-      await client.graphql({ query: mutation, variables: { input: { id } } });
-    }
+  await mapWithConcurrency(ids, limit, async (id) => {
+    await graphql({ query: mutation, variables: { input: { id } } });
   });
-  await Promise.all(workers);
 }
 
 export const handler: RevokeChainShareHandler = async (event) => {
+  const { shareId } = event.arguments;
+  let started: string | null = null;
   try {
-    assertSysadmin(event.identity);
-    const { shareId } = event.arguments;
+    if (!event.identity?.sub || !event.identity.groups?.includes('sysadmin')) {
+      throw new Error('Unauthorized: sysadmin required');
+    }
+    // Enforce the UI's removal prerequisite on the server as well.
+    try {
+      const members = await cognito.send(new ListUsersInGroupCommand({
+        UserPoolId: process.env.USER_POOL_ID, GroupName: `chainshare-${shareId}`, Limit: 1,
+      }));
+      if (members.Users?.length) throw new Error('Remove all reviewers before revoking this share');
+    } catch (error) {
+      // An already deleted group has no members and must not block cleanup.
+      if (!(error instanceof Error) || error.name !== 'ResourceNotFoundException') throw error;
+    }
+    started = await lifecycle.revoke(shareId);
+    if (!started) return { statusCode: 200, body: JSON.stringify({ shareId, alreadyRevoked: true }) };
 
     const [annIds, imgIds, locIds, nbrIds, catIds] = await Promise.all([
-      fetchAllIds(sharedChainAnnotationsByShareId, 'sharedChainAnnotationsByShareId', shareId),
-      fetchAllIds(sharedChainImagesByShareId, 'sharedChainImagesByShareId', shareId),
-      fetchAllIds(sharedChainLocationsByShareId, 'sharedChainLocationsByShareId', shareId),
-      fetchAllIds(sharedChainNeighboursByShareId, 'sharedChainNeighboursByShareId', shareId),
-      fetchAllIds(sharedChainCategoriesByShareId, 'sharedChainCategoriesByShareId', shareId),
+      fetchAllIds('SharedChainAnnotation', shareId),
+      fetchAllIds('SharedChainImage', shareId),
+      fetchAllIds('SharedChainLocation', shareId),
+      fetchAllIds('SharedChainNeighbour', shareId),
+      fetchAllIds('SharedChainCategory', shareId),
     ]);
 
     await deleteAll(annIds, deleteSharedChainAnnotation);
@@ -172,10 +137,7 @@ export const handler: RevokeChainShareHandler = async (event) => {
     await deleteAll(nbrIds, deleteSharedChainNeighbour);
     await deleteAll(catIds, deleteSharedChainCategory);
 
-    await client.graphql({
-      query: updateChainShare,
-      variables: { input: { shareId, status: 'revoked' } },
-    });
+    await lifecycle.finishRevocation(shareId, started);
 
     return {
       statusCode: 200,
@@ -192,6 +154,10 @@ export const handler: RevokeChainShareHandler = async (event) => {
     };
   } catch (error) {
     console.error('revokeChainShare error:', error);
+    if (started) {
+      await lifecycle.failRevocation(shareId, started, error).catch((failure) =>
+        console.error('Could not record cleanup failure; retry after operation timeout', failure));
+    }
     return {
       statusCode: 500,
       body: JSON.stringify({

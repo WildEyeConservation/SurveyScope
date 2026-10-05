@@ -10,7 +10,7 @@ WORKDIR /workspace
 COPY code/ /workspace/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Model checkpoint baked in (gitignored locally - see README). tf.train.latest_checkpoint
+# Model checkpoint baked in (gitignored locally). tf.train.latest_checkpoint
 # reads the `checkpoint` pointer, which references /models/batched_ss30_bs10_bg4_0/...
 COPY models/ /models/
 

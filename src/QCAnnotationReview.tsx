@@ -13,7 +13,7 @@ import { Badge, Button, Card } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight, Undo2, SearchCheck, RotateCcw } from 'lucide-react';
 import { GlobalContext, UserContext } from './Context';
 import { applyActiveMarkerStyle } from './activeMarkerStyle';
-import { getTileBlob } from './StorageLayer';
+import { getTileBlob, imageTileContext } from './StorageLayer';
 import type { Schema } from './amplify/client-schema';
 import {
   fetchInfoTagDataForSet,
@@ -376,7 +376,7 @@ export default function QCAnnotationReview({
           if (isVisible) {
             loadedTilesRef.current.add(sourceId);
             const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
-            pendingTiles.push(getTileBlob(path)
+            pendingTiles.push(getTileBlob(path, imageTileContext(image))
               .then((blob) => {
                 if (cancelledRef.current) return;
                 const url = URL.createObjectURL(blob);
