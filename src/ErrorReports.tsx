@@ -4,6 +4,7 @@ import Button from 'react-bootstrap/Button';
 import Modal from 'react-bootstrap/Modal';
 import MyTable from './Table';
 import { useUsers } from './apiInterface';
+import { graphqlErrorMessage } from './reportClientErrorCore';
 
 // Queried with plain GraphQL: the reports are sysadmin-only and nothing else in
 // the application reads them.
@@ -52,15 +53,15 @@ async function runGraphql<T>(
   query: string,
   variables: Record<string, unknown>
 ): Promise<T> {
-  const result = (await client.graphql({ query, variables })) as {
-    data?: T;
-    errors?: { message: string }[];
-  };
-  if (result.errors?.length) {
-    throw new Error(result.errors.map((e) => e.message).join('; '));
+  try {
+    const result = (await client.graphql({ query, variables })) as {
+      data?: T;
+    };
+    if (!result.data) throw new Error('GraphQL response missing data');
+    return result.data;
+  } catch (error) {
+    throw new Error(graphqlErrorMessage(error));
   }
-  if (!result.data) throw new Error('GraphQL response missing data');
-  return result.data;
 }
 
 async function fetchAllReports(): Promise<ErrorReport[]> {
@@ -105,7 +106,7 @@ export default function ErrorReports() {
       setReports(await fetchAllReports());
     } catch (error) {
       console.error('Failed to load error reports', error);
-      setLoadError(error instanceof Error ? error.message : String(error));
+      setLoadError(graphqlErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -193,7 +194,11 @@ export default function ErrorReports() {
         itemsPerPage={10}
         emptyMessage={loading ? 'Loading...' : 'No error reports'}
       />
-      <Modal show={selected !== null} onHide={() => setSelected(null)} size='xl'>
+      <Modal
+        show={selected !== null}
+        onHide={() => setSelected(null)}
+        size='xl'
+      >
         <Modal.Header closeButton>
           <Modal.Title>Error Report</Modal.Title>
         </Modal.Header>
@@ -208,7 +213,9 @@ export default function ErrorReports() {
                 <div className='small text-muted'>{selected.userId}</div>
               </dd>
               <dt>URL</dt>
-              <dd style={{ wordBreak: 'break-all' }}>{selected.url || 'N/A'}</dd>
+              <dd style={{ wordBreak: 'break-all' }}>
+                {selected.url || 'N/A'}
+              </dd>
               <dt>Status</dt>
               <dd>{selected.status || 'N/A'}</dd>
               <dt>User Agent</dt>

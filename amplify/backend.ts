@@ -772,6 +772,29 @@ const clientErrorRecipients = clientErrorEmails.length
   ? clientErrorEmails
   : statsAlarmEmails;
 backend.reportClientError.addEnvironment('ENVIRONMENT_NAME', envName);
+// Per-user counters behind the function's rate limit and duplicate
+// suppression. Every record expires within two hours, so the table holds
+// nothing worth retaining.
+const clientErrorLimitsTable = new dynamodb.Table(
+  Stack.of(backend.reportClientError.resources.lambda),
+  'ClientErrorLimits',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    timeToLiveAttribute: 'expiresAt',
+    removalPolicy: RemovalPolicy.DESTROY,
+  }
+);
+clientErrorLimitsTable.grant(
+  backend.reportClientError.resources.lambda,
+  'dynamodb:UpdateItem',
+  'dynamodb:DeleteItem'
+);
+backend.reportClientError.addEnvironment(
+  'CLIENT_ERROR_LIMITS_TABLE',
+  clientErrorLimitsTable.tableName
+);
 if (clientErrorRecipients.length) {
   // Lives in the function's own stack so nothing else has to reference it.
   const clientErrorTopic = new sns.Topic(
