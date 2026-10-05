@@ -10,6 +10,7 @@ import { inviteUserToOrganization } from "../functions/inviteUserToOrganization/
 import { respondToInvite } from "../functions/respondToInvite/resource";
 import { removeUserFromOrganization } from "../functions/removeUserFromOrganization/resource";
 import { updateActiveOrganizations } from "../functions/updateActiveOrganizations/resource";
+import { reportClientError } from "../functions/reportClientError/resource";
 /**
  * Define and configure your auth resource
  * @see https://docs.amplify.aws/gen2/build-a-backend/auth
@@ -49,5 +50,6 @@ export const auth = defineAuth({
     allow.resource(respondToInvite).to(["addUserToGroup", "listGroupsForUser"]),
     allow.resource(removeUserFromOrganization).to(["removeUserFromGroup"]),
     allow.resource(updateActiveOrganizations).to(["addUserToGroup", "removeUserFromGroup", "listGroupsForUser"]),
+    allow.resource(reportClientError).to(["getUser"]),
   ],
 });

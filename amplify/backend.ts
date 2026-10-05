@@ -3,6 +3,7 @@ import { infoTagWork } from './functions/infoTagWork/resource';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
+import { reportClientError } from './functions/reportClientError/resource';
 import { workflowFiles } from './storage/workflowFiles/resource';
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
@@ -146,6 +147,7 @@ const backend = defineBackend({
   queryWorkflowEvents,
   recordWorkflowTask,
   cancelIndividualIdJob,
+  reportClientError,
 });
 
 const infoTagState = new dynamodb.Table(
@@ -280,27 +282,30 @@ backend.updateUserStats.addEnvironment(
 // create a nested-stack cycle.
 const statsReliabilityStack = backend.createStack('DetwebStatsReliability');
 
+function alertEmailsFrom(variable: string): string[] {
+  const addresses = [
+    ...new Set(
+      (process.env[variable] ?? '')
+        .split(',')
+        .map((address) => address.trim())
+        .filter((address) => address !== '')
+    ),
+  ];
+  // Fail the build rather than deploy a silently unmonitored pipeline: a typo
+  // entered in the console would otherwise be indistinguishable from working
+  // alerting until the day an alarm needed to reach someone.
+  for (const address of addresses) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
+      throw new Error(`${variable} contains an invalid address: "${address}"`);
+    }
+  }
+  return addresses;
+}
+
 // Synth-time gate: set STATS_ALARM_EMAIL in the Amplify branch environment
 // (comma-separated for several recipients) to route every statistics alarm to
 // email. Unset, the alarms still exist but have no action.
-const statsAlarmEmails = [
-  ...new Set(
-    (process.env.STATS_ALARM_EMAIL ?? '')
-      .split(',')
-      .map((address) => address.trim())
-      .filter((address) => address !== '')
-  ),
-];
-// Fail the build rather than deploy a silently unmonitored pipeline: a typo
-// entered in the console would otherwise be indistinguishable from working
-// alerting until the day an alarm needed to reach someone.
-for (const address of statsAlarmEmails) {
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) {
-    throw new Error(
-      `STATS_ALARM_EMAIL contains an invalid address: "${address}"`
-    );
-  }
-}
+const statsAlarmEmails = alertEmailsFrom('STATS_ALARM_EMAIL');
 const statsAlarmTopic = statsAlarmEmails.length
   ? new sns.Topic(statsReliabilityStack, 'StatsAlarmTopic', {
       displayName: 'Detweb statistics alarms',
@@ -756,6 +761,50 @@ const enableJollyFargate =
 
 const envName =
   process.env.AMPLIFY_ENV ?? process.env.AWS_BRANCH ?? 'production';
+
+// Client error report recipients: CLIENT_ERROR_EMAIL, else STATS_ALARM_EMAIL.
+const clientErrorEmails = alertEmailsFrom('CLIENT_ERROR_EMAIL');
+const clientErrorRecipients = clientErrorEmails.length
+  ? clientErrorEmails
+  : statsAlarmEmails;
+backend.reportClientError.addEnvironment('ENVIRONMENT_NAME', envName);
+const clientErrorLimitsTable = new dynamodb.Table(
+  Stack.of(backend.reportClientError.resources.lambda),
+  'ClientErrorLimits',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    timeToLiveAttribute: 'expiresAt',
+    removalPolicy: RemovalPolicy.DESTROY,
+  }
+);
+clientErrorLimitsTable.grant(
+  backend.reportClientError.resources.lambda,
+  'dynamodb:UpdateItem',
+  'dynamodb:DeleteItem'
+);
+backend.reportClientError.addEnvironment(
+  'CLIENT_ERROR_LIMITS_TABLE',
+  clientErrorLimitsTable.tableName
+);
+if (clientErrorRecipients.length) {
+  const clientErrorTopic = new sns.Topic(
+    Stack.of(backend.reportClientError.resources.lambda),
+    'ClientErrorTopic',
+    { displayName: 'Detweb client error reports' }
+  );
+  for (const address of clientErrorRecipients) {
+    clientErrorTopic.addSubscription(
+      new snsSubscriptions.EmailSubscription(address)
+    );
+  }
+  clientErrorTopic.grantPublish(backend.reportClientError.resources.lambda);
+  backend.reportClientError.addEnvironment(
+    'CLIENT_ERROR_TOPIC_ARN',
+    clientErrorTopic.topicArn
+  );
+}
 
 const workflowStatsEnvName = envName
   .toLowerCase()
