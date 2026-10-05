@@ -4,6 +4,7 @@ import { Tabs, Tab } from './Tabs';
 import { Card } from 'react-bootstrap';
 import PendingOrganizations from './PendingOrganizations';
 import ClientLogs from './ClientLogs';
+import ErrorReports from './ErrorReports';
 import AdminStats from './AdminStats';
 import AwsServiceHealth from './AwsServiceHealth';
 import AdminSurveys from './AdminSurveys';
@@ -37,6 +38,11 @@ export default function Admin() {
             <Tab label='Client Logs'>
               <div className='m-2'>
                 <ClientLogs />
+              </div>
+            </Tab>
+            <Tab label='Error Reports'>
+              <div className='m-2'>
+                <ErrorReports />
               </div>
             </Tab>
             <Tab label='Statistics'>
