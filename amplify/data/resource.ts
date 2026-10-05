@@ -58,6 +58,7 @@ import { reconcileIndividualId } from '../functions/reconcileIndividualId/resour
 import { releaseIndividualIdTransects } from '../functions/releaseIndividualIdTransects/resource';
 import { createChainShare } from '../functions/createChainShare/resource';
 import { revokeChainShare } from '../functions/revokeChainShare/resource';
+import { reportClientError } from '../functions/reportClientError/resource';
 import { generateTile } from '../storage/generateTile/resource';
 
 const schema = a
@@ -884,6 +885,33 @@ const schema = a
       })
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(respondToInvite))
+      .returns(a.json()),
+    // A crash that reached the browser's error page. Rows are written only by
+    // the reportClientError function, which takes the user from the request
+    // identity; the remaining fields are whatever the browser sent.
+    ClientErrorReport: a
+      .model({
+        message: a.string().required(),
+        stack: a.string(),
+        status: a.string(),
+        url: a.string(),
+        userAgent: a.string(),
+        userId: a.string().required(),
+        userEmail: a.string(),
+      })
+      .authorization((allow) => [allow.group('sysadmin')]),
+    // Called automatically by the error page, so any signed-in user may report.
+    reportClientError: a
+      .mutation()
+      .arguments({
+        message: a.string().required(),
+        stack: a.string(),
+        status: a.string(),
+        url: a.string(),
+        userAgent: a.string(),
+      })
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(reportClientError))
       .returns(a.json()),
     removeUserFromOrganization: a
       .mutation()
@@ -1744,6 +1772,7 @@ const schema = a
     allow.resource(releaseIndividualIdTransects),
     allow.resource(createChainShare),
     allow.resource(revokeChainShare),
+    allow.resource(reportClientError),
   ]);
 
 export type ServerSchema = typeof schema;
@@ -1824,6 +1853,13 @@ export type ClaimIndividualIdTransectHandler = MutationHandler<{ jobId: string }
 export type CompleteIndividualIdTransectHandler = MutationHandler<{ transectRowId: string }>;
 export type CreateChainShareHandler = MutationHandler<{ annotationSetId: string; shareId: string }>;
 export type RevokeChainShareHandler = MutationHandler<{ shareId: string }>;
+export type ReportClientErrorHandler = MutationHandler<{
+  message: string;
+  stack?: string | null;
+  status?: string | null;
+  url?: string | null;
+  userAgent?: string | null;
+}>;
 
 export const data = defineData({
   schema,

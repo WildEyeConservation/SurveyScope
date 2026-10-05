@@ -1,6 +1,7 @@
 import { useRouteError, useNavigate } from 'react-router-dom';
 import { Button } from 'react-bootstrap';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { reportClientError } from './reportClientError';
 
 interface ErrorWithDetails {
   message?: string;
@@ -14,6 +15,11 @@ export default function ErrorPage() {
   const navigate = useNavigate();
   const [copySuccess, setCopySuccess] = useState(false);
   console.error(error);
+
+  // Report the crash without waiting for the user to send the details.
+  useEffect(() => {
+    void reportClientError(error);
+  }, [error]);
 
   const errorObj = error as ErrorWithDetails;
 
