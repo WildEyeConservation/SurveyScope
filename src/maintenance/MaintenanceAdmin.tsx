@@ -50,7 +50,7 @@ export function MaintenanceControls({
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!state) return;
+    if (!state || !Number.isFinite(now)) return;
     const toISO = (value: string) =>
       Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
     const input = {
@@ -157,7 +157,11 @@ export function MaintenanceControls({
         </Alert>
       )}
       <Form onSubmit={submit}>
-        <fieldset disabled={busy || !state || !!error || phase === 'blocked'}>
+        <fieldset
+          disabled={
+            busy || !state || !Number.isFinite(now) || !!error || phase === 'blocked'
+          }
+        >
           <Form.Group controlId='maintenance-type' className='mb-3'>
             <Form.Label>Message type</Form.Label>
             <Form.Select

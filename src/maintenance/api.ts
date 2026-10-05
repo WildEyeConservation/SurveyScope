@@ -13,17 +13,26 @@ export type UserAnnouncement = MaintenanceState & { userId: string };
 async function run<T>(
   query: string,
   field: string,
-  variables?: Record<string, unknown>
+  variables?: Record<string, unknown>,
+  signal?: AbortSignal
 ): Promise<T> {
-  const result = await client.graphql<GraphQLQuery<Record<string, T>>>({
+  if (signal?.aborted) throw new Error('Availability check cancelled.');
+  const request = client.graphql<GraphQLQuery<Record<string, T>>>({
     query,
     variables,
   });
-  if (result.errors?.length || !result.data?.[field])
-    throw new Error(
-      'Unable to read or save announcement. Refresh and try again.'
-    );
-  return result.data[field];
+  const cancel = () => client.cancel(request, 'Availability check cancelled.');
+  signal?.addEventListener('abort', cancel, { once: true });
+  try {
+    const result = await request;
+    if (result.errors?.length || !result.data?.[field])
+      throw new Error(
+        'Unable to read or save announcement. Refresh and try again.'
+      );
+    return result.data[field];
+  } finally {
+    signal?.removeEventListener('abort', cancel);
+  }
 }
 function watch<T>(
   field: string,
@@ -45,10 +54,12 @@ const writeArguments =
 const writeValues =
   'expectedRevision: $expectedRevision, message: $message, messageType: $messageType, publishAt: $publishAt, denyAccessAt: $denyAccessAt';
 
-export const getMaintenance = () =>
+export const getMaintenance = (signal?: AbortSignal) =>
   run<MaintenanceState>(
     `query { getSystemMaintenance { ${fields} } }`,
-    'getSystemMaintenance'
+    'getSystemMaintenance',
+    undefined,
+    signal
   );
 export const setMaintenance = (input: MaintenanceInput) =>
   run<MaintenanceState>(
@@ -61,11 +72,12 @@ export const subscribeMaintenance = (
   error: () => void
 ) => watch('onSystemMaintenanceChange', fields, next, error);
 
-export const getUserAnnouncement = (userId?: string) =>
+export const getUserAnnouncement = (userId?: string, signal?: AbortSignal) =>
   run<UserAnnouncement>(
     `query ($userId: String) { getUserAnnouncement(userId: $userId) { userId ${fields} } }`,
     'getUserAnnouncement',
-    { userId }
+    { userId },
+    signal
   );
 export const setUserAnnouncement = (
   input: MaintenanceInput & { userId: string }

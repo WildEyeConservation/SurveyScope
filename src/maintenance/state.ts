@@ -38,7 +38,7 @@ export function validateSchedule(input: MaintenanceInput): string | null {
 }
 
 // Also checked by queued client calls after their component has unmounted.
-let accessBlocked = false;
+let accessBlocked = true;
 let workspaceDiscarded = false;
 export function setMaintenanceAccessBlocked(
   blocked: boolean,

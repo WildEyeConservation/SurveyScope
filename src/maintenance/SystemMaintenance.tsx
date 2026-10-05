@@ -1,14 +1,9 @@
 import { MaintenanceContext } from './context';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Hub } from 'aws-amplify/utils';
+import * as maintenanceApi from './api';
 import {
-  getMaintenance,
-  setMaintenance,
-  subscribeMaintenance,
-  getUserAnnouncement,
-  subscribeUserAnnouncement,
-} from './api';
-import {
+  canReloadForMaintenance,
   setMaintenanceAccessBlocked,
   type MaintenanceInput,
   type MaintenanceState,
@@ -17,21 +12,33 @@ import {
 export function SystemMaintenanceProvider({
   children,
   isSysadmin,
+  api = maintenanceApi,
 }: {
   children: ReactNode;
   isSysadmin: boolean;
+  api?: Pick<
+    typeof maintenanceApi,
+    | 'getMaintenance'
+    | 'getUserAnnouncement'
+    | 'setMaintenance'
+    | 'subscribeMaintenance'
+    | 'subscribeUserAnnouncement'
+  >;
 }) {
   const [state, setState] = useState<MaintenanceState | null>(null);
   const [userState, setUserState] = useState<MaintenanceState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(Date.now());
-  const clock = useRef({ server: Date.now(), monotonic: performance.now() });
+  const [now, setNow] = useState(Number.NaN);
+  const clock = useRef({ server: Number.NaN, monotonic: performance.now() });
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const acceptRef = useRef<(next: MaintenanceState) => void>(() => {});
 
   useEffect(() => {
     let disposed = false;
     let reading = false;
+    let readId = 0;
+    let readController: AbortController | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     const subscriptions: { unsubscribe(): void }[] = [];
     let reconnect: ReturnType<typeof setTimeout> | undefined;
     const makeAccept = (setter: (state: MaintenanceState) => void) => {
@@ -50,15 +57,33 @@ export function SystemMaintenanceProvider({
         .forEach((subscription) => subscription.unsubscribe());
     };
     acceptRef.current = accept;
+    const invalidate = () => {
+      if (disposed) return;
+      readId++;
+      reading = false;
+      clearTimeout(deadline);
+      readController?.abort();
+      // Block synchronously: the upload online listener runs before refresh.
+      if (!isSysadmin)
+        setMaintenanceAccessBlocked(true, canReloadForMaintenance());
+      setError('Unable to verify app availability. Reconnecting…');
+    };
     const refresh = async () => {
       if (reading || disposed) return;
+      if (navigator.onLine === false) {
+        invalidate();
+        return;
+      }
       reading = true;
+      const currentRead = ++readId;
+      readController = new AbortController();
+      deadline = setTimeout(invalidate, 10000);
       try {
         const [next, personal] = await Promise.all([
-          getMaintenance(),
-          getUserAnnouncement(),
+          api.getMaintenance(readController.signal),
+          api.getUserAnnouncement(undefined, readController.signal),
         ]);
-        if (disposed) return;
+        if (disposed || currentRead !== readId) return;
         // Only query responses set the clock; subscription events may be delayed.
         clock.current = {
           server: Date.parse(next.serverTime),
@@ -69,10 +94,12 @@ export function SystemMaintenanceProvider({
         acceptUser(personal);
         setError(null);
       } catch {
-        if (!disposed)
-          setError('Unable to verify app availability. Reconnecting…');
+        if (currentRead === readId) invalidate();
       } finally {
-        reading = false;
+        if (currentRead === readId) {
+          reading = false;
+          clearTimeout(deadline);
+        }
       }
     };
     refreshRef.current = refresh;
@@ -89,13 +116,13 @@ export function SystemMaintenanceProvider({
       };
       try {
         subscriptions.push(
-          subscribeUserAnnouncement((next) => {
+          api.subscribeUserAnnouncement((next) => {
             acceptUser(next);
             void refresh();
           }, retry)
         );
         subscriptions.push(
-          subscribeMaintenance((next) => {
+          api.subscribeMaintenance((next) => {
             accept(next);
             void refresh();
           }, retry)
@@ -112,6 +139,7 @@ export function SystemMaintenanceProvider({
       if (document.visibilityState === 'visible') void refresh();
     };
     window.addEventListener('online', refresh);
+    window.addEventListener('offline', invalidate);
     document.addEventListener('visibilitychange', visible);
     connect();
     const poll = setInterval(refresh, 15000);
@@ -124,19 +152,21 @@ export function SystemMaintenanceProvider({
     );
     return () => {
       disposed = true;
+      readController?.abort();
+      clearTimeout(deadline);
       unsubscribe();
       if (reconnect) clearTimeout(reconnect);
       clearInterval(poll);
       clearInterval(tick);
       stopHub();
       window.removeEventListener('online', refresh);
+      window.removeEventListener('offline', invalidate);
       document.removeEventListener('visibilitychange', visible);
-      setMaintenanceAccessBlocked(false);
     };
-  }, []);
+  }, [api, isSysadmin]);
 
   const save = async (input: MaintenanceInput) => {
-    const next = await setMaintenance(input);
+    const next = await api.setMaintenance(input);
     acceptRef.current(next);
     await refreshRef.current();
   };

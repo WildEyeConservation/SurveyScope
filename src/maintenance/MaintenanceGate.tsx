@@ -30,7 +30,22 @@ export function MaintenanceGate({
     (phase === 'blocked' || maintenancePhase(userState, now) === 'blocked');
   const [wasBlocked, setWasBlocked] = useState(false);
   const unavailable =
-    !isSysadmin && (!state || !userState || !!error || blocked || wasBlocked);
+    !isSysadmin &&
+    (!state ||
+      !userState ||
+      !Number.isFinite(now) ||
+      !!error ||
+      blocked ||
+      wasBlocked);
+
+  useLayoutEffect(
+    () => () => {
+      // Transfers and queued calls outlive the signed-in workspace.
+      setMaintenanceAccessBlocked(true);
+      pauseUploads();
+    },
+    [pauseUploads]
+  );
 
   useLayoutEffect(() => {
     setMaintenanceAccessBlocked(unavailable, blocked || wasBlocked);
@@ -53,7 +68,8 @@ export function MaintenanceGate({
   // Keep the same workspace tree through verification failures so local edits
   // survive reconnection. Confirmed maintenance still tears down work.
   const keepWorkspace =
-    isSysadmin || (!!state && !!userState && !blocked && !wasBlocked);
+    isSysadmin ||
+    (!!state && !!userState && Number.isFinite(now) && !blocked && !wasBlocked);
   const restored = wasBlocked && !blocked && !error;
   return (
     // Portal events bubble through their React ancestors, including events

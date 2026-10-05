@@ -13,8 +13,8 @@ import {
 } from './state';
 
 // The test renderer has no DOM. Bootstrap's SSR-safe modal still uses window
-// for timer cleanup, so supply event/timer cleanup APIs; portal/focus behavior is
-// checked separately in a browser.
+// for timer cleanup, so supply event/timer cleanup APIs. These tests do not
+// cover browser portal/focus behavior.
 before(() => {
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
