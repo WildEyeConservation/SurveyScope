@@ -13,6 +13,13 @@ import { fetchAllPaginatedResults } from '../utils';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
 import LightLocationView from './LightLocationView';
 import ProjectContext from './ProjectContext';
+import {
+  type CandidateRef,
+  type PoolEntry,
+  type PresetLocation,
+  filterCandidates,
+  findAddedKeys,
+} from './addLocationCandidates';
 
 type Props = {
   show: boolean;
@@ -31,9 +38,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const { organizationId } = useContext(TestingContext)!;
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [candidates, setCandidates] = useState<
-    { annotationSetId: string; locationId: string }[]
-  >([]);
+  const [candidates, setCandidates] = useState<CandidateRef[]>([]);
+  const [pool, setPool] = useState<PoolEntry[]>([]);
+  const excludedKeysRef = useRef<Set<string>>(new Set());
+  const [bufferKey, setBufferKey] = useState(0);
   const [index, setIndex] = useState(0);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [maxAnnotations, setMaxAnnotations] = useState<number | ''>('');
@@ -51,12 +59,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const [customHeight, setCustomHeight] = useState<number | ''>('');
   const [offsetX, setOffsetX] = useState<number>(0);
   const [offsetY, setOffsetY] = useState<number>(0);
-  const candidatesRef = useRef<
-    {
-      annotationSetId: string;
-      locationId: string;
-    }[]
-  >([]);
+  const candidatesRef = useRef<CandidateRef[]>([]);
   const candidateIndexRef = useRef(0);
   const currentCandidate = candidatesRef.current[index] ?? null;
   const [addedLocations, setAddedLocations] = useState<Record<string, boolean>>(
@@ -78,7 +81,29 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
     };
   }, []);
 
-  const refreshCandidates = useCallback<
+  const showCandidates = useCallback(
+    (
+      entries: PoolEntry[],
+      excludedKeys: Set<string>,
+      categoryId: string,
+      maxAnn: number | ''
+    ) => {
+      const filtered = filterCandidates(
+        entries,
+        categoryId,
+        maxAnn,
+        excludedKeys
+      );
+      candidatesRef.current = filtered;
+      setCandidates(filtered);
+      candidateIndexRef.current = 0;
+      setIndex(0);
+      setBufferKey((k) => k + 1);
+    },
+    []
+  );
+
+  const loadPool = useCallback<
     (categoryId: string, maxAnn: number | '') => Promise<void>
   >(
     async (categoryId: string, maxAnn: number | '') => {
@@ -86,19 +111,20 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       setLoadedCount(0);
 
       // Get existing preset locations to exclude
-      const existingRaw: any[] = await (fetchAllPaginatedResults as any)(
-        (client as any).models.TestPresetLocation.locationsByTestPresetId,
-        {
-          testPresetId: preset.id,
-          selectionSet: ['locationId', 'annotationSetId'] as const,
-          limit: 10000,
-        }
-      );
-      const presetKeys = new Set(
-        existingRaw.map(
-          (loc: any) => `${loc.annotationSetId}_${loc.locationId}`
-        )
-      );
+      const presetLocations: PresetLocation[] = await (
+        fetchAllPaginatedResults as any
+      )((client as any).models.TestPresetLocation.locationsByTestPresetId, {
+        testPresetId: preset.id,
+        selectionSet: [
+          'locationId',
+          'annotationSetId',
+          'sourceLocationId',
+          'location.imageId',
+          'location.x',
+          'location.y',
+        ] as const,
+        limit: 10000,
+      });
 
       // Get all annotation sets for the project
       const annotationSets = (await fetchAllPaginatedResults(
@@ -108,10 +134,6 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           selectionSet: ['id'] as const,
         }
       )) as any[];
-
-      const allCandidates: { annotationSetId: string; locationId: string }[] =
-        [];
-      const uniqueLocationIds = new Set<string>();
 
       // Callback to update observation count as they're loaded
       const updateObservationCount = (count: number) => {
@@ -135,6 +157,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
               'location.height',
               'location.x',
               'location.y',
+              'location.source',
             ] as const,
             limit: 10000,
           },
@@ -150,6 +173,14 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       // OPTIMIZATION 2: Group observations by image to batch annotation queries
       const imageGroups = new Map<string, any[]>();
       for (const obs of allObservations) {
+        if (
+          !obs.location ||
+          obs.location.width == null ||
+          obs.location.height == null ||
+          obs.location.source === 'testing'
+        ) {
+          continue;
+        }
         const key = `${obs.annotationSetId}_${obs.location.imageId}`;
         if (!imageGroups.has(key)) {
           imageGroups.set(key, []);
@@ -179,20 +210,9 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       const annotationResults = await Promise.all(annotationPromises);
 
       // Process results
+      const entries: PoolEntry[] = [];
       for (const { annotations, observations } of annotationResults) {
         for (const obs of observations) {
-          const presetKey = `${obs.annotationSetId}_${obs.locationId}`;
-          if (presetKeys.has(presetKey)) continue;
-
-          // Check location bounds
-          if (
-            !obs.location ||
-            obs.location.width == null ||
-            obs.location.height == null
-          ) {
-            continue;
-          }
-
           const location = obs.location;
           const minX = location.x - location.width / 2;
           const minY = location.y - location.height / 2;
@@ -205,45 +225,24 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
               ann.x >= minX && ann.y >= minY && ann.x <= maxX && ann.y <= maxY
           );
 
-          // Apply category filter
-          if (
-            categoryId &&
-            !inside.some((a: any) => a.categoryId === categoryId)
-          ) {
-            continue;
-          }
-
-          // Apply max annotations limit
-          const limit = maxAnn === '' ? null : Number(maxAnn);
-          if (limit != null && inside.length > limit) {
-            continue;
-          }
-
           if (inside.length > 0) {
-            allCandidates.push({
+            entries.push({
               annotationSetId: obs.annotationSetId,
               locationId: obs.locationId,
+              location,
+              categoryIds: inside.map((ann: any) => ann.categoryId),
             });
-
-            if (!uniqueLocationIds.has(obs.locationId)) {
-              uniqueLocationIds.add(obs.locationId);
-            }
           }
         }
       }
 
-      const filteredCandidates = allCandidates.filter(
-        (cand, i, arr) =>
-          arr.findIndex((c) => c.locationId === cand.locationId) === i
-      );
-
-      candidatesRef.current = filteredCandidates;
-      setCandidates(filteredCandidates);
-      candidateIndexRef.current = 0;
-      setIndex(0);
+      const excludedKeys = findAddedKeys(entries, presetLocations);
+      excludedKeysRef.current = excludedKeys;
+      setPool(entries);
+      showCandidates(entries, excludedKeys, categoryId, maxAnn);
       setLoading(false);
     },
-    [client, preset.id, surveyId]
+    [client, preset.id, surveyId, showCandidates]
   );
 
   // Fetch project location sets for tiled sizes / testing set
@@ -305,10 +304,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 
   useEffect(() => {
     if (show) {
-      refreshCandidates(selectedCategoryId, maxAnnotations);
+      loadPool(selectedCategoryId, maxAnnotations);
     } else {
       candidatesRef.current = [];
       setCandidates([]);
+      setPool([]);
       setIndex(0);
     }
   }, [show, preset.id, surveyId]);
@@ -323,8 +323,19 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const applyFilters = useCallback(() => {
     setSelectedCategoryId(pendingCategoryId);
     setMaxAnnotations(pendingMaxAnnotations || '');
-    refreshCandidates(pendingCategoryId, pendingMaxAnnotations);
-  }, [pendingCategoryId, pendingMaxAnnotations, refreshCandidates]);
+    showCandidates(
+      pool,
+      new Set([...excludedKeysRef.current, ...Object.keys(addedLocations)]),
+      pendingCategoryId,
+      pendingMaxAnnotations || ''
+    );
+  }, [
+    pendingCategoryId,
+    pendingMaxAnnotations,
+    pool,
+    addedLocations,
+    showCandidates,
+  ]);
 
   // Ensure a dedicated testing location set exists
   const getOrCreateTestingLocationSetId = useCallback(async () => {
@@ -463,6 +474,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         testPresetId: preset.id,
         locationId: newLoc.id,
         annotationSetId: cand.annotationSetId,
+        sourceLocationId: cand.locationId,
         group: organizationId,
       });
 
@@ -503,7 +515,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 <Spinner animation='border' size='sm' /> {loadedCount}{' '}
                 observations loaded
               </p>
-            ) : candidates.length === 0 ? (
+            ) : pool.length === 0 ? (
               <p>No available locations to add.</p>
             ) : (
               <div className='d-flex flex-row gap-3 h-100'>
@@ -520,13 +532,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                         onChange={(e) => setPendingCategoryId(e.target.value)}
                       >
                         <option value=''>All labels</option>
-                        {/* options loaded lazily below via current candidate's annotationSetId */}
-                        {currentCandidate && (
-                          // @ts-ignore: will be re-evaluated as index changes
-                          <CategoryOptions
-                            annotationSetId={currentCandidate.annotationSetId}
-                          />
-                        )}
+                        <CategoryOptions
+                          annotationSetId={
+                            (currentCandidate ?? pool[0]).annotationSetId
+                          }
+                        />
                       </Form.Select>
                     </Form.Group>
                     <Form.Group>
@@ -665,72 +675,81 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 </div>
 
                 {/* Right image column */}
-                <div className='d-flex flex-column flex-grow-1 h-100 w-100'>
-                  <Form.Group className='mt-3 h-100 w-100'>
-                    <TaskBuffer
-                      index={index}
-                      setIndex={setIndex}
-                      fetcher={fetcher}
-                      preloadN={5}
-                      historyN={5}
-                      renderTask={(task) => (
-                        <LightLocationView
-                          {...task}
-                          location={task.location}
-                          overlay={{
-                            enabled: overlayEnabled,
-                            width: changeSize
-                              ? customWidth || undefined
-                              : undefined,
-                            height: changeSize
-                              ? customHeight || undefined
-                              : undefined,
-                            offsetX,
-                            offsetY,
-                          }}
-                        />
-                      )}
-                    />
-                  </Form.Group>
-                  <div className='d-flex flex-column w-100 gap-2 pt-3'>
-                    {currentCandidate && (
-                      <a
-                        className='btn btn-outline-info'
-                        target='_blank'
-                        href={`/surveys/${surveyId}/location/${
-                          currentCandidate!.locationId
-                        }/${currentCandidate!.annotationSetId}`}
-                      >
-                        Edit Location
-                      </a>
-                    )}
-                    <Button
-                      variant='success'
-                      onClick={handleAdd}
-                      disabled={
-                        adding ||
-                        !currentCandidate ||
-                        (changeSize &&
-                          (customWidth === '' || customHeight === '')) ||
-                        addedLocations[
-                          `${currentCandidate!.annotationSetId}_${
+                {candidates.length === 0 ? (
+                  <p className='mt-3'>
+                    {selectedCategoryId || maxAnnotations !== ''
+                      ? 'No locations match the filter.'
+                      : 'No available locations to add.'}
+                  </p>
+                ) : (
+                  <div className='d-flex flex-column flex-grow-1 h-100 w-100'>
+                    <Form.Group className='mt-3 h-100 w-100'>
+                      <TaskBuffer
+                        key={bufferKey}
+                        index={index}
+                        setIndex={setIndex}
+                        fetcher={fetcher}
+                        preloadN={5}
+                        historyN={5}
+                        renderTask={(task) => (
+                          <LightLocationView
+                            {...task}
+                            location={task.location}
+                            overlay={{
+                              enabled: overlayEnabled,
+                              width: changeSize
+                                ? customWidth || undefined
+                                : undefined,
+                              height: changeSize
+                                ? customHeight || undefined
+                                : undefined,
+                              offsetX,
+                              offsetY,
+                            }}
+                          />
+                        )}
+                      />
+                    </Form.Group>
+                    <div className='d-flex flex-column w-100 gap-2 pt-3'>
+                      {currentCandidate && (
+                        <a
+                          className='btn btn-outline-info'
+                          target='_blank'
+                          href={`/surveys/${surveyId}/location/${
                             currentCandidate!.locationId
-                          }`
-                        ]
-                      }
-                    >
-                      {adding
-                        ? 'Adding...'
-                        : addedLocations[
+                          }/${currentCandidate!.annotationSetId}`}
+                        >
+                          Edit Location
+                        </a>
+                      )}
+                      <Button
+                        variant='success'
+                        onClick={handleAdd}
+                        disabled={
+                          adding ||
+                          !currentCandidate ||
+                          (changeSize &&
+                            (customWidth === '' || customHeight === '')) ||
+                          addedLocations[
                             `${currentCandidate!.annotationSetId}_${
                               currentCandidate!.locationId
                             }`
                           ]
-                        ? 'Added'
-                        : 'Add to pool'}
-                    </Button>
+                        }
+                      >
+                        {adding
+                          ? 'Adding...'
+                          : addedLocations[
+                              `${currentCandidate!.annotationSetId}_${
+                                currentCandidate!.locationId
+                              }`
+                            ]
+                          ? 'Added'
+                          : 'Add to pool'}
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
           </div>

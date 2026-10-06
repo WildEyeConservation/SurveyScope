@@ -629,6 +629,7 @@ const schema = a
         location: a.belongsTo('Location', 'locationId'),
         annotationSetId: a.id().required(),
         annotationSet: a.belongsTo('AnnotationSet', 'annotationSetId'),
+        sourceLocationId: a.id(),
         group: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
