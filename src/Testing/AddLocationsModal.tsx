@@ -40,15 +40,13 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const [adding, setAdding] = useState(false);
   const [candidates, setCandidates] = useState<CandidateRef[]>([]);
   const [pool, setPool] = useState<PoolEntry[]>([]);
-  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>(
-    {}
-  );
+  const [labels, setLabels] = useState<string[]>([]);
   const excludedKeysRef = useRef<Set<string>>(new Set());
   const [bufferKey, setBufferKey] = useState(0);
   const [index, setIndex] = useState(0);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [selectedLabel, setSelectedLabel] = useState<string>('');
   const [maxAnnotations, setMaxAnnotations] = useState<number | ''>('');
-  const [pendingCategoryId, setPendingCategoryId] = useState<string>('');
+  const [pendingLabel, setPendingLabel] = useState<string>('');
   const [pendingMaxAnnotations, setPendingMaxAnnotations] = useState<
     number | ''
   >('');
@@ -88,15 +86,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
     (
       entries: PoolEntry[],
       excludedKeys: Set<string>,
-      categoryId: string,
+      label: string,
       maxAnn: number | ''
     ) => {
-      const filtered = filterCandidates(
-        entries,
-        categoryId,
-        maxAnn,
-        excludedKeys
-      );
+      const filtered = filterCandidates(entries, label, maxAnn, excludedKeys);
       candidatesRef.current = filtered;
       setCandidates(filtered);
       candidateIndexRef.current = 0;
@@ -107,9 +100,9 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   );
 
   const loadPool = useCallback<
-    (categoryId: string, maxAnn: number | '') => Promise<void>
+    (label: string, maxAnn: number | '') => Promise<void>
   >(
-    async (categoryId: string, maxAnn: number | '') => {
+    async (label: string, maxAnn: number | '') => {
       setLoading(true);
       setLoadedCount(0);
 
@@ -137,6 +130,19 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           selectionSet: ['id'] as const,
         }
       )) as any[];
+
+      // Labels are per annotation set, so match them across sets by name
+      const categories = (await fetchAllPaginatedResults(
+        (client as any).models.Category.categoriesByProjectId,
+        {
+          projectId: surveyId,
+          selectionSet: ['id', 'name'] as const,
+          limit: 10000,
+        }
+      )) as any[];
+      const labelById = new Map<string, string>(
+        categories.map((c: any) => [c.id, c.name])
+      );
 
       // Callback to update observation count as they're loaded
       const updateObservationCount = (count: number) => {
@@ -214,9 +220,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 
       // Process results
       const entries: PoolEntry[] = [];
-      const counts: Record<string, number> = {};
       for (const { annotations, observations } of annotationResults) {
-        const counted = new Set<any>();
         for (const obs of observations) {
           const location = obs.location;
           const minX = location.x - location.width / 2;
@@ -230,27 +234,28 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
               ann.x >= minX && ann.y >= minY && ann.x <= maxX && ann.y <= maxY
           );
 
-          for (const ann of inside) counted.add(ann);
-
           if (inside.length > 0) {
             entries.push({
               annotationSetId: obs.annotationSetId,
               locationId: obs.locationId,
               location,
-              categoryIds: inside.map((ann: any) => ann.categoryId),
+              labels: inside.map(
+                (ann: any) => labelById.get(ann.categoryId) ?? ''
+              ),
             });
           }
         }
-        for (const ann of counted) {
-          counts[ann.categoryId] = (counts[ann.categoryId] || 0) + 1;
-        }
       }
 
-      setCategoryCounts(counts);
+      setLabels(
+        [...new Set(entries.flatMap((entry) => entry.labels))]
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b))
+      );
       const excludedKeys = findAddedKeys(entries, presetLocations);
       excludedKeysRef.current = excludedKeys;
       setPool(entries);
-      showCandidates(entries, excludedKeys, categoryId, maxAnn);
+      showCandidates(entries, excludedKeys, label, maxAnn);
       setLoading(false);
     },
     [client, preset.id, surveyId, showCandidates]
@@ -315,7 +320,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 
   useEffect(() => {
     if (show) {
-      loadPool(selectedCategoryId, maxAnnotations);
+      loadPool(selectedLabel, maxAnnotations);
     } else {
       candidatesRef.current = [];
       setCandidates([]);
@@ -326,29 +331,28 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 
   useEffect(() => {
     if (show) {
-      setPendingCategoryId(selectedCategoryId);
+      setPendingLabel(selectedLabel);
       setPendingMaxAnnotations(maxAnnotations);
     }
   }, [show]);
 
   const matchingTotal = useMemo(
     () =>
-      filterCandidates(pool, selectedCategoryId, maxAnnotations, new Set())
-        .length,
-    [pool, selectedCategoryId, maxAnnotations]
+      filterCandidates(pool, selectedLabel, maxAnnotations, new Set()).length,
+    [pool, selectedLabel, maxAnnotations]
   );
 
   const applyFilters = useCallback(() => {
-    setSelectedCategoryId(pendingCategoryId);
+    setSelectedLabel(pendingLabel);
     setMaxAnnotations(pendingMaxAnnotations || '');
     showCandidates(
       pool,
       new Set([...excludedKeysRef.current, ...Object.keys(addedLocations)]),
-      pendingCategoryId,
+      pendingLabel,
       pendingMaxAnnotations || ''
     );
   }, [
-    pendingCategoryId,
+    pendingLabel,
     pendingMaxAnnotations,
     pool,
     addedLocations,
@@ -546,16 +550,15 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                     <Form.Group>
                       <Form.Label className='mb-0'>Label filter</Form.Label>
                       <Form.Select
-                        value={pendingCategoryId}
-                        onChange={(e) => setPendingCategoryId(e.target.value)}
+                        value={pendingLabel}
+                        onChange={(e) => setPendingLabel(e.target.value)}
                       >
                         <option value=''>All labels</option>
-                        <CategoryOptions
-                          annotationSetId={
-                            (currentCandidate ?? pool[0]).annotationSetId
-                          }
-                          counts={categoryCounts}
-                        />
+                        {labels.map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
                       </Form.Select>
                     </Form.Group>
                     <Form.Group>
@@ -696,7 +699,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 {/* Right image column */}
                 {candidates.length === 0 ? (
                   <p className='mt-3'>
-                    {!selectedCategoryId && maxAnnotations === ''
+                    {!selectedLabel && maxAnnotations === ''
                       ? 'No available locations to add.'
                       : matchingTotal > 0
                       ? `All ${matchingTotal} locations matching the filter are already in the pool.`
@@ -782,50 +785,5 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         </Footer>
       </Modal>
     </ProjectContext>
-  );
-}
-
-function CategoryOptions({
-  annotationSetId,
-  counts,
-}: {
-  annotationSetId: string;
-  counts: Record<string, number>;
-}) {
-  const { client } = useContext(GlobalContext)!;
-  const [cats, setCats] = useState<any[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const categories = (await fetchAllPaginatedResults(
-        // @ts-ignore: complex union types from generated client
-        (client as any).models.Category.categoriesByAnnotationSetId,
-        {
-          annotationSetId,
-          selectionSet: ['id', 'name', 'annotationSetId'] as const,
-        }
-      )) as any[];
-      if (!cancelled) {
-        setCats(
-          categories
-            ?.filter((c: any) => c.annotationSetId === annotationSetId)
-            ?.sort((a: any, b: any) => a.name.localeCompare(b.name)) || []
-        );
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [annotationSetId]);
-  return (
-    <>
-      {(Array.isArray(cats) ? (cats as any[]) : [])
-        .filter((c: any) => counts[c.id] > 0)
-        .map((c: any) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-    </>
   );
 }
