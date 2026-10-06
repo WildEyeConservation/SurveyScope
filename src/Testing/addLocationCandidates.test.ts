@@ -9,13 +9,13 @@ import {
 const entry = (
   locationId: string,
   x: number,
-  categoryIds: string[],
+  labels: string[],
   overrides: Partial<PoolEntry> = {}
 ): PoolEntry => ({
   annotationSetId: 'set',
   locationId,
   location: { imageId: 'img', x, y: 500, width: 1000, height: 1000 },
-  categoryIds,
+  labels,
   ...overrides,
 });
 
@@ -98,8 +98,8 @@ test('a location added directly to the pool is marked as added', () => {
 });
 
 test('filters by label and max annotations and skips excluded locations', () => {
-  const ids = (categoryId: string, max: number | '', excluded: string[] = []) =>
-    filterCandidates(pool, categoryId, max, new Set(excluded)).map(
+  const ids = (label: string, max: number | '', excluded: string[] = []) =>
+    filterCandidates(pool, label, max, new Set(excluded)).map(
       (c) => c.locationId
     );
 
@@ -120,5 +120,18 @@ test('a location seen under two annotation sets is listed once', () => {
   assert.deepEqual(
     candidates.map((c) => `${c.annotationSetId}_${c.locationId}`),
     ['set_a', 'set_b', 'set_c']
+  );
+});
+
+test('a label matches locations from every annotation set', () => {
+  const candidates = filterCandidates(
+    [...pool, entry('d', 3500, ['impala'], { annotationSetId: 'set2' })],
+    'impala',
+    '',
+    new Set()
+  );
+  assert.deepEqual(
+    candidates.map((c) => c.locationId),
+    ['b', 'c', 'd']
   );
 });

@@ -10,7 +10,7 @@ export type CandidateRef = { annotationSetId: string; locationId: string };
 
 export type PoolEntry = CandidateRef & {
   location: LocationBox;
-  categoryIds: string[];
+  labels: string[];
 };
 
 export type PresetLocation = CandidateRef & {
@@ -67,7 +67,7 @@ export function findAddedKeys(
 
 export function filterCandidates(
   pool: PoolEntry[],
-  categoryId: string,
+  label: string,
   maxAnnotations: number | '',
   excludedKeys: Set<string>
 ): CandidateRef[] {
@@ -76,8 +76,8 @@ export function filterCandidates(
   const candidates: CandidateRef[] = [];
   for (const entry of pool) {
     if (excludedKeys.has(candidateKey(entry))) continue;
-    if (categoryId && !entry.categoryIds.includes(categoryId)) continue;
-    if (limit != null && entry.categoryIds.length > limit) continue;
+    if (label && !entry.labels.includes(label)) continue;
+    if (limit != null && entry.labels.length > limit) continue;
     if (seenLocationIds.has(entry.locationId)) continue;
     seenLocationIds.add(entry.locationId);
     candidates.push({
