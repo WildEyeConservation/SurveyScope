@@ -702,7 +702,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                     {!selectedLabel && maxAnnotations === ''
                       ? 'No available locations to add.'
                       : matchingTotal > 0
-                      ? `All ${matchingTotal} locations matching the filter are already in the pool.`
+                      ? `Every location matching the filter (${matchingTotal}) is already in the pool.`
                       : 'No locations match the filter.'}
                   </p>
                 ) : (
