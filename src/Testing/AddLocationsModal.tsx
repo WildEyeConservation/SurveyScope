@@ -331,6 +331,13 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
     }
   }, [show]);
 
+  const matchingTotal = useMemo(
+    () =>
+      filterCandidates(pool, selectedCategoryId, maxAnnotations, new Set())
+        .length,
+    [pool, selectedCategoryId, maxAnnotations]
+  );
+
   const applyFilters = useCallback(() => {
     setSelectedCategoryId(pendingCategoryId);
     setMaxAnnotations(pendingMaxAnnotations || '');
@@ -689,9 +696,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 {/* Right image column */}
                 {candidates.length === 0 ? (
                   <p className='mt-3'>
-                    {selectedCategoryId || maxAnnotations !== ''
-                      ? 'No locations match the filter.'
-                      : 'No available locations to add.'}
+                    {!selectedCategoryId && maxAnnotations === ''
+                      ? 'No available locations to add.'
+                      : matchingTotal > 0
+                      ? `All ${matchingTotal} locations matching the filter are already in the pool.`
+                      : 'No locations match the filter.'}
                   </p>
                 ) : (
                   <div className='d-flex flex-column flex-grow-1 h-100 w-100'>
