@@ -40,6 +40,9 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const [adding, setAdding] = useState(false);
   const [candidates, setCandidates] = useState<CandidateRef[]>([]);
   const [pool, setPool] = useState<PoolEntry[]>([]);
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>(
+    {}
+  );
   const excludedKeysRef = useRef<Set<string>>(new Set());
   const [bufferKey, setBufferKey] = useState(0);
   const [index, setIndex] = useState(0);
@@ -211,7 +214,9 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 
       // Process results
       const entries: PoolEntry[] = [];
+      const counts: Record<string, number> = {};
       for (const { annotations, observations } of annotationResults) {
+        const counted = new Set<any>();
         for (const obs of observations) {
           const location = obs.location;
           const minX = location.x - location.width / 2;
@@ -225,6 +230,8 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
               ann.x >= minX && ann.y >= minY && ann.x <= maxX && ann.y <= maxY
           );
 
+          for (const ann of inside) counted.add(ann);
+
           if (inside.length > 0) {
             entries.push({
               annotationSetId: obs.annotationSetId,
@@ -234,8 +241,12 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
             });
           }
         }
+        for (const ann of counted) {
+          counts[ann.categoryId] = (counts[ann.categoryId] || 0) + 1;
+        }
       }
 
+      setCategoryCounts(counts);
       const excludedKeys = findAddedKeys(entries, presetLocations);
       excludedKeysRef.current = excludedKeys;
       setPool(entries);
@@ -536,6 +547,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                           annotationSetId={
                             (currentCandidate ?? pool[0]).annotationSetId
                           }
+                          counts={categoryCounts}
                         />
                       </Form.Select>
                     </Form.Group>
@@ -764,7 +776,13 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   );
 }
 
-function CategoryOptions({ annotationSetId }: { annotationSetId: string }) {
+function CategoryOptions({
+  annotationSetId,
+  counts,
+}: {
+  annotationSetId: string;
+  counts: Record<string, number>;
+}) {
   const { client } = useContext(GlobalContext)!;
   const [cats, setCats] = useState<any[]>([]);
   useEffect(() => {
@@ -792,11 +810,13 @@ function CategoryOptions({ annotationSetId }: { annotationSetId: string }) {
   }, [annotationSetId]);
   return (
     <>
-      {(Array.isArray(cats) ? (cats as any[]) : []).map((c: any) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-        </option>
-      ))}
+      {(Array.isArray(cats) ? (cats as any[]) : [])
+        .filter((c: any) => counts[c.id] > 0)
+        .map((c: any) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
     </>
   );
 }
