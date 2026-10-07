@@ -1,3 +1,4 @@
+import { assertMaintenanceAccess } from './maintenance/state';
 import pLimit from 'p-limit';
 import { Amplify } from 'aws-amplify';
 import outputs from '../amplify_outputs.json';
@@ -25,7 +26,10 @@ const limit = pLimit(15);
 
 // Expose a helper to run arbitrary async work through the same limiter
 export const runWithClientLimit = async <T>(fn: () => Promise<T>): Promise<T> =>
-  limit(fn);
+  limit(() => {
+    assertMaintenanceAccess();
+    return fn();
+  });
 
 // Custom error class for GraphQL errors
 export class GraphQLError extends Error {
@@ -57,6 +61,7 @@ async function executeWithRetry<T>(
   let retryCount = 0;
 
   while (retryCount < maxRetries) {
+    assertMaintenanceAccess();
     try {
       const result = await operation();
 
@@ -141,7 +146,11 @@ function wrapClientMethods(obj: unknown): unknown {
             : {};
           const shouldRetry = options.retry !== false;
 
-          const execute = () => limit(() => value(...args));
+          const execute = () =>
+            limit(() => {
+              assertMaintenanceAccess();
+              return value(...args);
+            });
 
           const result = shouldRetry
             ? await executeWithRetry(execute)

@@ -943,6 +943,91 @@ const schema = a
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(cancelIndividualIdJob))
       .returns(a.json()),
+    UserAnnouncement: a.customType({
+      userId: a.string().required(),
+      revision: a.integer().required(),
+      message: a.string().required(),
+      messageType: a.string().required(),
+      publishAt: a.datetime(),
+      denyAccessAt: a.datetime(),
+      serverTime: a.datetime().required(),
+    }),
+    getUserAnnouncement: a
+      .query()
+      .arguments({ userId: a.string() })
+      .returns(a.ref('UserAnnouncement'))
+      .authorization((allow) => [allow.authenticated()])
+      .handler(
+        a.handler.custom({
+          entry: './getSystemMaintenance.js',
+          dataSource: 'SystemMaintenanceStore',
+        })
+      ),
+    setUserAnnouncement: a
+      .mutation()
+      .arguments({
+        userId: a.string().required(),
+        expectedRevision: a.integer().required(),
+        message: a.string().required(),
+        messageType: a.string().required(),
+        publishAt: a.datetime(),
+        denyAccessAt: a.datetime(),
+      })
+      .returns(a.ref('UserAnnouncement'))
+      .authorization((allow) => [allow.authenticated()])
+      .handler(
+        a.handler.custom({
+          entry: './setSystemMaintenance.js',
+          dataSource: 'SystemMaintenanceStore',
+        })
+      ),
+    onUserAnnouncementChange: a
+      .subscription()
+      .for(a.ref('setUserAnnouncement'))
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.custom({ entry: './onUserAnnouncementChange.js' })),
+    SystemMaintenance: a.customType({
+      revision: a.integer().required(),
+      message: a.string().required(),
+      messageType: a.string().required(),
+      publishAt: a.datetime(),
+      denyAccessAt: a.datetime(),
+      serverTime: a.datetime().required(),
+    }),
+    getSystemMaintenance: a
+      .query()
+      .returns(a.ref('SystemMaintenance'))
+      .authorization((allow) => [allow.authenticated()])
+      .handler(
+        a.handler.custom({
+          entry: './getSystemMaintenance.js',
+          dataSource: 'SystemMaintenanceStore',
+        })
+      ),
+    setSystemMaintenance: a
+      .mutation()
+      .arguments({
+        expectedRevision: a.integer().required(),
+        message: a.string().required(),
+        messageType: a.string().required(),
+        publishAt: a.datetime(),
+        denyAccessAt: a.datetime(),
+      })
+      .returns(a.ref('SystemMaintenance'))
+      // The resolver enforces sysadmin membership. Keeping one Cognito auth
+      // directive on the shared return type allows all users to subscribe.
+      .authorization((allow) => [allow.authenticated()])
+      .handler(
+        a.handler.custom({
+          entry: './setSystemMaintenance.js',
+          dataSource: 'SystemMaintenanceStore',
+        })
+      ),
+    onSystemMaintenanceChange: a
+      .subscription()
+      .for(a.ref('setSystemMaintenance'))
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.custom({ entry: './onSystemMaintenanceChange.js' })),
     Message: a.customType({
       content: a.string().required(),
       channelName: a.string().required(),

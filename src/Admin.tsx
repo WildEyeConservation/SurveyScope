@@ -1,3 +1,5 @@
+import UserMaintenanceAdmin from './maintenance/UserMaintenanceAdmin';
+import MaintenanceAdmin from './maintenance/MaintenanceAdmin';
 import { useContext } from 'react';
 import { UserContext } from './Context';
 import { Tabs, Tab } from './Tabs';
@@ -32,6 +34,12 @@ export default function Admin() {
         </Card.Header>
         <Card.Body>
           <Tabs>
+            <Tab label='Maintenance'>
+              <MaintenanceAdmin />
+            </Tab>
+            <Tab label='User Messages'>
+              <UserMaintenanceAdmin />
+            </Tab>
             <Tab label='Pending Organisations'>
               <PendingOrganizations />
             </Tab>
