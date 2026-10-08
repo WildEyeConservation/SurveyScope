@@ -414,10 +414,11 @@ export default function DefineTransects({
   const assignPendingToNewTransect = useCallback(() => {
     const pending = pendingPolygonRef.current;
     if (!pending) return;
-    const currentMax =
-      segmentedImages.length > 0
-        ? Math.max(...segmentedImages.map((si) => si.transectId))
-        : -1;
+    // Spreading every image into Math.max overflows the stack on large surveys.
+    const currentMax = segmentedImages.reduce(
+      (max, si) => Math.max(max, si.transectId),
+      -1
+    );
     const newTransectId = isFiniteNumber(currentMax) ? currentMax + 1 : 0;
     const enclosedIds = pending.enclosedImageIds;
     setSegmentedImages((prev) =>
@@ -1596,6 +1597,7 @@ export default function DefineTransects({
     label.innerHTML = `<strong>${pendingPolygon.enclosedImageIds.size}</strong> points selected`;
     node.appendChild(label);
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'btn btn-primary btn-sm';
     btn.textContent = 'Merge points';
     btn.onclick = () => assignPendingToNewTransectRef.current();
