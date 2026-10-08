@@ -28,6 +28,7 @@ import type {
   LineString as GeoJSONLineString,
 } from 'geojson';
 import proj4 from 'proj4';
+import { getBaselineBearing } from './baselineBearing';
 import { BASE_STYLE, EMPTY_FC } from './surveyMapStyle';
 import './surveyMap.css';
 
@@ -233,51 +234,6 @@ function getProjectedDirectionalBaseline(
   const length = turf.length(baseline, { units: 'meters' });
 
   return { baseline, length };
-}
-
-// finds the average transect heading and returns the orthogonal baseline heading
-function getBaselineBearing(
-  transectIds: number[],
-  segmentedImages: Array<{
-    longitude: number;
-    latitude: number;
-    transectId: number;
-  }>
-): number {
-  // average transect heading
-  const headings: number[] = [];
-  transectIds.forEach((id) => {
-    const imgs = segmentedImages.filter((si) => si.transectId === id);
-    if (imgs.length >= 2) {
-      const start = imgs[0];
-      const end = imgs[imgs.length - 1];
-      headings.push(
-        turf.bearing(
-          [start.longitude, start.latitude],
-          [end.longitude, end.latitude]
-        )
-      );
-    }
-  });
-
-  // average the headings - accounting for sign changes
-  let avgHeading = 0;
-  if (headings.length) {
-    let sumX = 0,
-      sumY = 0;
-    headings.forEach((h) => {
-      const rad = (h * Math.PI) / 180;
-      sumX += Math.cos(rad);
-      sumY += Math.sin(rad);
-    });
-    const avgRad = Math.atan2(sumY, sumX);
-    avgHeading = (avgRad * 180) / Math.PI;
-  }
-
-  // baseline is orthogonal to the average
-  const baselineBearing = (avgHeading + 90) % 360;
-
-  return baselineBearing;
 }
 
 // define transects and strata
