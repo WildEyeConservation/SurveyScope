@@ -1,6 +1,8 @@
 import { useCallback, useContext, useRef } from 'react';
 import { GlobalContext, ImageContext, ProjectContext } from './Context';
 import useCreateTestResult from './useCreateTestResult';
+import { GraphQLError } from './limitedClient';
+import { persistObservation } from './persistObservation';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
@@ -32,10 +34,6 @@ interface UseCreateObservationProps {
 // Time limits in milliseconds (matching server-side validation)
 const MAX_TIME_WITH_ANNOTATIONS = 900 * 1000; // 15 minutes
 const MAX_TIME_WITHOUT_ANNOTATIONS = 120 * 1000; // 2 minutes
-
-function describeErrors(errors: readonly { message?: string }[] | undefined) {
-  return errors?.map((error) => error.message || 'Unknown GraphQL error').join('; ');
-}
 
 export default function useCreateObservation(props: UseCreateObservationProps) {
   const {
@@ -105,63 +103,51 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
 
         const persistedAnnotationSetId = annotationSetToUse ?? annotationSetId;
         const input = {
-            ...(observationId ? { id: observationId } : {}),
-            annotationSetId: persistedAnnotationSetId,
-            annotationCount: annoCount,
-            timeTaken,
-            // Time the user spent looking at a not-yet-loaded image. With
-            // preloading the image usually finishes before it becomes visible,
-            // in which case the user waited 0ms (never negative).
-            waitingTime:
-              visibleTimestamp && fullyLoadedTimestamp
-                ? Math.max(0, fullyLoadedTimestamp - visibleTimestamp)
-                : 0,
-            loadingTime: fullyLoadedTimestamp
-              ? fullyLoadedTimestamp - (startLoadingTimestamp ?? 0)
+          ...(observationId ? { id: observationId } : {}),
+          annotationSetId: persistedAnnotationSetId,
+          annotationCount: annoCount,
+          timeTaken,
+          // Time the user spent looking at a not-yet-loaded image. With
+          // preloading the image usually finishes before it becomes visible,
+          // in which case the user waited 0ms (never negative).
+          waitingTime:
+            visibleTimestamp && fullyLoadedTimestamp
+              ? Math.max(0, fullyLoadedTimestamp - visibleTimestamp)
               : 0,
-            locationId: id,
-            projectId: project.id,
-            queueId: queueId || undefined,
-            source: observationSource,
-            group: project.organizationId,
+          loadingTime: fullyLoadedTimestamp
+            ? fullyLoadedTimestamp - (startLoadingTimestamp ?? 0)
+            : 0,
+          locationId: id,
+          projectId: project.id,
+          queueId: queueId || undefined,
+          source: observationSource,
+          group: project.organizationId,
         };
 
-        const created = await client.models.Observation.create(input);
-        if (!created.data) {
-            // A lost response after a successful write is indistinguishable from
-            // a failed create. Queued observations use a deterministic ID, so a
-            // strongly identified existing row proves persistence and makes the
-            // client retry safe.
-          let existingObservationConfirmed = false;
-          if (observationId) {
-            const existing = await client.models.Observation.get(
-                { id: observationId },
-                {
-                  selectionSet: [
-                    'id',
-                    'annotationSetId',
-                    'locationId',
-                    'queueId',
-                  ],
-                }
-            );
-            if (
-              existing.data?.annotationSetId === persistedAnnotationSetId &&
-              existing.data.locationId === id &&
-              (existing.data.queueId ?? undefined) === (queueId ?? undefined)
-            ) {
-              existingObservationConfirmed = true;
-            }
-          }
-
-          if (!existingObservationConfirmed) {
-            throw new Error(
-              `Failed to persist observation: ${
-                describeErrors(created.errors) || 'no row returned'
-              }`
-            );
-          }
-        }
+        await persistObservation({
+          create: () => client.models.Observation.create(input),
+          getExisting: observationId
+            ? () =>
+                client.models.Observation.get(
+                  { id: observationId },
+                  {
+                    selectionSet: [
+                      'id',
+                      'annotationSetId',
+                      'locationId',
+                      'queueId',
+                    ],
+                  }
+                )
+            : undefined,
+          expected: {
+            annotationSetId: persistedAnnotationSetId,
+            locationId: id,
+            queueId: queueId || undefined,
+          },
+          isGraphQLError: (error): error is GraphQLError =>
+            error instanceof GraphQLError,
+        });
 
         // observedCount is bumped by the updateUserStats DynamoDB stream handler
         // when the Observation row lands; don't also increment from the client.
