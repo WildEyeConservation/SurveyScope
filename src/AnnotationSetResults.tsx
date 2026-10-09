@@ -133,6 +133,30 @@ export default function AnnotationSetResults({
       return acc;
     }, {} as Record<string, string>);
 
+    setExportStatus('Fetching strata...');
+    const [transects, strata] = await Promise.all([
+      fetchAllPaginatedResults(client.models.Transect.transectsByProjectId, {
+        projectId: surveyId,
+        selectionSet: ['id', 'stratumId'],
+        limit: 1000,
+      }),
+      fetchAllPaginatedResults(client.models.Stratum.strataByProjectId, {
+        projectId: surveyId,
+        selectionSet: ['id', 'name'],
+        limit: 1000,
+      }),
+    ]);
+
+    const stratumNameById = strata.reduce((acc, stratum) => {
+      acc[stratum.id] = stratum.name;
+      return acc;
+    }, {} as Record<string, string>);
+
+    const stratumByTransectId = transects.reduce((acc, transect) => {
+      acc[transect.id] = stratumNameById[transect.stratumId];
+      return acc;
+    }, {} as Record<string, string>);
+
     const infoTagsBySet = await Promise.all(
       annotationSets.map((set) =>
         fetchAllInfoTagsForSet(client, set.id, (count) => {
@@ -155,6 +179,8 @@ export default function AnnotationSetResults({
             category: anno.category?.name || 'Unknown',
             image: anno.image.originalPath || 'Unknown',
             transect: anno.image.transectId || 'Unknown',
+            stratum:
+              stratumByTransectId[anno.image.transectId ?? ''] || 'Unknown',
             timestamp: anno.image.timestamp,
             latitude: anno.image.latitude,
             longitude: anno.image.longitude,
