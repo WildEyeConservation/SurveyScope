@@ -15,6 +15,14 @@ import Alert from 'react-bootstrap/Alert';
 import { GlobalContext, UserContext } from './Context.tsx';
 import { uploadOrchestrator } from './upload/core/UploadOrchestrator.ts';
 import { saveDirectoryHandle } from './upload/core/dirHandles.ts';
+import { ElevationService } from './upload/core/elevation.ts';
+import {
+  METERS_PER_FOOT,
+  altitudeBandFrom,
+  computeAglByRow,
+  isOutsideAltitudeBand,
+  type AltitudeUnit,
+} from './upload/altitudeFilter.ts';
 import type { UploadBackend } from './upload/core/types.ts';
 import {
   downloadFailedImagesCsv,
@@ -49,6 +57,9 @@ import {
   bracketTimestamp,
   interpolateAt,
   minMaxOf,
+  gpsRowKey,
+  nextMapRemovedKeys,
+  type GpsRow,
 } from './survey/new-survey/gpsIndex';
 import OrientationReview, {
   OrientationCameraGroup,
@@ -281,6 +292,85 @@ export function FileUploadCore({
     { label: 'WGS84', value: 'wgs84' },
     { label: 'AGL', value: 'agl' },
   ];
+  const [altitudeFilterEnabled, setAltitudeFilterEnabled] = useState(false);
+  const [targetAltitude, setTargetAltitude] = useState('');
+  const [altitudeDeviation, setAltitudeDeviation] = useState('');
+  const [altitudeFilterUnit, setAltitudeFilterUnit] =
+    useState<AltitudeUnit>('m');
+  // Preserve map exclusions when other filters change.
+  const [mapRemovedKeys, setMapRemovedKeys] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [aglResult, setAglResult] = useState<{
+    rows: CsvFile;
+    aglByRow: Map<GpsRow, number>;
+  } | null>(null);
+  const elevationService = useMemo(
+    () =>
+      new ElevationService({
+        bucketName: (backend as unknown as UploadBackend).custom
+          .generalBucketName,
+      }),
+    [backend]
+  );
+  const altitudeBand = useMemo(
+    () =>
+      altitudeFilterEnabled
+        ? altitudeBandFrom(
+            targetAltitude,
+            altitudeDeviation,
+            altitudeFilterUnit
+          )
+        : null,
+    [
+      altitudeFilterEnabled,
+      targetAltitude,
+      altitudeDeviation,
+      altitudeFilterUnit,
+    ]
+  );
+  const aglByRow =
+    aglResult && aglResult.rows === fullCsvData ? aglResult.aglByRow : null;
+  useEffect(() => {
+    if (!altitudeFilterEnabled || !fullCsvData) return;
+    let cancelled = false;
+    setAglResult(null);
+    computeAglByRow(fullCsvData, altitudeType.value === 'agl', (lat, lng) =>
+      elevationService.getElevation(lat, lng)
+    ).then((result) => {
+      if (!cancelled) setAglResult({ rows: fullCsvData, aglByRow: result });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    altitudeFilterEnabled,
+    fullCsvData,
+    altitudeType.value,
+    elevationService,
+  ]);
+  const altitudeLookupPending = altitudeFilterEnabled && !aglByRow;
+  const altitudeFilterBlocking =
+    altitudeFilterEnabled && (!altitudeBand || altitudeLookupPending);
+  const altitudeStats = useMemo(() => {
+    if (!fullCsvData || !aglByRow) return null;
+    let outside = 0;
+    if (altitudeBand) {
+      for (const row of fullCsvData) {
+        if (isOutsideAltitudeBand(aglByRow.get(row), altitudeBand)) outside++;
+      }
+    }
+    return {
+      unknown: fullCsvData.length - aglByRow.size,
+      outside,
+      range: minMaxOf(aglByRow.values()),
+    };
+  }, [fullCsvData, aglByRow, altitudeBand]);
+  const formatFilterAltitude = (meters: number) =>
+    `${Math.round(
+      altitudeFilterUnit === 'ft' ? meters / METERS_PER_FOOT : meters
+    )} ${altitudeFilterUnit}`;
+
   // State for user-defined column mapping phase
   const [headerFields, setHeaderFields] = useState<string[] | null>(null);
   const [columnMapping, setColumnMapping] = useState<{
@@ -426,6 +516,10 @@ export function FileUploadCore({
           if (csvIndex.byTimestamp.has(exifMeta.timestamp)) {
             return true;
           }
+          // Its own row was filtered out; don't interpolate it back in.
+          if (fullCsvIndex.byTimestamp.has(exifMeta.timestamp)) {
+            return false;
+          }
           const bracket = bracketTimestamp(csvIndex, exifMeta.timestamp);
           if (!bracket) {
             return false;
@@ -444,7 +538,14 @@ export function FileUploadCore({
         }
       }
     });
-  }, [filteredImageFiles, failedFiles, exifData, csvIndex, associateByTimestamp]);
+  }, [
+    filteredImageFiles,
+    failedFiles,
+    exifData,
+    csvIndex,
+    fullCsvIndex,
+    associateByTimestamp,
+  ]);
 
   // One landscape/portrait group per camera. Grouping uses the source image's
   // displayed dimensions after its existing EXIF orientation is respected.
@@ -1559,6 +1660,7 @@ export function FileUploadCore({
         !scanningEXIF &&
         !loadingExistingImages &&
         hasValidGpsForAllImages &&
+        !altitudeFilterBlocking &&
         Boolean(csvData && csvData.data.length > 0)
       );
     }
@@ -1567,6 +1669,7 @@ export function FileUploadCore({
     scanningEXIF,
     loadingExistingImages,
     hasValidGpsForAllImages,
+    altitudeFilterBlocking,
     csvData,
   ]);
 
@@ -1574,9 +1677,16 @@ export function FileUploadCore({
     const hasData =
       !loadingExistingImages &&
       hasValidGpsForAllImages &&
+      !altitudeFilterBlocking &&
       Boolean(csvData && csvData.data.length > 0);
     setReadyToSubmit(hasData);
-  }, [loadingExistingImages, hasValidGpsForAllImages, csvData, setReadyToSubmit]);
+  }, [
+    loadingExistingImages,
+    hasValidGpsForAllImages,
+    altitudeFilterBlocking,
+    csvData,
+    setReadyToSubmit,
+  ]);
 
   // Simple concurrency limiter for mapping large arrays without blocking UI
   // Now handles errors gracefully - failed items will be null in results
@@ -2315,10 +2425,22 @@ export function FileUploadCore({
     return bounds;
   }, [fullCsvData, csvData]);
 
-  // Filter csvData rows by each day's selected time range.
-  const applyTimeFilter = () => {
+  const applyRowFilters = () => {
     if (!fullCsvData) return;
+    const filterByTime =
+      associateByTimestamp || fullCsvData.some((row) => row.timestamp);
     const filtered = fullCsvData.filter((row) => {
+      if (
+        altitudeBand &&
+        aglByRow &&
+        isOutsideAltitudeBand(aglByRow.get(row), altitudeBand)
+      ) {
+        return false;
+      }
+      if (mapRemovedKeys.size > 0 && mapRemovedKeys.has(gpsRowKey(row))) {
+        return false;
+      }
+      if (!filterByTime) return true;
       if (row.timestamp === undefined) return false;
       const date = new Date(row.timestamp!);
       const day = date.getUTCDate();
@@ -2332,15 +2454,16 @@ export function FileUploadCore({
     setCsvData({ data: filtered });
   };
 
-  // Automatically re-filter when time ranges change
   useEffect(() => {
-    if (
-      associateByTimestamp ||
-      (fullCsvData && fullCsvData.some((row) => row.timestamp))
-    ) {
-      applyTimeFilter();
-    }
-  }, [timeRanges, fullCsvData, associateByTimestamp]);
+    applyRowFilters();
+  }, [
+    timeRanges,
+    fullCsvData,
+    associateByTimestamp,
+    altitudeBand,
+    aglByRow,
+    mapRemovedKeys,
+  ]);
 
   // The model selector lives on the review step in wizard mode.
   const modelSelector = (
@@ -2793,8 +2916,10 @@ export function FileUploadCore({
             <GPSSubset
               gpsData={csvData.data}
               imageFiles={imageFiles}
-              onFilter={(filteredData) => {
-                setCsvData((prevData) => ({ ...prevData, data: filteredData }));
+              onFilter={(visibleRows) => {
+                setMapRemovedKeys((prev) =>
+                  nextMapRemovedKeys(prev, csvData.data, visibleRows)
+                );
               }}
               onShapefileParsed={onShapefileParsed}
               existingImages={existingImagePoints}
@@ -2922,6 +3047,115 @@ export function FileUploadCore({
                 </div>
               </Form.Group>
             )}
+          <Form.Group className='mt-3'>
+            <Form.Label className='mb-0'>
+              Filter Data by Altitude (Optional)
+            </Form.Label>
+            <Form.Text
+              className='d-block mb-1 mt-0'
+              style={{ fontSize: '12px' }}
+            >
+              Set the target height above ground and the allowed deviation.
+              Images taken outside that range are dropped from the upload.
+            </Form.Text>
+            <Form.Check
+              type='switch'
+              id='altitude-filter-enabled'
+              label='Filter images by height above ground'
+              checked={altitudeFilterEnabled}
+              onChange={(e) => setAltitudeFilterEnabled(e.target.checked)}
+            />
+            {altitudeFilterEnabled && (
+              <>
+                <div className='d-flex align-items-center gap-2 mt-2'>
+                  <label className='mb-0' htmlFor='altitude-filter-target'>
+                    Target:
+                  </label>
+                  <input
+                    type='number'
+                    id='altitude-filter-target'
+                    className='form-control'
+                    style={{ width: '120px' }}
+                    min={0}
+                    value={targetAltitude}
+                    onChange={(e) => setTargetAltitude(e.target.value)}
+                  />
+                  <label className='mb-0' htmlFor='altitude-filter-deviation'>
+                    Deviation (±):
+                  </label>
+                  <input
+                    type='number'
+                    id='altitude-filter-deviation'
+                    className='form-control'
+                    style={{ width: '120px' }}
+                    min={0}
+                    value={altitudeDeviation}
+                    onChange={(e) => setAltitudeDeviation(e.target.value)}
+                  />
+                  <Form.Select
+                    aria-label='Altitude filter unit'
+                    style={{ width: '80px' }}
+                    value={altitudeFilterUnit}
+                    onChange={(e) =>
+                      setAltitudeFilterUnit(e.target.value as AltitudeUnit)
+                    }
+                  >
+                    <option value='m'>m</option>
+                    <option value='ft'>ft</option>
+                  </Form.Select>
+                </div>
+                {altitudeLookupPending ? (
+                  <div className='alert alert-info mt-2 mb-0'>
+                    Looking up ground elevation...
+                  </div>
+                ) : (
+                  altitudeStats && (
+                    <div
+                      className={`alert ${
+                        altitudeBand && altitudeStats.range
+                          ? 'alert-info'
+                          : 'alert-warning'
+                      } mt-2 mb-0`}
+                    >
+                      {altitudeStats.range ? (
+                        <div>
+                          Heights above ground in this data:{' '}
+                          {formatFilterAltitude(altitudeStats.range.min)} to{' '}
+                          {formatFilterAltitude(altitudeStats.range.max)}.
+                        </div>
+                      ) : (
+                        <div>
+                          No image has a usable height above ground, so the
+                          filter has no effect.
+                        </div>
+                      )}
+                      {altitudeBand ? (
+                        <div>
+                          Keeping {formatFilterAltitude(altitudeBand.min)} to{' '}
+                          {formatFilterAltitude(altitudeBand.max)}:{' '}
+                          {altitudeStats.outside} image
+                          {altitudeStats.outside === 1 ? '' : 's'} outside this
+                          range will be dropped.
+                        </div>
+                      ) : (
+                        <div>
+                          Enter a target above 0 and a deviation to continue, or
+                          switch the filter off.
+                        </div>
+                      )}
+                      {altitudeStats.unknown > 0 && altitudeStats.range && (
+                        <div>
+                          {altitudeStats.unknown} image
+                          {altitudeStats.unknown === 1 ? '' : 's'} without a
+                          usable altitude or ground elevation will be kept.
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+              </>
+            )}
+          </Form.Group>
           <div className='mt-3'>
             {invalidGpsFiles.length > 0 && (() => {
               const sample = invalidGpsFiles.slice(0, 5);
@@ -3220,6 +3454,16 @@ export function FileUploadCore({
                   : ''}
               </li>
             )}
+            <li>
+              <strong>Altitude filter:</strong>{' '}
+              {altitudeBand
+                ? `${formatFilterAltitude(
+                    altitudeBand.min
+                  )} to ${formatFilterAltitude(
+                    altitudeBand.max
+                  )} above ground`
+                : 'Not applied'}
+            </li>
             <li>
               <strong>Camera setup:</strong>{' '}
               {multipleCameras ? 'Multiple cameras' : 'Single camera'}
