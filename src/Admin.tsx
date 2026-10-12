@@ -8,6 +8,7 @@ import ErrorReports from './ErrorReports';
 import AdminStats from './AdminStats';
 import AwsServiceHealth from './AwsServiceHealth';
 import AdminSurveys from './AdminSurveys';
+import SurveyMetrics from './survey-metrics/SurveyMetrics';
 
 export default function Admin() {
   const { cognitoGroups } = useContext(UserContext)!;
@@ -53,6 +54,11 @@ export default function Admin() {
             <Tab label='Surveys'>
               <div className='m-2'>
                 <AdminSurveys />
+              </div>
+            </Tab>
+            <Tab label='Survey Metrics'>
+              <div className='m-2'>
+                <SurveyMetrics />
               </div>
             </Tab>
             <Tab label='AWS Health'>
