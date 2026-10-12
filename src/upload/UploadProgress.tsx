@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button } from 'react-bootstrap';
+import { Button, Spinner } from 'react-bootstrap';
 import { AlertTriangle, Pause, Play, WifiOff, X } from 'lucide-react';
 import BlockedUploadModal from './BlockedUploadModal';
 import { uploadOrchestrator } from './core/UploadOrchestrator';
@@ -8,7 +8,8 @@ import { useUploadStatus, useUploadUi } from './uploadUi';
 // Navbar upload status pill.
 export default function UploadProgress() {
   const snapshot = useUploadStatus();
-  const { deletingProjectId, deleteStep, deleteTotal } = useUploadUi();
+  const { resumingProjectId, deletingProjectId, deleteStep, deleteTotal } =
+    useUploadUi();
   const [showDetails, setShowDetails] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);
 
@@ -34,6 +35,15 @@ export default function UploadProgress() {
     return (
       <div className='px-2'>
         <p className='m-0'>{`Deleting survey: ${deleteStep}/${deleteTotal}`}</p>
+      </div>
+    );
+  }
+
+  if (resumingProjectId) {
+    return (
+      <div className='px-2 d-flex flex-row align-items-center gap-2'>
+        <Spinner animation='border' size='sm' />
+        <p className='m-0'>Finding files to resume upload...</p>
       </div>
     );
   }

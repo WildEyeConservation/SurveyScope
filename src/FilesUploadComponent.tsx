@@ -12,6 +12,7 @@ import Modal from 'react-bootstrap/Modal';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import Alert from 'react-bootstrap/Alert';
+import Spinner from 'react-bootstrap/Spinner';
 import { GlobalContext, UserContext } from './Context.tsx';
 import { uploadOrchestrator } from './upload/core/UploadOrchestrator.ts';
 import { saveDirectoryHandle } from './upload/core/dirHandles.ts';
@@ -23,6 +24,8 @@ import {
   isOutsideAltitudeBand,
   type AltitudeUnit,
 } from './upload/altitudeFilter.ts';
+import { planCameraWrite } from './upload/core/cameras.ts';
+import { sampleSuccessfulScans } from './upload/sampleScan.ts';
 import type { UploadBackend } from './upload/core/types.ts';
 import {
   downloadFailedImagesCsv,
@@ -219,6 +222,7 @@ export function FileUploadCore({
   const [maxTimestamp, setMaxTimestamp] = useState(0);
   const [file, setFile] = useState<File | undefined>();
   const [scanningEXIF, setScanningEXIF] = useState(false);
+  const [readingFolder, setReadingFolder] = useState(false);
   const [csvData, setCsvData] = useState<CsvData | undefined>(undefined);
   const [fullCsvData, setFullCsvData] = useState<CsvFile | undefined>(
     undefined
@@ -776,9 +780,7 @@ export function FileUploadCore({
 
       try {
         // Get EXIF metadata for each file (sample first, then selective fast path if no GPS)
-        const sampleSize = Math.min(5, mapFiles.length);
-        const sampleFiles = mapFiles.slice(0, sampleSize);
-        const restFiles = mapFiles.slice(sampleSize);
+        const sampleSize = 5;
 
         // Helper to safely extract EXIF with error handling and validation
         const safeExtractExif = async (
@@ -848,50 +850,52 @@ export function FileUploadCore({
           }
         };
 
-        // Sample with full EXIF to check for GPS
-        const sampleResults = await Promise.all(
-          sampleFiles.map(async (file) => {
-            const exif = await safeExtractExif(file, getExifmeta);
-            if (!exif) return null;
+        const scanSampleFile = async (file: File) => {
+          const exif = await safeExtractExif(file, getExifmeta);
+          // Update count for all attempts (including failures) to show accurate progress
+          progress.scanned += 1;
+          if (!exif) return null;
 
-            // Validate and convert GPS data
-            let gpsData: GpsData | null = null;
-            if (exif.gpsData && exif.gpsData.alt && exif.gpsData.lat && exif.gpsData.lng) {
-              const lat = Number(exif.gpsData.lat);
-              const lng = Number(exif.gpsData.lng);
-              // Only set GPS data if coordinates are valid and in range
-              if (
-                Number.isFinite(lat) &&
-                Number.isFinite(lng) &&
-                lat >= -90 &&
-                lat <= 90 &&
-                lng >= -180 &&
-                lng <= 180
-              ) {
-                gpsData = {
-                  lat,
-                  lng,
-                  alt: convertAltitude(Number(exif.gpsData.alt)),
-                };
-              }
+          // Validate and convert GPS data
+          let gpsData: GpsData | null = null;
+          if (
+            exif.gpsData &&
+            exif.gpsData.alt &&
+            exif.gpsData.lat &&
+            exif.gpsData.lng
+          ) {
+            const lat = Number(exif.gpsData.lat);
+            const lng = Number(exif.gpsData.lng);
+            // Only set GPS data if coordinates are valid and in range
+            if (
+              Number.isFinite(lat) &&
+              Number.isFinite(lng) &&
+              lat >= -90 &&
+              lat <= 90 &&
+              lng >= -180 &&
+              lng <= 180
+            ) {
+              gpsData = {
+                lat,
+                lng,
+                alt: convertAltitude(Number(exif.gpsData.alt)),
+              };
             }
+          }
 
-            const updatedExif: ImageExif = {
-              ...exif,
-              width: exif.width || 0,
-              height: exif.height || 0,
-              gpsData,
-            };
-            return updatedExif;
-          })
-        );
+          const updatedExif: ImageExif = {
+            ...exif,
+            width: exif.width || 0,
+            height: exif.height || 0,
+            gpsData,
+          };
+          return updatedExif;
+        };
 
-        // Filter out null results (failed files)
-        const sampleRaw: ImageExif[] = sampleResults.filter(
-          (exif): exif is ImageExif => exif !== null
-        );
-        // Update count for all attempts (including failures) to show accurate progress
-        progress.scanned += sampleResults.length;
+        // Failed scans don't count toward the GPS sample.
+        const { sample: sampleRaw, consumed: sampleEnd } =
+          await sampleSuccessfulScans(mapFiles, sampleSize, scanSampleFile);
+        const restFiles = mapFiles.slice(sampleEnd);
 
         const gpsLikely = sampleRaw.some((x) => x.gpsData !== null);
         const extractor = gpsLikely ? getExifmeta : getTimestampOnlyExif;
@@ -1641,6 +1645,7 @@ export function FileUploadCore({
     if (setImagesReady) {
       setImagesReady(
         imageFiles.length > 0 &&
+          !readingFolder &&
           !scanningEXIF &&
           !loadingExistingImages &&
           Object.keys(exifData).length > 0
@@ -1649,6 +1654,7 @@ export function FileUploadCore({
   }, [
     setImagesReady,
     imageFiles,
+    readingFolder,
     scanningEXIF,
     loadingExistingImages,
     exifData,
@@ -1802,11 +1808,12 @@ export function FileUploadCore({
           (c) => c.name === effectiveName
         );
 
-        // Mapped folders reuse the existing camera without overwriting specs.
-        if (isMapped) {
-          if (existingCamera) allCameras.push(existingCamera);
-          continue;
-        }
+        const write = planCameraWrite(
+          !!existingCamera,
+          isMapped,
+          !!cameraSpecs[folderName]
+        );
+        if (write === 'reuse') continue;
 
         const spec = cameraSpecs[folderName] || {
           focalLengthMm: 0,
@@ -1814,7 +1821,7 @@ export function FileUploadCore({
           tiltDegrees: 0,
         };
 
-        if (existingCamera) {
+        if (write === 'update' && existingCamera) {
           await client.models.Camera.update({
             id: existingCamera.id,
             name: effectiveName,
@@ -2521,6 +2528,12 @@ export function FileUploadCore({
           className='p-2 mb-2 bg-white text-black'
           style={{ minHeight: '136px', overflow: 'auto' }}
         >
+          {scannedFiles.length === 0 && loadingExistingImages && (
+            <code className='m-0 text-dark d-flex align-items-center gap-2'>
+              <Spinner animation='border' size='sm' />
+              Loading existing survey images...
+            </code>
+          )}
           {scannedFiles.length > 0 && (
             <code className='m-0 text-dark'>
               Folder name: {name}
@@ -2532,7 +2545,10 @@ export function FileUploadCore({
               Image files size: {formatFileSize(totalImageSize)}
               <br />
               {loadingExistingImages ? (
-                'Loading existing survey images...'
+                <span className='d-inline-flex align-items-center gap-2'>
+                  <Spinner animation='border' size='sm' />
+                  Loading existing survey images...
+                </span>
               ) : (
                 <>
                   To upload: {toUploadFiles.length}
@@ -2558,8 +2574,10 @@ export function FileUploadCore({
             <FileInput
               id='filepicker'
               webkitdirectory=''
+              disabled={scanningEXIF}
               onFileChange={handleFileInputChange}
               onDirectoryHandle={setDirectoryHandle}
+              onReadingChange={setReadingFolder}
             >
               <p style={{ margin: 0 }}>
                 {scannedFiles.length > 0
@@ -2601,7 +2619,8 @@ export function FileUploadCore({
         </div>
       </Form.Group>
       {scanningEXIF && (
-        <div className='mt-3 mb-0'>
+        <div className='mt-3 mb-0 d-flex align-items-center gap-2'>
+          <Spinner animation='border' size='sm' />
           <p className='mb-0'>
             Scanning images for GPS data: {`${scanCount}/${scanTotal}`}
           </p>

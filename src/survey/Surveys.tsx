@@ -8,7 +8,7 @@ import {
   useUploadUi,
 } from '../upload/uploadUi.ts';
 import { Schema } from '../amplify/client-schema.ts';
-import { Card, Button, Form } from 'react-bootstrap';
+import { Card, Button, Form, Spinner } from 'react-bootstrap';
 import MyTable from '../Table.tsx';
 import NewSurveyModal from './NewSurveyModal.tsx';
 import { useNavigate } from 'react-router-dom';
@@ -70,7 +70,7 @@ export default function Surveys() {
     user,
   } = useContext(UserContext)!;
   const activeUploadProjectId = useActiveUploadProjectId();
-  const { deletingProjectId } = useUploadUi();
+  const { deletingProjectId, resumingProjectId } = useUploadUi();
   const uploadActive = activeUploadProjectId !== null;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -691,6 +691,7 @@ export default function Surveys() {
               <Button
                 size={size}
                 variant='info'
+                disabled={resumingProjectId !== null}
                 onClick={() => {
                   if (showResumeButton) {
                     requestResume({ id: project.id, name: project.name });
@@ -702,14 +703,21 @@ export default function Surveys() {
                   showModal('addFiles');
                 }}
               >
-                <Play />
+                {resumingProjectId === project.id ? (
+                  <Spinner animation='border' size='sm' />
+                ) : (
+                  <Play />
+                )}
               </Button>
             )}
             {isStale && (
               <Button
                 size={size}
                 variant='danger'
-                disabled={deletingProjectId === project.id}
+                disabled={
+                  deletingProjectId === project.id ||
+                  resumingProjectId === project.id
+                }
                 onClick={() => {
                   requestDelete({ id: project.id, name: project.name });
                 }}

@@ -96,7 +96,8 @@ export async function loadFilesFromStoredHandle(
 
 /** Walks a directory handle into Files with input-style webkitRelativePath. */
 export async function collectFilesFromHandle(
-  handle: DirectoryHandleLike
+  handle: DirectoryHandleLike,
+  onProgress?: (found: number) => void
 ): Promise<File[]> {
   const files: File[] = [];
   const walk = async (dir: DirectoryHandleLike, prefix: string) => {
@@ -111,6 +112,7 @@ export async function collectFilesFromHandle(
           configurable: true,
         });
         files.push(file);
+        if (files.length % 250 === 0) onProgress?.(files.length);
       } else {
         await walk(
           entry as DirectoryHandleLike,

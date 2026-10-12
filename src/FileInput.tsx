@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button } from 'react-bootstrap';
+import { Button, Spinner } from 'react-bootstrap';
 import {
   collectFilesFromHandle,
   pickDirectory,
@@ -19,6 +19,7 @@ export default function FileInput({
   fileType,
   onFileChange,
   onDirectoryHandle,
+  onReadingChange,
   children,
   ...fileProps
 }: {
@@ -27,13 +28,17 @@ export default function FileInput({
   onFileChange: (file: File[]) => void;
   /** Directory handle used to resume Chromium folder uploads. */
   onDirectoryHandle?: (handle: unknown) => void;
+  onReadingChange?: (reading: boolean) => void;
   children: React.ReactNode;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
   const [fileNames, setFileNames] = useState<string[]>([]);
+  // null when idle.
+  const [readCount, setReadCount] = useState<number | null>(null);
 
   const {
     onChange: additionalOnChange,
     style: additionalStyle,
+    disabled,
     ...otherProps
   } = fileProps;
 
@@ -55,27 +60,50 @@ export default function FileInput({
       try {
         const handle = await pickDirectory();
         if (!handle) return;
-        const files = await collectFilesFromHandle(handle);
+        setReadCount(0);
+        onReadingChange?.(true);
+        const files = await collectFilesFromHandle(handle, setReadCount);
         setFileNames([handle.name]);
         onFileChange(files);
         onDirectoryHandle?.(handle);
       } catch (err) {
         console.error('Directory pick failed:', err);
+      } finally {
+        setReadCount(null);
+        onReadingChange?.(false);
       }
     };
+    const reading = readCount !== null;
     return (
       <div className='d-flex flex-row align-items-center gap-2'>
-        <Button style={{ width: 'fit-content' }} onClick={handlePick}>
+        <Button
+          style={{ width: 'fit-content' }}
+          onClick={handlePick}
+          disabled={disabled || reading}
+        >
           {children}
         </Button>
-        {fileNames.length > 0 && <i className='mb-0'>{fileNames.join(', ')}</i>}
+        {reading ? (
+          <span className='d-flex align-items-center gap-2'>
+            <Spinner animation='border' size='sm' />
+            Reading folder... {readCount} files found
+          </span>
+        ) : (
+          fileNames.length > 0 && <i className='mb-0'>{fileNames.join(', ')}</i>
+        )}
       </div>
     );
   }
 
   return (
     <div className='d-flex flex-row align-items-center gap-2'>
-      <Button style={{ width: 'fit-content' }} as='label' htmlFor={id}>
+      <Button
+        style={{ width: 'fit-content' }}
+        as='label'
+        htmlFor={id}
+        disabled={disabled}
+        className={disabled ? 'disabled' : undefined}
+      >
         {children}
         <input
           id={id}
@@ -83,6 +111,7 @@ export default function FileInput({
           accept={fileType || '*'}
           multiple={true}
           onChange={handleChange}
+          disabled={disabled}
           style={{ display: 'none', ...additionalStyle }}
           {...otherProps}
         />
