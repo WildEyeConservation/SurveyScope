@@ -1804,7 +1804,6 @@ export function FileUploadCore({
           (c) => c.name === effectiveName
         );
 
-        // Existing cameras are reused as-is unless specs were entered here.
         const write = planCameraWrite(
           !!existingCamera,
           isMapped,
