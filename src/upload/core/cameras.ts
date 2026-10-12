@@ -48,3 +48,17 @@ export async function buildCameraResolver(
     },
   };
 }
+
+export type CameraWrite = 'reuse' | 'update' | 'create';
+
+// The form hides spec inputs for existing cameras, so a missing spec means
+// "leave the saved values alone", not zero.
+export function planCameraWrite(
+  cameraExists: boolean,
+  isMapped: boolean,
+  hasEnteredSpec: boolean
+): CameraWrite {
+  if (isMapped) return 'reuse';
+  if (!cameraExists) return 'create';
+  return hasEnteredSpec ? 'update' : 'reuse';
+}

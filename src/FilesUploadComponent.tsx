@@ -23,6 +23,7 @@ import {
   isOutsideAltitudeBand,
   type AltitudeUnit,
 } from './upload/altitudeFilter.ts';
+import { planCameraWrite } from './upload/core/cameras.ts';
 import type { UploadBackend } from './upload/core/types.ts';
 import {
   downloadFailedImagesCsv,
@@ -1802,11 +1803,13 @@ export function FileUploadCore({
           (c) => c.name === effectiveName
         );
 
-        // Mapped folders reuse the existing camera without overwriting specs.
-        if (isMapped) {
-          if (existingCamera) allCameras.push(existingCamera);
-          continue;
-        }
+        // Existing cameras are reused as-is unless specs were entered here.
+        const write = planCameraWrite(
+          !!existingCamera,
+          isMapped,
+          !!cameraSpecs[folderName]
+        );
+        if (write === 'reuse') continue;
 
         const spec = cameraSpecs[folderName] || {
           focalLengthMm: 0,
@@ -1814,7 +1817,7 @@ export function FileUploadCore({
           tiltDegrees: 0,
         };
 
-        if (existingCamera) {
+        if (write === 'update' && existingCamera) {
           await client.models.Camera.update({
             id: existingCamera.id,
             name: effectiveName,
