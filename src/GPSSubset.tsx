@@ -23,6 +23,7 @@ import {
   type FeatureCollection,
 } from './survey/surveyMapStyle';
 import './survey/surveyMap.css';
+import { gpsRowKey } from './survey/new-survey/gpsIndex';
 
 // Define the GPS data structure
 export interface GPSData {
@@ -110,11 +111,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     [existingImages]
   );
 
-  const createPointKey = useCallback((p: GPSData) => {
-    return `${p.filepath ?? ''}|${p.timestamp ?? ''}|${p.lat}|${p.lng}|${
-      p.alt
-    }`;
-  }, []);
+  const createPointKey = useCallback((p: GPSData) => gpsRowKey(p), []);
 
   const [currentFilteredPoints, setCurrentFilteredPoints] =
     useState<GPSData[]>(validGpsData);

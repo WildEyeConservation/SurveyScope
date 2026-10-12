@@ -131,3 +131,26 @@ export function minMaxOf(
   }
   return seen ? { min, max } : null;
 }
+
+// Value-based identity: row objects are rebuilt when the data is re-read.
+export function gpsRowKey(row: GpsRow): string {
+  return `${row.filepath ?? ''}|${row.timestamp ?? ''}|${row.lat}|${row.lng}|${
+    row.alt
+  }`;
+}
+
+// Rows the map was never offered cannot be restored through it.
+export function nextMapRemovedKeys(
+  prev: Set<string>,
+  offered: GpsRow[],
+  visible: GpsRow[]
+): Set<string> {
+  const visibleKeys = new Set(visible.map(gpsRowKey));
+  const next = new Set<string>();
+  for (const key of prev) if (!visibleKeys.has(key)) next.add(key);
+  for (const row of offered) {
+    const key = gpsRowKey(row);
+    if (!visibleKeys.has(key)) next.add(key);
+  }
+  return next;
+}

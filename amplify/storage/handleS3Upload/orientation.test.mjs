@@ -5,6 +5,7 @@ import exifr from 'exifr';
 import {
   composedOrientation,
   normalizeCorrection,
+  normalizeDamagedImageOrientation,
   normalizeImageOrientation,
 } from './orientation.mjs';
 
@@ -90,4 +91,45 @@ test('accounts for existing EXIF orientation before correction', async () => {
   assert.equal(metadata.width, 4);
   assert.equal(metadata.height, 2);
   assert.equal(metadata.orientation, 1);
+});
+
+async function truncatedJpeg() {
+  const noise = Buffer.alloc(256 * 128 * 3);
+  for (let i = 0; i < noise.length; i++) noise[i] = (i * 2654435761) >>> 24;
+  const jpeg = await sharp(noise, {
+    raw: { width: 256, height: 128, channels: 3 },
+  })
+    .jpeg()
+    .toBuffer();
+  return jpeg.subarray(0, Math.floor(jpeg.length / 2));
+}
+
+test('rotates a truncated JPEG and flags it as damaged', async () => {
+  const input = await truncatedJpeg();
+  await assert.rejects(normalizeImageOrientation(input, 90));
+
+  const { buffer, damaged, reason } = await normalizeDamagedImageOrientation(
+    input,
+    90
+  );
+  const metadata = await sharp(buffer).metadata();
+
+  assert.equal(damaged, true);
+  assert.match(reason, /premature end/i);
+  assert.equal(metadata.width, 128);
+  assert.equal(metadata.height, 256);
+  await sharp(buffer).raw().toBuffer();
+});
+
+test('does not flag an intact JPEG as damaged', async () => {
+  const input = await jpegWithOrientation(1);
+  const { damaged } = await normalizeDamagedImageOrientation(input, 90);
+
+  assert.equal(damaged, false);
+});
+
+test('still rejects input that cannot be decoded at all', async () => {
+  await assert.rejects(
+    normalizeDamagedImageOrientation(Buffer.from('not an image'), 90)
+  );
 });

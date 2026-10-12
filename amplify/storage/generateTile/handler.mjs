@@ -2,6 +2,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import sharp from 'sharp';
 import { env } from '$amplify/env/generateTile';
+import { decodeForTiling } from '../../functions/shared/tilingDecode.mjs';
 import { resolveImageAccess, db, table } from '../imageAccess/repository';
 import {
   validTile,
@@ -91,8 +92,7 @@ async function getSource(imageKey, timings) {
   timings.sourceBytes = imageBuffer.length;
 
   const decodeStart = performance.now();
-  const { data, info } = await sharp(imageBuffer)
-    .rotate()
+  const { data, info } = await decodeForTiling(imageBuffer)
     .raw()
     .toBuffer({ resolveWithObject: true });
   timings.decodeMs = performance.now() - decodeStart;
