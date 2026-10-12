@@ -23,7 +23,6 @@ export const annotationSetsByProjectId = /* GraphQL */ `query AnnotationSetsByPr
     sortDirection: $sortDirection
   ) {
     items {
-      annotationCount
       createdAt
       id
       name
@@ -490,7 +489,6 @@ export const getAnnotation = /* GraphQL */ `query GetAnnotation($id: ID!) {
     }
     projectId
     set {
-      annotationCount
       createdAt
       id
       name
@@ -513,7 +511,6 @@ export const getAnnotation = /* GraphQL */ `query GetAnnotation($id: ID!) {
 >;
 export const getAnnotationSet = /* GraphQL */ `query GetAnnotationSet($id: ID!) {
   getAnnotationSet(id: $id) {
-    annotationCount
     annotations {
       nextToken
       __typename
@@ -628,7 +625,6 @@ export const getCategory = /* GraphQL */ `query GetCategory($id: ID!) {
   getCategory(id: $id) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1007,7 +1003,6 @@ export const getJollyResultsMembership = /* GraphQL */ `query GetJollyResultsMem
     userId: $userId
   ) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1134,7 +1129,6 @@ export const getLocationAnnotationCount = /* GraphQL */ `query GetLocationAnnota
     locationId: $locationId
   ) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1301,7 +1295,6 @@ export const getObservation = /* GraphQL */ `query GetObservation($id: ID!) {
   getObservation(id: $id) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1737,7 +1730,6 @@ export const getStratum = /* GraphQL */ `query GetStratum($id: ID!) {
 export const getTasksOnAnnotationSet = /* GraphQL */ `query GetTasksOnAnnotationSet($id: ID!) {
   getTasksOnAnnotationSet(id: $id) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1812,7 +1804,6 @@ export const getTestPresetLocation = /* GraphQL */ `query GetTestPresetLocation(
     testPresetId: $testPresetId
   ) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1892,7 +1883,6 @@ export const getTestPresetProject = /* GraphQL */ `query GetTestPresetProject($p
 export const getTestResult = /* GraphQL */ `query GetTestResult($id: ID!) {
   getTestResult(id: $id) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -2471,7 +2461,6 @@ export const listAnnotationSets = /* GraphQL */ `query ListAnnotationSets(
 ) {
   listAnnotationSets(filter: $filter, limit: $limit, nextToken: $nextToken) {
     items {
-      annotationCount
       createdAt
       id
       name

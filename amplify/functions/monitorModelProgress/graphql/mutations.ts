@@ -84,7 +84,6 @@ export const createAnnotation = /* GraphQL */ `mutation CreateAnnotation(
     }
     projectId
     set {
-      annotationCount
       createdAt
       id
       name
@@ -110,7 +109,6 @@ export const createAnnotationSet = /* GraphQL */ `mutation CreateAnnotationSet(
   $input: CreateAnnotationSetInput!
 ) {
   createAnnotationSet(condition: $condition, input: $input) {
-    annotationCount
     annotations {
       nextToken
       __typename
@@ -240,7 +238,6 @@ export const createCategory = /* GraphQL */ `mutation CreateCategory(
   createCategory(condition: $condition, input: $input) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -627,7 +624,6 @@ export const createJollyResultsMembership = /* GraphQL */ `mutation CreateJollyR
 ) {
   createJollyResultsMembership(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -755,7 +751,6 @@ export const createLocationAnnotationCount = /* GraphQL */ `mutation CreateLocat
 ) {
   createLocationAnnotationCount(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -941,7 +936,6 @@ export const createObservation = /* GraphQL */ `mutation CreateObservation(
   createObservation(condition: $condition, input: $input) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1418,7 +1412,6 @@ export const createTasksOnAnnotationSet = /* GraphQL */ `mutation CreateTasksOnA
 ) {
   createTasksOnAnnotationSet(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1492,7 +1485,6 @@ export const createTestPresetLocation = /* GraphQL */ `mutation CreateTestPreset
 ) {
   createTestPresetLocation(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1578,7 +1570,6 @@ export const createTestResult = /* GraphQL */ `mutation CreateTestResult(
 ) {
   createTestResult(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1877,7 +1868,6 @@ export const deleteAnnotation = /* GraphQL */ `mutation DeleteAnnotation(
     }
     projectId
     set {
-      annotationCount
       createdAt
       id
       name
@@ -1903,7 +1893,6 @@ export const deleteAnnotationSet = /* GraphQL */ `mutation DeleteAnnotationSet(
   $input: DeleteAnnotationSetInput!
 ) {
   deleteAnnotationSet(condition: $condition, input: $input) {
-    annotationCount
     annotations {
       nextToken
       __typename
@@ -2033,7 +2022,6 @@ export const deleteCategory = /* GraphQL */ `mutation DeleteCategory(
   deleteCategory(condition: $condition, input: $input) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -2413,7 +2401,6 @@ export const deleteJollyResultsMembership = /* GraphQL */ `mutation DeleteJollyR
 ) {
   deleteJollyResultsMembership(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -2541,7 +2528,6 @@ export const deleteLocationAnnotationCount = /* GraphQL */ `mutation DeleteLocat
 ) {
   deleteLocationAnnotationCount(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -2727,7 +2713,6 @@ export const deleteObservation = /* GraphQL */ `mutation DeleteObservation(
   deleteObservation(condition: $condition, input: $input) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3211,7 +3196,6 @@ export const deleteTasksOnAnnotationSet = /* GraphQL */ `mutation DeleteTasksOnA
 ) {
   deleteTasksOnAnnotationSet(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3285,7 +3269,6 @@ export const deleteTestPresetLocation = /* GraphQL */ `mutation DeleteTestPreset
 ) {
   deleteTestPresetLocation(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3371,7 +3354,6 @@ export const deleteTestResult = /* GraphQL */ `mutation DeleteTestResult(
 ) {
   deleteTestResult(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3779,7 +3761,6 @@ export const updateAnnotation = /* GraphQL */ `mutation UpdateAnnotation(
     }
     projectId
     set {
-      annotationCount
       createdAt
       id
       name
@@ -3805,7 +3786,6 @@ export const updateAnnotationSet = /* GraphQL */ `mutation UpdateAnnotationSet(
   $input: UpdateAnnotationSetInput!
 ) {
   updateAnnotationSet(condition: $condition, input: $input) {
-    annotationCount
     annotations {
       nextToken
       __typename
@@ -3935,7 +3915,6 @@ export const updateCategory = /* GraphQL */ `mutation UpdateCategory(
   updateCategory(condition: $condition, input: $input) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4315,7 +4294,6 @@ export const updateJollyResultsMembership = /* GraphQL */ `mutation UpdateJollyR
 ) {
   updateJollyResultsMembership(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4443,7 +4421,6 @@ export const updateLocationAnnotationCount = /* GraphQL */ `mutation UpdateLocat
 ) {
   updateLocationAnnotationCount(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4629,7 +4606,6 @@ export const updateObservation = /* GraphQL */ `mutation UpdateObservation(
   updateObservation(condition: $condition, input: $input) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -5113,7 +5089,6 @@ export const updateTasksOnAnnotationSet = /* GraphQL */ `mutation UpdateTasksOnA
 ) {
   updateTasksOnAnnotationSet(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -5187,7 +5162,6 @@ export const updateTestPresetLocation = /* GraphQL */ `mutation UpdateTestPreset
 ) {
   updateTestPresetLocation(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -5273,7 +5247,6 @@ export const updateTestResult = /* GraphQL */ `mutation UpdateTestResult(
 ) {
   updateTestResult(condition: $condition, input: $input) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name

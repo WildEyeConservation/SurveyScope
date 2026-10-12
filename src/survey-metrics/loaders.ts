@@ -206,7 +206,7 @@ export function loadAnnotationSets(projectId: string, ctx: LoadContext) {
   return fetchAll<AnnotationSetRow>(
     'annotationSetsByProjectId',
     BY_PROJECT,
-    'id name annotationCount register createdAt',
+    'id name register createdAt',
     { projectId },
     ctx.signal,
     counted(ctx)
@@ -410,18 +410,14 @@ export async function scanDetectorLocations(
   return total;
 }
 
-export function loadAnnotations(
-  setId: string,
-  ctx: LoadContext,
-  totalHint?: number
-) {
+export function loadAnnotations(setId: string, ctx: LoadContext) {
   return fetchAll<AnnotationRow>(
     'annotationsByAnnotationSetId',
     { setId: 'ID!' },
     'id imageId categoryId objectId x y source oov obscured owner reviewedBy infoTaggedBy createdAt',
     { setId },
     ctx.signal,
-    counted(ctx, totalHint)
+    counted(ctx)
   );
 }
 

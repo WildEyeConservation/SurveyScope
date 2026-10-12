@@ -15,7 +15,6 @@ export type ImageSetRow = {
 export type AnnotationSetRow = {
   id: string;
   name: string;
-  annotationCount: number | null;
   register: boolean | null;
   createdAt: string | null;
 };

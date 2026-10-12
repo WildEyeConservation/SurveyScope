@@ -332,7 +332,6 @@ export type ReportRequest = {
   statIds: StatId[];
   // Denominators for progress only.
   imageCountHint?: number;
-  annotationCountHint?: number;
   cache: ReportCache;
   reuseCache: boolean;
   signal: AbortSignal;
@@ -633,7 +632,7 @@ function fetchEntity(
     case 'locationScan':
       return scanLocations(surveyId, ctx, needs);
     case 'annotations':
-      return loadAnnotations(setId, ctx, request.annotationCountHint);
+      return loadAnnotations(setId, ctx);
     case 'observations':
       return loadObservations(setId, ctx);
     case 'categories':
