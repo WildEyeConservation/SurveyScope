@@ -12,6 +12,7 @@ import { uploadOrchestrator } from './core/UploadOrchestrator';
 import {
   onUploadUiRequest,
   setUploadUiState,
+  withResuming,
   useUploadStatus,
 } from './uploadUi';
 
@@ -48,20 +49,22 @@ export default function UploadManager() {
 
   // Resume from memory or a saved folder handle before asking for a picker.
   const handleResumeRequest = async (project: { id: string; name: string }) => {
-    if (uploadOrchestrator.resume(project.id)) return;
+    const started = await withResuming(project.id, async () => {
+      if (uploadOrchestrator.resume(project.id)) return true;
 
-    const manifest =
-      ((await fileStore.getItem(project.id)) as ImageData[]) ?? [];
-    if (manifest.length > 0) {
+      const manifest =
+        ((await fileStore.getItem(project.id)) as ImageData[]) ?? [];
+      if (manifest.length === 0) return false;
       const files = await loadFilesFromStoredHandle(project.id);
-      if (files && files.length > 0) {
-        const manifestPaths = new Set(manifest.map((img) => img.originalPath));
-        if (files.some((f) => manifestPaths.has(f.webkitRelativePath))) {
-          startUpload(project.id, files);
-          return;
-        }
+      if (!files || files.length === 0) return false;
+      const manifestPaths = new Set(manifest.map((img) => img.originalPath));
+      if (!files.some((f) => manifestPaths.has(f.webkitRelativePath))) {
+        return false;
       }
-    }
+      startUpload(project.id, files);
+      return true;
+    });
+    if (started !== false) return;
 
     pendingResumeRef.current = project;
     setShowResumeModal(true);

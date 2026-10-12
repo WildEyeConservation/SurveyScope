@@ -12,6 +12,7 @@ import Modal from 'react-bootstrap/Modal';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import Alert from 'react-bootstrap/Alert';
+import Spinner from 'react-bootstrap/Spinner';
 import { GlobalContext, UserContext } from './Context.tsx';
 import { uploadOrchestrator } from './upload/core/UploadOrchestrator.ts';
 import { saveDirectoryHandle } from './upload/core/dirHandles.ts';
@@ -221,6 +222,7 @@ export function FileUploadCore({
   const [maxTimestamp, setMaxTimestamp] = useState(0);
   const [file, setFile] = useState<File | undefined>();
   const [scanningEXIF, setScanningEXIF] = useState(false);
+  const [readingFolder, setReadingFolder] = useState(false);
   const [csvData, setCsvData] = useState<CsvData | undefined>(undefined);
   const [fullCsvData, setFullCsvData] = useState<CsvFile | undefined>(
     undefined
@@ -1643,6 +1645,7 @@ export function FileUploadCore({
     if (setImagesReady) {
       setImagesReady(
         imageFiles.length > 0 &&
+          !readingFolder &&
           !scanningEXIF &&
           !loadingExistingImages &&
           Object.keys(exifData).length > 0
@@ -1651,6 +1654,7 @@ export function FileUploadCore({
   }, [
     setImagesReady,
     imageFiles,
+    readingFolder,
     scanningEXIF,
     loadingExistingImages,
     exifData,
@@ -2524,6 +2528,12 @@ export function FileUploadCore({
           className='p-2 mb-2 bg-white text-black'
           style={{ minHeight: '136px', overflow: 'auto' }}
         >
+          {scannedFiles.length === 0 && loadingExistingImages && (
+            <code className='m-0 text-dark d-flex align-items-center gap-2'>
+              <Spinner animation='border' size='sm' />
+              Loading existing survey images...
+            </code>
+          )}
           {scannedFiles.length > 0 && (
             <code className='m-0 text-dark'>
               Folder name: {name}
@@ -2535,7 +2545,10 @@ export function FileUploadCore({
               Image files size: {formatFileSize(totalImageSize)}
               <br />
               {loadingExistingImages ? (
-                'Loading existing survey images...'
+                <span className='d-inline-flex align-items-center gap-2'>
+                  <Spinner animation='border' size='sm' />
+                  Loading existing survey images...
+                </span>
               ) : (
                 <>
                   To upload: {toUploadFiles.length}
@@ -2561,8 +2574,10 @@ export function FileUploadCore({
             <FileInput
               id='filepicker'
               webkitdirectory=''
+              disabled={scanningEXIF}
               onFileChange={handleFileInputChange}
               onDirectoryHandle={setDirectoryHandle}
+              onReadingChange={setReadingFolder}
             >
               <p style={{ margin: 0 }}>
                 {scannedFiles.length > 0
@@ -2604,7 +2619,8 @@ export function FileUploadCore({
         </div>
       </Form.Group>
       {scanningEXIF && (
-        <div className='mt-3 mb-0'>
+        <div className='mt-3 mb-0 d-flex align-items-center gap-2'>
+          <Spinner animation='border' size='sm' />
           <p className='mb-0'>
             Scanning images for GPS data: {`${scanCount}/${scanTotal}`}
           </p>

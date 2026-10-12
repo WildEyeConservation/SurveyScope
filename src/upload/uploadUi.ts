@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { SessionSnapshot } from './core/types';
 import { uploadOrchestrator } from './core/UploadOrchestrator';
+import { createExclusive } from './exclusive';
 
 // Request bus plus external stores for uploader UI state.
 
@@ -26,12 +27,14 @@ export function requestDelete(project: { id: string; name: string }): void {
 }
 
 export interface UploadUiState {
+  resumingProjectId: string | null;
   deletingProjectId: string | null;
   deleteStep: number;
   deleteTotal: number;
 }
 
 let uiState: UploadUiState = {
+  resumingProjectId: null,
   deletingProjectId: null,
   deleteStep: 0,
   deleteTotal: 0,
@@ -47,6 +50,10 @@ function subscribeUi(listener: () => void): () => void {
   uiListeners.add(listener);
   return () => uiListeners.delete(listener);
 }
+
+export const withResuming = createExclusive((projectId) =>
+  setUploadUiState({ resumingProjectId: projectId })
+);
 
 export function useUploadUi(): UploadUiState {
   return useSyncExternalStore(subscribeUi, () => uiState);
