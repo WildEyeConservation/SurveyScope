@@ -308,6 +308,7 @@ async function handleLaunch(
     projectId,
     batchSize,
     organizationId,
+    payload.zoom,
     {
       annotationSetId,
       launchedCount: items.length,
@@ -390,6 +391,7 @@ async function createQueue(
   projectId: string,
   batchSize: number,
   organizationId: string,
+  zoom: number | undefined,
   tracking: {
     annotationSetId: string;
     launchedCount: number;
@@ -428,6 +430,7 @@ async function createQueue(
       name: options.name,
       projectId,
       batchSize,
+      zoom,
       hidden: options.hidden,
       tag: 'info-tags',
       approximateSize: tracking.launchedCount,

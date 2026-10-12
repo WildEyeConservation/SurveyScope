@@ -37,6 +37,7 @@ const PROJECT_SELECTION_SET = [
   'updatedAt',
   'createdAt',
   'tiledLocationSetId',
+  'defaultZoom',
   'annotationSets.id',
   'annotationSets.name',
   'queues.id',

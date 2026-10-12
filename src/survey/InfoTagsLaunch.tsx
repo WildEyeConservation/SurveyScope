@@ -8,6 +8,8 @@ import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { shouldIgnoreLaunchError } from './QCReview';
 import { parseLaunchResponse } from './launchResponse';
+import { pickZoomPreviewCandidates } from './zoomPreview';
+import ZoomSetting from './ZoomSetting';
 
 type LaunchHandler = {
   execute: (
@@ -45,6 +47,7 @@ export default function InfoTagsLaunch({
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [batchSize, setBatchSize] = useState(200);
   const [hidden, setHidden] = useState(false);
+  const [zoom, setZoom] = useState<number | undefined>(undefined);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadStatus, setLoadStatus] = useState({
@@ -197,6 +200,8 @@ export default function InfoTagsLaunch({
   const selectionRef = useRef(selectedCategoryIds);
   const batchSizeRef = useRef(batchSize);
   const hiddenRef = useRef(hidden);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   useEffect(() => {
     selectionRef.current = selectedCategoryIds;
   }, [selectedCategoryIds]);
@@ -224,6 +229,7 @@ export default function InfoTagsLaunch({
           categoryNames,
           batchSize: batchSizeRef.current,
           hidden: hiddenRef.current,
+          zoom: zoomRef.current,
         });
         onProgress(message ?? 'Informational tagging launch submitted');
         await logAdminAction(
@@ -324,6 +330,14 @@ export default function InfoTagsLaunch({
                 )}
               </div>
             )}
+
+            <ZoomSetting
+              mode='offset'
+              zoom={zoom}
+              onChange={setZoom}
+              loadCandidates={async () => pickZoomPreviewCandidates(selected)}
+              disabled={launching || selected.length === 0}
+            />
 
             <Form.Switch
               label='Show Advanced Options'

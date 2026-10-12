@@ -1,4 +1,11 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { Alert, Form } from 'react-bootstrap';
 import Select from 'react-select';
@@ -7,6 +14,8 @@ import { GlobalContext, UserContext } from '../Context';
 import { useLaunchTask } from '../useLaunchTask';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { loadLocationCandidates } from './zoomPreview';
+import ZoomSetting from './ZoomSetting';
 
 const defaultLowerConfidence = (modelValue?: string) =>
   modelValue === 'owl-d' ? 0.2 : modelValue === 'stormfly-testing' ? 0.3 : 0.6;
@@ -46,7 +55,8 @@ export default function SpeciesLabelling({
   const [viewUnobservedLocationsOnly, setViewUnobservedLocationsOnly] =
     useState<boolean>(true);
   const [taskTag, setTaskTag] = useState<string>(annotationSet.name);
-  const [zoom, setZoom] = useState<number | undefined>(undefined);
+  const savedZoom = (project as any).defaultZoom as number | null | undefined;
+  const [zoom, setZoom] = useState<number | undefined>(savedZoom ?? undefined);
   const [lowerLimit, setLowerLimit] = useState<number>(0.6);
   const [upperLimit, setUpperLimit] = useState<number>(1);
   const [hidden, setHidden] = useState<boolean>(false);
@@ -182,6 +192,18 @@ export default function SpeciesLabelling({
       mounted = false;
     };
   }, [client.models.LocationSet, project.id]);
+
+  const previewLocationSetIds = useMemo<string[]>(() => {
+    if (!modelGuided) return tiledLocationSetId ? [tiledLocationSetId] : [];
+    if (!model?.value) return [];
+    return locationSets
+      .filter((ls) =>
+        String(ls.name || '')
+          .toLowerCase()
+          .includes(model.value)
+      )
+      .map((ls) => ls.id);
+  }, [modelGuided, tiledLocationSetId, model, locationSets]);
 
   // Control Launch disabled state based on mode
   useEffect(() => {
@@ -375,9 +397,16 @@ export default function SpeciesLabelling({
     setSpeciesLaunchHandler({
       execute: async (onProgress: (msg: string) => void, onLaunchConfirmed: () => void) => {
         await performLaunchRef.current(onProgress, onLaunchConfirmed);
+        const launchedZoom = zoomRef.current ?? null;
+        if (launchedZoom !== (savedZoom ?? null)) {
+          await (client.models.Project.update as any)({
+            id: project.id,
+            defaultZoom: launchedZoom,
+          }).catch(console.error);
+        }
       }
     });
-  }, [setSpeciesLaunchHandler, client, user.userId, annotationSet.name, project.name, project.id, modelOptions]);
+  }, [setSpeciesLaunchHandler, client, user.userId, annotationSet.name, project.name, project.id, modelOptions, savedZoom]);
 
   return (
     <div className='px-3 pb-3 pt-1'>
@@ -396,6 +425,19 @@ export default function SpeciesLabelling({
             onChange={(e) => setBatchSize(Number(e.target.value))}
           />
         </Form.Group>
+        <ZoomSetting
+          mode='level'
+          zoom={zoom}
+          onChange={setZoom}
+          loadCandidates={() =>
+            loadLocationCandidates(
+              client,
+              previewLocationSetIds,
+              modelGuided ? { lower: lowerLimit, upper: upperLimit } : undefined
+            )
+          }
+          disabled={previewLocationSetIds.length === 0}
+        />
       </div>
 
       <div className='d-flex flex-column mt-2'>
@@ -427,30 +469,6 @@ export default function SpeciesLabelling({
               value={taskTag}
               onChange={(e) => setTaskTag(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='mb-0'>Zoom Level</Form.Label>
-            <span
-              className='text-muted d-block mb-1'
-              style={{ fontSize: '12px' }}
-            >
-              Select the default zoom level for images.
-            </span>
-            <Form.Select
-              value={zoom as any}
-              onChange={(e) =>
-                setZoom(
-                  e.target.value == 'auto' ? undefined : (e.target.value as any)
-                )
-              }
-            >
-              <option value='auto'>Auto</option>
-              {[...Array(13)].map((_, i) => (
-                <option key={i} value={i}>
-                  Level {i}
-                </option>
-              ))}
-            </Form.Select>
           </Form.Group>
           {modelGuided &&
             <Form.Group>

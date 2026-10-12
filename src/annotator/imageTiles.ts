@@ -74,11 +74,11 @@ export const mapZoomToStoredZoom = (zoom: number) => zoom + 1;
  * keyboard handling disabled — arrow keys belong to task navigation. */
 export function createImageMap(
   container: HTMLDivElement,
-  projection: ImageProjection
+  projection: ImageProjection,
+  maxZoom = projection.maxNativeZoom + 4
 ): maplibregl.Map {
   ensureTileProtocol();
   const minZoom = -2;
-  const maxZoom = projection.maxNativeZoom + 4;
   const map = new maplibregl.Map({
     container,
     style: { version: 8, sources: {}, layers: [] },

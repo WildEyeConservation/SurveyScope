@@ -23,6 +23,7 @@ import {
 import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 import { recordWorkflowTask } from './recordWorkflowTask';
 import { reviewWorkflowTask } from './reviewWorkflowTask';
+import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
 
 // ── Constants ──
 
@@ -69,7 +70,6 @@ type QCReviewProps = {
   setLegendCollapsed: (collapsed: boolean) => void;
 };
 
-const DEFAULT_ZOOM_OFFSET = 6;
 
 export default function QCAnnotationReview({
   annotation,

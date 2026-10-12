@@ -43,9 +43,9 @@ import {
 } from './recordWorkflowTask';
 import { infoTagWorkflowMetrics } from './infoTagWorkflowStats';
 import { useActiveTimeTracker } from './useActiveTimeTracker';
+import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
 
 const TILE_SIZE = 256;
-const DEFAULT_ZOOM_OFFSET = 6;
 const SOURCE_CURRENT = 'info-tag-current';
 const LAYER_CURRENT_LABEL = 'info-tag-current-label';
 const SOURCE_ANNOTATIONS = 'info-tag-annotations';

@@ -104,6 +104,7 @@ const schema = a
         shapefileExclusions: a.hasMany('ShapefileExclusions', 'projectId'),
         adminActionLogs: a.hasMany('AdminActionLog', 'projectId'),
         tiledLocationSetId: a.id(),
+        defaultZoom: a.integer(),
         pretileManifestS3Key: a.string(),
         group: a.string(),
       })

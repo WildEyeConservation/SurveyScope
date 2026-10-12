@@ -219,6 +219,7 @@ type LaunchFalseNegativesPayload = {
   /** Tiles fetched from the global tiled set by the client */
   locationTiles: MinimalTile[];
   batchSize?: number;
+  zoom?: number | null;
   /** S3 key where the full payload is stored (for large payloads). */
   payloadS3Key?: string;
   /** When true, this is a continuation of an unfinished launch (no pool/history changes). */
@@ -673,7 +674,7 @@ async function handleLaunch(
   });
 
   const queue = await withTiming('createQueue', () =>
-    createQueue(payload.queueOptions, payload.queueTag, projectId, workerBatchSize, organizationId, {
+    createQueue(payload.queueOptions, payload.queueTag, projectId, workerBatchSize, organizationId, payload.zoom, {
       annotationSetId,
       locationSetId,
       launchedCount: selectedTiles.length,
@@ -966,7 +967,7 @@ async function handleDistributedFalseNegativesLaunch(
     skipLocationWithAnnotations: false,
     taskTag: payload.queueTag,
     batchSize: workerBatchSize,
-    zoom: null,
+    zoom: payload.zoom ?? null,
     // False negatives specific config
     isFalseNegatives: true,
     samplePercent: payload.samplePercent,
@@ -1586,6 +1587,7 @@ async function createQueue(
   projectId: string,
   batchSize: number,
   organizationId: string,
+  zoom: number | null | undefined,
   trackingParams: {
     annotationSetId: string;
     locationSetId: string;
@@ -1646,6 +1648,7 @@ async function createQueue(
       name: queueOptions.name,
       projectId,
       batchSize,
+      zoom: zoom ?? undefined,
       hidden: queueOptions.hidden,
       tag: queueTag,
       approximateSize: 1,
