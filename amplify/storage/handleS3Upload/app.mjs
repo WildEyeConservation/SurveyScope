@@ -9,7 +9,6 @@ const s3 = new S3Client();
 import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 //import {doAppsyncQueryWithPagination, doAppsyncQuery} from './appsync.js'
 //import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
-import sharp from 'sharp';
 import {
   normalizeCorrection,
   normalizeImageOrientation,
@@ -19,6 +18,7 @@ import {
 //import { Amplify } from "aws-amplify";
 //import { generateClient } from "aws-amplify/data";
 import { env } from "$amplify/env/handleS3Upload";
+import { decodeForTiling } from '../../functions/shared/tilingDecode.mjs';
 //import { createImage } from "./graphql/mutations";
 
 // Amplify.configure(
@@ -346,8 +346,7 @@ export async function handler(event) {
         //const sharp = await import('sharp');
         //const sharp = require('sharp')
         console.log("File fetched. Processing with sharp...");
-        await sharp(buffer)
-          .rotate() // Called without arguments, this will auto-detect the orientation specified in exif data and rotate the image accordingly.
+        await decodeForTiling(buffer)
           .png()
           .tile({ layout: "google" })
           .toFile(localTmpPath);

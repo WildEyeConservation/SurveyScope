@@ -3,10 +3,10 @@ import path from 'node:path';
 import { Buffer } from 'node:buffer';
 import pLimit from 'p-limit';
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import sharp from 'sharp';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { env } from '$amplify/env/pretileImage';
+import { decodeForTiling } from '../shared/tilingDecode.mjs';
 
 Amplify.configure(
   {
@@ -315,8 +315,7 @@ export const handler = async (event, context) => {
     try {
       console.log(JSON.stringify({ msg: 'pretile_sharp_start', imageId }));
       const sharpStart = Date.now();
-      await sharp(buffer)
-        .rotate()
+      await decodeForTiling(buffer)
         .png()
         .tile({ layout: 'google' })
         .toFile(localTmpPath);
