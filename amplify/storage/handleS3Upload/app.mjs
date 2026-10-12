@@ -11,7 +11,7 @@ import { STSClient, AssumeRoleCommand } from '@aws-sdk/client-sts';
 //import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
 import {
   normalizeCorrection,
-  normalizeImageOrientation,
+  normalizeDamagedImageOrientation,
 } from './orientation.mjs';
 
 //const dynamoDb = new DynamoDBClient();
@@ -234,7 +234,16 @@ export async function handler(event) {
         console.log(
           `Physically rotating ${Bucket}/${Key} ${correctionCCW} degrees counter-clockwise.`,
         );
-        buffer = await normalizeImageOrientation(buffer, correctionCCW);
+        const normalized = await normalizeDamagedImageOrientation(
+          buffer,
+          correctionCCW
+        );
+        buffer = normalized.buffer;
+        if (normalized.damaged) {
+          console.warn(
+            `Source ${Bucket}/${Key} is damaged (${normalized.reason}); rotated with a lenient decode.`
+          );
+        }
         await s3.send(
           new PutObjectCommand({
             Bucket,
@@ -250,6 +259,7 @@ export async function handler(event) {
               'orientation-correction-ccw': String(correctionCCW),
               'orientation-normalized': 'true',
               'orientation-normalized-by': 'upload-handler-v1',
+              ...(normalized.damaged ? { 'source-damaged': 'true' } : {}),
             },
           }),
         );

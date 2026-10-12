@@ -50,7 +50,11 @@ function applyPhysicalOrientation(pipeline, orientation) {
   }
 }
 
-export async function normalizeImageOrientation(buffer, correctionCCW) {
+export async function normalizeImageOrientation(
+  buffer,
+  correctionCCW,
+  failOn = 'warning'
+) {
   const sourceMetadata = await sharp(buffer).metadata();
   const orientation = composedOrientation(
     sourceMetadata.orientation ?? 1,
@@ -65,7 +69,7 @@ export async function normalizeImageOrientation(buffer, correctionCCW) {
     ? sourceMetadata.width
     : sourceMetadata.height;
 
-  let pipeline = sharp(buffer);
+  let pipeline = sharp(buffer, { failOn });
   pipeline = applyPhysicalOrientation(pipeline, orientation);
 
   return pipeline
@@ -86,4 +90,19 @@ export async function normalizeImageOrientation(buffer, correctionCCW) {
       progressive: sourceMetadata.isProgressive ?? false,
     })
     .toBuffer();
+}
+
+export async function normalizeDamagedImageOrientation(buffer, correctionCCW) {
+  try {
+    return {
+      buffer: await normalizeImageOrientation(buffer, correctionCCW),
+      damaged: false,
+    };
+  } catch (error) {
+    return {
+      buffer: await normalizeImageOrientation(buffer, correctionCCW, 'none'),
+      damaged: true,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
