@@ -4,7 +4,6 @@
 
 export type ModelAnnotationSetFilterInput = {
   and?: Array< ModelAnnotationSetFilterInput | null > | null,
-  annotationCount?: ModelIntInput | null,
   createdAt?: ModelStringInput | null,
   id?: ModelIDInput | null,
   name?: ModelStringInput | null,
@@ -104,7 +103,6 @@ export type ModelAnnotationSetConnection = {
 
 export type AnnotationSet = {
   __typename: "AnnotationSet",
-  annotationCount?: number | null,
   annotations?: ModelAnnotationConnection | null,
   categories?: ModelCategoryConnection | null,
   createdAt: string,
@@ -1620,7 +1618,6 @@ export type CreateAnnotationInput = {
 
 export type ModelAnnotationSetConditionInput = {
   and?: Array< ModelAnnotationSetConditionInput | null > | null,
-  annotationCount?: ModelIntInput | null,
   createdAt?: ModelStringInput | null,
   name?: ModelStringInput | null,
   not?: ModelAnnotationSetConditionInput | null,
@@ -1631,7 +1628,6 @@ export type ModelAnnotationSetConditionInput = {
 };
 
 export type CreateAnnotationSetInput = {
-  annotationCount?: number | null,
   id?: string | null,
   name: string,
   projectId: string,
@@ -2606,7 +2602,6 @@ export type UpdateAnnotationInput = {
 };
 
 export type UpdateAnnotationSetInput = {
-  annotationCount?: number | null,
   id: string,
   name?: string | null,
   projectId?: string | null,
@@ -3002,7 +2997,6 @@ export type ModelSubscriptionIntInput = {
 
 export type ModelSubscriptionAnnotationSetFilterInput = {
   and?: Array< ModelSubscriptionAnnotationSetFilterInput | null > | null,
-  annotationCount?: ModelSubscriptionIntInput | null,
   createdAt?: ModelSubscriptionStringInput | null,
   id?: ModelSubscriptionIDInput | null,
   name?: ModelSubscriptionStringInput | null,
@@ -3518,7 +3512,6 @@ export type AnnotationSetsByProjectIdQuery = {
     __typename: "ModelAnnotationSetConnection",
     items:  Array< {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -3908,7 +3901,6 @@ export type GetAnnotationQuery = {
     projectId: string,
     set?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -3931,7 +3923,6 @@ export type GetAnnotationSetQueryVariables = {
 export type GetAnnotationSetQuery = {
   getAnnotationSet?:  {
     __typename: "AnnotationSet",
-    annotationCount?: number | null,
     annotations?:  {
       __typename: "ModelAnnotationConnection",
       nextToken?: string | null,
@@ -4057,7 +4048,6 @@ export type GetCategoryQuery = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -4440,7 +4430,6 @@ export type GetJollyResultsMembershipQuery = {
     __typename: "JollyResultsMembership",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -4566,7 +4555,6 @@ export type GetLocationAnnotationCountQuery = {
     __typename: "LocationAnnotationCount",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -4744,7 +4732,6 @@ export type GetObservationQuery = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -5199,7 +5186,6 @@ export type GetTasksOnAnnotationSetQuery = {
     __typename: "TasksOnAnnotationSet",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -5271,7 +5257,6 @@ export type GetTestPresetLocationQuery = {
     __typename: "TestPresetLocation",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -5354,7 +5339,6 @@ export type GetTestResultQuery = {
     __typename: "TestResult",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -5859,7 +5843,6 @@ export type ListAnnotationSetsQuery = {
     __typename: "ModelAnnotationSetConnection",
     items:  Array< {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -7619,7 +7602,6 @@ export type CreateAnnotationMutation = {
     projectId: string,
     set?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -7643,7 +7625,6 @@ export type CreateAnnotationSetMutationVariables = {
 export type CreateAnnotationSetMutation = {
   createAnnotationSet?:  {
     __typename: "AnnotationSet",
-    annotationCount?: number | null,
     annotations?:  {
       __typename: "ModelAnnotationConnection",
       nextToken?: string | null,
@@ -7771,7 +7752,6 @@ export type CreateCategoryMutation = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -8151,7 +8131,6 @@ export type CreateJollyResultsMembershipMutation = {
     __typename: "JollyResultsMembership",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -8277,7 +8256,6 @@ export type CreateLocationAnnotationCountMutation = {
     __typename: "LocationAnnotationCount",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -8459,7 +8437,6 @@ export type CreateObservationMutation = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -8924,7 +8901,6 @@ export type CreateTasksOnAnnotationSetMutation = {
     __typename: "TasksOnAnnotationSet",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -8996,7 +8972,6 @@ export type CreateTestPresetLocationMutation = {
     __typename: "TestPresetLocation",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -9080,7 +9055,6 @@ export type CreateTestResultMutation = {
     __typename: "TestResult",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -9374,7 +9348,6 @@ export type DeleteAnnotationMutation = {
     projectId: string,
     set?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -9398,7 +9371,6 @@ export type DeleteAnnotationSetMutationVariables = {
 export type DeleteAnnotationSetMutation = {
   deleteAnnotationSet?:  {
     __typename: "AnnotationSet",
-    annotationCount?: number | null,
     annotations?:  {
       __typename: "ModelAnnotationConnection",
       nextToken?: string | null,
@@ -9526,7 +9498,6 @@ export type DeleteCategoryMutation = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -9898,7 +9869,6 @@ export type DeleteJollyResultsMembershipMutation = {
     __typename: "JollyResultsMembership",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -10024,7 +9994,6 @@ export type DeleteLocationAnnotationCountMutation = {
     __typename: "LocationAnnotationCount",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -10206,7 +10175,6 @@ export type DeleteObservationMutation = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -10679,7 +10647,6 @@ export type DeleteTasksOnAnnotationSetMutation = {
     __typename: "TasksOnAnnotationSet",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -10751,7 +10718,6 @@ export type DeleteTestPresetLocationMutation = {
     __typename: "TestPresetLocation",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -10835,7 +10801,6 @@ export type DeleteTestResultMutation = {
     __typename: "TestResult",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -11220,7 +11185,6 @@ export type UpdateAnnotationMutation = {
     projectId: string,
     set?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -11244,7 +11208,6 @@ export type UpdateAnnotationSetMutationVariables = {
 export type UpdateAnnotationSetMutation = {
   updateAnnotationSet?:  {
     __typename: "AnnotationSet",
-    annotationCount?: number | null,
     annotations?:  {
       __typename: "ModelAnnotationConnection",
       nextToken?: string | null,
@@ -11372,7 +11335,6 @@ export type UpdateCategoryMutation = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -11744,7 +11706,6 @@ export type UpdateJollyResultsMembershipMutation = {
     __typename: "JollyResultsMembership",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -11870,7 +11831,6 @@ export type UpdateLocationAnnotationCountMutation = {
     __typename: "LocationAnnotationCount",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -12052,7 +12012,6 @@ export type UpdateObservationMutation = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -12525,7 +12484,6 @@ export type UpdateTasksOnAnnotationSetMutation = {
     __typename: "TasksOnAnnotationSet",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -12597,7 +12555,6 @@ export type UpdateTestPresetLocationMutation = {
     __typename: "TestPresetLocation",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -12681,7 +12638,6 @@ export type UpdateTestResultMutation = {
     __typename: "TestResult",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -12975,7 +12931,6 @@ export type OnCreateAnnotationSubscription = {
     projectId: string,
     set?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -12998,7 +12953,6 @@ export type OnCreateAnnotationSetSubscriptionVariables = {
 export type OnCreateAnnotationSetSubscription = {
   onCreateAnnotationSet?:  {
     __typename: "AnnotationSet",
-    annotationCount?: number | null,
     annotations?:  {
       __typename: "ModelAnnotationConnection",
       nextToken?: string | null,
@@ -13123,7 +13077,6 @@ export type OnCreateCategorySubscription = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -13487,7 +13440,6 @@ export type OnCreateJollyResultsMembershipSubscription = {
     __typename: "JollyResultsMembership",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -13611,7 +13563,6 @@ export type OnCreateLocationAnnotationCountSubscription = {
     __typename: "LocationAnnotationCount",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -13790,7 +13741,6 @@ export type OnCreateObservationSubscription = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -14243,7 +14193,6 @@ export type OnCreateTasksOnAnnotationSetSubscription = {
     __typename: "TasksOnAnnotationSet",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -14313,7 +14262,6 @@ export type OnCreateTestPresetLocationSubscription = {
     __typename: "TestPresetLocation",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -14395,7 +14343,6 @@ export type OnCreateTestResultSubscription = {
     __typename: "TestResult",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -14685,7 +14632,6 @@ export type OnDeleteAnnotationSubscription = {
     projectId: string,
     set?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -14708,7 +14654,6 @@ export type OnDeleteAnnotationSetSubscriptionVariables = {
 export type OnDeleteAnnotationSetSubscription = {
   onDeleteAnnotationSet?:  {
     __typename: "AnnotationSet",
-    annotationCount?: number | null,
     annotations?:  {
       __typename: "ModelAnnotationConnection",
       nextToken?: string | null,
@@ -14833,7 +14778,6 @@ export type OnDeleteCategorySubscription = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -15197,7 +15141,6 @@ export type OnDeleteJollyResultsMembershipSubscription = {
     __typename: "JollyResultsMembership",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -15321,7 +15264,6 @@ export type OnDeleteLocationAnnotationCountSubscription = {
     __typename: "LocationAnnotationCount",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -15500,7 +15442,6 @@ export type OnDeleteObservationSubscription = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -15953,7 +15894,6 @@ export type OnDeleteTasksOnAnnotationSetSubscription = {
     __typename: "TasksOnAnnotationSet",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -16023,7 +15963,6 @@ export type OnDeleteTestPresetLocationSubscription = {
     __typename: "TestPresetLocation",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -16105,7 +16044,6 @@ export type OnDeleteTestResultSubscription = {
     __typename: "TestResult",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -16395,7 +16333,6 @@ export type OnUpdateAnnotationSubscription = {
     projectId: string,
     set?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -16418,7 +16355,6 @@ export type OnUpdateAnnotationSetSubscriptionVariables = {
 export type OnUpdateAnnotationSetSubscription = {
   onUpdateAnnotationSet?:  {
     __typename: "AnnotationSet",
-    annotationCount?: number | null,
     annotations?:  {
       __typename: "ModelAnnotationConnection",
       nextToken?: string | null,
@@ -16543,7 +16479,6 @@ export type OnUpdateCategorySubscription = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -16907,7 +16842,6 @@ export type OnUpdateJollyResultsMembershipSubscription = {
     __typename: "JollyResultsMembership",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -17031,7 +16965,6 @@ export type OnUpdateLocationAnnotationCountSubscription = {
     __typename: "LocationAnnotationCount",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -17210,7 +17143,6 @@ export type OnUpdateObservationSubscription = {
     annotationCount?: number | null,
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -17663,7 +17595,6 @@ export type OnUpdateTasksOnAnnotationSetSubscription = {
     __typename: "TasksOnAnnotationSet",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -17733,7 +17664,6 @@ export type OnUpdateTestPresetLocationSubscription = {
     __typename: "TestPresetLocation",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,
@@ -17815,7 +17745,6 @@ export type OnUpdateTestResultSubscription = {
     __typename: "TestResult",
     annotationSet?:  {
       __typename: "AnnotationSet",
-      annotationCount?: number | null,
       createdAt: string,
       id: string,
       name: string,

@@ -247,7 +247,6 @@ const schema = a
         project: a.belongsTo('Project', 'projectId'),
         name: a.string().required(),
         annotations: a.hasMany('Annotation', 'setId'),
-        annotationCount: a.integer().default(0),
         observations: a.hasMany('Observation', 'annotationSetId'),
         tasks: a.hasMany('TasksOnAnnotationSet', 'annotationSetId'),
         testPresetLocations: a.hasMany('TestPresetLocation', 'annotationSetId'),

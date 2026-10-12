@@ -203,9 +203,6 @@ export default function SurveyMetrics() {
         annotationSetId: setId || null,
         statIds: activeStats.map((stat) => stat.id),
         imageCountHint: survey.imageCount || undefined,
-        annotationCountHint:
-          annotationSets.find((set) => set.id === setId)?.annotationCount ||
-          undefined,
         cache,
         reuseCache,
         signal: abort.signal,
@@ -302,8 +299,7 @@ export default function SurveyMetrics() {
             </option>
             {annotationSets.map((set) => (
               <option key={set.id} value={set.id}>
-                {set.name} ({(set.annotationCount ?? 0).toLocaleString()}{' '}
-                annotations)
+                {set.name}
               </option>
             ))}
           </Form.Select>

@@ -187,13 +187,9 @@ function Overview({ data }: { data: OverviewResult }) {
       />
       <Subheading>Annotation sets</Subheading>
       <DataTable
-        head={['Name', 'Created', 'Annotations']}
+        head={['Name', 'Created']}
         numericFrom={2}
-        rows={data.annotationSets.map((set) => [
-          set.name,
-          date(set.createdAt),
-          count(set.annotationCount),
-        ])}
+        rows={data.annotationSets.map((set) => [set.name, date(set.createdAt)])}
       />
       <Subheading>Location sets</Subheading>
       <DataTable

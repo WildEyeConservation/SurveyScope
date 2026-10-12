@@ -76,7 +76,6 @@ export const onCreateAnnotation = /* GraphQL */ `subscription OnCreateAnnotation
     }
     projectId
     set {
-      annotationCount
       createdAt
       id
       name
@@ -101,7 +100,6 @@ export const onCreateAnnotationSet = /* GraphQL */ `subscription OnCreateAnnotat
   $filter: ModelSubscriptionAnnotationSetFilterInput
 ) {
   onCreateAnnotationSet(filter: $filter) {
-    annotationCount
     annotations {
       nextToken
       __typename
@@ -221,7 +219,6 @@ export const onCreateCategory = /* GraphQL */ `subscription OnCreateCategory($fi
   onCreateCategory(filter: $filter) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -582,7 +579,6 @@ export const onCreateJollyResultsMembership = /* GraphQL */ `subscription OnCrea
 ) {
   onCreateJollyResultsMembership(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -703,7 +699,6 @@ export const onCreateLocationAnnotationCount = /* GraphQL */ `subscription OnCre
 ) {
   onCreateLocationAnnotationCount(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -880,7 +875,6 @@ export const onCreateObservation = /* GraphQL */ `subscription OnCreateObservati
   onCreateObservation(filter: $filter, owner: $owner) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1330,7 +1324,6 @@ export const onCreateTasksOnAnnotationSet = /* GraphQL */ `subscription OnCreate
 ) {
   onCreateTasksOnAnnotationSet(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1401,7 +1394,6 @@ export const onCreateTestPresetLocation = /* GraphQL */ `subscription OnCreateTe
 ) {
   onCreateTestPresetLocation(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1485,7 +1477,6 @@ export const onCreateTestResult = /* GraphQL */ `subscription OnCreateTestResult
 ) {
   onCreateTestResult(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -1772,7 +1763,6 @@ export const onDeleteAnnotation = /* GraphQL */ `subscription OnDeleteAnnotation
     }
     projectId
     set {
-      annotationCount
       createdAt
       id
       name
@@ -1797,7 +1787,6 @@ export const onDeleteAnnotationSet = /* GraphQL */ `subscription OnDeleteAnnotat
   $filter: ModelSubscriptionAnnotationSetFilterInput
 ) {
   onDeleteAnnotationSet(filter: $filter) {
-    annotationCount
     annotations {
       nextToken
       __typename
@@ -1917,7 +1906,6 @@ export const onDeleteCategory = /* GraphQL */ `subscription OnDeleteCategory($fi
   onDeleteCategory(filter: $filter) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -2278,7 +2266,6 @@ export const onDeleteJollyResultsMembership = /* GraphQL */ `subscription OnDele
 ) {
   onDeleteJollyResultsMembership(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -2399,7 +2386,6 @@ export const onDeleteLocationAnnotationCount = /* GraphQL */ `subscription OnDel
 ) {
   onDeleteLocationAnnotationCount(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -2576,7 +2562,6 @@ export const onDeleteObservation = /* GraphQL */ `subscription OnDeleteObservati
   onDeleteObservation(filter: $filter, owner: $owner) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3026,7 +3011,6 @@ export const onDeleteTasksOnAnnotationSet = /* GraphQL */ `subscription OnDelete
 ) {
   onDeleteTasksOnAnnotationSet(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3097,7 +3081,6 @@ export const onDeleteTestPresetLocation = /* GraphQL */ `subscription OnDeleteTe
 ) {
   onDeleteTestPresetLocation(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3181,7 +3164,6 @@ export const onDeleteTestResult = /* GraphQL */ `subscription OnDeleteTestResult
 ) {
   onDeleteTestResult(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3468,7 +3450,6 @@ export const onUpdateAnnotation = /* GraphQL */ `subscription OnUpdateAnnotation
     }
     projectId
     set {
-      annotationCount
       createdAt
       id
       name
@@ -3493,7 +3474,6 @@ export const onUpdateAnnotationSet = /* GraphQL */ `subscription OnUpdateAnnotat
   $filter: ModelSubscriptionAnnotationSetFilterInput
 ) {
   onUpdateAnnotationSet(filter: $filter) {
-    annotationCount
     annotations {
       nextToken
       __typename
@@ -3613,7 +3593,6 @@ export const onUpdateCategory = /* GraphQL */ `subscription OnUpdateCategory($fi
   onUpdateCategory(filter: $filter) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -3974,7 +3953,6 @@ export const onUpdateJollyResultsMembership = /* GraphQL */ `subscription OnUpda
 ) {
   onUpdateJollyResultsMembership(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4095,7 +4073,6 @@ export const onUpdateLocationAnnotationCount = /* GraphQL */ `subscription OnUpd
 ) {
   onUpdateLocationAnnotationCount(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4272,7 +4249,6 @@ export const onUpdateObservation = /* GraphQL */ `subscription OnUpdateObservati
   onUpdateObservation(filter: $filter, owner: $owner) {
     annotationCount
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4722,7 +4698,6 @@ export const onUpdateTasksOnAnnotationSet = /* GraphQL */ `subscription OnUpdate
 ) {
   onUpdateTasksOnAnnotationSet(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4793,7 +4768,6 @@ export const onUpdateTestPresetLocation = /* GraphQL */ `subscription OnUpdateTe
 ) {
   onUpdateTestPresetLocation(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
@@ -4877,7 +4851,6 @@ export const onUpdateTestResult = /* GraphQL */ `subscription OnUpdateTestResult
 ) {
   onUpdateTestResult(filter: $filter) {
     annotationSet {
-      annotationCount
       createdAt
       id
       name
