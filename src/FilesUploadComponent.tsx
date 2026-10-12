@@ -23,6 +23,7 @@ import {
   isOutsideAltitudeBand,
   type AltitudeUnit,
 } from './upload/altitudeFilter.ts';
+import { sampleSuccessfulScans } from './upload/sampleScan.ts';
 import type { UploadBackend } from './upload/core/types.ts';
 import {
   downloadFailedImagesCsv,
@@ -776,9 +777,7 @@ export function FileUploadCore({
 
       try {
         // Get EXIF metadata for each file (sample first, then selective fast path if no GPS)
-        const sampleSize = Math.min(5, mapFiles.length);
-        const sampleFiles = mapFiles.slice(0, sampleSize);
-        const restFiles = mapFiles.slice(sampleSize);
+        const sampleSize = 5;
 
         // Helper to safely extract EXIF with error handling and validation
         const safeExtractExif = async (
@@ -848,50 +847,52 @@ export function FileUploadCore({
           }
         };
 
-        // Sample with full EXIF to check for GPS
-        const sampleResults = await Promise.all(
-          sampleFiles.map(async (file) => {
-            const exif = await safeExtractExif(file, getExifmeta);
-            if (!exif) return null;
+        const scanSampleFile = async (file: File) => {
+          const exif = await safeExtractExif(file, getExifmeta);
+          // Update count for all attempts (including failures) to show accurate progress
+          progress.scanned += 1;
+          if (!exif) return null;
 
-            // Validate and convert GPS data
-            let gpsData: GpsData | null = null;
-            if (exif.gpsData && exif.gpsData.alt && exif.gpsData.lat && exif.gpsData.lng) {
-              const lat = Number(exif.gpsData.lat);
-              const lng = Number(exif.gpsData.lng);
-              // Only set GPS data if coordinates are valid and in range
-              if (
-                Number.isFinite(lat) &&
-                Number.isFinite(lng) &&
-                lat >= -90 &&
-                lat <= 90 &&
-                lng >= -180 &&
-                lng <= 180
-              ) {
-                gpsData = {
-                  lat,
-                  lng,
-                  alt: convertAltitude(Number(exif.gpsData.alt)),
-                };
-              }
+          // Validate and convert GPS data
+          let gpsData: GpsData | null = null;
+          if (
+            exif.gpsData &&
+            exif.gpsData.alt &&
+            exif.gpsData.lat &&
+            exif.gpsData.lng
+          ) {
+            const lat = Number(exif.gpsData.lat);
+            const lng = Number(exif.gpsData.lng);
+            // Only set GPS data if coordinates are valid and in range
+            if (
+              Number.isFinite(lat) &&
+              Number.isFinite(lng) &&
+              lat >= -90 &&
+              lat <= 90 &&
+              lng >= -180 &&
+              lng <= 180
+            ) {
+              gpsData = {
+                lat,
+                lng,
+                alt: convertAltitude(Number(exif.gpsData.alt)),
+              };
             }
+          }
 
-            const updatedExif: ImageExif = {
-              ...exif,
-              width: exif.width || 0,
-              height: exif.height || 0,
-              gpsData,
-            };
-            return updatedExif;
-          })
-        );
+          const updatedExif: ImageExif = {
+            ...exif,
+            width: exif.width || 0,
+            height: exif.height || 0,
+            gpsData,
+          };
+          return updatedExif;
+        };
 
-        // Filter out null results (failed files)
-        const sampleRaw: ImageExif[] = sampleResults.filter(
-          (exif): exif is ImageExif => exif !== null
-        );
-        // Update count for all attempts (including failures) to show accurate progress
-        progress.scanned += sampleResults.length;
+        // Failed scans don't count toward the GPS sample.
+        const { sample: sampleRaw, consumed: sampleEnd } =
+          await sampleSuccessfulScans(mapFiles, sampleSize, scanSampleFile);
+        const restFiles = mapFiles.slice(sampleEnd);
 
         const gpsLikely = sampleRaw.some((x) => x.gpsData !== null);
         const extractor = gpsLikely ? getExifmeta : getTimestampOnlyExif;
