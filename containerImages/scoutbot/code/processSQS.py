@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sys
@@ -29,8 +30,8 @@ single_image_failure_visibility_seconds = int(
 )
 
 createLocation=gql("""
-mutation MyMutation($confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!, $group: String!) {
-  createLocation(input: {confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width, group: $group}){
+mutation MyMutation($id: ID!, $confidence: Float, $height: Int, $imageId: ID!, $projectId: ID="", $setId: ID!, $source: String!, $width: Int, $x: Int!, $y: Int!, $group: String!) {
+  createLocation(input: {id: $id, confidence: $confidence, height: $height, imageId: $imageId, projectId: $projectId, setId: $setId, source: $source, x: $x, y: $y, width: $width, group: $group}){
     id
     group
   }
@@ -251,6 +252,49 @@ def _apply_rotation_to_detects(detects, info):
         for detect in detects
     ]
 
+SOURCE = 'scoutbotv3'
+
+NO_DETECTIONS = 'none'
+
+def _location_id(body, image_id, detect_index):
+    identity = json.dumps(
+        [body['projectId'], body['setId'], image_id, SOURCE, detect_index],
+        separators=(',', ':'),
+    )
+    return f'{SOURCE}-{hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]}'
+
+def _is_duplicate_create_error(error):
+    graphql_errors = getattr(error, 'errors', None)
+    descriptions = graphql_errors if graphql_errors else [str(error)]
+    duplicate_markers = (
+        'conditionalcheckfailedexception',
+        'the conditional request failed',
+        'already exists',
+    )
+    return bool(descriptions) and all(
+        any(marker in str(description).lower() for marker in duplicate_markers)
+        for description in descriptions
+    )
+
+def _create_location(body, image_id, detect_index, group, x, y, width, height, confidence):
+    try:
+        client.execute(createLocation, variable_values={
+            'id': _location_id(body, image_id, detect_index),
+            'height': height,
+            'imageId': image_id,
+            'projectId': body['projectId'],
+            'x': x,
+            'y': y,
+            'width': width,
+            'setId': body['setId'],
+            'confidence': confidence,
+            'source': SOURCE,
+            'group': group,
+        })
+    except Exception as error:
+        if not _is_duplicate_create_error(error):
+            raise
+
 def _extend_failed_single_image_visibility(message, message_id, image_ids):
     try:
         sqs.change_message_visibility(
@@ -339,32 +383,20 @@ def process_output(output_queue):
                     detection_count,
                 )
                 if not detects:
-                    resp = client.execute(createLocation, variable_values=json.dumps({
-                        'height': 0,
-                        'imageId': image['imageId'],
-                        'projectId': body['projectId'],
-                        'x': 0,
-                        'y': 0,
-                        'width': 0,
-                        'setId': body['setId'],
-                        'confidence': 0,
-                        'source': 'scoutbotv3',
-                        'group': group
-                    }))
+                    _create_location(body, image['imageId'], NO_DETECTIONS, group, 0, 0, 0, 0, 0)
                 else:
-                    for detect in detects:
-                        resp = client.execute(createLocation, variable_values=json.dumps({
-                            'height': round(detect['h']),
-                            'imageId': image['imageId'],
-                            'projectId': body['projectId'],
-                            'x': round(detect['x'] + detect['w'] / 2),
-                            'y': round(detect['y'] + detect['h'] / 2),
-                            'width': round(detect['w']),
-                            'setId': body['setId'],
-                            'confidence': detect['c'],
-                            'source': 'scoutbotv3',
-                            'group': group
-                        }))
+                    for detect_index, detect in enumerate(detects):
+                        _create_location(
+                            body,
+                            image['imageId'],
+                            detect_index,
+                            group,
+                            round(detect['x'] + detect['w'] / 2),
+                            round(detect['y'] + detect['h'] / 2),
+                            round(detect['w']),
+                            round(detect['h']),
+                            detect['c'],
+                        )
             sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
             logging.info(
                 'Completed Scoutbot message %s attempt %s with image ids: %s',
@@ -421,7 +453,6 @@ def main():
                 AttributeNames=['SentTimestamp', 'ApproximateReceiveCount'],
                 MaxNumberOfMessages=1,
                 MessageAttributeNames=['All'],
-                VisibilityTimeout=120,
                 WaitTimeSeconds=0
             )
 
