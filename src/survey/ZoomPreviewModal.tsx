@@ -328,7 +328,8 @@ export default function ZoomPreviewModal({
   const ready = !!sample && value != null;
 
   return (
-    <Modal show={show} onHide={onClose} fullscreen>
+    // p-0 overrides the scrollbar padding react-bootstrap adds inline.
+    <Modal show={show} onHide={onClose} fullscreen className='p-0'>
       <Modal.Header closeButton>
         <Modal.Title>Set Zoom Level</Modal.Title>
       </Modal.Header>
