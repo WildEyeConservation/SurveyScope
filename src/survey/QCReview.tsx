@@ -7,6 +7,8 @@ import { fetchAllPaginatedResults } from '../utils';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { useUsers } from '../apiInterface';
+import { pickZoomPreviewCandidates } from './zoomPreview';
+import ZoomSetting from './ZoomSetting';
 
 type LaunchHandler = {
   execute: (
@@ -70,6 +72,7 @@ export default function QCReview({
   const [samplePercent, setSamplePercent] = useState<number>(10);
   const [batchSize, setBatchSize] = useState<number>(200);
   const [hidden, setHidden] = useState(false);
+  const [zoom, setZoom] = useState<number | undefined>(undefined);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   // Annotator filter
@@ -234,6 +237,8 @@ export default function QCReview({
   const samplePercentRef = useRef(samplePercent);
   const batchSizeRef = useRef(batchSize);
   const hiddenRef = useRef(hidden);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const selectedAnnotatorIdsRef = useRef(selectedAnnotatorIds);
 
   useEffect(() => {
@@ -278,6 +283,7 @@ export default function QCReview({
           samplePercent: samplePercentRef.current,
           batchSize: batchSizeRef.current,
           hidden: hiddenRef.current,
+          zoom: zoomRef.current ?? null,
         };
         if (selectedAnnotatorIdsRef.current.length > 0) {
           payload.annotatorUserIds = selectedAnnotatorIdsRef.current;
@@ -427,6 +433,16 @@ export default function QCReview({
                       disabled={launching}
                     />
                   </Form.Group>
+
+                  <ZoomSetting
+                    mode='offset'
+                    zoom={zoom}
+                    onChange={setZoom}
+                    loadCandidates={async () =>
+                      pickZoomPreviewCandidates(categoryAnnotations)
+                    }
+                    disabled={launching}
+                  />
 
                   {/* Advanced options toggle */}
                   <Form.Group>

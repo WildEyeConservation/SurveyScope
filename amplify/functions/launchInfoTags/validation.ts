@@ -8,6 +8,7 @@ export type LaunchInfoTagsPayload = {
   categoryNames?: string[];
   batchSize: number;
   hidden: boolean;
+  zoom?: number;
 };
 
 export type AnnotationSetRef = {
@@ -56,6 +57,7 @@ export function parsePayload(request: unknown): LaunchInfoTagsPayload {
       : undefined,
     batchSize: normaliseBatchSize(parsed.batchSize),
     hidden: parsed.hidden === true,
+    zoom: Number.isInteger(parsed.zoom) ? parsed.zoom : undefined,
   };
 }
 

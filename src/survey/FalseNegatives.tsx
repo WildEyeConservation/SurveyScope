@@ -10,6 +10,8 @@ import { GlobalContext, UserContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { loadLocationCandidates } from './zoomPreview';
+import ZoomSetting from './ZoomSetting';
 
 type LaunchHandler = {
   execute: (
@@ -81,6 +83,7 @@ export default function FalseNegatives({
 
   // Sampling (first launch + additional sample modes)
   const [batchSize, setBatchSize] = useState<number>(200);
+  const [zoom, setZoom] = useState<number | undefined>(undefined);
   const [samplePercent, setSamplePercent] = useState<number>(5);
   const [showAdvancedOptions, setShowAdvancedOptions] =
     useState<boolean>(false);
@@ -371,6 +374,8 @@ export default function FalseNegatives({
   const queueTagRef = useRef(queueTag);
   const samplePercentRef = useRef(samplePercent);
   const batchSizeRef = useRef(batchSize);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const tiledLocationSetIdRef = useRef(tiledLocationSetId);
 
   useEffect(() => {
@@ -431,6 +436,7 @@ export default function FalseNegatives({
             locationSetId: currentTiledLocationSetId,
             locationTiles: remaining,
             batchSize: batchSizeRef.current,
+            zoom: zoomRef.current ?? null,
             isContinuation: true,
           };
 
@@ -463,6 +469,7 @@ export default function FalseNegatives({
             locationSetId: currentTiledLocationSetId,
             locationTiles: [], // Empty – Lambda loads from pool
             batchSize: batchSizeRef.current,
+            zoom: zoomRef.current ?? null,
           };
 
           onProgress('Enqueuing jobs...');
@@ -503,6 +510,7 @@ export default function FalseNegatives({
             locationSetId: currentTiledLocationSetId,
             locationTiles,
             batchSize: batchSizeRef.current,
+            zoom: zoomRef.current ?? null,
           };
 
           onProgress('Enqueuing jobs...');
@@ -697,6 +705,21 @@ export default function FalseNegatives({
     return Math.min(count, remainingInPool);
   })();
 
+  const zoomSetting = (
+    <ZoomSetting
+      mode='level'
+      zoom={zoom}
+      onChange={setZoom}
+      loadCandidates={() =>
+        loadLocationCandidates(
+          client,
+          tiledLocationSetId ? [tiledLocationSetId] : []
+        )
+      }
+      disabled={launching || !tiledLocationSetId}
+    />
+  );
+
   return (
     <div className='px-3 pb-3 pt-1'>
       <div className='d-flex flex-column gap-3 mt-2'>
@@ -718,6 +741,7 @@ export default function FalseNegatives({
           </Alert>
         ) : mode === 'continue' ? (
           // ── Continue mode UI ──
+          <>
           <div
             className='border border-dark shadow-sm p-2'
             style={{ backgroundColor: '#697582' }}
@@ -764,6 +788,8 @@ export default function FalseNegatives({
               </button>
             </div>
           </div>
+          {zoomSetting}
+          </>
         ) : mode === 'additional' ? (
           // ── Additional sample mode UI ──
           <>
@@ -829,6 +855,8 @@ export default function FalseNegatives({
                     disabled={launching}
                   />
                 </Form.Group>
+
+                {zoomSetting}
 
                 <Form.Group>
                   <Form.Switch
@@ -959,6 +987,8 @@ export default function FalseNegatives({
                 disabled={launching}
               />
             </Form.Group>
+
+            {zoomSetting}
 
             <Form.Group>
               <Form.Switch

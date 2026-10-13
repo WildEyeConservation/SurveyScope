@@ -89,3 +89,21 @@ test('inputs that belong to the project are accepted', () => {
     assertInputsBelongToProject(payload, annotationSet, [category])
   );
 });
+
+test('parsePayload keeps only integer zoom values', () => {
+  const parse = (zoom?: unknown) =>
+    parsePayload(
+      JSON.stringify({
+        projectId: 'project-1',
+        annotationSetId: 'set-1',
+        categoryIds: ['category-1'],
+        zoom,
+      })
+    ).zoom;
+  assert.equal(parse(4), 4);
+  assert.equal(parse(0), 0);
+  assert.equal(parse(2.5), undefined);
+  assert.equal(parse('4'), undefined);
+  assert.equal(parse(null), undefined);
+  assert.equal(parse(), undefined);
+});

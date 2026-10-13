@@ -146,6 +146,7 @@ type LaunchQCReviewPayload = {
   samplePercent: number;
   batchSize: number;
   hidden: boolean;
+  zoom?: number | null;
   annotatorUserIds?: string[];
 };
 
@@ -351,6 +352,7 @@ async function handleLaunch(payload: LaunchQCReviewPayload, organizationId: stri
     projectId,
     batchSize,
     organizationId,
+    payload.zoom,
     {
       annotationSetId,
       launchedCount: sampled.length,
@@ -460,6 +462,7 @@ async function createQueue(
   projectId: string,
   batchSize: number,
   organizationId: string,
+  zoom: number | null | undefined,
   trackingParams: {
     annotationSetId: string;
     launchedCount: number;
@@ -513,6 +516,7 @@ async function createQueue(
       name: queueOptions.name,
       projectId,
       batchSize,
+      zoom: zoom ?? undefined,
       hidden: queueOptions.hidden,
       tag: queueTag,
       approximateSize: 1,
@@ -627,6 +631,7 @@ function parsePayload(request: unknown): LaunchQCReviewPayload {
     samplePercent: parsed.samplePercent,
     batchSize: parsed.batchSize ?? 200,
     hidden: parsed.hidden ?? false,
+    zoom: Number.isInteger(parsed.zoom) ? parsed.zoom : undefined,
     annotatorUserIds: parsed.annotatorUserIds,
   };
 }

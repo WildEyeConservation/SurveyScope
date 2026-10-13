@@ -8,7 +8,7 @@ import type {
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from './utils';
 
-const LEGACY_STORMFLY_BOX_SIZE = 64;
+export const LEGACY_STORMFLY_BOX_SIZE = 64;
 
 // Types for options and function arguments
 export type LaunchTaskOptions = {
