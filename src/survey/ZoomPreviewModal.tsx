@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Form, Modal } from 'react-bootstrap';
+import { Badge, Button, Form, Modal } from 'react-bootstrap';
 import { Minus, Plus } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -194,25 +194,10 @@ export default function ZoomPreviewModal({
     );
   };
 
-  // Auto frames every location itself, so zooming is locked while it is on.
-  const setZoomLocked = (map: maplibregl.Map, locked: boolean) => {
-    for (const handler of [
-      map.scrollZoom,
-      map.boxZoom,
-      map.doubleClickZoom,
-      map.touchZoomRotate,
-    ]) {
-      if (locked) handler.disable();
-      else handler.enable();
-    }
-    if (!locked) map.touchZoomRotate.disableRotation();
-  };
-
   const toggleAuto = (next: boolean) => {
     const map = mapRef.current;
     setAuto(next);
     if (!map) return;
-    setZoomLocked(map, next);
     if (next) fitAuto();
     else pinnedRef.current = clampValue(readValue(map));
   };
@@ -221,6 +206,7 @@ export default function ZoomPreviewModal({
     const map = mapRef.current;
     if (!map) return;
     const clamped = clampValue(next);
+    setAuto(false);
     pinnedRef.current = clamped;
     setValue(clamped);
     map.zoomTo(toMapZoom(clamped), { duration: 150 });
@@ -296,7 +282,6 @@ export default function ZoomPreviewModal({
         });
         baseZoomRef.current = map.getZoom();
       }
-      setZoomLocked(map, autoRef.current);
       if (!autoRef.current && pinnedRef.current != null) {
         map.jumpTo({
           center: px2lngLat(x, y),
@@ -308,13 +293,24 @@ export default function ZoomPreviewModal({
       setValue(clampValue(readValue(map)));
     });
 
-    map.on('zoomend', (event) => {
+    const onZoom = (event: maplibregl.MapLibreEvent<unknown>) => {
+      const byUser = !!event.originalEvent;
+      const ended = event.type === 'zoomend';
+      if (!byUser && !ended) return;
       const next = clampValue(readValue(map));
       setValue(next);
-      if ('originalEvent' in event && event.originalEvent) {
-        pinnedRef.current = next;
+      if (!byUser) return;
+      // Zooming by hand takes over from Auto.
+      setAuto(false);
+      pinnedRef.current = next;
+      // Settle on the whole level that gets stored.
+      const target = toMapZoom(next);
+      if (ended && Math.abs(map.getZoom() - target) > 0.01) {
+        map.easeTo({ zoom: target, duration: 150 });
       }
-    });
+    };
+    map.on('zoom', onZoom);
+    map.on('zoomend', onZoom);
 
     return () => {
       map.remove();
@@ -369,7 +365,7 @@ export default function ZoomPreviewModal({
                 variant='dark'
                 className='d-flex p-1'
                 aria-label='Zoom in'
-                disabled={auto || value >= ZOOM_LEVEL_COUNT - 1}
+                disabled={value >= ZOOM_LEVEL_COUNT - 1}
                 onClick={() => changeValue(value + 1)}
               >
                 <Plus size={20} />
@@ -381,31 +377,38 @@ export default function ZoomPreviewModal({
                 max={ZOOM_LEVEL_COUNT - 1}
                 step={1}
                 value={value}
-                disabled={auto}
                 onChange={(e) => changeValue(Number(e.target.value))}
                 style={{
                   writingMode: 'vertical-lr',
                   direction: 'rtl',
                   height: 240,
                   width: 24,
-                  cursor: auto ? 'default' : 'pointer',
+                  cursor: 'pointer',
                 }}
               />
               <Button
                 variant='dark'
                 className='d-flex p-1'
                 aria-label='Zoom out'
-                disabled={auto || value <= 0}
+                disabled={value <= 0}
                 onClick={() => changeValue(value - 1)}
               >
                 <Minus size={20} />
               </Button>
-              <strong style={{ fontSize: '13px' }}>{value}</strong>
+              {auto ? (
+                <Badge pill bg='warning'>
+                  AUTO
+                </Badge>
+              ) : (
+                <strong style={{ fontSize: '13px' }}>{value}</strong>
+              )}
             </div>
           )}
           {ready && mode === 'level' && (
             <div
-              className='px-2 py-1 text-dark'
+              className={`px-2 py-1 ${
+                auto ? 'bg-warning text-white fw-bold' : 'text-dark'
+              }`}
               style={{ ...ZOOM_PANEL_STYLE, top: 12, right: 12 }}
             >
               <Form.Switch
