@@ -4,6 +4,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 import os
 import sys
+import time
 
 sys.path.insert(0, '/workspace')
 sys.path.insert(0, '/workspace/dinov3')
@@ -154,6 +155,11 @@ class OwlDDetector:
         model_cls = getattr(model_registry, spec['registry'])
         model = LossWrapper(model_cls(**spec['kwargs']), [])
         model = load_model(model, model_path).to(self.device).eval()
+        model.register_forward_pre_hook(self._before_forward)
+        model.register_forward_hook(self._after_forward)
+        self._forward_seconds = 0.0
+        self._forward_calls = 0
+        self.last_stats = {}
 
         self.stitcher = HerdNet_Detection_Branch_Stitcher(
             model=model,
@@ -182,12 +188,29 @@ class OwlDDetector:
             flush=True,
         )
 
+    def _before_forward(self, module, args):
+        self._forward_start = time.perf_counter()
+
+    def _after_forward(self, module, args, output):
+        import torch
+
+        torch.cuda.synchronize()
+        self._forward_seconds += time.perf_counter() - self._forward_start
+        self._forward_calls += 1
+
     def detect(self, image):
         import torch
 
+        start = time.perf_counter()
+        self._forward_seconds = 0.0
+        self._forward_calls = 0
+        torch.cuda.reset_peak_memory_stats()
         tensor, original_width, original_height, _, _, scale = _image_tensor(image)
+        prep_done = time.perf_counter()
         with torch.inference_mode(), _autocast(self.device, self.amp_dtype):
             heatmap = self.stitcher(tensor)
+        torch.cuda.synchronize()
+        stitch_done = time.perf_counter()
         if heatmap.dtype != torch.float32:
             heatmap = heatmap.float()
 
@@ -202,4 +225,12 @@ class OwlDDetector:
             x = min(original_width - 1.0, ((float(col) + 0.5) * DOWN_RATIO) / scale)
             y = min(original_height - 1.0, ((float(row) + 0.5) * DOWN_RATIO) / scale)
             detections.append(Detection(x=int(round(x)), y=int(round(y)), score=score))
+        self.last_stats = {
+            'prep': prep_done - start,
+            'forward': self._forward_seconds,
+            'tiling': stitch_done - prep_done - self._forward_seconds,
+            'post': time.perf_counter() - stitch_done,
+            'batches': self._forward_calls,
+            'peak_vram_mib': torch.cuda.max_memory_allocated() / 2**20,
+        }
         return detections

@@ -3,7 +3,9 @@
 import hashlib
 import json
 import os
+import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -29,6 +31,7 @@ BOX_SIZE = int(os.environ.get('OWL_BOX_SIZE', '64'))
 SOURCE = 'owl-d'
 LOCATION_BATCH = int(os.environ.get('OWL_LOCATION_BATCH', '25'))
 MESSAGE_VISIBILITY_SECONDS = int(os.environ.get('OWL_MESSAGE_VISIBILITY_SECONDS', '3600'))
+GPU_SAMPLE_MS = int(os.environ.get('OWL_GPU_SAMPLE_MS', '500'))
 
 sqs = boto3.client('sqs', region_name=REGION)
 s3 = boto3.client('s3', region_name=REGION)
@@ -83,8 +86,84 @@ query GetProjectOrganization($id: ID!) {
 """)
 
 _detector = None
+_gpu_sampler = None
 # organizationId per project, for messages sent without 'group'.
 _organization_ids = {}
+
+
+class GpuSampler:
+    def __init__(self):
+        self._samples = []
+        self._active = False
+        self._lock = threading.Lock()
+        self._process = subprocess.Popen(
+            [
+                'nvidia-smi',
+                '--query-gpu=utilization.gpu,memory.used',
+                '--format=csv,noheader,nounits',
+                '-lms',
+                str(GPU_SAMPLE_MS),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self):
+        for line in self._process.stdout:
+            try:
+                utilization, memory = (float(part) for part in line.split(','))
+            except ValueError:
+                continue
+            with self._lock:
+                if self._active:
+                    self._samples.append((utilization, memory))
+        print(
+            f'GPU sampling stopped: nvidia-smi exited with code {self._process.wait()}',
+            flush=True,
+        )
+
+    def start(self):
+        with self._lock:
+            self._samples = []
+            self._active = True
+
+    def stop(self):
+        with self._lock:
+            self._active = False
+            samples, self._samples = self._samples, []
+        return samples
+
+
+def _start_gpu_sampler():
+    global _gpu_sampler
+    try:
+        _gpu_sampler = GpuSampler()
+    except OSError as error:
+        print(f'GPU sampling disabled: {_error_summary(error)}', flush=True)
+
+
+def _gpu_summary(samples):
+    if not samples:
+        return ''
+    utilization = [sample[0] for sample in samples]
+    return (
+        f' gpu_util={sum(utilization) / len(utilization):.0f}/'
+        f'{min(utilization):.0f}/{max(utilization):.0f}%'
+        f' gpu_mem={max(sample[1] for sample in samples):.0f}MiB'
+    )
+
+
+def _inference_summary(model):
+    stats = getattr(model, 'last_stats', None)
+    if not isinstance(stats, dict) or not stats:
+        return ''
+    return (
+        f' prep={stats["prep"]:.2f}s forward={stats["forward"]:.2f}s '
+        f'tiling={stats["tiling"]:.2f}s post={stats["post"]:.2f}s '
+        f'batches={stats["batches"]} peak_vram={stats["peak_vram_mib"]:.0f}MiB'
+    )
 
 
 def _error_summary(error):
@@ -388,8 +467,13 @@ def handle_message(body, message):
                 inference_image, rotation_info = _maybe_rotate_image(
                     display_image, rotation, landscape
                 )
+                if _gpu_sampler:
+                    _gpu_sampler.start()
                 inference_start = time.time()
-                detections = model.detect(inference_image)
+                try:
+                    detections = model.detect(inference_image)
+                finally:
+                    gpu_samples = _gpu_sampler.stop() if _gpu_sampler else []
                 inference_seconds = time.time() - inference_start
 
         points = [
@@ -407,7 +491,8 @@ def handle_message(body, message):
         print(
             f'OWL-D image {image_id} attempt {attempt}: '
             f'download={download_seconds:.2f}s inference={inference_seconds:.2f}s '
-            f'write={write_seconds:.2f}s detections={len(points)}',
+            f'write={write_seconds:.2f}s detections={len(points)}'
+            f'{_inference_summary(model)}{_gpu_summary(gpu_samples)}',
             flush=True,
         )
 
@@ -429,7 +514,10 @@ def main():
     if not torch.cuda.is_available():
         print('CUDA is not available. Exiting so ECS can replace this task.', flush=True)
         sys.exit(1)
+    load_start = time.time()
     _get_detector()
+    print(f'OWL-D model ready in {time.time() - load_start:.1f}s', flush=True)
+    _start_gpu_sampler()
 
     while True:
         response = sqs.receive_message(

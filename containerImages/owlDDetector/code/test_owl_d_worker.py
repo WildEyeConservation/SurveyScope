@@ -172,6 +172,59 @@ class OwlDWorkerTests(unittest.TestCase):
             with self.assertRaises(DuplicateCreateError):
                 worker._write_locations(self.body, 'image-1', [(1, 2, 0.5)], 64, 'org-1')
 
+    def test_missing_nvidia_smi_disables_gpu_sampling(self):
+        with patch.object(worker, '_gpu_sampler', None), \
+                patch.object(worker.subprocess, 'Popen', side_effect=FileNotFoundError('nvidia-smi')):
+            worker._start_gpu_sampler()
+            self.assertIsNone(worker._gpu_sampler)
+
+    def test_gpu_sampler_records_only_between_start_and_stop(self):
+        process = Mock()
+        process.stdout = []
+        process.wait.return_value = 0
+        with patch.object(worker.subprocess, 'Popen', return_value=process), \
+                patch.object(worker.threading, 'Thread'):
+            sampler = worker.GpuSampler()
+        process.stdout = ['50, 900\n']
+        sampler._read()
+        self.assertEqual(sampler.stop(), [])
+        sampler.start()
+        process.stdout = ['10, 100\n', '[N/A], [N/A]\n', '30, 300\n']
+        sampler._read()
+        self.assertEqual(sampler.stop(), [(10.0, 100.0), (30.0, 300.0)])
+        self.assertEqual(sampler.stop(), [])
+
+    def test_gpu_sampler_stops_when_inference_raises(self):
+        model = Mock()
+        model.detect.side_effect = RuntimeError('CUDA out of memory')
+        sampler = Mock()
+        body = {**self.body, 'bucket': 'bucket', 'group': 'org-1', 'imageId': 'image-1', 'key': 'a.jpg'}
+        with patch.object(worker, '_get_detector', return_value=model), \
+                patch.object(worker, '_gpu_sampler', sampler), \
+                patch.object(worker, '_download_s3_object'), \
+                patch.object(worker, 'Image'), \
+                patch.object(worker, 'ImageOps'):
+            with self.assertRaises(RuntimeError):
+                worker.handle_message(body, {})
+        sampler.start.assert_called_once_with()
+        sampler.stop.assert_called_once_with()
+
+    def test_gpu_summary_formats_utilization_and_peak_memory(self):
+        self.assertEqual(worker._gpu_summary([]), '')
+        self.assertEqual(
+            worker._gpu_summary([(10, 100), (30, 300)]),
+            ' gpu_util=20/10/30% gpu_mem=300MiB',
+        )
+
+    def test_inference_summary_is_empty_without_stats(self):
+        self.assertEqual(worker._inference_summary(Mock()), '')
+        self.assertEqual(worker._inference_summary(Mock(last_stats={})), '')
+        stats = {'prep': 1, 'forward': 2, 'tiling': 3, 'post': 4, 'batches': 5, 'peak_vram_mib': 6}
+        self.assertEqual(
+            worker._inference_summary(Mock(last_stats=stats)),
+            ' prep=1.00s forward=2.00s tiling=3.00s post=4.00s batches=5 peak_vram=6MiB',
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
