@@ -116,7 +116,8 @@ export function fitPxBounds(
   left: number,
   top: number,
   right: number,
-  bottom: number
+  bottom: number,
+  eventData?: Record<string, unknown>
 ) {
   const container = map.getContainer();
   const camera = pxBoundsCamera(
@@ -127,5 +128,5 @@ export function fitPxBounds(
     right,
     bottom
   );
-  if (camera) map.jumpTo(camera);
+  if (camera) map.jumpTo(camera, eventData);
 }

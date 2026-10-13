@@ -23,6 +23,8 @@ const OFFSET_MAX_MAP_ZOOM = 22;
 const WHOLE_IMAGE_PADDING = 20;
 const AUTO_FIT_SCALE = 1.5;
 const ANNOTATOR_MAX_WIDTH = '1024px';
+// Isolated wheel zooms lack originalEvent, so tag programmatic moves.
+const OWN_ZOOM = { ownZoom: true };
 
 type Sample = {
   id: string;
@@ -190,12 +192,15 @@ export default function ZoomPreviewModal({
       x - box.width * AUTO_FIT_SCALE,
       y - box.height * AUTO_FIT_SCALE,
       x + box.width * AUTO_FIT_SCALE,
-      y + box.height * AUTO_FIT_SCALE
+      y + box.height * AUTO_FIT_SCALE,
+      OWN_ZOOM
     );
   };
 
   const toggleAuto = (next: boolean) => {
     const map = mapRef.current;
+    // End any wheel zoom first so its zoomend cannot undo this.
+    map?.stop();
     setAuto(next);
     if (!map) return;
     if (next) fitAuto();
@@ -206,10 +211,11 @@ export default function ZoomPreviewModal({
     const map = mapRef.current;
     if (!map) return;
     const clamped = clampValue(next);
+    map.stop();
     setAuto(false);
     pinnedRef.current = clamped;
     setValue(clamped);
-    map.zoomTo(toMapZoom(clamped), { duration: 150 });
+    map.zoomTo(toMapZoom(clamped), { duration: 150 }, OWN_ZOOM);
   };
 
   useEffect(() => {
@@ -276,25 +282,28 @@ export default function ZoomPreviewModal({
         });
       }
       if (mode === 'offset') {
-        map.fitBounds([px2lngLat(0, image.height), px2lngLat(image.width, 0)], {
-          padding: WHOLE_IMAGE_PADDING,
-          animate: false,
-        });
+        map.fitBounds(
+          [px2lngLat(0, image.height), px2lngLat(image.width, 0)],
+          { padding: WHOLE_IMAGE_PADDING, animate: false },
+          OWN_ZOOM
+        );
         baseZoomRef.current = map.getZoom();
       }
       if (!autoRef.current && pinnedRef.current != null) {
-        map.jumpTo({
-          center: px2lngLat(x, y),
-          zoom: toMapZoom(pinnedRef.current),
-        });
+        map.jumpTo(
+          { center: px2lngLat(x, y), zoom: toMapZoom(pinnedRef.current) },
+          OWN_ZOOM
+        );
       } else {
         fitAuto();
       }
       setValue(clampValue(readValue(map)));
     });
 
-    const onZoom = (event: maplibregl.MapLibreEvent<unknown>) => {
-      const byUser = !!event.originalEvent;
+    const onZoom = (
+      event: maplibregl.MapLibreEvent & { ownZoom?: boolean }
+    ) => {
+      const byUser = !event.ownZoom;
       const ended = event.type === 'zoomend';
       if (!byUser && !ended) return;
       const next = clampValue(readValue(map));
@@ -306,7 +315,7 @@ export default function ZoomPreviewModal({
       // Settle on the whole level that gets stored.
       const target = toMapZoom(next);
       if (ended && Math.abs(map.getZoom() - target) > 0.01) {
-        map.easeTo({ zoom: target, duration: 150 });
+        map.easeTo({ zoom: target, duration: 150 }, OWN_ZOOM);
       }
     };
     map.on('zoom', onZoom);
