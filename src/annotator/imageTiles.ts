@@ -1,5 +1,8 @@
 import maplibregl from 'maplibre-gl';
 import { getTileBlob, imageTileContext } from '../StorageLayer';
+import { pxBoundsCamera, type ImageProjection } from './imageProjection';
+
+export { makeProjection, type ImageProjection } from './imageProjection';
 
 /*
 Shared tiling machinery for MapLibre-based image viewers.
@@ -33,38 +36,6 @@ export function ensureTileProtocol() {
     });
     return { data: await blob.arrayBuffer() };
   });
-}
-
-export interface ImageProjection {
-  px2lngLat: (x: number, y: number) => [number, number];
-  lngLat2px: (lng: number, lat: number) => { x: number; y: number };
-  maxNativeZoom: number;
-}
-
-/** Pixel <-> LngLat mapping that places the pyramid's power-of-two square
- * exactly over the mercator world, so tile (z, x, y) == pyramid tile. */
-export function makeProjection(
-  width: number,
-  height: number
-): ImageProjection {
-  const n = Math.pow(2, Math.ceil(Math.log2(Math.max(width, height))));
-  const px2lngLat = (x: number, y: number): [number, number] => {
-    const lng = (x / n) * 360 - 180;
-    const t = y / n; // 0 = top edge of the pyramid square
-    const lat = (Math.atan(Math.sinh(Math.PI * (1 - 2 * t))) * 180) / Math.PI;
-    return [lng, lat];
-  };
-  const lngLat2px = (lng: number, lat: number): { x: number; y: number } => {
-    const x = ((lng + 180) / 360) * n;
-    const rad = (lat * Math.PI) / 180;
-    const t = (1 - Math.asinh(Math.tan(rad)) / Math.PI) / 2;
-    return { x, y: t * n };
-  };
-  const maxNativeZoom = Math.max(
-    0,
-    Math.ceil(Math.log2(Math.max(width, height))) - 8
-  );
-  return { px2lngLat, lngLat2px, maxNativeZoom };
 }
 
 export const storedZoomToMapZoom = (zoom: number) => zoom - 1;
@@ -114,7 +85,9 @@ export function addImageTiles(
       .filter(([, value]) => value != null)
       .map(([key, value]) => [key, String(value)])
   );
-  const template = `detweb://slippymaps/${encodeURIComponent(sourceKey)}/{z}/{y}/{x}.png?${query}`;
+  const template = `detweb://slippymaps/${encodeURIComponent(
+    sourceKey
+  )}/{z}/{y}/{x}.png?${query}`;
   map.addSource(SOURCE_TILES, {
     type: 'raster',
     tiles: [template],
@@ -145,11 +118,14 @@ export function fitPxBounds(
   right: number,
   bottom: number
 ) {
-  map.fitBounds(
-    [
-      projection.px2lngLat(left, bottom),
-      projection.px2lngLat(right, top),
-    ],
-    { duration: 0 }
+  const container = map.getContainer();
+  const camera = pxBoundsCamera(
+    projection,
+    { width: container.clientWidth, height: container.clientHeight },
+    left,
+    top,
+    right,
+    bottom
   );
+  if (camera) map.jumpTo(camera);
 }

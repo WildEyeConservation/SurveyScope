@@ -172,10 +172,10 @@ export default function MapLibreLightViewer({
       fitPxBounds(
         map,
         projection,
-        Math.max(0, fitRect.x - fitRect.width * fitScale),
-        Math.max(0, fitRect.y - fitRect.height * fitScale),
-        Math.min(image.width, fitRect.x + fitRect.width * fitScale),
-        Math.min(image.height, fitRect.y + fitRect.height * fitScale)
+        fitRect.x - fitRect.width * fitScale,
+        fitRect.y - fitRect.height * fitScale,
+        fitRect.x + fitRect.width * fitScale,
+        fitRect.y + fitRect.height * fitScale
       );
     } else {
       fitPxBounds(map, projection, 0, 0, image.width, image.height);

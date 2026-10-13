@@ -183,14 +183,14 @@ export default function ZoomPreviewModal({
   const fitAuto = () => {
     const map = mapRef.current;
     if (!map || !sample?.box || !projection) return;
-    const { x, y, box, image } = sample;
+    const { x, y, box } = sample;
     fitPxBounds(
       map,
       projection,
-      Math.max(0, x - box.width * AUTO_FIT_SCALE),
-      Math.max(0, y - box.height * AUTO_FIT_SCALE),
-      Math.min(image.width, x + box.width * AUTO_FIT_SCALE),
-      Math.min(image.height, y + box.height * AUTO_FIT_SCALE)
+      x - box.width * AUTO_FIT_SCALE,
+      y - box.height * AUTO_FIT_SCALE,
+      x + box.width * AUTO_FIT_SCALE,
+      y + box.height * AUTO_FIT_SCALE
     );
   };
 
