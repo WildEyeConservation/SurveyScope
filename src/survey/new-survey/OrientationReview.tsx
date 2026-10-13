@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Button, Form } from 'react-bootstrap';
 import {
   orientationCorrectionFor,
@@ -26,6 +27,127 @@ interface OrientationReviewProps {
 const groupLabel = (group: ImageOrientationGroup) =>
   group === 'portrait' ? 'Portrait source images' : 'Landscape source images';
 
+function ExpandedSample({
+  url,
+  title,
+  rotation,
+  onRotate,
+  onNextSample,
+  onClose,
+}: {
+  url: string;
+  title: string;
+  rotation: number;
+  onRotate: () => void;
+  onNextSample?: () => void;
+  onClose: () => void;
+}) {
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const dragRef = useRef<{ x: number; y: number } | null>(null);
+  const quarterTurn = rotation % 180 !== 0;
+
+  useEffect(() => setView({ scale: 1, x: 0, y: 0 }), [url]);
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = e.clientX - rect.left - rect.width / 2;
+    const cy = e.clientY - rect.top - rect.height / 2;
+    setView((prev) => {
+      const scale = Math.min(
+        Math.max(prev.scale * (e.deltaY < 0 ? 1.2 : 1 / 1.2), 1),
+        20
+      );
+      if (scale === 1) return { scale, x: 0, y: 0 };
+      const ratio = scale / prev.scale;
+      // Keep the point under the cursor fixed.
+      return {
+        scale,
+        x: cx - (cx - prev.x) * ratio,
+        y: cy - (cy - prev.y) * ratio,
+      };
+    });
+  };
+
+  return createPortal(
+    <div
+      className='d-flex flex-column'
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 2000,
+        backgroundColor: 'rgba(0,0,0,0.95)',
+      }}
+    >
+      <div className='d-flex align-items-center gap-2 p-2 text-white'>
+        <strong className='text-truncate' style={{ flex: 1, minWidth: 0 }}>
+          {title}
+        </strong>
+        <span
+          className='text-muted d-none d-md-inline'
+          style={{ fontSize: 12 }}
+        >
+          Scroll to zoom, drag to pan
+        </span>
+        <Button size='sm' variant='secondary' onClick={onRotate}>
+          ↺ Rotate
+        </Button>
+        {onNextSample && (
+          <Button size='sm' variant='outline-secondary' onClick={onNextSample}>
+            Another sample
+          </Button>
+        )}
+        <Button size='sm' variant='outline-light' onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      <div
+        onWheel={handleWheel}
+        onPointerDown={(e) => {
+          dragRef.current = { x: e.clientX, y: e.clientY };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const last = dragRef.current;
+          if (!last) return;
+          dragRef.current = { x: e.clientX, y: e.clientY };
+          setView((prev) => ({
+            ...prev,
+            x: prev.x + e.clientX - last.x,
+            y: prev.y + e.clientY - last.y,
+          }));
+        }}
+        onPointerUp={() => (dragRef.current = null)}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'grab',
+          touchAction: 'none',
+        }}
+      >
+        <img
+          src={url}
+          alt={title}
+          draggable={false}
+          style={{
+            // A quarter turn swaps which viewport side limits the image.
+            maxWidth: quarterTurn ? 'calc(100vh - 60px)' : '100vw',
+            maxHeight: quarterTurn ? '100vw' : 'calc(100vh - 60px)',
+            transform: `translate(${view.x}px, ${view.y}px) scale(${
+              view.scale
+            }) rotate(${-rotation}deg)`,
+            userSelect: 'none',
+          }}
+        />
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function CameraOrientationCard({
   group,
   rotation,
@@ -44,6 +166,7 @@ function CameraOrientationCard({
   );
   const file = group.files[Math.min(sampleIdx, group.files.length - 1)];
   const [url, setUrl] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (!file) {
@@ -63,7 +186,7 @@ function CameraOrientationCard({
   return (
     <div
       className='border border-dark p-2'
-      style={{ width: 300, backgroundColor: 'rgba(0,0,0,0.15)' }}
+      style={{ width: 360, backgroundColor: 'rgba(0,0,0,0.15)' }}
     >
       <div className='d-flex justify-content-between align-items-center mb-1'>
         <strong>{groupLabel(group.orientationGroup)}</strong>
@@ -73,7 +196,7 @@ function CameraOrientationCard({
       </div>
       <div
         style={{
-          height: 260,
+          height: 320,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -85,9 +208,12 @@ function CameraOrientationCard({
           <img
             src={url}
             alt={file?.webkitRelativePath || group.cameraName}
+            title='Click to expand'
+            onClick={() => setExpanded(true)}
             style={{
-              maxWidth: 240,
-              maxHeight: 240,
+              cursor: 'zoom-in',
+              maxWidth: 300,
+              maxHeight: 300,
               objectFit: 'contain',
               // CSS rotate() is clockwise; the stored correction is CCW.
               transform: `rotate(${-rotation}deg)`,
@@ -125,6 +251,14 @@ function CameraOrientationCard({
         <Button
           size='sm'
           variant='outline-secondary'
+          disabled={!url}
+          onClick={() => setExpanded(true)}
+        >
+          ⤢ Expand
+        </Button>
+        <Button
+          size='sm'
+          variant='outline-secondary'
           className='ms-auto'
           disabled={group.files.length <= 1}
           onClick={nextSample}
@@ -132,6 +266,16 @@ function CameraOrientationCard({
           Another sample
         </Button>
       </div>
+      {expanded && url && (
+        <ExpandedSample
+          url={url}
+          title={`${group.cameraName} · ${file?.webkitRelativePath ?? ''}`}
+          rotation={rotation}
+          onRotate={onRotate}
+          onNextSample={group.files.length > 1 ? nextSample : undefined}
+          onClose={() => setExpanded(false)}
+        />
+      )}
       <div className='mt-2' style={{ fontSize: 12 }}>
         {rotation === 0 ? (
           <span className='text-success'>
@@ -182,10 +326,10 @@ export default function OrientationReview({
       <Form.Label className='mb-0'>Camera Orientation Check</Form.Label>
       <Form.Text className='d-block mb-2 mt-0' style={{ fontSize: '12px' }}>
         Each camera is split into landscape and portrait source images. Review
-        every group shown and rotate its sample until it looks upright. The
-        selected correction applies to all images in that camera and shape
-        group. Uploaded copies are physically normalized before processing;
-        files on your computer are not modified.
+        every group shown and rotate its sample until it looks upright; click a
+        sample to expand it and zoom in. The selected correction applies to all
+        images in that camera and shape group. Uploaded copies are physically
+        normalized before processing; files on your computer are not modified.
       </Form.Text>
 
       <div className='d-flex flex-column gap-3'>
