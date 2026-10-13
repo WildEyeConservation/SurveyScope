@@ -45,7 +45,19 @@ import GPSSubset from './GPSSubset';
 import { parseGPX } from '@we-gold/gpxjs';
 import FileInput from './FileInput';
 import FolderStructure from './FolderStructure';
-import ImageMaskEditor from './ImageMaskEditor.tsx';
+import CameraMaskEditor, {
+  type MaskTarget,
+} from './survey/masks/CameraMaskEditor';
+import {
+  MASK_HELP,
+  loadLocalSample,
+  strideSamples,
+} from './survey/masks/samplePreview';
+import {
+  parseCameraMasks,
+  serializeCameraMasks,
+  type CameraMasks,
+} from './types/CameraMask';
 import Select from 'react-select';
 import localforage from 'localforage';
 import CameraOverlap from './CameraOverlap';
@@ -93,6 +105,7 @@ export type UploadWizardStep =
   | 'images'
   | 'georeference'
   | 'cameras'
+  | 'masks'
   | 'review'
   | 'none';
 
@@ -233,7 +246,9 @@ export function FileUploadCore({
   const [cameraSpecs, setCameraSpecs] = useState<Record<string, CameraSpec>>(
     {}
   );
-  const [masks, setMasks] = useState<number[][][]>([]);
+  const [cameraMasks, setCameraMasks] = useState<Record<string, CameraMasks>>(
+    {}
+  );
   // Independent CCW corrections for each camera's landscape and portrait
   // source-image groups; baked into the stored JPEG before processing.
   const [cameraRotations, setCameraRotations] =
@@ -622,6 +637,74 @@ export function FileUploadCore({
     }
     return result;
   }, [orientationCameraGroups, cameraRotations]);
+
+  const savedCameraMasksRef = useRef<Record<string, CameraMasks>>({});
+  // A mask drawn before a camera's correction changed no longer lines up.
+  const previousRotationsRef = useRef(cameraRotations);
+  useEffect(() => {
+    const previous = previousRotationsRef.current;
+    previousRotationsRef.current = cameraRotations;
+    const changed = Object.keys({ ...previous, ...cameraRotations }).filter(
+      (name) =>
+        (['landscape', 'portrait'] as const).some(
+          (group) =>
+            orientationCorrectionFor(previous, name, group) !==
+            orientationCorrectionFor(cameraRotations, name, group)
+        )
+    );
+    if (changed.length === 0) return;
+    setCameraMasks((prev) => {
+      const next = { ...prev };
+      for (const name of changed) {
+        const saved = savedCameraMasksRef.current[name];
+        if (saved) next[name] = saved;
+        else delete next[name];
+      }
+      return next;
+    });
+  }, [cameraRotations]);
+
+  const maskTargets = useMemo<MaskTarget[]>(() => {
+    const byKey = new Map<
+      string,
+      Omit<MaskTarget, 'samples'> & { files: { file: File; rotation: number }[] }
+    >();
+    for (const group of orientationCameraGroups) {
+      const rotation = orientationCorrectionFor(
+        cameraRotations,
+        group.cameraName,
+        group.orientationGroup
+      );
+      const flipped: ImageOrientationGroup =
+        group.orientationGroup === 'portrait' ? 'landscape' : 'portrait';
+      const shape = rotation % 180 !== 0 ? flipped : group.orientationGroup;
+      const key = `${group.cameraName}:${shape}`;
+      const entry = byKey.get(key) ?? {
+        cameraName: group.cameraName,
+        shape,
+        files: [],
+      };
+      for (const file of group.files) entry.files.push({ file, rotation });
+      byKey.set(key, entry);
+    }
+    return Array.from(byKey.values()).map(({ files, ...target }) => ({
+      ...target,
+      samples: strideSamples(files).map(({ file, rotation }) => ({
+        label: file.webkitRelativePath,
+        load: () => loadLocalSample(file, rotation),
+      })),
+    }));
+  }, [orientationCameraGroups, cameraRotations]);
+
+  const maskRegionCount = useMemo(
+    () =>
+      maskTargets.reduce(
+        (total, target) =>
+          total + (cameraMasks[target.cameraName]?.[target.shape]?.length ?? 0),
+        0
+      ),
+    [maskTargets, cameraMasks]
+  );
 
   // Handler to confirm column mapping before processing
   const handleConfirmMapping = () => {
@@ -1070,6 +1153,11 @@ export function FileUploadCore({
           setExistingCameraNames(
             (data || []).map((c) => c.name).filter(Boolean)
           );
+          const saved = Object.fromEntries(
+            (data || []).map((c) => [c.name, parseCameraMasks(c.masks)])
+          );
+          savedCameraMasksRef.current = saved;
+          setCameraMasks((prev) => ({ ...saved, ...prev }));
         }
       } finally {
         if (!cancelled) setLoadingExistingCameras(false);
@@ -1844,6 +1932,19 @@ export function FileUploadCore({
         }
       }
 
+      // Shapes without images in this upload keep their saved masks.
+      for (const camera of allCameras) {
+        const saved = parseCameraMasks(camera.masks);
+        const next = { ...saved };
+        for (const target of maskTargets) {
+          if (target.cameraName !== camera.name) continue;
+          next[target.shape] = cameraMasks[camera.name]?.[target.shape] ?? [];
+        }
+        const serialized = serializeCameraMasks(next);
+        if (serialized === serializeCameraMasks(saved)) continue;
+        await client.models.Camera.update({ id: camera.id, masks: serialized });
+      }
+
       for (const overlap of overlaps) {
         const overlapA = resolveCameraName(overlap.cameraA);
         const overlapB = resolveCameraName(overlap.cameraB);
@@ -1978,7 +2079,6 @@ export function FileUploadCore({
       ) as CameraOrientationRotations;
       await metadataStore.setItem(projectId, {
         model: model.value,
-        masks: masks,
         folderCameraMapping: useFolderCameraMapping ? folderCameraMapping : {},
         rotations: activeRotations,
       });
@@ -2030,7 +2130,8 @@ export function FileUploadCore({
       user.userId,
       name,
       model,
-      masks,
+      cameraMasks,
+      maskTargets,
       cameraRotations,
       orientationRotationByPath,
       directoryHandle,
@@ -3428,11 +3529,33 @@ export function FileUploadCore({
         />
       )}
       </div>
+      <div className={sectionClass('masks')}>
+        <Form.Group>
+          <Form.Label className='d-block mb-0'>
+            Camera Masks (optional)
+          </Form.Label>
+          <Form.Text
+            className='d-block text-muted m-0 mb-2'
+            style={{ fontSize: '12px' }}
+          >
+            {MASK_HELP}
+          </Form.Text>
+          {stepVisited('masks') && (
+            <CameraMaskEditor
+              targets={maskTargets}
+              masks={cameraMasks}
+              onChange={(cameraName, shape, polygons) =>
+                setCameraMasks((prev) => ({
+                  ...prev,
+                  [cameraName]: { ...prev[cameraName], [shape]: polygons },
+                }))
+              }
+            />
+          )}
+        </Form.Group>
+      </div>
       <div className={sectionClass('review')}>
       {modelSelector}
-      {filteredImageFiles.length > 0 && csvData && stepVisited('review') && (
-        <ImageMaskEditor setMasks={setMasks} />
-      )}
       {csvData && (
         <div className='border border-dark p-2 mt-2'>
           <strong>Summary</strong>
@@ -3535,9 +3658,9 @@ export function FileUploadCore({
                   .join('; ')}
               </li>
             )}
-            {masks.length > 0 && (
+            {maskRegionCount > 0 && (
               <li>
-                <strong>Masks:</strong> {masks.length}
+                <strong>Mask regions:</strong> {maskRegionCount}
               </li>
             )}
           </ul>
@@ -3571,12 +3694,14 @@ const MODAL_WIZARD_STEPS = [
   'Images',
   'Location Data',
   'Cameras',
+  'Masks',
   'Review & Submit',
 ];
 const MODAL_CORE_STEPS: UploadWizardStep[] = [
   'images',
   'georeference',
   'cameras',
+  'masks',
   'review',
 ];
 

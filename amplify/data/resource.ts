@@ -701,6 +701,8 @@ const schema = a
         focalLengthMm: a.float(),
         sensorWidthMm: a.float(),
         tiltDegrees: a.float(),
+        // JSON CameraMasks: polygons as fractions of the stored image, per shape.
+        masks: a.string(),
         images: a.hasMany('Image', 'cameraId'),
         group: a.string(),
       })

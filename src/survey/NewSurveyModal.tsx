@@ -18,6 +18,7 @@ const WIZARD_STEPS = [
   'Images',
   'Location Data',
   'Cameras',
+  'Masks',
   'Review & Create',
 ];
 
@@ -28,6 +29,7 @@ const CORE_STEPS: UploadWizardStep[] = [
   'images',
   'georeference',
   'cameras',
+  'masks',
   'review',
 ];
 

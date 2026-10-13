@@ -6,6 +6,7 @@ import EditShapeFile from './EditShapeFile';
 import DefineTransects from './DefineTransects';
 import EditInformation from './EditInformation';
 import EditCameras from './EditCameras';
+import EditMasks from './EditMasks';
 import AdvancedOptions from './AdvancedOptions';
 import DeleteImages from './DeleteImages';
 import Logs from './Logs';
@@ -35,6 +36,9 @@ export default function EditSurveyModal({
           </Tab>
           <Tab label='Edit Cameras'>
             <EditCameras key={project.id} projectId={project.id} organizationId={project.organizationId} />
+          </Tab>
+          <Tab label='Masks'>
+            <EditMasks key={project.id} projectId={project.id} />
           </Tab>
           <Tab label='Edit Shape File'>
             <EditShapeFile key={project.id} projectId={project.id} organizationId={project.organizationId} />

@@ -7,6 +7,12 @@ import type {
 } from './types/LaunchTask';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from './utils';
+import {
+  countMaskRegions,
+  isPointMasked,
+  parseCameraMasks,
+  type CameraMasks,
+} from './types/CameraMask';
 
 export const LEGACY_STORMFLY_BOX_SIZE = 64;
 
@@ -83,6 +89,53 @@ export function useLaunchTask(
     };
     recoveredLegacyStormflyCount: number;
   };
+
+  async function filterMaskedLocations(
+    locations: LocationWithConfidence[],
+    onProgress?: (message: string) => void
+  ): Promise<LocationWithConfidence[]> {
+    if (locations.length === 0) return locations;
+    const cameras = await fetchAllPaginatedResults(
+      client.models.Camera.camerasByProjectId,
+      {
+        projectId: options.projectId,
+        selectionSet: ['id', 'masks'] as const,
+      }
+    );
+    const masksByCamera = new Map<string, CameraMasks>();
+    for (const camera of cameras) {
+      const masks = parseCameraMasks(camera.masks);
+      if (countMaskRegions(masks) > 0) masksByCamera.set(camera.id, masks);
+    }
+    if (masksByCamera.size === 0) return locations;
+
+    onProgress?.('Applying camera masks...');
+    const images = await fetchAllPaginatedResults(
+      client.models.Image.imagesByProjectId,
+      {
+        projectId: options.projectId,
+        limit: 10000,
+        selectionSet: ['id', 'cameraId', 'width', 'height'] as const,
+      }
+    );
+    const imageById = new Map(images.map((image) => [image.id, image]));
+    const kept = locations.filter((location) => {
+      const image = imageById.get(location.imageId);
+      const masks = image?.cameraId
+        ? masksByCamera.get(image.cameraId)
+        : undefined;
+      return !(
+        image &&
+        isPointMasked(masks, location.x, location.y, image.width, image.height)
+      );
+    });
+    if (kept.length < locations.length) {
+      onProgress?.(
+        `Discarded ${locations.length - kept.length} detections inside camera masks`
+      );
+    }
+    return kept;
+  }
 
   async function queryLocations(
     locationSetId: string,
@@ -344,6 +397,14 @@ export function useLaunchTask(
           onProgress?.(`Filtered to ${allLocationsWithConfidence.length} locations matching ${launchImageIds.length} image IDs`);
         }
 
+        const beforeMaskFilter = allLocationsWithConfidence.length;
+        allLocationsWithConfidence = await filterMaskedLocations(
+          allLocationsWithConfidence,
+          onProgress
+        );
+        const maskedLocationCount =
+          beforeMaskFilter - allLocationsWithConfidence.length;
+
         // Filter out locations that already have annotations within their bounds
         let annotatedLocationCount = 0;
         if (options.skipLocationWithAnnotations && allAnnotations.length > 0) {
@@ -402,6 +463,9 @@ export function useLaunchTask(
                 : null,
               imageFilteredLocationCount > 0
                 ? `${imageFilteredLocationCount} outside the selected images`
+                : null,
+              maskedLocationCount > 0
+                ? `${maskedLocationCount} inside camera masks`
                 : null,
               annotatedLocationCount > 0
                 ? `${annotatedLocationCount} with existing annotations`
