@@ -1,5 +1,5 @@
 import { Button, Form } from 'react-bootstrap';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import { GlobalContext, UserContext } from '../Context';
 import { useContext, useEffect } from 'react';
@@ -9,7 +9,6 @@ import MyTable from '../Table';
 import { useUsers } from '../apiInterface';
 import { fetchAllPaginatedResults } from '../utils';
 import { FilesUploadForm, UploadWizardStep } from '../FilesUploadComponent';
-import { saveShapefileForProject } from '../utils/shapefileUtils';
 import { logAdminAction } from '../utils/adminActionLogger';
 import StepIndicator from './new-survey/StepIndicator';
 
@@ -17,6 +16,8 @@ const WIZARD_STEPS = [
   'Survey Details',
   'Images',
   'Location Data',
+  'Survey Area',
+  'Filter Images',
   'Cameras',
   'Masks',
   'Review & Create',
@@ -28,6 +29,8 @@ const CORE_STEPS: UploadWizardStep[] = [
   'none',
   'images',
   'georeference',
+  'surveyArea',
+  'filter',
   'cameras',
   'masks',
   'review',
@@ -79,12 +82,13 @@ export default function NewSurveyModal({
   >({});
   const [loading, setLoading] = useState(false);
   const [uploadSubmitFn, setUploadSubmitFn] = useState<
-    ((projectId: string) => Promise<void>) | null
+    ((projectId: string) => Promise<unknown>) | null
   >(null);
+  // Set once the survey exists, so a retried upload does not create another.
+  const createdProjectIdRef = useRef<string | null>(null);
   const [gpsReady, setGpsReady] = useState(false);
   const [imagesReady, setImagesReady] = useState(false);
-  const [shapefileLatLngs, setShapefileLatLngs] =
-    useState<[number, number][]>();
+  const [locationReady, setLocationReady] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [furthestIndex, setFurthestIndex] = useState(0);
 
@@ -97,6 +101,8 @@ export default function NewSurveyModal({
       case 1:
         return imagesReady;
       case 2:
+        return locationReady;
+      case 4:
         return gpsReady;
       default:
         return true;
@@ -113,8 +119,43 @@ export default function NewSurveyModal({
     setFurthestIndex((prev) => Math.max(prev, next));
   };
 
+  async function startUpload(projectId: string) {
+    if (!organization) return;
+    setLoading(true);
+    createdProjectIdRef.current = projectId;
+
+    if (uploadSubmitFn && (await uploadSubmitFn(projectId)) === false) {
+      setLoading(false);
+      return;
+    }
+
+    // Create an empty tiled location set for global tiles
+    const { data: tiledLocationSet } = await client.models.LocationSet.create({
+      name: `${name} - Tiles`,
+      projectId,
+      description: JSON.stringify({ mode: 'tiled', global: true }),
+      locationCount: 0,
+      group: organization.value,
+    });
+
+    if (tiledLocationSet?.id) {
+      // Update project with the tiled location set ID
+      await client.models.Project.update({
+        id: projectId,
+        tiledLocationSetId: tiledLocationSet.id,
+      });
+    }
+
+    setLoading(false);
+    showModal(null);
+  }
+
   async function handleSave() {
     if (!organization) return;
+    if (createdProjectIdRef.current) {
+      await startUpload(createdProjectIdRef.current);
+      return;
+    }
     if (projects.includes(name.toLowerCase())) {
       alert('A project with this name already exists');
       return;
@@ -229,34 +270,7 @@ export default function NewSurveyModal({
       projectId: project.id,
     });
 
-    if (uploadSubmitFn) {
-      await uploadSubmitFn(project.id);
-    }
-
-    // If a shapefile was provided during upload, save it to the project now
-    if (shapefileLatLngs && shapefileLatLngs.length > 0) {
-      await saveShapefileForProject(client, project.id, shapefileLatLngs, organization.value);
-    }
-
-    // Create an empty tiled location set for global tiles
-    const { data: tiledLocationSet } = await client.models.LocationSet.create({
-      name: `${name} - Tiles`,
-      projectId: project.id,
-      description: JSON.stringify({ mode: 'tiled', global: true }),
-      locationCount: 0,
-      group: organization.value,
-    });
-
-    if (tiledLocationSet?.id) {
-      // Update project with the tiled location set ID
-      await client.models.Project.update({
-        id: project.id,
-        tiledLocationSetId: tiledLocationSet.id,
-      });
-    }
-
-    setLoading(false);
-    showModal(null);
+    await startUpload(project.id);
   }
 
   useEffect(() => {
@@ -330,6 +344,7 @@ export default function NewSurveyModal({
       setAddPermissionExceptions(false);
       setPermissionExceptions([]);
       setUploadSubmitFn(null);
+      createdProjectIdRef.current = null;
       setStepIndex(0);
       setFurthestIndex(0);
       setImagesReady(false);
@@ -537,7 +552,7 @@ export default function NewSurveyModal({
             setGpsDataReady={setGpsReady}
             setImagesReady={setImagesReady}
             currentStep={CORE_STEPS[stepIndex]}
-            onShapefileParsed={(latLngs) => setShapefileLatLngs(latLngs)}
+            setLocationReady={setLocationReady}
             summaryDetails={[
               { label: 'Survey name', value: name.trim() || 'Not entered' },
               {

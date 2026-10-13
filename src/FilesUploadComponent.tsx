@@ -26,7 +26,7 @@ import {
 } from './upload/altitudeFilter.ts';
 import { planCameraWrite } from './upload/core/cameras.ts';
 import { sampleSuccessfulScans } from './upload/sampleScan.ts';
-import type { UploadBackend } from './upload/core/types.ts';
+import type { UploadBackend, UploadMetadata } from './upload/core/types.ts';
 import {
   downloadFailedImagesCsv,
   failedImagesCsvName,
@@ -80,6 +80,19 @@ import OrientationReview, {
   OrientationCameraGroup,
 } from './survey/new-survey/OrientationReview';
 import StepIndicator from './survey/new-survey/StepIndicator';
+import SurveyAreaEditor, { type AreaPoint } from './survey/SurveyAreaEditor';
+import {
+  EMPTY_AREA,
+  outsideAreaKeys,
+  pruneOutsideArea,
+  ringAreaKm2,
+  type SurveyArea,
+} from './survey/new-survey/surveyArea';
+import {
+  clearAreaDerivedResults,
+  loadSurveyArea,
+  saveSurveyArea,
+} from './utils/shapefileUtils';
 
 // Configure a dedicated storage instance for file paths
 const fileStore = localforage.createInstance({
@@ -104,6 +117,8 @@ interface FilesUploadComponentProps {
 export type UploadWizardStep =
   | 'images'
   | 'georeference'
+  | 'surveyArea'
+  | 'filter'
   | 'cameras'
   | 'masks'
   | 'review'
@@ -120,7 +135,10 @@ interface FilesUploadBaseProps {
   setReadyToSubmit: React.Dispatch<React.SetStateAction<boolean>>;
   setGpsDataReady?: React.Dispatch<React.SetStateAction<boolean>>;
   newProject?: boolean;
-  onShapefileParsed?: (latLngs: [number, number][]) => void;
+  /** True when continuing a stale upload, where the saved area may be edited. */
+  resumingUpload?: boolean;
+  /** Signals when every image has a position, before any filtering. */
+  setLocationReady?: React.Dispatch<React.SetStateAction<boolean>>;
   /**
    * Wizard step whose section is visible. Undefined renders all sections at
    * once (legacy single-page layout). State lives here regardless of the
@@ -188,6 +206,8 @@ type NormalizedGps = {
   alt?: number;
 };
 
+const NO_AREA_KEYS = new Set<string>();
+
 const isFiniteWithinRange = (
   value: unknown,
   min: number,
@@ -207,7 +227,8 @@ export function FileUploadCore({
   setReadyToSubmit,
   setGpsDataReady,
   newProject = true,
-  onShapefileParsed,
+  resumingUpload = false,
+  setLocationReady,
   project,
   currentStep,
   setImagesReady,
@@ -320,6 +341,18 @@ export function FileUploadCore({
   const [mapRemovedKeys, setMapRemovedKeys] = useState<Set<string>>(
     () => new Set()
   );
+  const [surveyArea, setSurveyArea] = useState<SurveyArea>(EMPTY_AREA);
+  const [areaLocked, setAreaLocked] = useState(!newProject);
+  const [areaDirty, setAreaDirty] = useState(false);
+  const [loadingArea, setLoadingArea] = useState(!newProject);
+  const areaSaveAttemptedRef = useRef(false);
+  const [areaLoadFailed, setAreaLoadFailed] = useState(false);
+  const [areaLoadAttempt, setAreaLoadAttempt] = useState(0);
+  // An area that has not been restored must not let unfiltered images through.
+  const areaPending = loadingArea || areaLoadFailed;
+  const [trimToBoundary, setTrimToBoundary] = useState(true);
+  const [trimMarginInput, setTrimMarginInput] = useState('0');
+  const trimMarginM = Math.max(0, Number(trimMarginInput) || 0);
   const [aglResult, setAglResult] = useState<{
     rows: CsvFile;
     aglByRow: Map<GpsRow, number>;
@@ -389,6 +422,47 @@ export function FileUploadCore({
     `${Math.round(
       altitudeFilterUnit === 'ft' ? meters / METERS_PER_FOOT : meters
     )} ${altitudeFilterUnit}`;
+
+  const areaOutsideKeys = useMemo(
+    () =>
+      trimToBoundary && fullCsvData
+        ? outsideAreaKeys(
+            fullCsvData,
+            surveyArea.boundary,
+            trimMarginM,
+            gpsRowKey
+          )
+        : NO_AREA_KEYS,
+    [trimToBoundary, fullCsvData, surveyArea.boundary, trimMarginM]
+  );
+  const areaPoints = useMemo<AreaPoint[]>(
+    () => [
+      ...existingImagePoints.map(
+        (point) => ({ ...point, state: 'uploaded' }) as AreaPoint
+      ),
+      ...(fullCsvData ?? []).map(
+        (row) =>
+          ({
+            lat: row.lat,
+            lng: row.lng,
+            state: areaOutsideKeys.has(gpsRowKey(row)) ? 'skipped' : 'upload',
+          }) as AreaPoint
+      ),
+    ],
+    [existingImagePoints, fullCsvData, areaOutsideKeys]
+  );
+  const imageTally = useMemo(() => {
+    const placed = (row: { lat: number; lng: number }) =>
+      Number.isFinite(row.lat) && Number.isFinite(row.lng);
+    const total = (fullCsvData ?? []).filter(placed).length;
+    const kept = (csvData?.data ?? []).filter(placed).length;
+    const outside = areaOutsideKeys.size;
+    return { total, kept, outside, filtered: Math.max(0, total - outside - kept) };
+  }, [fullCsvData, csvData, areaOutsideKeys]);
+  const handleAreaChange = useCallback((area: SurveyArea) => {
+    setSurveyArea(area);
+    setAreaDirty(true);
+  }, []);
 
   // State for user-defined column mapping phase
   const [headerFields, setHeaderFields] = useState<string[] | null>(null);
@@ -1213,6 +1287,43 @@ export function FileUploadCore({
     };
   }, [client, project?.id, newProject]);
 
+  useEffect(() => {
+    if (newProject || !project?.id) {
+      setLoadingArea(false);
+      return;
+    }
+    const projectId = project.id;
+    let cancelled = false;
+    setLoadingArea(true);
+    setAreaLoadFailed(false);
+    Promise.all([
+      loadSurveyArea(client, projectId),
+      (metadataStore.getItem(projectId) as Promise<UploadMetadata | null>).catch(
+        () => null
+      ),
+    ])
+      .then(([area, metadata]) => {
+        if (cancelled) return;
+        setSurveyArea(area);
+        setAreaDirty(false);
+        setAreaLocked(true);
+        if (metadata?.areaTrim) {
+          setTrimToBoundary(metadata.areaTrim.enabled);
+          setTrimMarginInput(String(metadata.areaTrim.marginM));
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load survey area:', err);
+        if (!cancelled) setAreaLoadFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingArea(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, project?.id, newProject, areaLoadAttempt]);
+
   const handleFileInputChange = (files: File[]) => {
     if (files) {
       setScannedFiles(Array.from(files));
@@ -1749,10 +1860,28 @@ export function FileUploadCore({
   ]);
 
   useEffect(() => {
+    if (setLocationReady) {
+      setLocationReady(
+        !scanningEXIF &&
+          !loadingExistingImages &&
+          hasValidGpsForAllImages &&
+          Boolean(fullCsvData && fullCsvData.length > 0)
+      );
+    }
+  }, [
+    setLocationReady,
+    scanningEXIF,
+    loadingExistingImages,
+    hasValidGpsForAllImages,
+    fullCsvData,
+  ]);
+
+  useEffect(() => {
     if (setGpsDataReady) {
       setGpsDataReady(
         !scanningEXIF &&
         !loadingExistingImages &&
+        !areaPending &&
         hasValidGpsForAllImages &&
         !altitudeFilterBlocking &&
         Boolean(csvData && csvData.data.length > 0)
@@ -1762,6 +1891,7 @@ export function FileUploadCore({
     setGpsDataReady,
     scanningEXIF,
     loadingExistingImages,
+    areaPending,
     hasValidGpsForAllImages,
     altitudeFilterBlocking,
     csvData,
@@ -1770,12 +1900,14 @@ export function FileUploadCore({
   useEffect(() => {
     const hasData =
       !loadingExistingImages &&
+      !areaPending &&
       hasValidGpsForAllImages &&
       !altitudeFilterBlocking &&
       Boolean(csvData && csvData.data.length > 0);
     setReadyToSubmit(hasData);
   }, [
     loadingExistingImages,
+    areaPending,
     hasValidGpsForAllImages,
     altitudeFilterBlocking,
     csvData,
@@ -1865,6 +1997,27 @@ export function FileUploadCore({
         typeof proj?.organizationId === 'string'
           ? proj.organizationId
           : undefined;
+
+      try {
+        if (newProject) {
+          // A failed attempt may have saved part of an area since cleared.
+          const hasShapes =
+            surveyArea.boundary !== null || surveyArea.exclusions.length > 0;
+          if (hasShapes || areaSaveAttemptedRef.current) {
+            areaSaveAttemptedRef.current = true;
+            await saveSurveyArea(client, projectId, surveyArea, organizationId);
+          }
+        } else if (areaDirty) {
+          await saveSurveyArea(client, projectId, surveyArea, organizationId);
+          await clearAreaDerivedResults(client, projectId);
+        }
+      } catch (err) {
+        console.error('Failed to save survey area:', err);
+        alert(
+          'The survey area could not be saved, so the upload was not started. Please try again.'
+        );
+        return false;
+      }
 
       const allCameras: Schema['Camera']['type'][] = [];
 
@@ -2055,8 +2208,17 @@ export function FileUploadCore({
       }
 
       // Merge stored manifest entries so retry/resume keeps prior metadata.
-      const existingStoredImages =
+      const storedImages =
         ((await fileStore.getItem(projectId)) as typeof images) ?? [];
+      // A resumed upload must not re-queue images the area now skips.
+      const existingStoredImages = trimToBoundary
+        ? pruneOutsideArea(
+            storedImages,
+            surveyArea.boundary,
+            trimMarginM,
+            existingImagePathSet
+          )
+        : storedImages;
       const newPaths = new Set(images.map((img) => img.originalPath));
       const merged = [
         ...existingStoredImages.filter(
@@ -2081,7 +2243,8 @@ export function FileUploadCore({
         model: model.value,
         folderCameraMapping: useFolderCameraMapping ? folderCameraMapping : {},
         rotations: activeRotations,
-      });
+        areaTrim: { enabled: trimToBoundary, marginM: trimMarginM },
+      } satisfies UploadMetadata);
 
       // Save the handle so reload resume can avoid another folder picker.
       if (directoryHandle) {
@@ -2137,6 +2300,12 @@ export function FileUploadCore({
       directoryHandle,
       useFolderCameraMapping,
       folderCameraMapping,
+      newProject,
+      surveyArea,
+      areaDirty,
+      trimToBoundary,
+      trimMarginM,
+      existingImagePathSet,
     ]
   );
 
@@ -2545,8 +2714,9 @@ export function FileUploadCore({
       ) {
         return false;
       }
-      if (mapRemovedKeys.size > 0 && mapRemovedKeys.has(gpsRowKey(row))) {
-        return false;
+      if (mapRemovedKeys.size > 0 || areaOutsideKeys.size > 0) {
+        const key = gpsRowKey(row);
+        if (mapRemovedKeys.has(key) || areaOutsideKeys.has(key)) return false;
       }
       if (!filterByTime) return true;
       if (row.timestamp === undefined) return false;
@@ -2571,6 +2741,7 @@ export function FileUploadCore({
     altitudeBand,
     aglByRow,
     mapRemovedKeys,
+    areaOutsideKeys,
   ]);
 
   // The model selector lives on the review step in wizard mode.
@@ -3032,7 +3203,215 @@ export function FileUploadCore({
       )}
       {csvData && (
         <>
-          {stepVisited('georeference') && (
+          <div className='mt-3'>
+            {invalidGpsFiles.length > 0 && (() => {
+              const sample = invalidGpsFiles.slice(0, 5);
+              const plural = invalidGpsFiles.length === 1 ? '' : 's';
+              const examplePlural = sample.length === 1 ? '' : 's';
+              return (
+                <div
+                  className={`alert ${
+                    skipImagesWithoutGps ? 'alert-warning' : 'alert-danger'
+                  } mb-2`}
+                >
+                  <div>
+                    Missing GPS coordinates for {invalidGpsFiles.length} image
+                    {plural}. Example{examplePlural}: {sample.join(', ')}
+                  </div>
+                  <Form.Check
+                    type='checkbox'
+                    id='skip-images-without-gps'
+                    className='mt-2'
+                    label={`Skip ${invalidGpsFiles.length} image${plural} without GPS data and continue`}
+                    checked={skipImagesWithoutGps}
+                    onChange={(e) =>
+                      setSkipImagesWithoutGps(e.target.checked)
+                    }
+                  />
+                </div>
+              );
+            })()}
+            {(invalidGpsFiles.length === 0 || skipImagesWithoutGps) && (() => {
+              let message = '';
+              const hasTimestampData =
+                csvData &&
+                fullCsvData &&
+                fullCsvData.some((row) => row.timestamp);
+              if (associateByTimestamp || hasTimestampData) {
+                const csvRange = minMaxOf(
+                  (fullCsvData ?? csvData.data).map((row) => row.timestamp || 0)
+                );
+                const csvMin = csvRange?.min ?? 0;
+                const csvMax = csvRange?.max ?? 0;
+                if (csvRange) {
+                  const formatTimestamp = (timestamp: number) =>
+                    new Date(timestamp).toLocaleString(undefined, {
+                      timeZone: 'UTC',
+                    }) + ' UTC';
+                  if (csvMin < minTimestamp || csvMax > maxTimestamp) {
+                    message = `Timestamp mismatch: CSV timestamps (${formatTimestamp(
+                      csvMin
+                    )} - ${formatTimestamp(
+                      csvMax
+                    )}) are outside the image timestamps range.`;
+                  } else {
+                    message = `Timestamp range valid: CSV timestamps (${formatTimestamp(
+                      csvMin
+                    )} - ${formatTimestamp(
+                      csvMax
+                    )}) are within the image timestamps range.`;
+                  }
+                }
+              } else {
+                const total = filteredImageFiles.length;
+                if (total > 0) {
+                  const matched = filteredImageFiles.filter((file) =>
+                    csvIndex.byFilepath.has(
+                      file.webkitRelativePath.toLowerCase()
+                    )
+                  ).length;
+                  const percent = Math.round((matched / total) * 100);
+                  message = `${percent}% of image files have corresponding CSV file paths.`;
+                } else {
+                  message = `No image files available for CSV file path matching.`;
+                }
+              }
+              const hasData = (fullCsvData ?? csvData.data).length > 0;
+              const alertClass = hasData ? 'alert-info' : 'alert-danger';
+              const displayMessage = hasData
+                ? message
+                : 'No matching GPS data for selected images.';
+              return (
+                <div className={`alert ${alertClass} mb-0`}>
+                  {displayMessage}
+                </div>
+              );
+            })()}
+          </div>
+        </>
+      )}
+      </div>
+      <div className={sectionClass('surveyArea')}>
+        {loadingArea ? (
+          <div className='d-flex align-items-center gap-2'>
+            <Spinner animation='border' size='sm' />
+            Loading survey area
+          </div>
+        ) : areaLoadFailed ? (
+          <div className='alert alert-danger mb-0 d-flex align-items-center gap-2'>
+            <span className='flex-grow-1'>
+              The survey&apos;s saved area could not be loaded. The upload
+              cannot continue without it.
+            </span>
+            <Button
+              size='sm'
+              variant='dark'
+              onClick={() => setAreaLoadAttempt((attempt) => attempt + 1)}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : (
+          stepVisited('surveyArea') && (
+            <>
+              <Form.Text className='d-block mt-0' style={{ fontSize: 12 }}>
+                Optional. The boundary is the area the survey covers and
+                exclusion zones are deducted from it when computing results.
+                {newProject
+                  ? ' You can also set or change it later under Edit Survey.'
+                  : ''}
+              </Form.Text>
+              {!newProject && !resumingUpload && (
+                <div className='alert alert-info mb-0'>
+                  This is the survey&apos;s saved area. To change it, use the
+                  Edit Shape File tab under Edit Survey.
+                </div>
+              )}
+              {resumingUpload && areaLocked && (
+                <div className='alert alert-info mb-0 d-flex align-items-center gap-2'>
+                  <span className='flex-grow-1'>
+                    The survey area was restored from the survey, so you can
+                    continue to the next step.
+                  </span>
+                  <Button
+                    size='sm'
+                    variant='dark'
+                    onClick={() => setAreaLocked(false)}
+                  >
+                    Unlock to edit
+                  </Button>
+                </div>
+              )}
+              {resumingUpload && !areaLocked && (
+                <div className='alert alert-warning mb-0'>
+                  Changes only affect which of the remaining images are
+                  uploaded. Images already uploaded outside a new boundary stay
+                  until you remove them under Edit Survey, and saving a changed
+                  area clears the survey&apos;s strata and results.
+                </div>
+              )}
+              <SurveyAreaEditor
+                value={surveyArea}
+                onChange={handleAreaChange}
+                points={areaPoints}
+                locked={areaLocked}
+              >
+                {surveyArea.boundary && (
+                  <div className='d-flex flex-column gap-1 mt-2'>
+                    <Form.Check
+                      type='switch'
+                      id='trim-to-survey-area'
+                      label='Skip images outside the boundary'
+                      checked={trimToBoundary}
+                      onChange={(e) => setTrimToBoundary(e.target.checked)}
+                    />
+                    {trimToBoundary && (
+                      <div className='d-flex align-items-center gap-2'>
+                        <label className='mb-0' htmlFor='survey-area-margin'>
+                          Keep images within
+                        </label>
+                        <input
+                          type='number'
+                          id='survey-area-margin'
+                          className='form-control'
+                          style={{ width: '90px' }}
+                          min={0}
+                          value={trimMarginInput}
+                          onChange={(e) => setTrimMarginInput(e.target.value)}
+                        />
+                        <span>m of it</span>
+                      </div>
+                    )}
+                    <span className='text-muted' style={{ fontSize: 12 }}>
+                      {areaOutsideKeys.size} of {imageTally.total} images will
+                      not be uploaded.
+                    </span>
+                    {imageTally.total > 0 &&
+                      areaOutsideKeys.size >= imageTally.total && (
+                        <div className='alert alert-danger mb-0 p-2'>
+                          Every image falls outside this boundary. Adjust the
+                          boundary or switch the skip off.
+                        </div>
+                      )}
+                  </div>
+                )}
+              </SurveyAreaEditor>
+            </>
+          )
+        )}
+      </div>
+      <div className={sectionClass('filter')}>
+      {csvData && (
+        <>
+          {areaOutsideKeys.size > 0 && (
+            <div className='alert alert-info mb-0'>
+              {areaOutsideKeys.size} image
+              {areaOutsideKeys.size === 1 ? '' : 's'} outside the survey area{' '}
+              {areaOutsideKeys.size === 1 ? 'is' : 'are'} already skipped.
+              Change this in the Survey Area step.
+            </div>
+          )}
+          {stepVisited('filter') && (
             <GPSSubset
               gpsData={csvData.data}
               imageFiles={imageFiles}
@@ -3041,19 +3420,36 @@ export function FileUploadCore({
                   nextMapRemovedKeys(prev, csvData.data, visibleRows)
                 );
               }}
-              onShapefileParsed={onShapefileParsed}
               existingImages={existingImagePoints}
+              allPoints={fullCsvData}
+              outsideAreaKeys={areaOutsideKeys}
+              area={surveyArea}
             />
           )}
-          <div className='mt-2 mb-2'>
-            <strong>Images to upload:</strong>{' '}
-            {
-              csvData.data.filter(
-                (point) =>
-                  Number.isFinite(point.lat) && Number.isFinite(point.lng)
-              ).length
-            }
+          <div className='border border-dark p-2 mt-2 mb-2'>
+            <div className='d-flex justify-content-between'>
+              <span>Images with a position</span>
+              <span>{imageTally.total}</span>
+            </div>
+            <div className='d-flex justify-content-between'>
+              <span>Outside the survey area</span>
+              <span>{imageTally.outside}</span>
+            </div>
+            <div className='d-flex justify-content-between'>
+              <span>Removed by filters</span>
+              <span>{imageTally.filtered}</span>
+            </div>
+            <div className='d-flex justify-content-between fw-bold'>
+              <span>Images to upload</span>
+              <span>{imageTally.kept}</span>
+            </div>
           </div>
+          {imageTally.kept === 0 && (
+            <div className='alert alert-danger mb-0'>
+              No images are left to upload. Relax the filters or the survey
+              area to continue.
+            </div>
+          )}
           {(associateByTimestamp ||
             (csvData &&
               fullCsvData &&
@@ -3276,91 +3672,6 @@ export function FileUploadCore({
               </>
             )}
           </Form.Group>
-          <div className='mt-3'>
-            {invalidGpsFiles.length > 0 && (() => {
-              const sample = invalidGpsFiles.slice(0, 5);
-              const plural = invalidGpsFiles.length === 1 ? '' : 's';
-              const examplePlural = sample.length === 1 ? '' : 's';
-              return (
-                <div
-                  className={`alert ${
-                    skipImagesWithoutGps ? 'alert-warning' : 'alert-danger'
-                  } mb-2`}
-                >
-                  <div>
-                    Missing GPS coordinates for {invalidGpsFiles.length} image
-                    {plural}. Example{examplePlural}: {sample.join(', ')}
-                  </div>
-                  <Form.Check
-                    type='checkbox'
-                    id='skip-images-without-gps'
-                    className='mt-2'
-                    label={`Skip ${invalidGpsFiles.length} image${plural} without GPS data and continue`}
-                    checked={skipImagesWithoutGps}
-                    onChange={(e) =>
-                      setSkipImagesWithoutGps(e.target.checked)
-                    }
-                  />
-                </div>
-              );
-            })()}
-            {(invalidGpsFiles.length === 0 || skipImagesWithoutGps) && (() => {
-              let message = '';
-              const hasTimestampData =
-                csvData &&
-                fullCsvData &&
-                fullCsvData.some((row) => row.timestamp);
-              if (associateByTimestamp || hasTimestampData) {
-                const csvRange = minMaxOf(
-                  csvData.data.map((row) => row.timestamp || 0)
-                );
-                const csvMin = csvRange?.min ?? 0;
-                const csvMax = csvRange?.max ?? 0;
-                if (csvRange) {
-                  const formatTimestamp = (timestamp: number) =>
-                    new Date(timestamp).toLocaleString(undefined, {
-                      timeZone: 'UTC',
-                    }) + ' UTC';
-                  if (csvMin < minTimestamp || csvMax > maxTimestamp) {
-                    message = `Timestamp mismatch: CSV timestamps (${formatTimestamp(
-                      csvMin
-                    )} - ${formatTimestamp(
-                      csvMax
-                    )}) are outside the image timestamps range.`;
-                  } else {
-                    message = `Timestamp range valid: CSV timestamps (${formatTimestamp(
-                      csvMin
-                    )} - ${formatTimestamp(
-                      csvMax
-                    )}) are within the image timestamps range.`;
-                  }
-                }
-              } else {
-                const total = filteredImageFiles.length;
-                if (total > 0) {
-                  const matched = filteredImageFiles.filter((file) =>
-                    csvIndex.byFilepath.has(
-                      file.webkitRelativePath.toLowerCase()
-                    )
-                  ).length;
-                  const percent = Math.round((matched / total) * 100);
-                  message = `${percent}% of image files have corresponding CSV file paths.`;
-                } else {
-                  message = `No image files available for CSV file path matching.`;
-                }
-              }
-              const hasData = csvData.data.length > 0;
-              const alertClass = hasData ? 'alert-info' : 'alert-danger';
-              const displayMessage = hasData
-                ? message
-                : 'No matching GPS data for selected images.';
-              return (
-                <div className={`alert ${alertClass} mb-0`}>
-                  {displayMessage}
-                </div>
-              );
-            })()}
-          </div>
         </>
       )}
       </div>
@@ -3597,6 +3908,26 @@ export function FileUploadCore({
               </li>
             )}
             <li>
+              <strong>Survey area:</strong>{' '}
+              {surveyArea.boundary
+                ? `${ringAreaKm2(surveyArea.boundary).toFixed(1)} km\u00B2 boundary`
+                : 'No boundary'}
+              {surveyArea.exclusions.length > 0
+                ? `, ${surveyArea.exclusions.length} exclusion zone${
+                    surveyArea.exclusions.length === 1 ? '' : 's'
+                  }`
+                : ''}
+              {surveyArea.boundary
+                ? trimToBoundary
+                  ? `; ${areaOutsideKeys.size} image${
+                      areaOutsideKeys.size === 1 ? '' : 's'
+                    } outside it skipped${
+                      trimMarginM > 0 ? ` (${trimMarginM} m margin)` : ''
+                    }`
+                  : '; images outside it kept'
+                : ''}
+            </li>
+            <li>
               <strong>Altitude filter:</strong>{' '}
               {altitudeBand
                 ? `${formatFilterAltitude(
@@ -3693,6 +4024,8 @@ export const formatFileSize = (bytes: number): string => {
 const MODAL_WIZARD_STEPS = [
   'Images',
   'Location Data',
+  'Survey Area',
+  'Filter Images',
   'Cameras',
   'Masks',
   'Review & Submit',
@@ -3700,6 +4033,8 @@ const MODAL_WIZARD_STEPS = [
 const MODAL_CORE_STEPS: UploadWizardStep[] = [
   'images',
   'georeference',
+  'surveyArea',
+  'filter',
   'cameras',
   'masks',
   'review',
@@ -3714,7 +4049,7 @@ export default function FilesUploadComponent({
 }: FilesUploadComponentProps) {
   const { client } = useContext(GlobalContext)!;
   const [uploadSubmitFn, setUploadSubmitFn] = useState<
-    ((projectId: string, fromStaleUpload?: boolean) => Promise<void>) | null
+    ((projectId: string, fromStaleUpload?: boolean) => Promise<unknown>) | null
   >(null);
   const [readyToSubmit, setReadyToSubmit] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -3723,12 +4058,15 @@ export default function FilesUploadComponent({
   const [furthestIndex, setFurthestIndex] = useState(0);
   const [imagesReady, setImagesReady] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
+  const [locationReady, setLocationReady] = useState(false);
 
   const stepReadyToAdvance = (index: number): boolean => {
     switch (index) {
       case 0:
         return imagesReady;
       case 1:
+        return locationReady;
+      case 3:
         return gpsReady;
       default:
         return true;
@@ -3756,9 +4094,10 @@ export default function FilesUploadComponent({
         /* noop: status update will be enforced by UploadManager */
       }
 
-      handleClose();
-
-      await uploadSubmitFn(project.id, fromStaleUpload);
+      // false means nothing started; keep the form open for another try.
+      if ((await uploadSubmitFn(project.id, fromStaleUpload)) !== false) {
+        handleClose();
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -3799,9 +4138,11 @@ export default function FilesUploadComponent({
             setOnSubmit={setUploadSubmitFn}
             setReadyToSubmit={setReadyToSubmit}
             setGpsDataReady={setGpsReady}
+            setLocationReady={setLocationReady}
             setImagesReady={setImagesReady}
             currentStep={MODAL_CORE_STEPS[stepIndex]}
             newProject={false}
+            resumingUpload={fromStaleUpload}
           />
         </Form>
       </Modal.Body>

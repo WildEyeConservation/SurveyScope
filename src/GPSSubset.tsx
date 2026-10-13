@@ -12,9 +12,6 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { booleanPointInPolygon } from '@turf/turf';
-import shp from 'shpjs';
-import { parseShapefileToLatLngs } from './utils/shapefileUtils';
-import FileInput from './FileInput';
 import GPSSubsetImageViewerModal from './GPSSubsetImageViewerModal';
 import {
   BASE_STYLE,
@@ -24,6 +21,10 @@ import {
 } from './survey/surveyMapStyle';
 import './survey/surveyMap.css';
 import { gpsRowKey } from './survey/new-survey/gpsIndex';
+import {
+  ringToPolygon,
+  type SurveyArea,
+} from './survey/new-survey/surveyArea';
 
 // Define the GPS data structure
 export interface GPSData {
@@ -39,8 +40,13 @@ export interface GPSSubsetProps {
   gpsData: GPSData[];
   onFilter: (filteredData: GPSData[]) => void;
   imageFiles?: File[];
-  onShapefileParsed?: (latLngs: [number, number][]) => void;
   existingImages?: { lat: number; lng: number }[];
+  /** Every georeferenced row, so rows filtered before mounting still draw. */
+  allPoints?: GPSData[];
+  /** Keys of rows skipped by the survey boundary; shown grey and locked. */
+  outsideAreaKeys?: Set<string>;
+  /** Survey boundary and exclusions, drawn as outlines. */
+  area?: SurveyArea;
 }
 
 // ---------------------------------------------------------------------------
@@ -54,8 +60,20 @@ const SRC_POINTS = 'gps-points';
 const LYR_POINTS = 'gps-points-circles';
 const SRC_EXISTING = 'existing-images';
 const LYR_EXISTING = 'existing-images-circles';
-const SRC_SHAPEFILE = 'shapefile';
-const LYR_SHAPEFILE = 'shapefile-line';
+const SRC_AREA = 'survey-area';
+const LYR_AREA = 'survey-area-line';
+
+const NO_KEYS = new Set<string>();
+
+const POINT_COLOR = [
+  'match',
+  ['get', 'state'],
+  'included',
+  '#ffa500',
+  'outside',
+  '#8a8a8a',
+  '#ff0000',
+] as any;
 
 type PopupProps = {
   key: string;
@@ -64,7 +82,7 @@ type PopupProps = {
   lat: number;
   lng: number;
   alt: number;
-  included: boolean;
+  state: 'included' | 'removed' | 'outside';
 };
 
 // The main component
@@ -72,16 +90,15 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   gpsData,
   onFilter,
   imageFiles,
-  onShapefileParsed,
   existingImages,
+  allPoints,
+  outsideAreaKeys = NO_KEYS,
+  area,
 }) => {
   const [showExistingImages, setShowExistingImages] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [polygonCount, setPolygonCount] = useState(0);
-  const [shapefileFC, setShapefileFC] = useState<FeatureCollection | null>(
-    null
-  );
 
   // Image modal state
   const [showImageModal, setShowImageModal] = useState(false);
@@ -139,6 +156,11 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   // everything that should be drawn (visible points orange, removed red).
   const allPointsByKey = useMemo(() => {
     const union = new Map<string, GPSData>();
+    for (const p of allPoints ?? []) {
+      if (Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+        union.set(createPointKey(p), p);
+      }
+    }
     if (initialPointsRef.current) {
       for (const [k, v] of initialPointsRef.current.entries()) {
         union.set(k, v);
@@ -151,7 +173,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       union.set(createPointKey(p), p);
     }
     return union;
-  }, [deletedPointsStack, currentFilteredPoints, createPointKey]);
+  }, [allPoints, deletedPointsStack, currentFilteredPoints, createPointKey]);
 
   // Sync visible points when parent-provided data changes (e.g., time filter).
   // This treats externally excluded points like "removed" without losing
@@ -355,7 +377,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         imgWrap.appendChild(img);
         container.appendChild(imgWrap);
 
-        if (props.included) {
+        if (props.state === 'included') {
           const viewBtn = document.createElement('button');
           viewBtn.type = 'button';
           viewBtn.className = 'btn btn-primary btn-sm w-100 mt-2';
@@ -366,18 +388,26 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       }
     }
 
-    const actionBtn = document.createElement('button');
-    actionBtn.type = 'button';
-    if (props.included) {
-      actionBtn.className = 'btn btn-danger btn-sm w-100 mt-2';
-      actionBtn.textContent = 'Remove';
-      actionBtn.onclick = () => actionsRef.current?.removeByKey(props.key);
+    if (props.state === 'outside') {
+      const note = document.createElement('div');
+      note.className = 'mt-2';
+      note.textContent =
+        'Outside the survey area. Change the boundary in the Survey Area step to include it.';
+      container.appendChild(note);
     } else {
-      actionBtn.className = 'btn btn-success btn-sm w-100 mt-2';
-      actionBtn.textContent = 'Add Back';
-      actionBtn.onclick = () => actionsRef.current?.restoreByKey(props.key);
+      const actionBtn = document.createElement('button');
+      actionBtn.type = 'button';
+      if (props.state === 'included') {
+        actionBtn.className = 'btn btn-danger btn-sm w-100 mt-2';
+        actionBtn.textContent = 'Remove';
+        actionBtn.onclick = () => actionsRef.current?.removeByKey(props.key);
+      } else {
+        actionBtn.className = 'btn btn-success btn-sm w-100 mt-2';
+        actionBtn.textContent = 'Add Back';
+        actionBtn.onclick = () => actionsRef.current?.restoreByKey(props.key);
+      }
+      container.appendChild(actionBtn);
     }
-    container.appendChild(actionBtn);
 
     popupRef.current = new maplibregl.Popup({
       closeButton: true,
@@ -394,7 +424,6 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   // GeoJSON derivations
   // ---------------------------------------------------------------------
 
-  // Full point set with an `included` flag driving the orange/red styling.
   // Rebuilt (and pushed via setData) only on explicit filter actions — cheap
   // compared to re-rendering per-point DOM markers.
   const pointsFC = useMemo<FeatureCollection>(
@@ -409,12 +438,33 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
           lat: p.lat,
           lng: p.lng,
           alt: p.alt,
-          included: visibleKeys.has(key),
+          state: visibleKeys.has(key)
+            ? 'included'
+            : outsideAreaKeys.has(key)
+              ? 'outside'
+              : 'removed',
         },
         geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
       })),
     }),
-    [allPointsByKey, visibleKeys]
+    [allPointsByKey, visibleKeys, outsideAreaKeys]
+  );
+
+  const areaFC = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: [
+        ...(area?.boundary ? [{ ring: area.boundary, role: 'boundary' }] : []),
+        ...(area?.exclusions ?? []).map((ring) => ({
+          ring,
+          role: 'exclusion',
+        })),
+      ].flatMap(({ ring, role }) => {
+        const polygon = ringToPolygon(ring);
+        return polygon ? [{ ...polygon, properties: { role } }] : [];
+      }),
+    }),
+    [area]
   );
 
   const existingFC = useMemo<FeatureCollection>(
@@ -456,13 +506,22 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     map.on('load', () => {
       map.addSource(SRC_POINTS, { type: 'geojson', data: EMPTY_FC as any });
       map.addSource(SRC_EXISTING, { type: 'geojson', data: EMPTY_FC as any });
-      map.addSource(SRC_SHAPEFILE, { type: 'geojson', data: EMPTY_FC as any });
+      map.addSource(SRC_AREA, { type: 'geojson', data: EMPTY_FC as any });
 
       map.addLayer({
-        id: LYR_SHAPEFILE,
+        id: LYR_AREA,
         type: 'line',
-        source: SRC_SHAPEFILE,
-        paint: { 'line-color': '#fd7e14', 'line-width': 2 },
+        source: SRC_AREA,
+        paint: {
+          'line-color': [
+            'match',
+            ['get', 'role'],
+            'boundary',
+            '#97009c',
+            '#ff0000',
+          ],
+          'line-width': 2,
+        },
       });
 
       // Existing survey images: faint cyan, non-interactive, under the points.
@@ -486,20 +545,10 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         source: SRC_POINTS,
         paint: {
           'circle-radius': 5,
-          'circle-color': [
-            'case',
-            ['boolean', ['get', 'included'], false],
-            '#ffa500',
-            '#ff0000',
-          ],
+          'circle-color': POINT_COLOR,
           'circle-opacity': 0.7,
           'circle-stroke-width': 1,
-          'circle-stroke-color': [
-            'case',
-            ['boolean', ['get', 'included'], false],
-            '#ffa500',
-            '#ff0000',
-          ],
+          'circle-stroke-color': POINT_COLOR,
         },
       });
 
@@ -616,15 +665,14 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     );
   }, [mapLoaded, existingFC, showExistingImages]);
 
-  // Shapefile outline overlay.
   useEffect(() => {
     if (!mapLoaded) return;
-    const src = mapRef.current?.getSource(SRC_SHAPEFILE) as
+    const src = mapRef.current?.getSource(SRC_AREA) as
       | maplibregl.GeoJSONSource
       | undefined;
     if (!src) return;
-    src.setData((shapefileFC ?? EMPTY_FC) as any);
-  }, [mapLoaded, shapefileFC]);
+    src.setData(areaFC as any);
+  }, [mapLoaded, areaFC]);
 
   // ---------------------------------------------------------------------
   // Polygon drawing / filtering
@@ -705,73 +753,6 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   );
 
   // ---------------------------------------------------------------------
-  // Shapefile upload: filter to points inside its polygons (undoable) and
-  // draw its outline.
-  // ---------------------------------------------------------------------
-  const handleShapefileSelected = useCallback(
-    async (file: File) => {
-      try {
-        const buffer = await file.arrayBuffer();
-        const geojson: any = await shp(buffer);
-        let allowedPolygons: any[] = [];
-        if (geojson.type === 'FeatureCollection') {
-          allowedPolygons = geojson.features.filter(
-            (feature: any) =>
-              feature.geometry &&
-              (feature.geometry.type === 'Polygon' ||
-                feature.geometry.type === 'MultiPolygon')
-          );
-        } else if (
-          geojson.type === 'Feature' &&
-          geojson.geometry &&
-          (geojson.geometry.type === 'Polygon' ||
-            geojson.geometry.type === 'MultiPolygon')
-        ) {
-          allowedPolygons = [geojson];
-        }
-        if (allowedPolygons.length === 0) {
-          console.warn('No valid polygon found in shapefile');
-          return;
-        }
-
-        setShapefileFC({
-          type: 'FeatureCollection',
-          features: allowedPolygons,
-        });
-
-        // Apply shapefile filter relative to the current filtered set and
-        // push the removed points onto the undo stack so this is undoable.
-        const newVisiblePoints: GPSData[] = [];
-        const removedPoints: GPSData[] = [];
-        currentPointsRef.current.forEach((point) => {
-          const inside = allowedPolygons.some((feature: any) =>
-            booleanPointInPolygon([point.lng, point.lat], feature)
-          );
-          if (inside) {
-            newVisiblePoints.push(point);
-          } else {
-            removedPoints.push(point);
-          }
-        });
-        setDeletedPointsStack((stack) => [...stack, removedPoints]);
-        setCurrentFilteredPoints(newVisiblePoints);
-        onFilter(newVisiblePoints);
-
-        // Also parse to simplified [lat,lng] list for saving later
-        try {
-          const latLngs = await parseShapefileToLatLngs(buffer);
-          if (latLngs && onShapefileParsed) onShapefileParsed(latLngs);
-        } catch (e) {
-          console.error('Error simplifying shapefile for save', e);
-        }
-      } catch (err) {
-        console.error('Error parsing shapefile', err);
-      }
-    },
-    [onFilter, onShapefileParsed]
-  );
-
-  // ---------------------------------------------------------------------
   // Image modal handlers
   // ---------------------------------------------------------------------
 
@@ -805,23 +786,6 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
 
   return (
     <>
-      <Form.Group className='mt-3'>
-        <Form.Label className='mb-0'>Upload Shapefile (Optional)</Form.Label>
-        <Form.Text className='d-block mb-1 mt-0' style={{ fontSize: '12px' }}>
-          If you have a zipped shapefile, you can upload it here. Uploading this
-          file will filter the GPS data to only include images within the
-          shapefile.
-        </Form.Text>
-        <FileInput
-          id='shapefile-file'
-          fileType='.zip'
-          onFileChange={(files) => {
-            if (files[0]) handleShapefileSelected(files[0]);
-          }}
-        >
-          <p className='mb-0'>Select Shapefile</p>
-        </FileInput>
-      </Form.Group>
       <Form.Group className='mt-3 d-flex flex-column gap-2'>
         <div>
           <Form.Label className='d-block mb-0'>
@@ -853,6 +817,12 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
                 <span style={{ color: 'red' }}>Red points</span> represent
                 images that are removed.
               </li>
+              {outsideAreaKeys.size > 0 && (
+                <li>
+                  <span style={{ color: '#8a8a8a' }}>Grey points</span> are
+                  outside the survey area and are skipped.
+                </li>
+              )}
             </ul>
           </Form.Text>
         </div>
