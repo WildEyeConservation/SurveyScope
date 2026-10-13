@@ -13,6 +13,7 @@ import {
   makeProjection,
   createImageMap,
   addImageTiles,
+  fitPxBounds,
   storedZoomToMapZoom,
   mapZoomToStoredZoom,
 } from './imageTiles';
@@ -335,21 +336,16 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     } else {
       const scale = viewBoundsScale ?? 1.5;
       const hasBounds = location?.x && location?.width && location?.height;
-      const left = hasBounds
-        ? Math.max(0, location.x - location.width * scale)
-        : 0;
-      const top = hasBounds
-        ? Math.max(0, location.y - location.height * scale)
-        : 0;
+      // Not clamped to the image, so edge locations stay centred.
+      const left = hasBounds ? location.x - location.width * scale : 0;
+      const top = hasBounds ? location.y - location.height * scale : 0;
       const right = hasBounds
-        ? Math.min(image.width, location.x + location.width * scale)
+        ? location.x + location.width * scale
         : image.width;
       const bottom = hasBounds
-        ? Math.min(image.height, location.y + location.height * scale)
+        ? location.y + location.height * scale
         : image.height;
-      map.fitBounds([px2lngLat(left, bottom), px2lngLat(right, top)], {
-        duration: 0,
-      });
+      fitPxBounds(map, projection, left, top, right, bottom);
     }
     // Reapply when a default changes while this buffered workspace is already
     // mounted. Other inputs are fixed for the lifetime of this map.
