@@ -85,7 +85,7 @@ export async function loadStoredSample(
 }
 
 export const MASK_HELP =
-  'Masked regions are ignored when images are registered to each other, and model detections inside them are discarded. Use them for static objects such as a wheel or wing strut. Click on the image to add polygon corners; click the first corner (or double-click) to finish. Drag corners to adjust and right-click a polygon to remove it.';
+  'Masked regions are ignored when images are registered to each other, and model detections inside them are discarded. Use them for static objects such as a wheel or wing strut. Choose Draw mask and click to place corners; clicks near or outside the image edge snap to it. Use Edit masks to adjust corners afterwards.';
 
 export function strideSamples<T>(items: T[], count = 7): T[] {
   if (items.length <= count) return items;
