@@ -19,6 +19,8 @@ from requests_aws4auth import AWS4Auth
 from shapely.geometry import Point, Polygon
 from torchvision.io import ImageReadMode, read_image
 
+from camera_masks import apply_camera_masks
+
 # LoFTR is trained at 528px short side; matching quality drops sharply off that.
 TARGET_SIZE = 528
 MAX_SUGGESTED_POINTS = 10
@@ -274,10 +276,14 @@ def _match_with_rotation(img0, img1, rot_k):
     return matches0, matches1, confidences, scale
 
 
-def _evaluate_attempt(body, matches0, matches1, confidences, scale):
+def _evaluate_attempt(body, matches0, matches1, confidences, scale, shapes):
     """Returns None on degenerate inputs so the rotation loop can move on cleanly."""
     if "masks" in body:
         matches0, matches1, confidences = _apply_masks(matches0, matches1, confidences, body["masks"])
+    if body.get("cameraMasks") and len(matches0) > 0:
+        matches0, matches1, confidences = apply_camera_masks(
+            matches0, matches1, confidences, body["cameraMasks"], shapes
+        )
     if len(matches0) < 8:
         return None
 
@@ -315,9 +321,10 @@ def alignImages(body, img0, img1):
     best_score = None
     best_rot = 0
 
+    shapes = (img0.shape[1:3], img1.shape[1:3])
     for rot_k in range(4):
         matches0, matches1, confidences, scale = _match_with_rotation(img0, img1, rot_k)
-        attempt = _evaluate_attempt(body, matches0, matches1, confidences, scale)
+        attempt = _evaluate_attempt(body, matches0, matches1, confidences, scale, shapes)
 
         if attempt is not None:
             if attempt["inlier_count"] > MIN_HOMOGRAPHY_INLIERS:

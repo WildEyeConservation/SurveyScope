@@ -1,5 +1,5 @@
-import shp from 'shpjs';
 import * as turf from '@turf/turf';
+import type { SurveyArea } from '../survey/new-survey/surveyArea';
 
 export type LatLngTuple = [number, number];
 
@@ -41,42 +41,12 @@ export function ensureClosedRing(
   return coords;
 }
 
-// Parse a zipped shapefile ArrayBuffer and return simplified [lat, lng] tuples
-export async function parseShapefileToLatLngs(
-  shapefileBuffer: ArrayBuffer
-): Promise<LatLngTuple[] | null> {
-  const geojson: any = await shp(shapefileBuffer);
-  const features =
-    geojson.features || (geojson.type === 'Feature' ? [geojson] : []);
-  const poly = features.find(
-    (f: any) =>
-      f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
-  );
-  if (!poly) return null;
-
-  // Extract raw [lng, lat] pairs
-  let coordsList: [number, number][] = [];
-  if (poly.geometry.type === 'Polygon') {
-    coordsList = poly.geometry.coordinates[0];
-  } else {
-    coordsList = poly.geometry.coordinates[0][0];
-  }
-
-  const closed = ensureClosedRing(coordsList);
-  const simplifiedLonLat = simplifyPolygonToRange(closed);
-  const latLngs: LatLngTuple[] = simplifiedLonLat.map(([lng, lat]) => [
-    lat,
-    lng,
-  ]);
-  return latLngs;
-}
-
 // Create or update the shapefile for a project using [lat, lng] tuples
 export async function saveShapefileForProject(
   client: any,
   projectId: string,
   latLngs: LatLngTuple[],
-  group: string
+  group: string | undefined
 ): Promise<void> {
   if (!latLngs || latLngs.length === 0) return;
 
@@ -92,16 +62,151 @@ export async function saveShapefileForProject(
   });
 
   // create vs update
-  const updateResult = (await client.models.Shapefile.shapefilesByProjectId({
-    projectId,
-  })) as any;
-  const existing = updateResult.data as Array<{ id: string }>;
+  const existing = unwrap<Array<{ id: string }>>(
+    await client.models.Shapefile.shapefilesByProjectId({ projectId })
+  );
   if (existing && existing.length > 0) {
-    await client.models.Shapefile.update({
-      id: existing[0].id,
-      coordinates: flattened,
-    });
+    unwrap(
+      await client.models.Shapefile.update({
+        id: existing[0].id,
+        coordinates: flattened,
+      })
+    );
   } else {
-    await client.models.Shapefile.create({ projectId, coordinates: flattened, group });
+    unwrap(
+      await client.models.Shapefile.create({
+        projectId,
+        coordinates: flattened,
+        group,
+      })
+    );
   }
+}
+
+// Amplify resolves failed requests with an errors array instead of rejecting.
+function unwrap<T>(result: { data?: T | null; errors?: unknown[] | null }) {
+  if (result?.errors?.length) {
+    throw new Error(
+      `Survey area request failed: ${JSON.stringify(result.errors)}`
+    );
+  }
+  return result?.data ?? null;
+}
+
+function unflatten(coordinates: (number | null)[] | null): LatLngTuple[] {
+  const flat = (coordinates ?? []).filter((n): n is number => n != null);
+  const ring: LatLngTuple[] = [];
+  for (let i = 0; i + 1 < flat.length; i += 2) {
+    ring.push([flat[i], flat[i + 1]]);
+  }
+  return ring;
+}
+
+type StoredRing = { id: string; coordinates: (number | null)[] | null };
+
+export async function loadSurveyArea(
+  client: any,
+  projectId: string
+): Promise<SurveyArea> {
+  const [boundaryResult, exclusionResult] = await Promise.all([
+    client.models.Shapefile.shapefilesByProjectId({ projectId }),
+    client.models.ShapefileExclusions.shapefileExclusionsByProjectId({
+      projectId,
+    }),
+  ]);
+  const boundary = unflatten(
+    unwrap<StoredRing[]>(boundaryResult)?.[0]?.coordinates ?? null
+  );
+  const exclusions = (unwrap<StoredRing[]>(exclusionResult) ?? [])
+    .map((item) => unflatten(item.coordinates))
+    .filter((ring) => ring.length >= 3);
+  return { boundary: boundary.length >= 3 ? boundary : null, exclusions };
+}
+
+export async function saveExclusionsForProject(
+  client: any,
+  projectId: string,
+  exclusions: LatLngTuple[][],
+  group: string | undefined
+): Promise<void> {
+  const existing =
+    unwrap<StoredRing[]>(
+      await client.models.ShapefileExclusions.shapefileExclusionsByProjectId({
+        projectId,
+      })
+    ) ?? [];
+  for (const result of await Promise.all(
+    existing.map((exclusion) =>
+      client.models.ShapefileExclusions.delete({ id: exclusion.id })
+    )
+  )) {
+    unwrap(result);
+  }
+  for (const result of await Promise.all(
+    exclusions.map((ring) =>
+      client.models.ShapefileExclusions.create({
+        projectId,
+        coordinates: ring.flat(),
+        group,
+      })
+    )
+  )) {
+    unwrap(result);
+  }
+}
+
+export async function saveSurveyArea(
+  client: any,
+  projectId: string,
+  area: SurveyArea,
+  group: string | undefined
+): Promise<void> {
+  if (area.boundary && area.boundary.length >= 3) {
+    await saveShapefileForProject(client, projectId, area.boundary, group);
+  } else {
+    const existing =
+      unwrap<StoredRing[]>(
+        await client.models.Shapefile.shapefilesByProjectId({ projectId })
+      ) ?? [];
+    for (const result of await Promise.all(
+      existing.map((shapefile) =>
+        client.models.Shapefile.delete({ id: shapefile.id })
+      )
+    )) {
+      unwrap(result);
+    }
+  }
+  await saveExclusionsForProject(client, projectId, area.exclusions, group);
+}
+
+type JollyKey = {
+  stratumId: string;
+  annotationSetId: string;
+  categoryId: string;
+};
+
+// Strata and Jolly results are derived from the area, so a new area voids them.
+export async function clearAreaDerivedResults(
+  client: any,
+  projectId: string
+): Promise<void> {
+  const [strataResult, jollyResult] = await Promise.all([
+    client.models.Stratum.strataByProjectId({ projectId }),
+    client.models.JollyResult.jollyResultsBySurveyId({ surveyId: projectId }),
+  ]);
+  await Promise.all(
+    (unwrap<Array<{ id: string }>>(strataResult) ?? []).map((stratum) =>
+      client.models.Stratum.delete({ id: stratum.id })
+    )
+  );
+  await Promise.all(
+    (unwrap<JollyKey[]>(jollyResult) ?? []).map((result) =>
+      client.models.JollyResult.delete({
+        surveyId: projectId,
+        stratumId: result.stratumId,
+        annotationSetId: result.annotationSetId,
+        categoryId: result.categoryId,
+      })
+    )
+  );
 }

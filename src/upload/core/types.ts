@@ -82,6 +82,7 @@ export interface UploadMetadata {
    * trigger physically rotates the stored JPEG before processing begins.
    */
   rotations?: PersistedCameraOrientationRotations;
+  areaTrim?: { enabled: boolean; marginM: number };
 }
 
 export interface UploadBackend {

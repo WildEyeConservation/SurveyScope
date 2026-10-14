@@ -3,6 +3,12 @@ import { env } from '$amplify/env/runImageRegistration';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { authorizeRequest } from '../shared/authorizeRequest';
+import {
+  countMaskRegions,
+  pairCameraMasks,
+  parseCameraMasks,
+  type CameraMasks,
+} from '../../../shared/cameraMasks';
 import { SendMessageBatchCommand, SQSClient } from '@aws-sdk/client-sqs';
 import type { SendMessageBatchRequestEntry } from '@aws-sdk/client-sqs';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
@@ -160,6 +166,17 @@ interface PagedList<T> {
 }
 
 type SqsEntry = SendMessageBatchRequestEntry;
+
+const camerasWithMasks = /* GraphQL */ `
+  query CamerasWithMasks($projectId: ID!, $limit: Int, $nextToken: String) {
+    camerasByProjectId(projectId: $projectId, limit: $limit, nextToken: $nextToken) {
+      items { id masks }
+      nextToken
+    }
+  }
+`;
+
+let cameraMasksById = new Map<string, CameraMasks>();
 
 interface MinimalImage {
   id: string;
@@ -352,6 +369,10 @@ async function handlePair(
         keys: [computeKey(originalPath1), computeKey(originalPath2)],
         action: 'register',
         masks: masks.length > 0 ? masks : undefined,
+        cameraMasks: pairCameraMasks(
+          [image1.cameraId, image2.cameraId],
+          cameraMasksById
+        ),
         projectId,
         group: organizationId,
         cameraPairKey: cameraPairKey ?? null,
@@ -720,6 +741,27 @@ export const handler: RunImageRegistrationHandler = async (event, context) => {
         timestamp: typeof img.timestamp === 'number' ? img.timestamp : null,
         cameraId: (img.cameraId ?? null) as string | null,
       }));
+
+    const cameras = await fetchAllPages<
+      { id: string; masks?: string | null },
+      'camerasByProjectId'
+    >(
+      (nextToken) =>
+        client.graphql({
+          query: camerasWithMasks,
+          variables: { projectId, nextToken, limit: 1000 },
+        }) as Promise<
+          GraphQLResult<{
+            camerasByProjectId: PagedList<{ id: string; masks?: string | null }>;
+          }>
+        >,
+      'camerasByProjectId'
+    );
+    cameraMasksById = new Map();
+    for (const camera of cameras) {
+      const parsed = parseCameraMasks(camera.masks);
+      if (countMaskRegions(parsed) > 0) cameraMasksById.set(camera.id, parsed);
+    }
 
     const sortedImages = images.sort(
       (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
