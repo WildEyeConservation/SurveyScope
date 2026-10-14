@@ -29,6 +29,25 @@ export function makeProjection(width: number, height: number): ImageProjection {
   return { px2lngLat, lngLat2px, maxNativeZoom, size: n };
 }
 
+// Centre the image so off-image drags stay within longitude bounds.
+export function makeCentredProjection(
+  width: number,
+  height: number
+): ImageProjection {
+  const world = makeProjection(width * 2, height * 2);
+  const dx = (world.size - width) / 2;
+  const dy = (world.size - height) / 2;
+  return {
+    ...world,
+    maxNativeZoom: makeProjection(width, height).maxNativeZoom,
+    px2lngLat: (x, y) => world.px2lngLat(x + dx, y + dy),
+    lngLat2px: (lng, lat) => {
+      const { x, y } = world.lngLat2px(lng, lat);
+      return { x: x - dx, y: y - dy };
+    },
+  };
+}
+
 const WORLD_SIZE_AT_ZOOM_0 = 512;
 
 // fitBounds clamps corners at the mercator latitude limits, shifting the centre.

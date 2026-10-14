@@ -7,15 +7,17 @@ import {
   TerraDrawPolygonMode,
   TerraDrawRenderMode,
   TerraDrawSelectMode,
+  type GeoJSONStoreFeatures,
   type TerraDrawMouseEvent,
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import {
   createImageMap,
   fitPxBounds,
-  makeProjection,
   type ImageProjection,
 } from '../../annotator/imageTiles';
+import { makeCentredProjection } from '../../annotator/imageProjection';
+import type { Polygon } from 'geojson';
 import type { MaskPolygon } from '../../types/CameraMask';
 import '../surveyMap.css';
 
@@ -50,14 +52,14 @@ const imageCorners = (
   projection.px2lngLat(0, height),
 ];
 
-function maskFeatures(draw: TerraDraw): any[] {
+function maskFeatures(draw: TerraDraw): GeoJSONStoreFeatures<Polygon>[] {
   return draw
     .getSnapshot()
     .filter(
-      (feature: any) =>
-        feature.geometry?.type === 'Polygon' &&
-        feature.properties?.mode === MODE_MASK &&
-        !feature.properties?.currentlyDrawing
+      (feature): feature is GeoJSONStoreFeatures<Polygon> =>
+        feature.geometry.type === 'Polygon' &&
+        feature.properties.mode === MODE_MASK &&
+        !feature.properties.currentlyDrawing
     );
 }
 
@@ -84,6 +86,7 @@ export default function MaskCanvas({
   const precisionRef = useRef(9);
   // The polygons the draw store currently shows; other values get re-seeded.
   const syncedRef = useRef<MaskPolygon[] | null>(null);
+  const ownChangeRef = useRef<MaskPolygon[] | null>(null);
   const valueRef = useRef(polygons);
   valueRef.current = polygons;
   const onChangeRef = useRef(onChange);
@@ -109,7 +112,7 @@ export default function MaskCanvas({
   }, [imageUrl]);
 
   const projection = useMemo(
-    () => (size ? makeProjection(size.width, size.height) : null),
+    () => (size ? makeCentredProjection(size.width, size.height) : null),
     [size]
   );
 
@@ -117,6 +120,7 @@ export default function MaskCanvas({
     const previous = valueRef.current;
     if (JSON.stringify(previous) === JSON.stringify(next)) return;
     valueRef.current = next;
+    ownChangeRef.current = next;
     setHistory((stack) => [...stack.slice(-(HISTORY_LIMIT - 1)), previous]);
     if (fromDraw) syncedRef.current = next;
     onChangeRef.current(next);
@@ -153,7 +157,6 @@ export default function MaskCanvas({
       'top-right'
     );
 
-    // Clicks outside the image, or near its edge, land on the edge.
     const snapToImage = (event: TerraDrawMouseEvent) => {
       const { x, y } = projection.lngLat2px(event.lng, event.lat);
       const screenPerPx = (512 * 2 ** map.getZoom()) / projection.size;
@@ -167,12 +170,12 @@ export default function MaskCanvas({
 
     const masksFromDraw = (draw: TerraDraw): MaskPolygon[] =>
       maskFeatures(draw).map((feature) => {
-        const ring = (feature.geometry.coordinates[0] as number[][]).map(
+        const ring: MaskPolygon = feature.geometry.coordinates[0].map(
           ([lng, lat]) => {
             const { x, y } = projection.lngLat2px(lng, lat);
             return [toFraction(x / size.width), toFraction(y / size.height)];
           }
-        ) as MaskPolygon;
+        );
         ring.pop();
         return ring;
       });
@@ -219,6 +222,7 @@ export default function MaskCanvas({
             },
           }),
           new TerraDrawSelectMode({
+            dragEventThrottle: 0,
             flags: {
               [MODE_MASK]: {
                 feature: {
@@ -271,9 +275,13 @@ export default function MaskCanvas({
       setMapLoaded(true);
     });
 
-    // Keep Escape (cancel polygon) from closing the surrounding modal.
+    // Keep Escape (cancel or deselect) from closing the surrounding modal.
     const stopEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && drawRef.current?.getModeState() === 'drawing')
+      const draw = drawRef.current;
+      if (
+        e.key === 'Escape' &&
+        (draw?.getModeState() === 'drawing' || draw?.getMode() === MODE_SELECT)
+      )
         e.stopPropagation();
     };
     container.addEventListener('keydown', stopEscape);
@@ -335,12 +343,16 @@ export default function MaskCanvas({
     const draw = drawRef.current;
     if (!mapLoaded || !draw || !projection || !size) return;
     if (syncedRef.current === polygons) return;
+    // Undo cannot step back over changes made outside the canvas.
+    if (syncedRef.current && polygons !== ownChangeRef.current) setHistory([]);
     stopTool();
-    const stale = maskFeatures(draw).map((feature) => feature.id);
+    const stale = maskFeatures(draw).flatMap(({ id }) =>
+      id === undefined ? [] : [id]
+    );
     if (stale.length) draw.removeFeatures(stale);
     const scale = 10 ** precisionRef.current;
     const round = (value: number) => Math.round(value * scale) / scale;
-    const features = polygons
+    const features: GeoJSONStoreFeatures<Polygon>[] = polygons
       .filter((polygon) => polygon.length >= 3)
       .map((polygon) => {
         const ring = polygon.map(([x, y]) =>
@@ -355,7 +367,7 @@ export default function MaskCanvas({
       });
     if (features.length) {
       const invalid = draw
-        .addFeatures(features as any)
+        .addFeatures(features)
         .filter((result) => !result.valid);
       if (invalid.length) console.error('Failed to add mask polygons', invalid);
     }
@@ -387,6 +399,7 @@ export default function MaskCanvas({
     const previous = history[history.length - 1];
     if (!previous) return;
     setHistory(history.slice(0, -1));
+    ownChangeRef.current = previous;
     onChange(previous);
   };
 

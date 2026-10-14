@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { makeProjection, pxBoundsCamera } from './imageProjection';
+import {
+  makeCentredProjection,
+  makeProjection,
+  pxBoundsCamera,
+} from './imageProjection';
 
 const projection = makeProjection(8192, 8192);
 const viewport = { width: 1024, height: 768 };
@@ -39,4 +43,12 @@ test('an empty viewport or rectangle yields no camera', () => {
     null
   );
   assert.equal(pxBoundsCamera(projection, viewport, 100, 100, 100, 100), null);
+});
+
+test('a centred projection keeps points past the image edges in range', () => {
+  const centred = makeCentredProjection(538, 463);
+  const [lng, lat] = centred.px2lngLat(-269, -231);
+  assert.ok(lng > -180 && lat < 85);
+  const { x, y } = centred.lngLat2px(...centred.px2lngLat(100, 200));
+  assert.ok(Math.abs(x - 100) < 1e-6 && Math.abs(y - 200) < 1e-6);
 });
