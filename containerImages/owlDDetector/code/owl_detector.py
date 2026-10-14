@@ -107,6 +107,53 @@ def _autocast(device, dtype):
     return nullcontext()
 
 
+def _compile_mode():
+    mode = os.environ.get('OWL_COMPILE', 'off').strip().lower()
+    if mode in ('', '0', 'false', 'no', 'off', 'none'):
+        return None
+    if mode in ('1', 'true', 'yes', 'on'):
+        return 'default'
+    return mode
+
+
+def _static_batch_stitcher():
+    import torch
+    from animaloc.eval.stitchers import HerdNet_Detection_Branch_Stitcher
+
+    class StaticBatchStitcher(HerdNet_Detection_Branch_Stitcher):
+        # Pads short batches so compiled graphs always see one input shape.
+        pad_batches = False
+
+        @torch.no_grad()
+        def _inference(self, patches):
+            self.model.eval()
+            maps = []
+            for start in range(0, len(patches), self.batch_size):
+                batch = patches[start:start + self.batch_size]
+                count = len(batch)
+                if self.pad_batches and count < self.batch_size:
+                    padding = batch.new_zeros((self.batch_size - count, *batch.shape[1:]))
+                    batch = torch.cat([batch, padding])
+                outputs = self.model(batch.to(self.device).contiguous())[0]
+                if isinstance(outputs, tuple):
+                    outputs = outputs[0]
+                maps.append(outputs[:count].clone())
+            return maps
+
+        def _process_single_image(self, image):
+            output_map = self._inference(image.unsqueeze(0))[0]
+            if self.up:
+                output_map = torch.nn.functional.interpolate(
+                    output_map,
+                    scale_factor=self.down_ratio,
+                    mode='bilinear',
+                    align_corners=True,
+                )
+            return output_map
+
+    return StaticBatchStitcher
+
+
 def _image_tensor(image):
     import numpy as np
     import torch
@@ -139,7 +186,6 @@ class OwlDDetector:
 
         import animaloc.models as model_registry
         from animaloc.eval.lmds import HerdNet_Detection_Branch_LMDS
-        from animaloc.eval.stitchers import HerdNet_Detection_Branch_Stitcher
         from animaloc.models.utils import LossWrapper, load_model
         import torch
 
@@ -160,8 +206,11 @@ class OwlDDetector:
         self._forward_seconds = 0.0
         self._forward_calls = 0
         self.last_stats = {}
+        self.compile_mode = _compile_mode()
+        if self.compile_mode:
+            model.model = torch.compile(model.model, mode=self.compile_mode, dynamic=False)
 
-        self.stitcher = HerdNet_Detection_Branch_Stitcher(
+        self.stitcher = _static_batch_stitcher()(
             model=model,
             size=_tile_size(),
             overlap=_env_int('OWL_OVERLAP', DEFAULT_OVERLAP),
@@ -171,6 +220,7 @@ class OwlDDetector:
             reduction=os.environ.get('OWL_REDUCTION', 'mean'),
             device_name=self.device,
         )
+        self.stitcher.pad_batches = bool(self.compile_mode)
         self.lmds = HerdNet_Detection_Branch_LMDS(
             up=False,
             kernel_size=(3, 3),
@@ -184,7 +234,22 @@ class OwlDDetector:
             f'device={self.device} tile={self.stitcher.size} '
             f'overlap={self.stitcher.overlap} batch={self.stitcher.batch_size} '
             f'amp={os.environ.get("OWL_AMP", "off")} '
+            f'compile={self.compile_mode or "off"} '
             f'threshold={self.threshold}',
+            flush=True,
+        )
+        if self.compile_mode:
+            self._warm_up()
+
+    def _warm_up(self):
+        import torch
+
+        patches = torch.zeros((self.stitcher.batch_size, 3, *self.stitcher.size))
+        start = time.perf_counter()
+        with torch.inference_mode(), _autocast(self.device, self.amp_dtype):
+            self.stitcher._inference(patches)
+        print(
+            f'[owl-d] compiled in {time.perf_counter() - start:.1f}s',
             flush=True,
         )
 
