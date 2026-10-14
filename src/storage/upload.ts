@@ -8,8 +8,7 @@ import {
   type StorageOperation,
 } from './operations';
 
-// Originals up to SINGLE_PUT_MAX use one presigned PUT, avoiding three extra
-// Lambda round trips; larger files use S3 multipart.
+// Single PUTs avoid multipart Lambda round trips.
 
 export const PART_SIZE = 5 * 1024 * 1024;
 export const SINGLE_PUT_MAX = 64 * 1024 * 1024;
@@ -21,6 +20,7 @@ const PART_CONCURRENCY = 4;
 const PART_URL_BATCH = 32;
 const MAX_ATTEMPTS = 4;
 const BASE_DELAY_MS = 500;
+const URL_EXPIRY_MARGIN_MS = 2 * 60 * 1000;
 
 export interface PutResult {
   status: number;
@@ -41,6 +41,8 @@ export interface UploadDependencies {
   put: PutRequest;
   sleep: (ms: number) => Promise<void>;
   singlePutMax: number;
+  /** Runs signing and PUTs in a connection slot so URLs are fresh. */
+  putSlot: <T>(task: () => Promise<T>) => Promise<T>;
 }
 
 interface SingleGrant {
@@ -160,29 +162,32 @@ async function uploadSingle(
   signal: AbortSignal,
   contentType: string
 ): Promise<void> {
-  const grant = await deps.operation<SingleGrant>(
-    PREPARE_IMAGE_UPLOAD,
-    {
-      projectId: args.projectId,
-      originalPath: args.originalPath,
-      contentType,
-      rotation: args.rotation,
-    },
-    'prepareImageUpload'
-  );
-  if (signal.aborted) throw abortError();
-  if (grant.exists) {
-    args.onProgress(args.file.size);
-    return;
-  }
-  if (!grant.url || !grant.headers) {
-    throw new Error('Missing upload authorization');
-  }
-  await putWithRetry(deps, signal, {
-    url: grant.url,
-    headers: grant.headers,
-    body: args.file,
-    onProgress: args.onProgress,
+  await deps.putSlot(async () => {
+    if (signal.aborted) throw abortError();
+    const grant = await deps.operation<SingleGrant>(
+      PREPARE_IMAGE_UPLOAD,
+      {
+        projectId: args.projectId,
+        originalPath: args.originalPath,
+        contentType,
+        rotation: args.rotation,
+      },
+      'prepareImageUpload'
+    );
+    if (signal.aborted) throw abortError();
+    if (grant.exists) {
+      args.onProgress(args.file.size);
+      return;
+    }
+    if (!grant.url || !grant.headers) {
+      throw new Error('Missing upload authorization');
+    }
+    await putWithRetry(deps, signal, {
+      url: grant.url,
+      headers: grant.headers,
+      body: args.file,
+      onProgress: args.onProgress,
+    });
   });
 }
 
@@ -223,7 +228,10 @@ async function uploadMultipart(
     args.onProgress(total);
   };
 
-  const signed = new Map<number, string>();
+  const signed = new Map<number, { url: string; expiresAt: number }>();
+  const usable = (partNumber: number) =>
+    (signed.get(partNumber)?.expiresAt ?? 0) - Date.now() >
+    URL_EXPIRY_MARGIN_MS;
   const signParts = (partNumbers: number[]) =>
     withRetry(deps, signal, async () => {
       const batch = await deps.operation<SignedParts>(
@@ -231,26 +239,28 @@ async function uploadMultipart(
         { ...base, uploadId, partNumbers },
         'signImageUploadParts'
       );
-      batch.parts.forEach((p) => signed.set(p.partNumber, p.url));
+      batch.parts.forEach((p) =>
+        signed.set(p.partNumber, { url: p.url, expiresAt: batch.expiresAt })
+      );
     });
   // Serialised so concurrent workers share one signing window.
   let signing: Promise<void> = Promise.resolve();
   const partUrl = (partNumber: number, fresh = false) => {
     const run = signing.then(async () => {
-      if (!fresh && signed.has(partNumber)) return;
+      if (!fresh && usable(partNumber)) return;
       const window: number[] = [];
       for (
         let n = partNumber;
         n <= partCount && window.length < PART_URL_BATCH;
         n++
       ) {
-        if (fresh ? n === partNumber : !signed.has(n)) window.push(n);
+        if (fresh ? n === partNumber : !usable(n)) window.push(n);
       }
       if (window.length) await signParts(window);
     });
     signing = run.catch(() => {});
     return run.then(() => {
-      const url = signed.get(partNumber);
+      const url = signed.get(partNumber)?.url;
       if (!url) throw new Error(`No upload URL for part ${partNumber}`);
       return url;
     });
@@ -264,29 +274,31 @@ async function uploadMultipart(
       Math.min(start + partSize, args.file.size)
     );
     let attempt = 0;
-    const result = await withRetry(deps, signal, async () => {
-      // Re-sign on retry in case the URL expired.
-      const url = await partUrl(partNumber, attempt++ > 0);
-      const response = await deps.put({
-        url,
-        headers: {},
-        body,
-        onProgress: (loaded) => {
-          partProgress.set(partNumber, loaded);
-          report();
-        },
-        signal,
-      });
-      if (response.status < 200 || response.status >= 300) {
-        throw new HttpError(response.status);
-      }
-      if (!response.eTag) {
-        throw new Error(
-          'S3 did not return a part ETag; check bucket CORS ExposeHeaders'
-        );
-      }
-      return response;
-    });
+    const result = await deps.putSlot(() =>
+      withRetry(deps, signal, async () => {
+        // Re-sign on retry in case the URL expired.
+        const url = await partUrl(partNumber, attempt++ > 0);
+        const response = await deps.put({
+          url,
+          headers: {},
+          body,
+          onProgress: (loaded) => {
+            partProgress.set(partNumber, loaded);
+            report();
+          },
+          signal,
+        });
+        if (response.status < 200 || response.status >= 300) {
+          throw new HttpError(response.status);
+        }
+        if (!response.eTag) {
+          throw new Error(
+            'S3 did not return a part ETag; check bucket CORS ExposeHeaders'
+          );
+        }
+        return response;
+      })
+    );
     partProgress.delete(partNumber);
     completedBytes += body.size;
     eTags.set(partNumber, result.eTag!);
@@ -331,20 +343,15 @@ async function uploadMultipart(
   }
 }
 
-// Shared across uploads so PUTs never queue inside the browser's socket pool.
-const putSlots = pLimit(S3_CONNECTIONS);
-const limitedPut: PutRequest = (request) =>
-  putSlots(() =>
-    request.signal.aborted ? Promise.reject(abortError()) : xhrPut(request)
-  );
-
 export const defaultUploadDependencies: UploadDependencies = {
   // Loaded on demand so importing this module does not configure Amplify.
   operation: async (query, variables, field) =>
     (await import('./api')).storageOperation(query, variables, field),
-  put: limitedPut,
+  put: xhrPut,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   singlePutMax: SINGLE_PUT_MAX,
+  // Shared across uploads so PUTs never queue in the browser's socket pool.
+  putSlot: pLimit(S3_CONNECTIONS),
 };
 
 export function uploadOriginal(
