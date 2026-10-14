@@ -9,7 +9,8 @@ import type { UploadStateStore } from './persistence';
 import type { DuplicateRecord, ItemFailure } from './types';
 
 const SEED_CONCURRENCY = 5;
-const UPLOAD_CONCURRENCY = 6;
+// Extra items overlap hashing and DB writes with S3 transfers.
+const UPLOAD_CONCURRENCY = 16;
 const BYTES_REPORT_INTERVAL_MS = 300;
 
 export type { ItemFailure };

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import pLimit from 'p-limit';
 import {
+  isAbortError,
   PART_SIZE,
   uploadOriginal,
   type PutResult,
@@ -72,6 +74,8 @@ function fixture(
       return result;
     },
     sleep: async () => {},
+    singlePutMax: PART_SIZE,
+    putSlot: (task) => task(),
   };
   return { deps, calls, puts };
 }
@@ -100,6 +104,26 @@ test('small originals use one signed PUT with the server-provided headers', asyn
   assert.equal(calls[0].variables.rotation, 90);
   assert.deepEqual(puts, [{ url: 'https://s3/put', size: 1024 }]);
   assert.equal(progress.at(-1), 1024);
+});
+
+test('originals up to the single-PUT limit skip multipart', async () => {
+  const { deps, calls, puts } = fixture();
+  deps.singlePutMax = PART_SIZE * 4;
+  await uploadOriginal(
+    {
+      projectId: 'p',
+      originalPath: 'photo.tif',
+      file: fileOf(PART_SIZE * 3),
+      rotation: 0,
+      onProgress: () => {},
+    },
+    deps
+  ).result;
+  assert.deepEqual(
+    calls.map((c) => c.field),
+    ['prepareImageUpload']
+  );
+  assert.equal(puts.length, 1);
 });
 
 test('large originals are split into parts, uploaded concurrently, then completed in order', async () => {
@@ -244,4 +268,90 @@ test('an original that already exists is reported complete without a transfer', 
   ).result;
   assert.equal(puts.length, 0);
   assert.equal(reported, PART_SIZE * 3);
+});
+
+test('PUTs from concurrent uploads share the slot limit', async () => {
+  const { deps, puts } = fixture();
+  const innerPut = deps.put;
+  let active = 0;
+  let peak = 0;
+  deps.putSlot = pLimit(2);
+  deps.put = async (request) => {
+    peak = Math.max(peak, ++active);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    active--;
+    return innerPut(request);
+  };
+  const upload = (size: number) =>
+    uploadOriginal(
+      {
+        projectId: 'p',
+        originalPath: 'photo.tif',
+        file: fileOf(size),
+        rotation: 0,
+        onProgress: () => {},
+      },
+      deps
+    ).result;
+  await Promise.all([upload(PART_SIZE * 3), upload(1024), upload(1024)]);
+  assert.equal(puts.length, 5);
+  assert.equal(peak, 2);
+});
+
+test('an upload cancelled while waiting for a slot is never signed or sent', async () => {
+  const { deps, calls, puts } = fixture();
+  const innerPut = deps.put;
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => (release = resolve));
+  deps.putSlot = pLimit(1);
+  deps.put = async (request) => {
+    await blocked;
+    return innerPut(request);
+  };
+  const args = {
+    projectId: 'p',
+    originalPath: 'photo.tif',
+    file: fileOf(1024),
+    rotation: 0,
+    onProgress: () => {},
+  };
+  const first = uploadOriginal(args, deps);
+  const second = uploadOriginal(args, deps);
+  second.cancel();
+  release();
+  await first.result;
+  await assert.rejects(second.result, (error: unknown) => isAbortError(error));
+  assert.equal(calls.length, 1);
+  assert.equal(puts.length, 1);
+});
+
+test('part URLs near expiry are re-signed before use', async () => {
+  const { deps, calls } = fixture();
+  const innerOperation = deps.operation;
+  deps.operation = async <T>(
+    query: string,
+    variables: Record<string, unknown>,
+    field: string
+  ): Promise<T> => {
+    const result = await innerOperation<T>(query, variables, field);
+    return field === 'signImageUploadParts'
+      ? ({ ...result, expiresAt: Date.now() + 1000 } as T)
+      : result;
+  };
+  await uploadOriginal(
+    {
+      projectId: 'p',
+      originalPath: 'photo.tif',
+      file: fileOf(PART_SIZE * 3),
+      rotation: 0,
+      onProgress: () => {},
+    },
+    deps
+  ).result;
+  assert.deepEqual(
+    calls
+      .filter((c) => c.field === 'signImageUploadParts')
+      .map((c) => c.variables.partNumbers),
+    [[1, 2, 3], [2, 3], [3]]
+  );
 });
