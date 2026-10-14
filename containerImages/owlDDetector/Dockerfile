@@ -6,6 +6,7 @@ ENV PIP_ROOT_USER_ACTION=ignore \
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      gcc \
       git \
       libgl1 \
       libglib2.0-0 \

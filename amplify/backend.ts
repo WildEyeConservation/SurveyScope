@@ -1505,6 +1505,7 @@ if (enableEcs) {
           OWL_THRESHOLD: process.env.OWL_D_THRESHOLD ?? '0.05',
           OWL_AMP: process.env.OWL_D_AMP ?? 'fp16',
           OWL_BATCH_SIZE: process.env.OWL_D_BATCH_SIZE ?? '1',
+          OWL_COMPILE: process.env.OWL_D_COMPILE ?? 'off',
           OWL_OVERLAP: process.env.OWL_D_OVERLAP ?? '160',
           OWL_BOX_SIZE: process.env.OWL_D_BOX_SIZE ?? '64',
         },
