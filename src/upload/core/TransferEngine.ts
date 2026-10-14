@@ -9,7 +9,9 @@ import type { UploadStateStore } from './persistence';
 import type { DuplicateRecord, ItemFailure } from './types';
 
 const SEED_CONCURRENCY = 5;
-const UPLOAD_CONCURRENCY = 6;
+// S3 sockets are capped in storage/upload; extra items keep hashing and
+// record writes off the transfer path so sockets never sit idle.
+const UPLOAD_CONCURRENCY = 16;
 const BYTES_REPORT_INTERVAL_MS = 300;
 
 export type { ItemFailure };

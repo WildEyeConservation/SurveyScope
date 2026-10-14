@@ -72,6 +72,7 @@ function fixture(
       return result;
     },
     sleep: async () => {},
+    singlePutMax: PART_SIZE,
   };
   return { deps, calls, puts };
 }
@@ -100,6 +101,26 @@ test('small originals use one signed PUT with the server-provided headers', asyn
   assert.equal(calls[0].variables.rotation, 90);
   assert.deepEqual(puts, [{ url: 'https://s3/put', size: 1024 }]);
   assert.equal(progress.at(-1), 1024);
+});
+
+test('originals up to the single-PUT limit skip multipart', async () => {
+  const { deps, calls, puts } = fixture();
+  deps.singlePutMax = PART_SIZE * 4;
+  await uploadOriginal(
+    {
+      projectId: 'p',
+      originalPath: 'photo.tif',
+      file: fileOf(PART_SIZE * 3),
+      rotation: 0,
+      onProgress: () => {},
+    },
+    deps
+  ).result;
+  assert.deepEqual(
+    calls.map((c) => c.field),
+    ['prepareImageUpload']
+  );
+  assert.equal(puts.length, 1);
 });
 
 test('large originals are split into parts, uploaded concurrently, then completed in order', async () => {

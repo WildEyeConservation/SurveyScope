@@ -1,3 +1,4 @@
+import pLimit from 'p-limit';
 import {
   ABORT_IMAGE_MULTIPART_UPLOAD,
   COMPLETE_IMAGE_MULTIPART_UPLOAD,
@@ -7,11 +8,13 @@ import {
   type StorageOperation,
 } from './operations';
 
-// Originals up to one part use a single presigned PUT; larger files use S3
-// multipart with the same part size, concurrency and retry that
-// aws-amplify/storage's uploadData applied.
+// Originals up to SINGLE_PUT_MAX use one presigned PUT, avoiding three extra
+// Lambda round trips; larger files use S3 multipart.
 
 export const PART_SIZE = 5 * 1024 * 1024;
+export const SINGLE_PUT_MAX = 64 * 1024 * 1024;
+// Chrome allows six HTTP/1.1 connections per host; S3 has no HTTP/2.
+const S3_CONNECTIONS = 6;
 export const MAX_FILE_SIZE = 5 * 1024 ** 4; // 5 TiB, the S3 object limit
 const MAX_PARTS = 10_000;
 const PART_CONCURRENCY = 4;
@@ -37,6 +40,7 @@ export interface UploadDependencies {
   operation: StorageOperation;
   put: PutRequest;
   sleep: (ms: number) => Promise<void>;
+  singlePutMax: number;
 }
 
 interface SingleGrant {
@@ -327,12 +331,20 @@ async function uploadMultipart(
   }
 }
 
+// Shared across uploads so PUTs never queue inside the browser's socket pool.
+const putSlots = pLimit(S3_CONNECTIONS);
+const limitedPut: PutRequest = (request) =>
+  putSlots(() =>
+    request.signal.aborted ? Promise.reject(abortError()) : xhrPut(request)
+  );
+
 export const defaultUploadDependencies: UploadDependencies = {
   // Loaded on demand so importing this module does not configure Amplify.
   operation: async (query, variables, field) =>
     (await import('./api')).storageOperation(query, variables, field),
-  put: xhrPut,
+  put: limitedPut,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  singlePutMax: SINGLE_PUT_MAX,
 };
 
 export function uploadOriginal(
@@ -345,7 +357,7 @@ export function uploadOriginal(
       throw new Error('Original image exceeds the maximum object size');
     }
     const contentType = args.file.type || 'application/octet-stream';
-    if (args.file.size <= PART_SIZE) {
+    if (args.file.size <= deps.singlePutMax) {
       await uploadSingle(args, deps, controller.signal, contentType);
     } else {
       await uploadMultipart(args, deps, controller.signal, contentType);
