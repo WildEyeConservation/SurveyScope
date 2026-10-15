@@ -114,7 +114,7 @@ export default function CameraMaskEditor({
         })}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ backgroundColor: '#000', minHeight: 200 }}>
+        <div>
           {sampleUrl ? (
             <MaskCanvas
               imageUrl={sampleUrl}
