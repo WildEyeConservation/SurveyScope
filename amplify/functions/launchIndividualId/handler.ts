@@ -6,6 +6,11 @@ import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { authorizeRequest } from '../shared/authorizeRequest';
 import { enqueuePretile } from '../shared/enqueuePretile';
 import { detectTransects } from '../shared/detectTransects';
+import {
+  isOnEffort,
+  type BoundaryStatus,
+} from '../../../shared/boundaryStatus';
+import { assignOutsideImages, includeOutsideTransect } from './outside';
 import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
 import {
   S3Client,
@@ -40,7 +45,16 @@ const updateProjectMembershipsMutation = /* GraphQL */ `
 const transectsByProjectIdQuery = /* GraphQL */ `
   query TransectsByProjectId($projectId: ID!, $limit: Int, $nextToken: String) {
     transectsByProjectId(projectId: $projectId, limit: $limit, nextToken: $nextToken) {
-      items { id }
+      items { id stratumId }
+      nextToken
+    }
+  }
+`;
+
+const strataByProjectIdQuery = /* GraphQL */ `
+  query StrataByProjectId($projectId: ID!, $limit: Int, $nextToken: String) {
+    strataByProjectId(projectId: $projectId, limit: $limit, nextToken: $nextToken) {
+      items { id offEffort }
       nextToken
     }
   }
@@ -49,7 +63,7 @@ const transectsByProjectIdQuery = /* GraphQL */ `
 const imagesByProjectIdQuery = /* GraphQL */ `
   query ImagesByProjectId($projectId: ID!, $limit: Int, $nextToken: String) {
     imagesByProjectId(projectId: $projectId, limit: $limit, nextToken: $nextToken) {
-      items { id timestamp latitude longitude cameraId transectId }
+      items { id timestamp latitude longitude cameraId transectId boundaryStatus }
       nextToken
     }
   }
@@ -157,6 +171,9 @@ type LaunchIndividualIdPayload = {
   // project has no transects yet (the lambda detects/creates them and a
   // fresh project has no completed work to skip).
   incompleteTransectIds?: string[];
+  // Whether the client found linking work among images outside the survey
+  // area. Older clients omit it.
+  includeOutside?: boolean;
   payloadS3Key?: string;
 };
 
@@ -167,6 +184,7 @@ type ProjectImageRow = {
   longitude: number | null;
   cameraId: string | null;
   transectId: string | null;
+  boundaryStatus: BoundaryStatus | null;
 };
 
 type NeighboursByImage1Result = {
@@ -282,30 +300,29 @@ async function handleLaunch(
     return { jobId: null, transectCount: 0, message: 'No annotations found' };
   }
 
-  // Does the project already have transects? (limit 1 — existence check)
-  const existingTransects = await executeGraphql<{
-    transectsByProjectId?: { items: Array<{ id: string }> };
-  }>(transectsByProjectIdQuery, { projectId, limit: 1 });
-  const hasTransects =
-    (existingTransects.transectsByProjectId?.items?.length ?? 0) > 0;
+  const images = await fetchAllProjectImages(projectId);
+  const onEffortImages = images.filter((img) =>
+    isOnEffort(img.boundaryStatus)
+  );
+  const outsideImages = images.filter(
+    (img) => !isOnEffort(img.boundaryStatus)
+  );
+  const hasTransects = onEffortImages.some((img) => img.transectId);
 
   // imageId -> transectId for every project image.
   const imageToTransect = new Map<string, string>();
-  let pendingImageUpdates = 0;
   const fanout: Array<{ imageId: string; transectId: string }> = [];
 
   if (hasTransects) {
     // Reuse existing assignment straight off Image.transectId.
-    const images = await fetchAllProjectImages(projectId);
-    for (const img of images) {
+    for (const img of onEffortImages) {
       if (img.transectId) imageToTransect.set(img.id, img.transectId);
     }
   } else {
     // Detect transects from timestamp gaps, create a synthetic stratum + the
     // transect rows, then queue the per-image transectId writes for the SQS
     // fanout consumer (a single lambda would time out on large surveys).
-    const images = await fetchAllProjectImages(projectId);
-    const assignments = detectTransects(images);
+    const assignments = detectTransects(onEffortImages);
     const transectIndexes = Array.from(
       new Set(assignments.map((a) => a.transectIndex))
     ).sort((a, b) => a - b);
@@ -338,8 +355,22 @@ async function handleLaunch(
       imageToTransect.set(a.id, transectId);
       fanout.push({ imageId: a.id, transectId });
     }
-    pendingImageUpdates = fanout.length;
   }
+
+  let outsideTransect: { id: string; fresh: boolean } | null = null;
+  if (outsideImages.length > 0) {
+    const outside = await ensureOutsideTransect(projectId, organizationId);
+    const assigned = assignOutsideImages(outsideImages, outside.transectId);
+    for (const [imageId, transectId] of assigned.imageToTransect) {
+      imageToTransect.set(imageId, transectId);
+    }
+    fanout.push(...assigned.fanout);
+    outsideTransect = {
+      id: outside.transectId,
+      fresh: outside.created || assigned.fanout.length > 0,
+    };
+  }
+  const pendingImageUpdates = fanout.length;
 
   // Transects that contain annotations of this category.
   const transectsWithAnnotations = new Set<string>();
@@ -403,6 +434,12 @@ async function handleLaunch(
   let effectiveTransectIds = workTransectIds;
   if (Array.isArray(payload.incompleteTransectIds)) {
     const allow = new Set(payload.incompleteTransectIds);
+    if (
+      outsideTransect &&
+      includeOutsideTransect(payload.includeOutside, outsideTransect.fresh)
+    ) {
+      allow.add(outsideTransect.id);
+    }
     effectiveTransectIds = workTransectIds.filter((id) => allow.has(id));
     if (effectiveTransectIds.length === 0) {
       await setProjectStatus(projectId, 'active');
@@ -469,7 +506,6 @@ async function handleLaunch(
     )
   );
 
-  // Fan out image->transect writes (only when we created transects).
   if (fanout.length > 0) {
     await fanOutTransectUpdates(fanout, jobId);
   }
@@ -543,6 +579,66 @@ async function fetchAllProjectImages(
     nextToken = page?.nextToken ?? null;
   } while (nextToken);
   return all;
+}
+
+async function fetchAllPages<T>(
+  query: string,
+  field: string,
+  projectId: string
+): Promise<T[]> {
+  const all: T[] = [];
+  let nextToken: string | null = null;
+  do {
+    const res: Record<string, { items: T[]; nextToken?: string | null }> =
+      await executeGraphql(query, { projectId, limit: 1000, nextToken });
+    all.push(...(res[field]?.items ?? []));
+    nextToken = res[field]?.nextToken ?? null;
+  } while (nextToken);
+  return all;
+}
+
+// Area edits and transect saves delete these rows.
+async function ensureOutsideTransect(
+  projectId: string,
+  organizationId: string
+): Promise<{ transectId: string; created: boolean }> {
+  const strata = await fetchAllPages<{ id: string; offEffort: boolean | null }>(
+    strataByProjectIdQuery,
+    'strataByProjectId',
+    projectId
+  );
+  let stratumId = strata.find((stratum) => stratum.offEffort)?.id;
+  if (!stratumId) {
+    const created = await executeGraphql<{ createStratum?: { id: string } }>(
+      createStratumMutation,
+      {
+        input: {
+          projectId,
+          name: 'Outside boundary',
+          offEffort: true,
+          group: organizationId,
+        },
+      }
+    );
+    stratumId = created.createStratum?.id;
+    if (!stratumId) throw new Error('Failed to create outside stratum');
+  }
+  const transects = await fetchAllPages<{ id: string; stratumId: string }>(
+    transectsByProjectIdQuery,
+    'transectsByProjectId',
+    projectId
+  );
+  const existing = transects.find(
+    (transect) => transect.stratumId === stratumId
+  );
+  if (existing) return { transectId: existing.id, created: false };
+  const created = await executeGraphql<{ createTransect?: { id: string } }>(
+    createTransectMutation,
+    { input: { projectId, stratumId, group: organizationId } }
+  );
+  const transectId = created.createTransect?.id;
+  if (!transectId) throw new Error('Failed to create outside transect');
+  return { transectId, created: true };
 }
 
 async function fanOutTransectUpdates(
@@ -653,6 +749,9 @@ function parsePayload(request: unknown): LaunchIndividualIdPayload {
     ...(Array.isArray(parsed.incompleteTransectIds)
       ? { incompleteTransectIds: parsed.incompleteTransectIds }
       : {}),
+    ...(typeof parsed.includeOutside === 'boolean'
+      ? { includeOutside: parsed.includeOutside }
+      : {}),
   };
 }
 
@@ -675,6 +774,9 @@ async function readPayloadFromS3(
     annotatedImageIds: parsed.annotatedImageIds ?? [],
     ...(Array.isArray(parsed.incompleteTransectIds)
       ? { incompleteTransectIds: parsed.incompleteTransectIds }
+      : {}),
+    ...(typeof parsed.includeOutside === 'boolean'
+      ? { includeOutside: parsed.includeOutside }
       : {}),
   };
 }

@@ -81,7 +81,7 @@ async function main(): Promise<void> {
         indexName: stratumIndex,
         hashAttribute: 'projectId',
         hashValue: job.surveyId,
-        fields: ['id', 'name', 'area', 'baselineLength'],
+        fields: ['id', 'name', 'area', 'baselineLength', 'offEffort'],
       }),
       queryByHash<TransectRecord>({
         tableName: environment.transectTableName,
@@ -116,6 +116,7 @@ async function main(): Promise<void> {
           'longitude',
           'altitude_agl',
           'timestamp',
+          'boundaryStatus',
         ],
       },
       async (pageImages) => {

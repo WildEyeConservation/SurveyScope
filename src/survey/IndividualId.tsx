@@ -13,6 +13,9 @@ import type {
   ImageType,
 } from '../schemaTypes';
 import { findIncompleteTransectIds } from '../individual-id/utils/transectCompletion';
+import { isOnEffort } from '../../shared/boundaryStatus';
+
+const OUTSIDE_GROUP = 'outside-boundary';
 
 // AppSync rejects very large mutation arguments; above this the payload is
 // staged in S3 and only a reference is sent (mirrors FalseNegatives).
@@ -62,7 +65,13 @@ type AnnotationRow = {
 // launch-time check could disagree with the harness.
 type ImageWithNeighbours = Pick<
   ImageType,
-  'id' | 'width' | 'height' | 'transectId' | 'timestamp' | 'originalPath'
+  | 'id'
+  | 'width'
+  | 'height'
+  | 'transectId'
+  | 'timestamp'
+  | 'originalPath'
+  | 'boundaryStatus'
 > & {
   leftNeighbours?: ImageNeighbourType[] | null;
   rightNeighbours?: ImageNeighbourType[] | null;
@@ -136,11 +145,14 @@ export default function IndividualId({
     const byTransect = new Map<string, Set<string>>();
     for (const img of projectImages) {
       byId[img.id] = img as unknown as ImageType;
-      if (img.transectId) {
-        let set = byTransect.get(img.transectId);
+      const group = isOnEffort(img.boundaryStatus)
+        ? img.transectId
+        : OUTSIDE_GROUP;
+      if (group) {
+        let set = byTransect.get(group);
         if (!set) {
           set = new Set<string>();
-          byTransect.set(img.transectId, set);
+          byTransect.set(group, set);
         }
         set.add(img.id);
       }
@@ -171,7 +183,9 @@ export default function IndividualId({
   // launch) has created them. Without them no individual-id linking can have
   // happened, so the "already complete" gate doesn't apply — the launch
   // lambda detects and creates transects itself.
-  const transectsExist = imageIdsByTransect.size > 0;
+  const transectsExist = Array.from(imageIdsByTransect.keys()).some(
+    (group) => group !== OUTSIDE_GROUP
+  );
 
   // Recompute which transects still have work whenever the label changes.
   // Deferred to a macrotask so the "Checking…" status can paint before the
@@ -381,7 +395,10 @@ export default function IndividualId({
         // Omitted when transects don't exist yet: the lambda detects/creates
         // them, and a fresh project has no completed work to skip.
         if (transectsExist && incomplete && incomplete.length > 0) {
-          payload.incompleteTransectIds = incomplete;
+          payload.incompleteTransectIds = incomplete.filter(
+            (id) => id !== OUTSIDE_GROUP
+          );
+          payload.includeOutside = incomplete.includes(OUTSIDE_GROUP);
         }
 
         onProgress('Submitting ChainLinker request...');
@@ -577,6 +594,7 @@ async function fetchProjectImages(
         'transectId',
         'timestamp',
         'originalPath',
+        'boundaryStatus',
         'leftNeighbours.*',
         'rightNeighbours.*',
       ],

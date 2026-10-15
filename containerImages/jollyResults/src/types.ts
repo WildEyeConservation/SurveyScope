@@ -10,6 +10,7 @@ export interface StratumRecord {
   name?: string | null;
   area?: number | null;
   baselineLength?: number | null;
+  offEffort?: boolean | null;
 }
 
 export interface TransectRecord {
@@ -25,6 +26,7 @@ export interface ImageRecord {
   longitude?: number | null;
   altitude_agl?: number | null;
   timestamp?: number | null;
+  boundaryStatus?: 'inside' | 'outside' | 'excluded' | null;
 }
 
 export interface AnnotationRecord {
@@ -57,6 +59,7 @@ export interface JollyResultRecord {
 
 export interface ValidationCounts {
   excludedImages: number;
+  outsideBoundary: number;
   missingTransect: number;
   missingCamera: number;
   missingPosition: number;

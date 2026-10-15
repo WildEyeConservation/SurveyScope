@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "predev": "npm run generate-types",
     "generate-types": "tsx script.ts",
-    "test": "tsx --test \"src/**/*.test.ts\" \"amplify/**/*.test.ts\" \"amplify/**/*.test.mjs\""
+    "test": "tsx --test \"src/**/*.test.ts\" \"shared/**/*.test.ts\" \"amplify/**/*.test.ts\" \"amplify/**/*.test.mjs\""
   },
   "dependencies": {
     "@aws-amplify/api": "^6.3.24",

@@ -3,11 +3,13 @@ import { GlobalContext } from '../Context';
 import {
   clearAreaDerivedResults,
   loadSurveyArea,
+  recomputeBoundaryStatus,
   saveSurveyArea,
 } from '../utils/shapefileUtils';
 import { Spinner, Button } from 'react-bootstrap';
 import { Footer } from '../Modal';
 import SurveyAreaEditor from './SurveyAreaEditor';
+import SurveyAreaMargin from './SurveyAreaMargin';
 import { EMPTY_AREA, type SurveyArea } from './new-survey/surveyArea';
 
 export default function EditShapeFile({
@@ -19,6 +21,7 @@ export default function EditShapeFile({
 }) {
   const { client, showModal } = useContext(GlobalContext)!;
   const [area, setArea] = useState<SurveyArea>(EMPTY_AREA);
+  const [marginInput, setMarginInput] = useState('0');
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -28,7 +31,9 @@ export default function EditShapeFile({
     setLoading(true);
     loadSurveyArea(client, projectId)
       .then((loaded) => {
-        if (!cancelled) setArea(loaded);
+        if (cancelled) return;
+        setArea(loaded);
+        setMarginInput(String(loaded.marginM ?? 0));
       })
       .catch((err) => {
         console.error('Failed to load shapefile/exclusions:', err);
@@ -46,8 +51,15 @@ export default function EditShapeFile({
     if (!area.boundary) return;
     setSaving(true);
     try {
-      await saveSurveyArea(client, projectId, area, organizationId);
+      await saveSurveyArea(
+        client,
+        projectId,
+        area,
+        organizationId,
+        Math.max(0, Number(marginInput) || 0)
+      );
       await clearAreaDerivedResults(client, projectId);
+      await recomputeBoundaryStatus(client, projectId);
       alert(
         'You have successfully updated the shapefile. Please review your strata and transects on the next tab and save your work whether you made any changes or not.'
       );
@@ -78,7 +90,15 @@ export default function EditShapeFile({
             window to try again.
           </div>
         ) : (
-          <SurveyAreaEditor value={area} onChange={setArea} locked={saving} />
+          <SurveyAreaEditor value={area} onChange={setArea} locked={saving}>
+            {area.boundary && (
+              <SurveyAreaMargin
+                value={marginInput}
+                onChange={setMarginInput}
+                disabled={saving}
+              />
+            )}
+          </SurveyAreaEditor>
         )}
         {saving && (
           <div className='d-flex justify-content-center align-items-center'>

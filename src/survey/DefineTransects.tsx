@@ -29,6 +29,8 @@ import type {
 } from 'geojson';
 import proj4 from 'proj4';
 import { getBaselineBearing } from './baselineBearing';
+import { isOnEffort } from '../../shared/boundaryStatus';
+import { boundaryRecomputePending } from '../utils/shapefileUtils';
 import { BASE_STYLE, EMPTY_FC } from './surveyMapStyle';
 import './surveyMap.css';
 
@@ -237,13 +239,65 @@ function getProjectedDirectionalBaseline(
 }
 
 // define transects and strata
-export default function DefineTransects({
+type DefineTransectsProps = { projectId: string; organizationId: string };
+
+export default function DefineTransects(props: DefineTransectsProps) {
+  const { client } = useContext(GlobalContext)!;
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = async () => {
+      try {
+        const { data } = await client.models.Project.get(
+          { id: props.projectId },
+          {
+            selectionSet: [
+              'boundaryRecomputeRequested',
+              'boundaryRecomputeLeaseUntil',
+            ],
+          }
+        );
+        if (cancelled) return;
+        if (data && boundaryRecomputePending(data)) {
+          timer = setTimeout(check, 3000);
+        } else {
+          setReady(true);
+        }
+      } catch (err) {
+        console.error('Failed to check the survey area status:', err);
+        if (!cancelled) setReady(true);
+      }
+    };
+    check();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [client, props.projectId]);
+
+  if (ready) return <DefineTransectsEditor {...props} />;
+  return (
+    <div className='d-flex flex-column align-items-center gap-3 p-4'>
+      <div className='d-flex align-items-center gap-2'>
+        <Spinner animation='border' />
+        <span>Applying the survey area to the images</span>
+      </div>
+      <span className='text-muted' style={{ fontSize: 14 }}>
+        Transects open once every image has been checked against the boundary.
+      </span>
+      <Button variant='outline-secondary' onClick={() => setReady(true)}>
+        Continue without waiting
+      </Button>
+    </div>
+  );
+}
+
+function DefineTransectsEditor({
   projectId,
   organizationId,
-}: {
-  projectId: string;
-  organizationId: string;
-}) {
+}: DefineTransectsProps) {
   const { client, showModal } = useContext(GlobalContext)!;
   const [images, setImages] = useState<any[]>([]);
   const [partsLoading, setPartsLoading] = useState<null | number>(0);
@@ -290,6 +344,8 @@ export default function DefineTransects({
   // Add state for shapefile exclusion polygons
   const [exclusionCoords, setExclusionCoords] = useState<LatLng[][]>([]);
   const [imputedImageIds, setImputedImageIds] = useState<Set<any>>(new Set());
+  // Saved transect of every image, so links that no longer apply are cleared.
+  const dbTransectIdsRef = useRef<Map<string, string | null>>(new Map());
   const transectIds = useMemo(() => {
     const ids = segmentedImages.map((img) => img.transectId);
     return Array.from(new Set(ids)).sort((a, b) => a - b);
@@ -441,12 +497,7 @@ export default function DefineTransects({
     setDisabledClose(true);
     setSaving(true);
 
-    // Calculate how many images will be linked to transects
-    const imagesToUpdate = segmentedImages.filter(
-      (img) => img.transectId != null
-    );
-    const imageCount = imagesToUpdate.length;
-    setSavingImageCount(imageCount);
+    setSavingImageCount(0);
     setSavingProgress(0);
 
     // delete all existing strata so we can recreate them fresh
@@ -587,25 +638,49 @@ export default function DefineTransects({
       transectMap[tid] = trId;
     }
 
-    // update images with progress tracking
-    await Promise.all(
-      segmentedImages.map(async (img) => {
-        const trId = transectMap[img.transectId];
-        if (trId) {
-          const update: any = {
-            id: img.id,
-            transectId: trId,
-          };
-          // if this image had imputed coordinates, persist them back
-          if (imputedImageIds.has(img.id)) {
-            update.latitude = img.latitude;
-            update.longitude = img.longitude;
-          }
-          await (client.models.Image.update as any)(update);
-          setSavingProgress((p) => p + 1);
+    const dbTransectIds = dbTransectIdsRef.current;
+    const imageUpdates: {
+      id: string;
+      transectId: string | null;
+      latitude?: number;
+      longitude?: number;
+    }[] = [];
+    const segmentedIds = new Set<string>();
+    for (const img of segmentedImages) {
+      segmentedIds.add(img.id);
+      const trId = transectMap[img.transectId];
+      if (trId) {
+        const update: (typeof imageUpdates)[number] = {
+          id: img.id,
+          transectId: trId,
+        };
+        // if this image had imputed coordinates, persist them back
+        if (imputedImageIds.has(img.id)) {
+          update.latitude = img.latitude;
+          update.longitude = img.longitude;
         }
+        imageUpdates.push(update);
+      } else if (dbTransectIds.get(img.id)) {
+        imageUpdates.push({ id: img.id, transectId: null });
+      }
+    }
+    for (const [id, dbTransectId] of dbTransectIds) {
+      if (dbTransectId && !segmentedIds.has(id)) {
+        imageUpdates.push({ id, transectId: null });
+      }
+    }
+    setSavingImageCount(imageUpdates.length);
+    await Promise.all(
+      imageUpdates.map(async (update) => {
+        await (client.models.Image.update as any)(update);
+        setSavingProgress((p) => p + 1);
       })
     );
+    const savedTransectIds = new Map(dbTransectIds);
+    for (const update of imageUpdates) {
+      savedTransectIds.set(update.id, update.transectId);
+    }
+    dbTransectIdsRef.current = savedTransectIds;
 
     // cleanup: delete unused transects from the database
     const allTransects = await fetchAllPaginatedResults(
@@ -671,18 +746,25 @@ export default function DefineTransects({
             'latitude',
             'longitude',
             'transectId',
+            'boundaryStatus',
           ],
         } as any
       )) as any[];
+      dbTransectIdsRef.current = new Map(
+        rawImgs.map((img) => [img.id, img.transectId ?? null])
+      );
+      const onEffortImgs = rawImgs.filter((img) =>
+        isOnEffort(img.boundaryStatus)
+      );
       // normalize timestamp unit and sort chronologically before imputation
-      rawImgs.forEach((img) => {
+      onEffortImgs.forEach((img) => {
         img.timestamp = normalizeToMillis(img.timestamp);
       });
-      rawImgs.sort(
+      onEffortImgs.sort(
         (a, b) =>
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
       );
-      const { filled, imputedIds } = imputeLatLngForImages(rawImgs);
+      const { filled, imputedIds } = imputeLatLngForImages(onEffortImgs);
       setImages(filled);
       setImputedImageIds((prev) => {
         const next = new Set(prev);
@@ -718,10 +800,13 @@ export default function DefineTransects({
               'latitude',
               'longitude',
               'transectId',
+              'boundaryStatus',
             ],
           } as any
         );
-        const imgsWithTxRaw = rawImgsWithTx as any[];
+        const imgsWithTxRaw = (rawImgsWithTx as any[]).filter(
+          (img) => img.transectId && isOnEffort(img.boundaryStatus)
+        );
         imgsWithTxRaw.forEach((img) => {
           img.timestamp = normalizeToMillis(img.timestamp);
         });
@@ -758,7 +843,7 @@ export default function DefineTransects({
         });
         const segImgs = imgsWithTx.map((img) => ({
           ...img,
-          transectId: img.transectId ? dbToUI[img.transectId] : 0,
+          transectId: dbToUI[img.transectId],
         }));
         setSegmentedImages(segImgs);
         // load existing strata polygons into state
