@@ -81,6 +81,7 @@ import OrientationReview, {
 } from './survey/new-survey/OrientationReview';
 import StepIndicator from './survey/new-survey/StepIndicator';
 import SurveyAreaEditor, { type AreaPoint } from './survey/SurveyAreaEditor';
+import SurveyAreaMargin from './survey/SurveyAreaMargin';
 import {
   EMPTY_AREA,
   outsideAreaKeys,
@@ -91,6 +92,7 @@ import {
 import {
   clearAreaDerivedResults,
   loadSurveyArea,
+  recomputeBoundaryStatus,
   saveSurveyArea,
 } from './utils/shapefileUtils';
 
@@ -423,9 +425,9 @@ export function FileUploadCore({
       altitudeFilterUnit === 'ft' ? meters / METERS_PER_FOOT : meters
     )} ${altitudeFilterUnit}`;
 
-  const areaOutsideKeys = useMemo(
+  const boundaryOutsideKeys = useMemo(
     () =>
-      trimToBoundary && fullCsvData
+      fullCsvData
         ? outsideAreaKeys(
             fullCsvData,
             surveyArea.boundary,
@@ -433,8 +435,9 @@ export function FileUploadCore({
             gpsRowKey
           )
         : NO_AREA_KEYS,
-    [trimToBoundary, fullCsvData, surveyArea.boundary, trimMarginM]
+    [fullCsvData, surveyArea.boundary, trimMarginM]
   );
+  const areaOutsideKeys = trimToBoundary ? boundaryOutsideKeys : NO_AREA_KEYS;
   const areaPoints = useMemo<AreaPoint[]>(
     () => [
       ...existingImagePoints.map(
@@ -461,6 +464,10 @@ export function FileUploadCore({
   }, [fullCsvData, csvData, areaOutsideKeys]);
   const handleAreaChange = useCallback((area: SurveyArea) => {
     setSurveyArea(area);
+    setAreaDirty(true);
+  }, []);
+  const handleMarginChange = useCallback((value: string) => {
+    setTrimMarginInput(value);
     setAreaDirty(true);
   }, []);
 
@@ -1305,11 +1312,13 @@ export function FileUploadCore({
       .then(([area, metadata]) => {
         if (cancelled) return;
         setSurveyArea(area);
+        setTrimMarginInput(
+          String(area.marginM ?? metadata?.areaTrim?.marginM ?? 0)
+        );
         setAreaDirty(false);
         setAreaLocked(true);
         if (metadata?.areaTrim) {
           setTrimToBoundary(metadata.areaTrim.enabled);
-          setTrimMarginInput(String(metadata.areaTrim.marginM));
         }
       })
       .catch((err) => {
@@ -2005,11 +2014,25 @@ export function FileUploadCore({
             surveyArea.boundary !== null || surveyArea.exclusions.length > 0;
           if (hasShapes || areaSaveAttemptedRef.current) {
             areaSaveAttemptedRef.current = true;
-            await saveSurveyArea(client, projectId, surveyArea, organizationId);
+            await saveSurveyArea(
+              client,
+              projectId,
+              surveyArea,
+              organizationId,
+              trimMarginM
+            );
+            await recomputeBoundaryStatus(client, projectId);
           }
         } else if (areaDirty) {
-          await saveSurveyArea(client, projectId, surveyArea, organizationId);
+          await saveSurveyArea(
+            client,
+            projectId,
+            surveyArea,
+            organizationId,
+            trimMarginM
+          );
           await clearAreaDerivedResults(client, projectId);
+          await recomputeBoundaryStatus(client, projectId);
         }
       } catch (err) {
         console.error('Failed to save survey area:', err);
@@ -3358,6 +3381,11 @@ export function FileUploadCore({
               >
                 {surveyArea.boundary && (
                   <div className='d-flex flex-column gap-1 mt-2'>
+                    <SurveyAreaMargin
+                      value={trimMarginInput}
+                      onChange={handleMarginChange}
+                      disabled={areaLocked}
+                    />
                     <Form.Check
                       type='switch'
                       id='trim-to-survey-area'
@@ -3365,26 +3393,10 @@ export function FileUploadCore({
                       checked={trimToBoundary}
                       onChange={(e) => setTrimToBoundary(e.target.checked)}
                     />
-                    {trimToBoundary && (
-                      <div className='d-flex align-items-center gap-2'>
-                        <label className='mb-0' htmlFor='survey-area-margin'>
-                          Keep images within
-                        </label>
-                        <input
-                          type='number'
-                          id='survey-area-margin'
-                          className='form-control'
-                          style={{ width: '90px' }}
-                          min={0}
-                          value={trimMarginInput}
-                          onChange={(e) => setTrimMarginInput(e.target.value)}
-                        />
-                        <span>m of it</span>
-                      </div>
-                    )}
                     <span className='text-muted' style={{ fontSize: 12 }}>
-                      {areaOutsideKeys.size} of {imageTally.total} images will
-                      not be uploaded.
+                      {trimToBoundary
+                        ? `${areaOutsideKeys.size} of ${imageTally.total} images will not be uploaded.`
+                        : `${boundaryOutsideKeys.size} of ${imageTally.total} images are outside the boundary and will be uploaded marked as outside.`}
                     </span>
                     {imageTally.total > 0 &&
                       areaOutsideKeys.size >= imageTally.total && (

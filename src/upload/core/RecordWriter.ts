@@ -4,6 +4,7 @@ import type { CameraResolver } from './cameras';
 import type { ElevationService } from './elevation';
 import type { UploadClient } from './types';
 import { unwrap, withRetry } from './retry';
+import type { BoundaryStatus } from '../../../shared/boundaryStatus';
 
 export interface RecordWriterContext {
   client: UploadClient;
@@ -13,6 +14,10 @@ export interface RecordWriterContext {
   makeKey: (originalPath: string) => string;
   elevation: ElevationService;
   cameras: CameraResolver;
+  classifyBoundary?: (
+    lat: number | null | undefined,
+    lng: number | null | undefined
+  ) => BoundaryStatus | null;
   signal?: AbortSignal;
 }
 
@@ -32,6 +37,7 @@ export class RecordWriter {
       imageSetId,
       elevation,
       cameras,
+      classifyBoundary,
       signal,
     } = this.ctx;
 
@@ -72,6 +78,9 @@ export class RecordWriter {
                 : undefined),
             cameraId,
             phash,
+            boundaryStatus:
+              classifyBoundary?.(imageData.latitude, imageData.longitude) ??
+              undefined,
             group: organizationId,
           }),
         { signal }

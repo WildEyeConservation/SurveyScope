@@ -292,3 +292,61 @@ test('invalid images are excluded without aborting a computable stratum', () => 
   assert.equal(output.validation.missingPosition, 1);
   assert.equal(output.results.length, 2);
 });
+
+test('images outside the survey area and off-effort strata are left out', () => {
+  const accumulator = new SurveyAccumulator({
+    surveyId: 'survey-1',
+    annotationSetId: 'set-1',
+    organizationId: 'org-1',
+    categoryIds: ['seen'],
+    cameras: [
+      { id: 'camera-1', focalLengthMm: 50, sensorWidthMm: 36, tiltDegrees: 0 },
+    ],
+    strata: [
+      { id: 'stratum-1', name: 'Stratum 1', area: 10, baselineLength: 1_000 },
+      { id: 'outside', name: 'Outside boundary', offEffort: true },
+    ],
+    transects: [
+      { id: 'transect-1', stratumId: 'stratum-1' },
+      { id: 'transect-2', stratumId: 'stratum-1' },
+      { id: 'outside-transect', stratumId: 'outside' },
+    ],
+    now: () => '2026-07-30T00:00:00.000Z',
+  });
+  addTransectPair(accumulator, 'transect-1', 0, 2);
+  addTransectPair(accumulator, 'transect-2', 1, 0);
+  for (const [id, boundaryStatus] of [
+    ['outside-image', 'outside'],
+    ['excluded-image', 'excluded'],
+  ] as const) {
+    accumulator.addImage({
+      id,
+      transectId: 'outside-transect',
+      cameraId: 'camera-1',
+      latitude: -34,
+      longitude: 18,
+      altitude_agl: 100,
+      timestamp: 10,
+      boundaryStatus,
+    });
+    accumulator.addAnnotation({
+      id: `${id}-annotation`,
+      objectId: `${id}-annotation`,
+      imageId: id,
+      categoryId: 'seen',
+    });
+  }
+
+  const output = accumulator.calculate();
+  assert.equal(output.results.length, 1);
+  assert.equal(output.results[0].stratumId, 'stratum-1');
+  assert.equal(output.results[0].animals, 2);
+  assert.equal(output.validation.outsideBoundary, 2);
+  assert.equal(output.validation.annotationsForExcludedImages, 2);
+  assert.ok(
+    output.warnings.some((warning) => warning.startsWith('2 images outside'))
+  );
+  assert.ok(
+    !output.warnings.some((warning) => warning.includes('missing or invalid'))
+  );
+});

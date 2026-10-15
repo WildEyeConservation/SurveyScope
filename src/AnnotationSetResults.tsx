@@ -106,6 +106,7 @@ export default function AnnotationSetResults({
               'image.latitude',
               'image.longitude',
               'image.transectId',
+              'image.boundaryStatus',
             ] as const,
             limit: 10000,
           },
@@ -172,6 +173,7 @@ export default function AnnotationSetResults({
             transect: anno.image.transectId || 'Unknown',
             stratum:
               stratumByTransectId[anno.image.transectId ?? ''] || 'Unknown',
+            surveyArea: anno.image.boundaryStatus ?? 'inside',
             timestamp: anno.image.timestamp,
             latitude: anno.image.latitude,
             longitude: anno.image.longitude,

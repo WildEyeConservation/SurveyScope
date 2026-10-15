@@ -7,6 +7,7 @@ import type {
   Position,
 } from 'geojson';
 import { simplifyPolygonToRange } from '../../utils/shapefileUtils';
+import { createBoundaryClassifier } from '../../../shared/boundaryStatus';
 
 // Rings are open and ordered [lat, lng].
 export type LatLng = [number, number];
@@ -261,20 +262,14 @@ export function outsideAreaKeys<T extends { lat: number; lng: number }>(
   keyOf: (row: T) => string
 ): Set<string> {
   const outside = new Set<string>();
-  const polygon = boundary ? ringToPolygon(boundary) : null;
-  if (!polygon) return outside;
-  const trim =
-    (marginM > 0 && turf.buffer(polygon, marginM, { units: 'meters' })) ||
-    polygon;
-  const [minLng, minLat, maxLng, maxLat] = turf.bbox(trim);
+  if (!boundary) return outside;
+  const classify = createBoundaryClassifier({
+    boundary,
+    exclusions: [],
+    marginM,
+  });
   for (const row of rows) {
-    if (!Number.isFinite(row.lat) || !Number.isFinite(row.lng)) continue;
-    const inBox =
-      row.lng >= minLng &&
-      row.lng <= maxLng &&
-      row.lat >= minLat &&
-      row.lat <= maxLat;
-    if (!inBox || !insidePolygon(row, trim)) outside.add(keyOf(row));
+    if (classify(row.lat, row.lng) === 'outside') outside.add(keyOf(row));
   }
   return outside;
 }

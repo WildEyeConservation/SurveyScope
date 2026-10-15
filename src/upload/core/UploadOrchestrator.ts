@@ -14,6 +14,11 @@ import { UploadStateStore } from './persistence';
 import { runPool, sleep } from './pool';
 import { getProjectKeyInfo, type ProjectKeyInfo } from './projectKeys';
 import { RecordWriter } from './RecordWriter';
+import { loadSurveyArea } from '../../utils/shapefileUtils';
+import {
+  createBoundaryClassifier,
+  type BoundaryStatus,
+} from '../../../shared/boundaryStatus';
 import {
   backoffDelayMs,
   classifyError,
@@ -84,11 +89,17 @@ interface InternalSession {
   releaseLock: () => void;
 }
 
+type BoundaryClassifier = (
+  lat: number | null | undefined,
+  lng: number | null | undefined
+) => BoundaryStatus | null;
+
 interface PreparedPlan {
   keyInfo: ProjectKeyInfo;
   imageSetId: string;
   input: TransferInput;
   cameras: CameraResolver;
+  classifyBoundary: BoundaryClassifier;
 }
 
 type Listener = (snapshot: SessionSnapshot | null) => void;
@@ -401,6 +412,7 @@ export class UploadOrchestrator {
             makeKey: plan.keyInfo.makeKey,
             elevation: session.elevation,
             cameras: plan.cameras,
+            classifyBoundary: plan.classifyBoundary,
             signal: session.controller.signal,
           }),
           phashService,
@@ -568,6 +580,11 @@ export class UploadOrchestrator {
 
     const storedImages = await store.getImages();
     const uploadMetadata = await store.getMetadata();
+    const area = await loadSurveyArea(client, projectId);
+    const classifyBoundary = createBoundaryClassifier({
+      ...area,
+      marginM: area.marginM ?? uploadMetadata?.areaTrim?.marginM ?? 0,
+    });
     const cameras = await buildCameraResolver(
       client,
       projectId,
@@ -722,6 +739,7 @@ export class UploadOrchestrator {
     return {
       keyInfo,
       imageSetId: imageSet.id,
+      classifyBoundary,
       input: {
         projectId,
         seedPaths,

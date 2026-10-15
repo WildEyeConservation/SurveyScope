@@ -46,7 +46,8 @@ export async function saveShapefileForProject(
   client: any,
   projectId: string,
   latLngs: LatLngTuple[],
-  group: string | undefined
+  group: string | undefined,
+  marginM?: number
 ): Promise<void> {
   if (!latLngs || latLngs.length === 0) return;
 
@@ -70,6 +71,7 @@ export async function saveShapefileForProject(
       await client.models.Shapefile.update({
         id: existing[0].id,
         coordinates: flattened,
+        ...(marginM === undefined ? {} : { marginM }),
       })
     );
   } else {
@@ -77,6 +79,7 @@ export async function saveShapefileForProject(
       await client.models.Shapefile.create({
         projectId,
         coordinates: flattened,
+        marginM: marginM ?? 0,
         group,
       })
     );
@@ -102,25 +105,34 @@ function unflatten(coordinates: (number | null)[] | null): LatLngTuple[] {
   return ring;
 }
 
-type StoredRing = { id: string; coordinates: (number | null)[] | null };
+type StoredRing = {
+  id: string;
+  coordinates: (number | null)[] | null;
+  marginM?: number | null;
+};
 
 export async function loadSurveyArea(
   client: any,
   projectId: string
-): Promise<SurveyArea> {
+): Promise<SurveyArea & { marginM: number | null }> {
   const [boundaryResult, exclusionResult] = await Promise.all([
     client.models.Shapefile.shapefilesByProjectId({ projectId }),
     client.models.ShapefileExclusions.shapefileExclusionsByProjectId({
       projectId,
     }),
   ]);
-  const boundary = unflatten(
-    unwrap<StoredRing[]>(boundaryResult)?.[0]?.coordinates ?? null
-  );
+  const stored = unwrap<StoredRing[]>(boundaryResult)?.[0];
+  const boundary = unflatten(stored?.coordinates ?? null);
   const exclusions = (unwrap<StoredRing[]>(exclusionResult) ?? [])
     .map((item) => unflatten(item.coordinates))
     .filter((ring) => ring.length >= 3);
-  return { boundary: boundary.length >= 3 ? boundary : null, exclusions };
+  return {
+    boundary: boundary.length >= 3 ? boundary : null,
+    exclusions,
+    // Null for boundaries saved before the margin was stored.
+    marginM:
+      typeof stored?.marginM === 'number' ? Math.max(0, stored.marginM) : null,
+  };
 }
 
 export async function saveExclusionsForProject(
@@ -159,10 +171,17 @@ export async function saveSurveyArea(
   client: any,
   projectId: string,
   area: SurveyArea,
-  group: string | undefined
+  group: string | undefined,
+  marginM?: number
 ): Promise<void> {
   if (area.boundary && area.boundary.length >= 3) {
-    await saveShapefileForProject(client, projectId, area.boundary, group);
+    await saveShapefileForProject(
+      client,
+      projectId,
+      area.boundary,
+      group,
+      marginM
+    );
   } else {
     const existing =
       unwrap<StoredRing[]>(
@@ -177,6 +196,54 @@ export async function saveSurveyArea(
     }
   }
   await saveExclusionsForProject(client, projectId, area.exclusions, group);
+}
+
+type DataResult = { data?: unknown; errors?: unknown[] | null };
+type RecomputeClient = {
+  models: {
+    Project: {
+      update(input: {
+        id: string;
+        boundaryRecomputeRequested: boolean;
+      }): Promise<DataResult>;
+    };
+  };
+  mutations: {
+    recomputeBoundaryStatus(args: { projectId: string }): Promise<DataResult>;
+  };
+};
+
+export async function recomputeBoundaryStatus(
+  client: RecomputeClient,
+  projectId: string
+): Promise<void> {
+  unwrap(
+    await client.models.Project.update({
+      id: projectId,
+      boundaryRecomputeRequested: true,
+    })
+  );
+  try {
+    unwrap(await client.mutations.recomputeBoundaryStatus({ projectId }));
+  } catch (err) {
+    await client.models.Project.update({
+      id: projectId,
+      boundaryRecomputeRequested: false,
+    });
+    throw err;
+  }
+}
+
+export function boundaryRecomputePending(
+  project: {
+    boundaryRecomputeRequested?: boolean | null;
+    boundaryRecomputeLeaseUntil?: string | null;
+  },
+  now = Date.now()
+): boolean {
+  if (project.boundaryRecomputeRequested) return true;
+  const until = Date.parse(project.boundaryRecomputeLeaseUntil ?? '');
+  return Number.isFinite(until) && until > now;
 }
 
 type JollyKey = {

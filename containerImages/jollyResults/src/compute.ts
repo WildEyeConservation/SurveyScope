@@ -85,6 +85,7 @@ export class SurveyAccumulator {
   >();
   private readonly validation: ValidationCounts = {
     excludedImages: 0,
+    outsideBoundary: 0,
     missingTransect: 0,
     missingCamera: 0,
     missingPosition: 0,
@@ -103,11 +104,16 @@ export class SurveyAccumulator {
     this.cameraMap = new Map(
       options.cameras.map((camera) => [camera.id, camera])
     );
+    // Off-effort strata hold images outside the survey area for chain linking.
     this.stratumMap = new Map(
-      options.strata.map((stratum) => [stratum.id, stratum])
+      options.strata
+        .filter((stratum) => !stratum.offEffort)
+        .map((stratum) => [stratum.id, stratum])
     );
     this.transectMap = new Map(
-      options.transects.map((transect) => [transect.id, transect])
+      options.transects
+        .filter((transect) => this.stratumMap.has(transect.stratumId))
+        .map((transect) => [transect.id, transect])
     );
     this.now = options.now ?? (() => new Date().toISOString());
 
@@ -135,6 +141,14 @@ export class SurveyAccumulator {
       this.validation[reason] += 1;
     };
 
+    // A missing status predates the field and counts as inside.
+    if (
+      image.boundaryStatus === 'outside' ||
+      image.boundaryStatus === 'excluded'
+    ) {
+      exclude('outsideBoundary');
+      return;
+    }
     if (!image.transectId || !this.transectMap.has(image.transectId)) {
       exclude('missingTransect');
       return;
@@ -214,9 +228,16 @@ export class SurveyAccumulator {
     }
 
     const warnings: string[] = [];
-    if (this.validation.excludedImages > 0) {
+    if (this.validation.outsideBoundary > 0) {
       warnings.push(
-        `${this.validation.excludedImages} images were excluded because required survey data was missing or invalid`
+        `${this.validation.outsideBoundary} images outside the survey area or in an exclusion zone were left out`
+      );
+    }
+    const invalidImages =
+      this.validation.excludedImages - this.validation.outsideBoundary;
+    if (invalidImages > 0) {
+      warnings.push(
+        `${invalidImages} images were excluded because required survey data was missing or invalid`
       );
     }
     if (this.validation.annotationsForExcludedImages > 0) {

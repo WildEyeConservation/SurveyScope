@@ -1,5 +1,6 @@
 import { imageAccess } from './storage/imageAccess/resource';
 import { infoTagWork } from './functions/infoTagWork/resource';
+import { recomputeBoundaryStatus } from './functions/recomputeBoundaryStatus/resource';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
@@ -96,6 +97,7 @@ const backend = defineBackend({
   generateTile,
   imageAccess,
   infoTagWork,
+  recomputeBoundaryStatus,
   chainMutationGuard,
   revokeChainShare,
   workflowFiles,
@@ -193,6 +195,44 @@ backend.infoTagWork.addEnvironment(
 );
 // OUTPUTS_BUCKET_NAME comes from the storage access grant (resolved via SSM at
 // runtime); referencing the bucket here would make data depend on storage.
+
+const boundaryTables: Record<string, string> = {};
+for (const model of [
+  'Project',
+  'Image',
+  'Shapefile',
+  'ShapefileExclusions',
+] as const) {
+  const table = backend.data.resources.tables[model];
+  boundaryTables[model] = table.tableName;
+  backend.recomputeBoundaryStatus.resources.lambda.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:Query'],
+      resources: [table.tableArn, `${table.tableArn}/index/*`],
+    })
+  );
+}
+for (const model of ['Project', 'Image'] as const) {
+  backend.data.resources.tables[model].grant(
+    backend.recomputeBoundaryStatus.resources.lambda,
+    'dynamodb:UpdateItem'
+  );
+}
+backend.recomputeBoundaryStatus.addEnvironment(
+  'BOUNDARY_TABLES',
+  JSON.stringify(boundaryTables)
+);
+// A separate policy avoids a dependency on the function's own ARN.
+const recomputeLambda = backend.recomputeBoundaryStatus.resources.lambda;
+new iam.Policy(Stack.of(recomputeLambda), 'RecomputeBoundaryStatusSelfInvoke', {
+  roles: [recomputeLambda.role!],
+  statements: [
+    new iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [recomputeLambda.functionArn],
+    }),
+  ],
+});
 
 const guardFunction = backend.chainMutationGuard.resources.lambda;
 const snapshotTables: Record<string, string> = {};

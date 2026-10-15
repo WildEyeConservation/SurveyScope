@@ -24,6 +24,7 @@ import { runStormflyDetector } from '../functions/runStormflyDetector/resource';
 import { runOwlDDetector } from '../functions/runOwlDDetector/resource';
 import { runElephantDetector } from '../functions/runElephantDetector/resource';
 import { launchAnnotationSet } from '../functions/launchAnnotationSet/resource';
+import { recomputeBoundaryStatus } from '../functions/recomputeBoundaryStatus/resource';
 import { launchFalseNegatives } from '../functions/launchFalseNegatives/resource';
 import { requeueProjectQueues } from '../functions/requeueProjectQueues/resource';
 import { monitorScoutbotDlq } from '../functions/monitorScoutbotDlq/resource';
@@ -106,6 +107,9 @@ const schema = a
         tiledLocationSetId: a.id(),
         defaultZoom: a.integer(),
         pretileManifestS3Key: a.string(),
+        // Set while image boundary statuses are being recomputed.
+        boundaryRecomputeRequested: a.boolean(),
+        boundaryRecomputeLeaseUntil: a.datetime(),
         group: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')]),
@@ -203,6 +207,8 @@ const schema = a
         group: a.string(),
         phash: a.string(),
         tiledAt: a.datetime(),
+        // Position relative to the survey area; a missing value counts as inside.
+        boundaryStatus: a.enum(['inside', 'outside', 'excluded']),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
       .secondaryIndexes((index) => [
@@ -675,6 +681,8 @@ const schema = a
         projectId: a.id().required(),
         project: a.belongsTo('Project', 'projectId'),
         coordinates: a.float().array(),
+        // Images within this many metres of the boundary count as inside.
+        marginM: a.float(),
         group: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
@@ -745,6 +753,8 @@ const schema = a
         area: a.float(),
         baselineLength: a.float(),
         coordinates: a.float().array(),
+        // Holds images outside the survey area for chain linking; not in results.
+        offEffort: a.boolean(),
         group: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
@@ -1466,6 +1476,11 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(launchHomography)),
+    recomputeBoundaryStatus: a
+      .mutation()
+      .arguments({ projectId: a.string().required() })
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(recomputeBoundaryStatus).async()),
     launchIndividualId: a
       .mutation()
       .arguments({
@@ -1848,6 +1863,7 @@ export type DeleteQueueHandler = MutationHandler<{ queueId: string }>;
 export type CancelIndividualIdJobHandler = MutationHandler<{ jobId: string }>;
 export type UpdateActiveOrganizationsHandler = MutationHandler<{ activatedOrganizationIds: string[] }>;
 export type LaunchIndividualIdHandler = MutationHandler<{ request: string }>;
+export type RecomputeBoundaryStatusHandler = MutationHandler<{ projectId: string }>;
 export type ClaimIndividualIdTransectHandler = MutationHandler<{ jobId: string }>;
 export type CompleteIndividualIdTransectHandler = MutationHandler<{ transectRowId: string }>;
 export type CreateChainShareHandler = MutationHandler<{ annotationSetId: string; shareId: string }>;
