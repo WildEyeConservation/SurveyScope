@@ -77,6 +77,7 @@ type AutoProcessorProps={
 export class AutoProcessor extends Construct {
   queue: sqs.Queue;
   asg: autoscaling.AutoScalingGroup;
+  cluster: ecs.Cluster;
   constructor(scope: Construct, id: string, props: AutoProcessorProps) {
     super(scope, id);
 
@@ -100,6 +101,7 @@ export class AutoProcessor extends Construct {
     const cluster = new ecs.Cluster(this, 'ProcessorCluster', {
       vpc: vpc,
     });
+    this.cluster = cluster;
 
     const sg = new ec2.SecurityGroup(this, "instanceSg", { vpc });
     sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22));
