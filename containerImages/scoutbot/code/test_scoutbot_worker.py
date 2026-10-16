@@ -4,6 +4,7 @@ import logging
 import os
 import queue
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -27,10 +28,6 @@ def _load_worker():
     gql_requests.log = logging.getLogger('gql-stub')
     aws_auth = types.ModuleType('requests_aws4auth')
     aws_auth.AWS4Auth = lambda **kwargs: Mock()
-    cv2 = types.ModuleType('cv2')
-    cv2.ROTATE_90_COUNTERCLOCKWISE = 2
-    cv2.ROTATE_180 = 1
-    cv2.ROTATE_90_CLOCKWISE = 0
     stubs = {
         'boto3': boto3,
         'botocore': botocore,
@@ -40,9 +37,7 @@ def _load_worker():
         'gql.transport': gql_transport,
         'gql.transport.requests': gql_requests,
         'requests_aws4auth': aws_auth,
-        'scoutbot': types.ModuleType('scoutbot'),
         'torch': types.ModuleType('torch'),
-        'cv2': cv2,
     }
     environment = {
         'REGION': 'eu-west-1',
@@ -59,6 +54,11 @@ def _load_worker():
 
 
 worker = _load_worker()
+
+try:
+    import torch
+except ImportError:
+    torch = None
 
 
 class DuplicateCreateError(Exception):
@@ -167,6 +167,56 @@ class ScoutbotWorkerTests(unittest.TestCase):
         fake_client.execute.side_effect = RuntimeError('connection reset')
         self._run_output([[{'x': 0, 'y': 0, 'w': 2, 'h': 2, 'c': 0.9}], []], fake_client, fake_sqs)
         fake_sqs.delete_message.assert_not_called()
+
+    @unittest.skipIf(torch is None, 'needs torch')
+    def test_rotated_detections_map_back_onto_the_stored_image(self):
+        box = {'x': 30, 'y': 5, 'w': 12, 'h': 7}
+        picture = torch.zeros(3, 40, 64, dtype=torch.uint8)
+        picture[:, box['y']:box['y'] + box['h'], box['x']:box['x'] + box['w']] = 255
+        for rotation in (90, 180, 270):
+            with self.subTest(rotation=rotation), patch.object(worker, 'torch', torch):
+                rotated, info = worker._maybe_rotate_picture(picture, rotation, None)
+                ys, xs = rotated[0].nonzero(as_tuple=True)
+                found = {
+                    'x': int(xs.min()), 'y': int(ys.min()),
+                    'w': int(xs.max() - xs.min() + 1), 'h': int(ys.max() - ys.min() + 1), 'c': 0.9,
+                }
+                mapped, = worker._apply_rotation_to_detects([found], info)
+                self.assertEqual({key: mapped[key] for key in box}, box)
+
+    def test_landscape_constraint_skips_rotation(self):
+        picture = types.SimpleNamespace(shape=(3, 40, 64))
+        unchanged, info = worker._maybe_rotate_picture(picture, 90, False)
+        self.assertIs(unchanged, picture)
+        self.assertEqual(info, {'rotation': 0})
+
+    def test_decode_failures_travel_with_the_task_and_files_are_removed(self):
+        files = []
+        for _ in range(2):
+            handle = tempfile.NamedTemporaryFile(delete=False)
+            handle.close()
+            files.append(handle.name)
+
+        def decode(path):
+            if path == files[1]:
+                raise ValueError('unreadable')
+            return 'pixels'
+
+        fast = types.ModuleType('fast')
+        fast.decode = decode
+        inputs, decoded = queue.Queue(), queue.Queue()
+        inputs.put({'files': [files[0]], 'message': self.message})
+        inputs.put({'files': files, 'message': self.message})
+        inputs.put(None)
+        with patch.dict(sys.modules, {'fast': fast}):
+            worker._decode_tasks(inputs, decoded)
+        good, bad, sentinel = decoded.get(), decoded.get(), decoded.get()
+        self.assertEqual(good['pictures'], ['pixels'])
+        self.assertIsInstance(bad['error'], ValueError)
+        self.assertIsNone(sentinel)
+        self.assertFalse(any(os.path.exists(file) for file in files))
+        with self.assertRaises(ValueError):
+            worker._detect_task(Mock(), bad)
 
     def test_receive_uses_the_queue_visibility_timeout(self):
         fake_sqs = Mock()

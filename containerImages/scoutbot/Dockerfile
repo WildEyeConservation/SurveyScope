@@ -27,6 +27,8 @@ COPY constraints.txt /tmp/constraints.txt
 RUN pip install -c /tmp/constraints.txt git+https://github.com/WildMeOrg/scoutbot.git@e0bb33a0f72f2dfd0c21e0ee46852dba2be1fdd0 --timeout=100
 RUN pip3 uninstall -y onnxruntime
 RUN pip3 install -c /tmp/constraints.txt onnxruntime-gpu
+# TensorRT runs the model in fp16; onnx is needed to export the model for it.
+RUN pip3 install --no-cache-dir -c /tmp/constraints.txt tensorrt-cu12 onnx
 # The upstream model CDN (wildbookiarepository.azureedge.net) no longer exists,
 # so `scoutbot fetch` cannot download anything. Instead we pre-seed pooch's
 # download cache with the model files, named <md5(url)>-<filename> exactly as
