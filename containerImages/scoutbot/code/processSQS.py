@@ -10,13 +10,12 @@ import boto3
 from botocore.exceptions import ClientError
 from tempfile import NamedTemporaryFile
 import time
-from contextlib import ExitStack
-import scoutbot
 from requests_aws4auth import AWS4Auth
 import multiprocessing
+import queue
+import threading
 import logging
 import torch
-import cv2
                                                                                                                                          
 logging.basicConfig(level=logging.INFO)   
 from gql.transport.requests import log as requests_logger                                                               
@@ -134,22 +133,18 @@ def _location_group(body):
 #
 # Some surveys hold landscape images whose correct orientation is only reached by
 # rotating them (e.g. 270 CCW), but that rotation was never written to EXIF, so
-# Scoutbot (via cv2.imread, which honours EXIF) sees them in the wrong orientation
-# and detects poorly. When a message carries a `rotation` (CCW degrees, one of
-# 90/180/270 - message-level, or per-image as an override) we rotate the pixels
-# before inference and map every detection box back into the original/stored frame
-# so the saved Locations still line up with the image as the web app displays it.
+# Scoutbot sees them in the wrong orientation and detects poorly. When a message
+# carries a `rotation` (CCW degrees, one of 90/180/270 - message-level, or per-image
+# as an override) we rotate the pixels before inference and map every detection box
+# back into the original/stored frame so the saved Locations still line up with the
+# image as the web app displays it.
 #
 # An optional `landscape` flag gates the rotation on the image's actual dimensions,
 # so a mixed set only rotates the images that are genuinely in the wrong orientation:
 #   landscape=True  -> only rotate when width  > height
 #   landscape=False -> only rotate when height > width
 #   landscape unset -> rotate regardless of dimensions
-_ROTATE_CODES = {
-    90: cv2.ROTATE_90_COUNTERCLOCKWISE,
-    180: cv2.ROTATE_180,
-    270: cv2.ROTATE_90_CLOCKWISE,  # 270 CCW == 90 CW
-}
+_ROTATIONS = (90, 180, 270)
 
 def _normalize_rotation(value):
     """Return rotation in CCW degrees (0/90/180/270), or 0 if unset/invalid."""
@@ -160,7 +155,7 @@ def _normalize_rotation(value):
     except (TypeError, ValueError):
         logging.warning('Ignoring invalid rotation value: %r', value)
         return 0
-    if rotation not in _ROTATE_CODES:
+    if rotation not in _ROTATIONS:
         if rotation != 0:
             logging.warning('Ignoring unsupported rotation %r (expected 0/90/180/270 CCW)', value)
         return 0
@@ -206,27 +201,19 @@ def _orientation_qualifies(orig_width, orig_height, landscape):
         return orig_width > orig_height
     return orig_height > orig_width
 
-def _maybe_rotate_image_file(path, rotation, landscape):
-    """Rotate the image on disk in place by `rotation` CCW degrees, but only when its
-    orientation satisfies the optional `landscape` constraint.
-
-    Returns a rotation_info dict: the rotation actually applied (0 if skipped) and the
-    pre-rotation dimensions (the EXIF-applied display frame) when rotated, so detection
-    coordinates can be mapped back. Raises on read/write failure."""
-    image = cv2.imread(path, cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError(f'cv2 could not read image for rotation: {path}')
-    orig_height, orig_width = image.shape[:2]
+def _maybe_rotate_picture(picture, rotation, landscape):
+    """Return rotated pixels and metadata for mapping boxes back."""
+    orig_height, orig_width = picture.shape[1:]
+    if not rotation:
+        return picture, {'rotation': 0}
     if not _orientation_qualifies(orig_width, orig_height, landscape):
         logging.info(
-            'Skipping %d-degree rotation for %s: %dx%d does not satisfy landscape=%s',
-            rotation, path, orig_width, orig_height, landscape,
+            'Skipping %d-degree rotation: %dx%d does not satisfy landscape=%s',
+            rotation, orig_width, orig_height, landscape,
         )
-        return {'rotation': 0}
-    rotated = cv2.rotate(image, _ROTATE_CODES[rotation])
-    if not cv2.imwrite(path, rotated):
-        raise ValueError(f'cv2 could not write rotated image: {path}')
-    return {'rotation': rotation, 'origWidth': orig_width, 'origHeight': orig_height}
+        return picture, {'rotation': 0}
+    rotated = torch.rot90(picture, rotation // 90, dims=(1, 2)).contiguous()
+    return rotated, {'rotation': rotation, 'origWidth': orig_width, 'origHeight': orig_height}
 
 def _map_detect_to_original(detect, rotation, orig_width, orig_height):
     """Map a detection box (x, y top-left, w, h - in the rotated frame) back to the
@@ -315,9 +302,40 @@ def _extend_failed_single_image_visibility(message, message_id, image_ids):
             _error_summary(error),
         )
 
-def process_scoutbot(input_queue, output_queue):
+def _decode_tasks(input_queue, decoded_queue):
+    """Decode the next message's images while the GPU works on the current one."""
+    from fast import decode
+
     while True:
         task = input_queue.get()
+        if task is None:
+            decoded_queue.put(None)
+            break
+        try:
+            task['pictures'] = [decode(file) for file in task['files']]
+        except Exception as error:
+            task['error'] = error
+        finally:
+            _cleanup_files(task['files'])
+        decoded_queue.put(task)
+
+def _detect_task(detector, task):
+    if 'error' in task:
+        raise task['error']
+    detects_list = []
+    for picture, (rotation, landscape) in zip(task['pictures'], task['rotations']):
+        picture, info = _maybe_rotate_picture(picture.to(detector.device), rotation, landscape)
+        detects_list.append(_apply_rotation_to_detects(detector.detect(picture), info))
+    return detects_list
+
+def process_scoutbot(input_queue, output_queue):
+    from detector import Detector
+
+    detector = Detector()
+    decoded_queue = queue.Queue(maxsize=1)
+    threading.Thread(target=_decode_tasks, args=(input_queue, decoded_queue), daemon=True).start()
+    while True:
+        task = decoded_queue.get()
         if task is None:  # Sentinel value to stop the process
             output_queue.put(None)
             logging.info('Scoutbot process received sentinel value. Exiting.')
@@ -330,14 +348,8 @@ def process_scoutbot(input_queue, output_queue):
             image_ids,
         )
         try:
-            _, detects_list = scoutbot.batch_v3(task['files'], 'v3', torch.cuda.current_device())
-            rotation_info = task.get('rotationInfo')
-            if rotation_info:
-                detects_list = [
-                    _apply_rotation_to_detects(detects, info)
-                    for detects, info in zip(detects_list, rotation_info)
-                ]
-            output_queue.put((detects_list, task['message']))
+            detector.maybe_upgrade()
+            output_queue.put((_detect_task(detector, task), task['message']))
         except Exception as error:
             if len(body.get('images', [])) > 1 and not body.get('splitFromBatch'):
                 logging.error(
@@ -359,8 +371,6 @@ def process_scoutbot(input_queue, output_queue):
                     _error_summary(error),
                 )
                 _extend_failed_single_image_visibility(task['message'], message_id, image_ids)
-        finally:
-            _cleanup_files(task['files'])
 
 def process_output(output_queue):
     while True:
@@ -472,23 +482,11 @@ def main():
                         for key,file in zip(keys,files):
                             s3_client.download_file(body['bucket'], key, file)
 
-                        # Optionally rotate images whose true orientation is missing
-                        # from EXIF, gated on the `landscape` orientation check, and
-                        # record original dimensions so detection boxes can be mapped
-                        # back to the stored frame after inference.
-                        rotation_info = []
-                        for image, file in zip(body['images'], files):
-                            rotation = _get_rotation(body, image)
-                            if rotation:
-                                landscape = _get_landscape(body, image)
-                                rotation_info.append(
-                                    _maybe_rotate_image_file(file, rotation, landscape)
-                                )
-                            else:
-                                rotation_info.append({'rotation': 0})
-
-                        # Put task in the input queue
-                        input_queue.put({'files':files, 'message': message, 'rotationInfo': rotation_info})
+                        rotations = [
+                            (_get_rotation(body, image), _get_landscape(body, image))
+                            for image in body['images']
+                        ]
+                        input_queue.put({'files': files, 'message': message, 'rotations': rotations})
                     except Exception as error:
                         _cleanup_files(files)
                         if len(body.get('images', [])) > 1 and not body.get('splitFromBatch'):

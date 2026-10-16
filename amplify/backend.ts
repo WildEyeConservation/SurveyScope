@@ -1409,6 +1409,19 @@ if (enableEcs) {
       'arn:aws:ecr:eu-west-2:275736403632:repository/cdk-hnb659fds-container-assets-275736403632-eu-west-2'
     );
 
+    // Cache engines per GPU model to avoid rebuilding on new instances.
+    const scoutbotEngineBucket = new s3.Bucket(
+      ecsStack,
+      'ScoutbotEngineCache',
+      {
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        enforceSSL: true,
+        removalPolicy: RemovalPolicy.DESTROY,
+        autoDeleteObjects: true,
+      }
+    );
+    scoutbotEngineBucket.grantReadWrite(ecsTaskRole);
+
     const scoutbotAutoProcessor = new AutoProcessor(
       ecsStack,
       'ScoutbotAutoProcessor',
@@ -1425,6 +1438,7 @@ if (enableEcs) {
         environment: {
           API_ENDPOINT: backend.data.graphqlUrl,
           BUCKET: backend.inputBucket.resources.bucket.bucketName,
+          ENGINE_BUCKET: scoutbotEngineBucket.bucketName,
         },
         machineImage: ecs.EcsOptimizedImage.amazonLinux2(
           ecs.AmiHardwareType.GPU
