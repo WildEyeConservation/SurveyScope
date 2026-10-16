@@ -10,11 +10,15 @@ import { Construct } from 'constructs';
 function metricAutoscalingQueueDemand(
   queue: sqs.Queue,
   messagesPerWorker: number,
+  inFlightPerWorker = 1,
 ): cloudwatch.IMetric {
   const period = cdk.Duration.minutes(1);
+  // Workers that prefetch hold several messages, so count busy workers, not messages.
+  const busyWorkers =
+    inFlightPerWorker > 1 ? `CEIL(inFlight / ${inFlightPerWorker})` : 'inFlight';
 
   return new cloudwatch.MathExpression({
-    expression: `MAX([visible, inFlight * ${messagesPerWorker}])`,
+    expression: `MAX([visible, ${busyWorkers} * ${messagesPerWorker}])`,
     usingMetrics: {
       visible: queue.metricApproximateNumberOfMessagesVisible({ period }),
       inFlight: queue.metricApproximateNumberOfMessagesNotVisible({ period }),
@@ -63,6 +67,7 @@ type AutoProcessorProps={
   rootVolumeSize?: number;
   maxTasks?: number; // maximum desired ECS tasks to allow
   messagesPerTask?: number;
+  inFlightPerTask?: number; // messages a busy task holds at once
   allowSelfRequeue?: boolean;
   visibilityTimeout?: cdk.Duration;
   spotPrice?: string;
@@ -72,6 +77,7 @@ type AutoProcessorProps={
 export class AutoProcessor extends Construct {
   queue: sqs.Queue;
   asg: autoscaling.AutoScalingGroup;
+  cluster: ecs.Cluster;
   constructor(scope: Construct, id: string, props: AutoProcessorProps) {
     super(scope, id);
 
@@ -95,6 +101,7 @@ export class AutoProcessor extends Construct {
     const cluster = new ecs.Cluster(this, 'ProcessorCluster', {
       vpc: vpc,
     });
+    this.cluster = cluster;
 
     const sg = new ec2.SecurityGroup(this, "instanceSg", { vpc });
     sg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22));
@@ -185,7 +192,11 @@ export class AutoProcessor extends Construct {
     scaling.scaleOnMetric('ScaleOnSQSMessages', {
       // Preserve the visible-backlog thresholds while ensuring the target
       // capacity never drops below the number of workers processing messages.
-      metric: metricAutoscalingQueueDemand(this.queue, messagesPerTask),
+      metric: metricAutoscalingQueueDemand(
+        this.queue,
+        messagesPerTask,
+        props.inFlightPerTask
+      ),
       scalingSteps: steps,
       adjustmentType: autoscaling.AdjustmentType.EXACT_CAPACITY,
       evaluationPeriods: 1,

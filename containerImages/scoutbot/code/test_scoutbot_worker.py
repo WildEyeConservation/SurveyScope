@@ -1,10 +1,12 @@
 import importlib.util
 import json
 import logging
+import multiprocessing
 import os
 import queue
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -218,15 +220,152 @@ class ScoutbotWorkerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             worker._detect_task(Mock(), bad)
 
+    def test_output_releases_each_message_whether_or_not_it_is_written(self):
+        for failure in (None, RuntimeError('connection reset')):
+            busy = multiprocessing.Value('i', 2)
+            fake_client = Mock()
+            fake_client.execute.side_effect = failure
+            outputs = queue.Queue()
+            outputs.put(([[{'x': 0, 'y': 0, 'w': 2, 'h': 2, 'c': 0.9}], []], self.message))
+            outputs.put(None)
+            with self.subTest(failure=failure), patch.object(worker, 'client', fake_client), patch.object(
+                worker, 'sqs', Mock()
+            ):
+                worker.process_output(outputs, busy)
+                self.assertEqual(busy.value, 1)
+
+    def test_scale_in_protection_is_set_renewed_and_cleared(self):
+        calls = []
+
+        def urlopen(request, timeout):
+            calls.append(json.loads(request.data))
+            response = Mock()
+            response.__enter__ = lambda self: self
+            response.__exit__ = lambda *args: None
+            response.read.return_value = b'{"protection": {"ProtectionEnabled": true}}'
+            return response
+
+        clock = [1000.0]
+        with patch.dict(os.environ, {'ECS_AGENT_URI': 'http://agent'}), patch.object(
+            worker.urllib.request, 'urlopen', urlopen
+        ), patch.object(worker.time, 'monotonic', lambda: clock[0]):
+            protection = worker._ScaleInProtection()
+            protection.update(True)
+            protection.update(True)
+            clock[0] += protection.RENEW_SECONDS + 1
+            protection.update(True)
+            protection.update(False)
+            protection.update(False)
+        self.assertEqual(
+            calls,
+            [
+                {'ProtectionEnabled': True, 'ExpiresInMinutes': 30},
+                {'ProtectionEnabled': True, 'ExpiresInMinutes': 30},
+                {'ProtectionEnabled': False},
+            ],
+        )
+
+    def test_a_failed_download_is_released_after_its_recovery(self):
+        fake_aws, protection = Mock(), Mock()
+        fake_aws.receive_message.side_effect = [{'Messages': [{**self.message, 'Body': json.dumps({
+            **self.body, 'bucket': 'images', 'images': [{'imageId': 'image-1', 'key': 'a.jpg'}],
+        })}]}, KeyboardInterrupt]
+        fake_aws.download_file.side_effect = RuntimeError('no such key')
+        busy, held = multiprocessing.Value('i', 0), []
+        with patch.object(worker, '_extend_failed_single_image_visibility', lambda *args: held.append(busy.value)):
+            self._run_main(fake_aws, protection=protection, busy=busy)
+        self.assertEqual(held, [1])
+        self.assertEqual(busy.value, 0)
+        protection.update.assert_called_with(True)
+        protection.keep_updated.assert_called_once()
+
+    def test_a_task_holding_its_limit_receives_nothing_more(self):
+        fake_sqs = Mock()
+        with patch.object(worker.time, 'sleep', side_effect=KeyboardInterrupt):
+            self._run_main(fake_sqs, {'MAX_IN_FLIGHT': '0'})
+        fake_sqs.receive_message.assert_not_called()
+
+    def test_a_failed_detection_is_released_after_its_recovery(self):
+        busy = multiprocessing.Value('i', 1)
+        held = []
+        detector = types.ModuleType('detector')
+        detector.Detector = Mock
+        fast = types.ModuleType('fast')
+        fast.decode = Mock()
+        inputs, outputs = queue.Queue(), queue.Queue()
+        message = {**self.message, 'Body': json.dumps({**self.body, 'images': [{'imageId': 'image-1'}]})}
+        inputs.put({'files': [], 'message': message, 'rotations': []})
+        inputs.put(None)
+        with patch.dict(sys.modules, {'detector': detector, 'fast': fast}), patch.object(
+            worker, '_detect_task', side_effect=RuntimeError('CUDA error')
+        ), patch.object(
+            worker, '_extend_failed_single_image_visibility', lambda *args: held.append(busy.value)
+        ):
+            worker.process_scoutbot(inputs, outputs, busy)
+        self.assertEqual(held, [1])
+        self.assertEqual(busy.value, 0)
+        self.assertIsNone(outputs.get_nowait())
+
+    def test_protection_is_renewed_in_the_background(self):
+        busy = multiprocessing.Value('i', 1)
+        renewed = threading.Event()
+        calls = []
+
+        def update(state):
+            calls.append(state)
+            if len(calls) >= 3:
+                renewed.set()
+
+        with patch.dict(os.environ, {'ECS_AGENT_URI': 'http://agent'}):
+            protection = worker._ScaleInProtection()
+        with patch.object(protection, '_update', update):
+            protection.keep_updated(busy, interval=0.01)
+            self.assertTrue(renewed.wait(2))
+        self.assertTrue(all(calls[:3]))
+
+    def test_background_refresh_reads_busy_after_taking_the_lock(self):
+        with patch.dict(os.environ, {'ECS_AGENT_URI': 'http://agent'}):
+            protection = worker._ScaleInProtection()
+        busy, seen = multiprocessing.Value('i', 0), []
+        with patch.object(protection, '_update', seen.append):
+            protection.lock.acquire()
+            refresh = threading.Thread(target=protection.refresh, args=(busy,))
+            refresh.start()
+            busy.value = 1
+            protection.lock.release()
+            refresh.join(2)
+        self.assertEqual(seen, [True])
+
+    def test_scale_in_protection_retries_after_a_failure_and_is_off_outside_ecs(self):
+        with patch.dict(os.environ, {'ECS_AGENT_URI': 'http://agent'}), patch.object(
+            worker.urllib.request, 'urlopen', side_effect=OSError('agent unavailable')
+        ) as urlopen:
+            protection = worker._ScaleInProtection()
+            protection.update(True)
+            protection.update(True)
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertFalse(protection.protected)
+        with patch.dict(os.environ, {}, clear=True), patch.object(worker.urllib.request, 'urlopen') as urlopen:
+            worker._ScaleInProtection().update(True)
+        urlopen.assert_not_called()
+
+    def _run_main(self, fake_aws, environment=None, protection=None, busy=None):
+        context = Mock()
+        busy = busy or multiprocessing.Value('i', 0)
+        context.Value.return_value = busy
+        environment = {'REGION': 'eu-west-1', 'QUEUE_URL': 'https://sqs.example/queue', **(environment or {})}
+        with patch.object(worker.boto3, 'client', return_value=fake_aws), patch.object(
+            worker, 'torch', Mock()
+        ), patch.object(worker.multiprocessing, 'get_context', return_value=context), patch.object(
+            worker, '_ScaleInProtection', return_value=protection or Mock()
+        ), patch.dict(os.environ, environment):
+            worker.main()
+        return busy
+
     def test_receive_uses_the_queue_visibility_timeout(self):
         fake_sqs = Mock()
         fake_sqs.receive_message.side_effect = KeyboardInterrupt
-        with patch.object(worker.boto3, 'client', return_value=fake_sqs), patch.object(
-            worker, 'torch', Mock()
-        ), patch.object(worker.multiprocessing, 'get_context', return_value=Mock()), patch.dict(
-            os.environ, {'REGION': 'eu-west-1', 'QUEUE_URL': 'https://sqs.example/queue'}
-        ):
-            worker.main()
+        self._run_main(fake_sqs)
         fake_sqs.receive_message.assert_called_once()
         self.assertNotIn('VisibilityTimeout', fake_sqs.receive_message.call_args.kwargs)
 

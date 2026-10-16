@@ -15,6 +15,7 @@ import multiprocessing
 import queue
 import threading
 import logging
+import urllib.request
 import torch
                                                                                                                                          
 logging.basicConfig(level=logging.INFO)   
@@ -302,6 +303,66 @@ def _extend_failed_single_image_visibility(message, message_id, image_ids):
             _error_summary(error),
         )
 
+# Messages this task holds, from receipt until deleted or handed back to SQS.
+def _release_busy(busy):
+    if busy is not None:
+        with busy.get_lock():
+            busy.value -= 1
+
+class _ScaleInProtection:
+    MINUTES = 30
+    RENEW_SECONDS = 600
+
+    def __init__(self):
+        self.url = os.environ.get('ECS_AGENT_URI')
+        self.protected = False
+        self.renewed = 0.0
+        self.lock = threading.Lock()
+
+    def keep_updated(self, busy, interval=60):
+        def run():
+            while True:
+                self.refresh(busy)
+                time.sleep(interval)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def refresh(self, busy):
+        if not self.url:
+            return
+        # Read under the lock so a stale idle reading cannot undo a newer update(True).
+        with self.lock:
+            self._update(busy.value > 0)
+
+    def update(self, busy):
+        if not self.url:
+            return
+        with self.lock:
+            self._update(busy)
+
+    def _update(self, busy):
+        now = time.monotonic()
+        if busy == self.protected and not (busy and now - self.renewed > self.RENEW_SECONDS):
+            return
+        state = {'ProtectionEnabled': busy}
+        if busy:
+            state['ExpiresInMinutes'] = self.MINUTES
+        request = urllib.request.Request(
+            f'{self.url}/task-protection/v1/state',
+            data=json.dumps(state).encode(),
+            headers={'Content-Type': 'application/json'},
+            method='PUT',
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                result = json.loads(response.read() or b'{}')
+            if 'protection' not in result:
+                raise RuntimeError(result)
+            self.protected, self.renewed = busy, now
+            logging.info('Scale-in protection %s.', 'enabled' if busy else 'cleared')
+        except Exception as error:
+            logging.warning('Could not update scale-in protection: %s', _error_summary(error))
+
 def _decode_tasks(input_queue, decoded_queue):
     """Decode the next message's images while the GPU works on the current one."""
     from fast import decode
@@ -328,7 +389,7 @@ def _detect_task(detector, task):
         detects_list.append(_apply_rotation_to_detects(detector.detect(picture), info))
     return detects_list
 
-def process_scoutbot(input_queue, output_queue):
+def process_scoutbot(input_queue, output_queue, busy=None):
     from detector import Detector
 
     detector = Detector()
@@ -351,28 +412,31 @@ def process_scoutbot(input_queue, output_queue):
             detector.maybe_upgrade()
             output_queue.put((_detect_task(detector, task), task['message']))
         except Exception as error:
-            if len(body.get('images', [])) > 1 and not body.get('splitFromBatch'):
-                logging.error(
-                    'Scoutbot batch failed for message %s; splitting image ids into single-image messages: %s; error: %s',
-                    message_id,
-                    image_ids,
-                    _error_summary(error),
-                )
-                _split_and_delete_batch_message(
-                    body,
-                    message_id,
-                    task['message']['ReceiptHandle'],
-                )
-            else:
-                logging.error(
-                    'Scoutbot single-image message %s failed and will retry/DLQ via SQS. Image ids: %s; error: %s',
-                    message_id,
-                    image_ids,
-                    _error_summary(error),
-                )
-                _extend_failed_single_image_visibility(task['message'], message_id, image_ids)
+            try:
+                if len(body.get('images', [])) > 1 and not body.get('splitFromBatch'):
+                    logging.error(
+                        'Scoutbot batch failed for message %s; splitting image ids into single-image messages: %s; error: %s',
+                        message_id,
+                        image_ids,
+                        _error_summary(error),
+                    )
+                    _split_and_delete_batch_message(
+                        body,
+                        message_id,
+                        task['message']['ReceiptHandle'],
+                    )
+                else:
+                    logging.error(
+                        'Scoutbot single-image message %s failed and will retry/DLQ via SQS. Image ids: %s; error: %s',
+                        message_id,
+                        image_ids,
+                        _error_summary(error),
+                    )
+                    _extend_failed_single_image_visibility(task['message'], message_id, image_ids)
+            finally:
+                _release_busy(busy)
 
-def process_output(output_queue):
+def process_output(output_queue, busy=None):
     while True:
         output = output_queue.get() 
         if output is None:
@@ -423,6 +487,8 @@ def process_output(output_queue):
             )
             if len(image_ids) == 1:
                 _extend_failed_single_image_visibility(message, message_id, image_ids)
+        finally:
+            _release_busy(busy)
 
 def main():
     sqs = boto3.client('sqs', os.environ['REGION'])
@@ -440,12 +506,18 @@ def main():
     ctx = multiprocessing.get_context('spawn')
 
     # Create queues for inter-process communication (must share the spawn context)
-    input_queue = ctx.Queue(maxsize=5)  # Adjust capacity as needed
+    # The decode thread already prefetches a message.
+    input_queue = ctx.Queue(maxsize=1)
     output_queue = ctx.Queue()
+    busy = ctx.Value('i', 0)
+    # Autoscaling counts every MAX_IN_FLIGHT in-flight messages as one busy task.
+    max_in_flight = int(os.environ.get('MAX_IN_FLIGHT', '5'))
+    protection = _ScaleInProtection()
+    protection.keep_updated(busy)
 
     # Start the scoutbot process
-    scoutbot_process = ctx.Process(target=process_scoutbot, args=(input_queue, output_queue))
-    output_process = ctx.Process(target=process_output, args=(output_queue,))
+    scoutbot_process = ctx.Process(target=process_scoutbot, args=(input_queue, output_queue, busy))
+    output_process = ctx.Process(target=process_output, args=(output_queue, busy))
     scoutbot_process.start()
     output_process.start()
 
@@ -458,6 +530,10 @@ def main():
                 output_process.terminate()
                 sys.exit(1)
 
+            if busy.value >= max_in_flight:
+                time.sleep(0.5)
+                continue
+
             response = sqs.receive_message(
                 QueueUrl=queue_url,
                 AttributeNames=['SentTimestamp', 'ApproximateReceiveCount'],
@@ -468,6 +544,9 @@ def main():
 
             if 'Messages' in response:
                 for message in response['Messages']:
+                    with busy.get_lock():
+                        busy.value += 1
+                    protection.update(True)
                     body, message_id, image_ids, receive_count = _message_context(message)
                     logging.info(
                         'Received Scoutbot message %s attempt %s with image ids: %s',
@@ -489,28 +568,32 @@ def main():
                         input_queue.put({'files': files, 'message': message, 'rotations': rotations})
                     except Exception as error:
                         _cleanup_files(files)
-                        if len(body.get('images', [])) > 1 and not body.get('splitFromBatch'):
-                            logging.error(
-                                'Failed to prepare Scoutbot batch message %s; splitting image ids into single-image messages: %s; error: %s',
-                                message_id,
-                                image_ids,
-                                _error_summary(error),
-                            )
-                            _split_and_delete_batch_message(
-                                body,
-                                message_id,
-                                message['ReceiptHandle'],
-                            )
-                        else:
-                            logging.error(
-                                'Failed to prepare Scoutbot single-image message %s; it will retry/DLQ via SQS. Image ids: %s; error: %s',
-                                message_id,
-                                image_ids,
-                                _error_summary(error),
-                            )
-                            _extend_failed_single_image_visibility(message, message_id, image_ids)
+                        try:
+                            if len(body.get('images', [])) > 1 and not body.get('splitFromBatch'):
+                                logging.error(
+                                    'Failed to prepare Scoutbot batch message %s; splitting image ids into single-image messages: %s; error: %s',
+                                    message_id,
+                                    image_ids,
+                                    _error_summary(error),
+                                )
+                                _split_and_delete_batch_message(
+                                    body,
+                                    message_id,
+                                    message['ReceiptHandle'],
+                                )
+                            else:
+                                logging.error(
+                                    'Failed to prepare Scoutbot single-image message %s; it will retry/DLQ via SQS. Image ids: %s; error: %s',
+                                    message_id,
+                                    image_ids,
+                                    _error_summary(error),
+                                )
+                                _extend_failed_single_image_visibility(message, message_id, image_ids)
+                        finally:
+                            _release_busy(busy)
             else:
                 logging.debug('Scoutbot queue empty.')
+                protection.update(busy.value > 0)
                 time.sleep(30)
 
     except KeyboardInterrupt:

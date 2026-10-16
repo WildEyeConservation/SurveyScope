@@ -1421,6 +1421,7 @@ if (enableEcs) {
       }
     );
     scoutbotEngineBucket.grantReadWrite(ecsTaskRole);
+    const scoutbotMaxInFlight = 5;
 
     const scoutbotAutoProcessor = new AutoProcessor(
       ecsStack,
@@ -1439,13 +1440,28 @@ if (enableEcs) {
           API_ENDPOINT: backend.data.graphqlUrl,
           BUCKET: backend.inputBucket.resources.bucket.bucketName,
           ENGINE_BUCKET: scoutbotEngineBucket.bucketName,
+          MAX_IN_FLIGHT: String(scoutbotMaxInFlight),
         },
         machineImage: ecs.EcsOptimizedImage.amazonLinux2(
           ecs.AmiHardwareType.GPU
         ),
         rootVolumeSize: 100,
         allowSelfRequeue: true,
+        inFlightPerTask: scoutbotMaxInFlight,
       }
+    );
+
+    ecsTaskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['ecs:GetTaskProtection', 'ecs:UpdateTaskProtection'],
+        resources: [
+          Stack.of(ecsStack).formatArn({
+            service: 'ecs',
+            resource: 'task',
+            resourceName: `${scoutbotAutoProcessor.cluster.clusterName}/*`,
+          }),
+        ],
+      })
     );
 
     scoutbotAutoProcessor.asg.role.addManagedPolicy(
