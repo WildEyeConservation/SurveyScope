@@ -1445,6 +1445,7 @@ if (enableEcs) {
         ),
         rootVolumeSize: 100,
         allowSelfRequeue: true,
+        inFlightPerTask: 5,
       }
     );
 

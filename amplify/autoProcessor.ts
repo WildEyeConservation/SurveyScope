@@ -10,11 +10,15 @@ import { Construct } from 'constructs';
 function metricAutoscalingQueueDemand(
   queue: sqs.Queue,
   messagesPerWorker: number,
+  inFlightPerWorker = 1,
 ): cloudwatch.IMetric {
   const period = cdk.Duration.minutes(1);
+  // Workers that prefetch hold several messages, so count busy workers, not messages.
+  const busyWorkers =
+    inFlightPerWorker > 1 ? `CEIL(inFlight / ${inFlightPerWorker})` : 'inFlight';
 
   return new cloudwatch.MathExpression({
-    expression: `MAX([visible, inFlight * ${messagesPerWorker}])`,
+    expression: `MAX([visible, ${busyWorkers} * ${messagesPerWorker}])`,
     usingMetrics: {
       visible: queue.metricApproximateNumberOfMessagesVisible({ period }),
       inFlight: queue.metricApproximateNumberOfMessagesNotVisible({ period }),
@@ -63,6 +67,7 @@ type AutoProcessorProps={
   rootVolumeSize?: number;
   maxTasks?: number; // maximum desired ECS tasks to allow
   messagesPerTask?: number;
+  inFlightPerTask?: number; // messages a busy task holds at once
   allowSelfRequeue?: boolean;
   visibilityTimeout?: cdk.Duration;
   spotPrice?: string;
@@ -185,7 +190,11 @@ export class AutoProcessor extends Construct {
     scaling.scaleOnMetric('ScaleOnSQSMessages', {
       // Preserve the visible-backlog thresholds while ensuring the target
       // capacity never drops below the number of workers processing messages.
-      metric: metricAutoscalingQueueDemand(this.queue, messagesPerTask),
+      metric: metricAutoscalingQueueDemand(
+        this.queue,
+        messagesPerTask,
+        props.inFlightPerTask
+      ),
       scalingSteps: steps,
       adjustmentType: autoscaling.AdjustmentType.EXACT_CAPACITY,
       evaluationPeriods: 1,
