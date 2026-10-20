@@ -25,6 +25,10 @@ import {
   type AltitudeUnit,
 } from './upload/altitudeFilter.ts';
 import { planCameraWrite } from './upload/core/cameras.ts';
+import {
+  DEFAULT_MODEL,
+  modelForProcessedSources,
+} from './upload/core/modelDispatch.ts';
 import { sampleSuccessfulScans } from './upload/sampleScan.ts';
 import type { UploadBackend, UploadMetadata } from './upload/core/types.ts';
 import {
@@ -162,6 +166,16 @@ export type CameraSpec = {
   tiltDegrees: number;
 };
 
+type SavedCamera = CameraSpec & { name: string; masks: CameraMasks };
+
+const formatCameraSpec = (spec: CameraSpec) =>
+  spec.focalLengthMm || spec.sensorWidthMm || spec.tiltDegrees
+    ? `${spec.focalLengthMm} mm focal length, ${spec.sensorWidthMm} mm sensor, ${spec.tiltDegrees}\u00B0 tilt`
+    : 'no specifications';
+
+const regionCount = (count: number) =>
+  `${count} region${count === 1 ? '' : 's'}`;
+
 type GpsData = {
   lat: number | undefined;
   lng: number | undefined;
@@ -209,6 +223,18 @@ type NormalizedGps = {
 };
 
 const NO_AREA_KEYS = new Set<string>();
+
+type ModelOption = { label: string; value: string };
+
+const MODEL_OPTIONS: ModelOption[] = [
+  { label: 'ScoutBot', value: 'scoutbot' },
+  { label: 'Elephant Detection Nadir', value: 'elephant-detection-nadir' },
+  { label: 'Marine Animal Detector (MAD AI)', value: 'mad' },
+  { label: 'OWL-D', value: 'owl-d' },
+  { label: 'Manual (images may be processed later)', value: 'manual' },
+];
+
+const MODEL_SAMPLE_SIZE = 40;
 
 const isFiniteWithinRange = (
   value: unknown,
@@ -280,6 +306,7 @@ export function FileUploadCore({
   // automatically reflect the latest existing-image and map-filter state.
   const [existingSurveyImages, setExistingSurveyImages] = useState<
     {
+      id: string;
       originalPath: string;
       latitude: number;
       longitude: number;
@@ -307,13 +334,11 @@ export function FileUploadCore({
       ),
     [existingSurveyImages]
   );
-  const [model, setModel] = useState<{
-    label: string;
-    value: string;
-  }>({
-    label: 'ScoutBot',
-    value: 'scoutbot',
-  });
+  const [model, setModel] = useState<ModelOption>(
+    () => MODEL_OPTIONS.find((o) => o.value === DEFAULT_MODEL)!
+  );
+  const modelTouchedRef = useRef(false);
+  const [modelFromSurvey, setModelFromSurvey] = useState(false);
   const [overlaps, setOverlaps] = useState<
     { cameraA: string; cameraB: string }[]
   >([]);
@@ -512,7 +537,16 @@ export function FileUploadCore({
   };
 
   // Prefetched existing cameras for the project (modal flow)
-  const [existingCameraNames, setExistingCameraNames] = useState<string[]>([]);
+  const [existingCameras, setExistingCameras] = useState<SavedCamera[]>([]);
+  const existingCameraNames = useMemo(
+    () => existingCameras.map((c) => c.name),
+    [existingCameras]
+  );
+  const [existingOverlaps, setExistingOverlaps] = useState<
+    { cameraA: string; cameraB: string }[]
+  >([]);
+  const camerasTouchedRef = useRef(false);
+  const [camerasFromSurvey, setCamerasFromSurvey] = useState(false);
   const [loadingExistingCameras, setLoadingExistingCameras] = useState(false);
 
   // State for scan count and total
@@ -786,6 +820,24 @@ export function FileUploadCore({
       ),
     [maskTargets, cameraMasks]
   );
+
+  const untouchedSavedMasks = useMemo(() => {
+    const targetKeys = new Set(
+      maskTargets.map((t) => `${t.cameraName}:${t.shape}`)
+    );
+    return existingCameras.flatMap((camera) =>
+      (['landscape', 'portrait'] as const)
+        .filter(
+          (shape) =>
+            camera.masks[shape]?.length &&
+            !targetKeys.has(`${camera.name}:${shape}`)
+        )
+        .map((shape) => ({
+          label: `${camera.name} ${shape}`,
+          count: camera.masks[shape]!.length,
+        }))
+    );
+  }, [maskTargets, existingCameras]);
 
   // Handler to confirm column mapping before processing
   const handleConfirmMapping = () => {
@@ -1219,7 +1271,8 @@ export function FileUploadCore({
 
   useEffect(() => {
     if (!project || !project.id) {
-      setExistingCameraNames([]);
+      setExistingCameras([]);
+      setExistingOverlaps([]);
       return;
     }
     const projectId = project.id;
@@ -1227,15 +1280,43 @@ export function FileUploadCore({
     async function fetchExistingCameras() {
       try {
         setLoadingExistingCameras(true);
-        const { data } = await client.models.Camera.camerasByProjectId({
-          projectId,
-        });
+        const [{ data }, overlapRows] = await Promise.all([
+          client.models.Camera.camerasByProjectId({ projectId }),
+          fetchAllPaginatedResults(
+            client.models.CameraOverlap.cameraOverlapsByProjectId,
+            { projectId, selectionSet: ['cameraAId', 'cameraBId'] as const }
+          ).catch(() => []),
+        ]);
         if (!cancelled) {
-          setExistingCameraNames(
-            (data || []).map((c) => c.name).filter(Boolean)
+          const cameras = ((data || []) as Schema['Camera']['type'][]).filter(
+            (c) => c.name
           );
+          const savedCameras = cameras.map((c) => ({
+            name: c.name,
+            focalLengthMm: c.focalLengthMm ?? 0,
+            sensorWidthMm: c.sensorWidthMm ?? 0,
+            tiltDegrees: c.tiltDegrees ?? 0,
+            masks: parseCameraMasks(c.masks),
+          }));
+          setExistingCameras(savedCameras);
+          const nameById = new Map(cameras.map((c) => [c.id, c.name]));
+          const overlapIds = overlapRows as {
+            cameraAId: string;
+            cameraBId: string;
+          }[];
+          setExistingOverlaps(
+            overlapIds.flatMap((o) => {
+              const cameraA = nameById.get(o.cameraAId);
+              const cameraB = nameById.get(o.cameraBId);
+              return cameraA && cameraB ? [{ cameraA, cameraB }] : [];
+            })
+          );
+          if (cameras.length > 1 && !camerasTouchedRef.current) {
+            setMultipleCameras(true);
+            setCamerasFromSurvey(true);
+          }
           const saved = Object.fromEntries(
-            (data || []).map((c) => [c.name, parseCameraMasks(c.masks)])
+            savedCameras.map((c) => [c.name, c.masks])
           );
           savedCameraMasksRef.current = saved;
           setCameraMasks((prev) => ({ ...saved, ...prev }));
@@ -1267,6 +1348,7 @@ export function FileUploadCore({
             projectId,
             limit: 10000,
             selectionSet: [
+              'id',
               'originalPath',
               'latitude',
               'longitude',
@@ -1276,6 +1358,7 @@ export function FileUploadCore({
         if (!cancelled) {
           setExistingSurveyImages(
             imgs as {
+              id: string;
               originalPath: string;
               latitude: number;
               longitude: number;
@@ -1293,6 +1376,39 @@ export function FileUploadCore({
       cancelled = true;
     };
   }, [client, project?.id, newProject]);
+
+  useEffect(() => {
+    if (newProject || existingSurveyImages.length === 0) return;
+    let cancelled = false;
+    const sample = strideSamples(existingSurveyImages, MODEL_SAMPLE_SIZE);
+    Promise.all(
+      sample.map(async (image) => {
+        try {
+          const { data } = await client.models.Image.get(
+            { id: image.id },
+            { selectionSet: ['processedBy.source'] as const }
+          );
+          const processedBy = (data?.processedBy ?? []) as {
+            source: string;
+          }[];
+          return processedBy.map((p) => p.source);
+        } catch {
+          return [];
+        }
+      })
+    ).then((sources) => {
+      if (cancelled || modelTouchedRef.current) return;
+      const value = modelForProcessedSources(sources.flat());
+      const option =
+        MODEL_OPTIONS.find((o) => o.value === value) ??
+        MODEL_OPTIONS.find((o) => o.value === DEFAULT_MODEL)!;
+      setModel(option);
+      setModelFromSurvey(option.value === value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, existingSurveyImages, newProject]);
 
   useEffect(() => {
     if (newProject || !project?.id) {
@@ -2780,30 +2896,20 @@ export function FileUploadCore({
         <Select
           className='text-black'
           value={model}
-          options={[
-            { label: 'ScoutBot', value: 'scoutbot' },
-            {
-              label: 'Elephant Detection Nadir',
-              value: 'elephant-detection-nadir',
-            },
-            {
-              label: 'Marine Animal Detector (MAD AI)',
-              value: 'mad',
-            },
-            {
-              label: 'OWL-D',
-              value: 'owl-d',
-            },
-            {
-              label: 'Manual (images may be processed later)',
-              value: 'manual',
-            },
-          ]}
+          options={MODEL_OPTIONS}
           onChange={(e) => {
-            if (e) setModel(e);
+            if (!e) return;
+            modelTouchedRef.current = true;
+            setModelFromSurvey(false);
+            setModel(e);
           }}
           placeholder='Select a model'
         />
+        {modelFromSurvey && (
+          <Form.Text className='d-block text-muted' style={{ fontSize: 12 }}>
+            Matches the model this survey's images were processed with.
+          </Form.Text>
+        )}
       </Form.Group>
   );
 
@@ -3702,8 +3808,45 @@ export function FileUploadCore({
               leftLabel='Single Camera'
               rightLabel='Multiple Cameras'
               checked={multipleCameras}
-              onChange={(e) => setMultipleCameras(e)}
+              onChange={(e) => {
+                camerasTouchedRef.current = true;
+                setCamerasFromSurvey(false);
+                setMultipleCameras(e);
+              }}
             />
+            {camerasFromSurvey && (
+              <Form.Text
+                className='d-block text-muted'
+                style={{ fontSize: 12 }}
+              >
+                This survey already has {existingCameras.length} cameras.
+              </Form.Text>
+            )}
+            {existingCameras.length > 0 && (
+              <div
+                className='border border-dark p-2 mt-2'
+                style={{ fontSize: 14 }}
+              >
+                <strong>Saved on this survey</strong>
+                <ul className='mb-0 mt-1'>
+                  {existingCameras.map((camera) => (
+                    <li key={camera.name}>
+                      {camera.name} - {formatCameraSpec(camera)}
+                    </li>
+                  ))}
+                  {existingOverlaps.length > 0 && (
+                    <li>
+                      Overlaps:{' '}
+                      {existingOverlaps
+                        .map(
+                          ({ cameraA, cameraB }) => `${cameraA} / ${cameraB}`
+                        )
+                        .join('; ')}
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
             {multipleCameras && (
               <>
                 <FolderStructure
@@ -3863,6 +4006,25 @@ export function FileUploadCore({
           >
             {MASK_HELP}
           </Form.Text>
+          {untouchedSavedMasks.length > 0 && (
+            <div
+              className='border border-dark p-2 mb-2'
+              style={{ fontSize: 14 }}
+            >
+              <strong>Saved masks kept as they are</strong>
+              <span className='d-block text-muted' style={{ fontSize: 12 }}>
+                No images in this upload use them. Edit them from the survey's
+                Edit Masks page.
+              </span>
+              <ul className='mb-0 mt-1'>
+                {untouchedSavedMasks.map(({ label, count }) => (
+                  <li key={label}>
+                    {label} - {regionCount(count)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {stepVisited('masks') && (
             <CameraMaskEditor
               targets={maskTargets}
@@ -3899,6 +4061,7 @@ export function FileUploadCore({
             </li>
             <li>
               <strong>Model:</strong> {model.label}
+              {modelFromSurvey ? ' (matches this survey)' : ''}
             </li>
             <li>
               <strong>Location data:</strong>{' '}
@@ -3988,8 +4151,26 @@ export function FileUploadCore({
                 {Object.entries(cameraSpecs)
                   .map(
                     ([cameraName, spec]) =>
-                      `${cameraName} - ${spec.focalLengthMm} mm focal length, ${spec.sensorWidthMm} mm sensor, ${spec.tiltDegrees}\u00B0 tilt`
+                      `${cameraName} - ${formatCameraSpec(spec)}`
                   )
+                  .join('; ')}
+              </li>
+            )}
+            {existingCameras.length > 0 && (
+              <li>
+                <strong>Saved cameras:</strong>{' '}
+                {existingCameras
+                  .map(
+                    (camera) => `${camera.name} - ${formatCameraSpec(camera)}`
+                  )
+                  .join('; ')}
+              </li>
+            )}
+            {existingOverlaps.length > 0 && (
+              <li>
+                <strong>Saved camera overlaps:</strong>{' '}
+                {existingOverlaps
+                  .map(({ cameraA, cameraB }) => `${cameraA} / ${cameraB}`)
                   .join('; ')}
               </li>
             )}
@@ -4004,6 +4185,14 @@ export function FileUploadCore({
             {maskRegionCount > 0 && (
               <li>
                 <strong>Mask regions:</strong> {maskRegionCount}
+              </li>
+            )}
+            {untouchedSavedMasks.length > 0 && (
+              <li>
+                <strong>Saved masks kept:</strong>{' '}
+                {untouchedSavedMasks
+                  .map(({ label, count }) => `${label} - ${regionCount(count)}`)
+                  .join('; ')}
               </li>
             )}
           </ul>

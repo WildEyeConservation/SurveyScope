@@ -64,3 +64,18 @@ export const DETECTOR_DISPATCH: Record<string, DetectorConfig> = {
       void client.mutations.runStormflyDetector(args, { retry: false }),
   },
 };
+
+export const DEFAULT_MODEL = 'owl-d';
+
+export function modelForProcessedSources(
+  sources: Iterable<string>
+): string | null {
+  const models = new Set<string>();
+  for (const source of sources) {
+    const model = Object.keys(DETECTOR_DISPATCH).find(
+      (key) => DETECTOR_DISPATCH[key].processedSource === source
+    );
+    if (model) models.add(model);
+  }
+  return models.size === 1 ? [...models][0] : null;
+}
