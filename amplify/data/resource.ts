@@ -107,6 +107,8 @@ const schema = a
         tiledLocationSetId: a.id(),
         defaultZoom: a.integer(),
         pretileManifestS3Key: a.string(),
+        // JSON UploadDefaults from the last upload, used to prefill the next.
+        uploadDefaults: a.string(),
         // Set while image boundary statuses are being recomputed.
         boundaryRecomputeRequested: a.boolean(),
         boundaryRecomputeLeaseUntil: a.datetime(),
