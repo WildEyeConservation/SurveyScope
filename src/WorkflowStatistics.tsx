@@ -470,8 +470,18 @@ export default function WorkflowStatistics() {
           (bucket.workflowType === 'info-tags' ? bucket.metrics.annotationsProcessed ?? 0 : bucket.completedUnits)
       );
     });
+    // Runs with no work in the range are hidden, except ones launched in it.
+    const launchedInRange = (run: RunSummary) => {
+      const launchDate = localDateString(new Date(run.launchedAt));
+      return (
+        !!launchDate &&
+        (!startString || launchDate >= startString) &&
+        (!endString || launchDate <= endString)
+      );
+    };
     return runs
       .filter((run) => !selectedWorkflow || run.workflowType === selectedWorkflow.value)
+      .filter((run) => completionsByRun.has(run.runId) || launchedInRange(run))
       .sort((left, right) => right.launchedAt.localeCompare(left.launchedAt))
       .map((run) => ({
         id: run.runId,
@@ -485,7 +495,7 @@ export default function WorkflowStatistics() {
           completionsByRun.get(run.runId) ?? 0,
         ],
       }));
-  }, [runs, bucketsInRange, selectedWorkflow]);
+  }, [runs, bucketsInRange, selectedWorkflow, startString, endString]);
 
   const exportBaseName = `${project?.label ?? 'survey'}_${startString ?? 'all'}_${
     endString ?? 'all'
