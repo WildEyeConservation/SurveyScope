@@ -700,6 +700,7 @@ new iam.Policy(Stack.of(imageInputBucket), 'ImageStorageMissingObjectChecks', {
     backend.imageAccess.resources.lambda.role!,
     backend.generateTile.resources.lambda.role!,
     backend.workflowFiles.resources.lambda.role!,
+    backend.refreshTiles.resources.lambda.role!,
   ],
   statements: [
     new iam.PolicyStatement({
@@ -758,11 +759,6 @@ for (const model of ['Project', 'AnnotationSet'] as const) {
   );
   table.grant(backend.workflowFiles.resources.lambda, 'dynamodb:GetItem');
 }
-backend.data.resources.tables.Image.grant(
-  backend.generateTile.resources.lambda,
-  'dynamodb:UpdateItem'
-);
-
 const generateTileLambda = backend.generateTile.resources.lambda as lambda.Function;
 const sharpLayer = new lambda.LayerVersion(
   // Stays in the function stack; moving it into data would create a cycle.

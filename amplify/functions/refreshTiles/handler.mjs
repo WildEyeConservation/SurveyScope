@@ -1,7 +1,6 @@
-import pLimit from 'p-limit';
 import {
   S3Client,
-  ListObjectsV2Command,
+  HeadObjectCommand,
   CopyObjectCommand,
 } from '@aws-sdk/client-s3';
 import {
@@ -11,6 +10,7 @@ import {
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { env } from '$amplify/env/refreshTiles';
+import { tilePackKey } from '../../../shared/tilePack';
 
 Amplify.configure(
   {
@@ -75,23 +75,16 @@ async function stampTiledAt(imageId) {
 
 // ── Helpers ──
 
-async function listAllTileKeys(bucket, prefix) {
-  const keys = [];
-  let continuationToken = undefined;
-  do {
-    const resp = await s3.send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: `${prefix}/`,
-        ContinuationToken: continuationToken,
-      })
-    );
-    for (const obj of resp.Contents ?? []) {
-      if (obj.Key) keys.push(obj.Key);
+async function packExists(bucket, key) {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    if (err?.name === 'NotFound' || err?.$metadata?.httpStatusCode === 404) {
+      return false;
     }
-    continuationToken = resp.IsTruncated ? resp.NextContinuationToken : undefined;
-  } while (continuationToken);
-  return keys;
+    throw err;
+  }
 }
 
 function describeError(err) {
@@ -115,7 +108,7 @@ async function copyInPlaceWithRetry(bucket, key, maxRetries = 5) {
           Key: key,
           CopySource: `${bucket}/${encodeURIComponent(key).replace(/%2F/g, '/')}`,
           MetadataDirective: 'REPLACE',
-          ContentType: key.endsWith('.png') ? 'image/png' : undefined,
+          ContentType: 'application/octet-stream',
           Metadata: { 'refreshed-at': new Date().toISOString() },
         })
       );
@@ -154,43 +147,37 @@ export const handler = async (event) => {
       );
     }
 
-    const outputPrefix = sourceKey.replace(/^images\//, 'slippymaps/');
+    const packKey = tilePackKey(sourceKey.replace(/^images\//, ''));
     const bucket = env.OUTPUTS_BUCKET_NAME;
 
-    console.log(
-      JSON.stringify({ msg: 'refresh_list_start', imageId, outputPrefix, launchId })
-    );
-    const listStart = Date.now();
-    let tileKeys;
+    let exists;
     try {
-      tileKeys = await listAllTileKeys(bucket, outputPrefix);
+      exists = await packExists(bucket, packKey);
     } catch (err) {
       console.error(
         JSON.stringify({
-          msg: 'refresh_list_failed',
+          msg: 'refresh_head_failed',
           imageId,
           launchId,
-          outputPrefix,
+          packKey,
           error: describeError(err),
         })
       );
       if (err instanceof Error) throw err;
       const wrapped = new Error(
-        `listAllTileKeys failed for imageId="${imageId}": ${JSON.stringify(describeError(err))}`
+        `packExists failed for imageId="${imageId}": ${JSON.stringify(describeError(err))}`
       );
       wrapped.cause = err;
       throw wrapped;
     }
-    const listMs = Date.now() - listStart;
 
-    // Fallback: tiles were deleted (lifecycle, manual, or never written fully).
-    // Re-enqueue to pretileQueue so the image gets properly regenerated.
-    if (tileKeys.length === 0) {
+    // Rebuild missing packs, including legacy PNG pyramids.
+    if (!exists) {
       console.log(
         JSON.stringify({
           msg: 'refresh_fallback_to_pretile',
           imageId,
-          outputPrefix,
+          packKey,
           launchId,
         })
       );
@@ -225,29 +212,16 @@ export const handler = async (event) => {
       continue;
     }
 
-    console.log(
-      JSON.stringify({
-        msg: 'refresh_copy_start',
-        imageId,
-        launchId,
-        tileCount: tileKeys.length,
-        listMs,
-      })
-    );
     const copyStart = Date.now();
-    const limit = pLimit(20);
     try {
-      await Promise.all(
-        tileKeys.map((key) => limit(() => copyInPlaceWithRetry(bucket, key)))
-      );
+      await copyInPlaceWithRetry(bucket, packKey);
     } catch (err) {
       console.error(
         JSON.stringify({
           msg: 'refresh_copy_failed',
           imageId,
           launchId,
-          tileCount: tileKeys.length,
-          elapsedMs: Date.now() - copyStart,
+          packKey,
           error: describeError(err),
           causeError: err?.cause ? describeError(err.cause) : undefined,
           errorMessage: err?.message,
@@ -257,8 +231,6 @@ export const handler = async (event) => {
     }
     const copyMs = Date.now() - copyStart;
 
-    // Stamp tiledAt AFTER all copies succeed so a failure doesn't falsely
-    // mark the image as refreshed.
     try {
       await stampTiledAt(imageId);
     } catch (err) {
@@ -267,7 +239,7 @@ export const handler = async (event) => {
           msg: 'refresh_stamp_failed',
           imageId,
           launchId,
-          tileCount: tileKeys.length,
+          packKey,
           error: describeError(err),
           causeError: err?.cause ? describeError(err.cause) : undefined,
           errorMessage: err?.message,
@@ -281,8 +253,7 @@ export const handler = async (event) => {
         msg: 'refresh_complete',
         imageId,
         launchId,
-        tileCount: tileKeys.length,
-        listMs,
+        packKey,
         copyMs,
       })
     );

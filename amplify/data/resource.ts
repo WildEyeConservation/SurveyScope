@@ -1600,6 +1600,16 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(imageAccess)),
+    signImageTilePack: a
+      .query()
+      .arguments({
+        imageId: a.id().required(),
+        sourceKey: a.string().required(),
+        sharedImageId: a.id(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(imageAccess)),
     imageDownloadUrl: a
       .query()
       .arguments({

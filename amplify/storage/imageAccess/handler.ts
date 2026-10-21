@@ -18,6 +18,7 @@ import {
   tileId,
   type TileCoordinate,
 } from '../../../shared/imageTiles';
+import { tilePackKey } from '../../../shared/tilePack';
 import {
   requireStorageUser,
   authorizeProject,
@@ -107,15 +108,13 @@ export function createImageAccessHandler(s3 = new S3Client({})) {
   const objectKey = (sourceKey: string) => `images/${sourceKey}`;
   const signingLifetime = () => sharedSigningLifetime(s3);
 
-  async function head(
-    sourceKey: string
+  async function headObject(
+    name: 'INPUTS' | 'OUTPUTS',
+    key: string
   ): Promise<HeadObjectCommandOutput | null> {
     try {
       return await s3.send(
-        new HeadObjectCommand({
-          Bucket: bucket('INPUTS'),
-          Key: objectKey(sourceKey),
-        })
+        new HeadObjectCommand({ Bucket: bucket(name), Key: key })
       );
     } catch (error) {
       const status = (error as { $metadata?: { httpStatusCode?: number } })
@@ -124,6 +123,9 @@ export function createImageAccessHandler(s3 = new S3Client({})) {
       throw error;
     }
   }
+
+  const head = (sourceKey: string) =>
+    headObject('INPUTS', objectKey(sourceKey));
 
   // Legacy objects without ownership metadata need an existing file row.
   async function ownsExistingObject(
@@ -216,6 +218,29 @@ export function createImageAccessHandler(s3 = new S3Client({})) {
       }))
     );
     return { expiresAt: lifetime.expiresAt, tiles: urls };
+  }
+
+  // A null url means the image has no pack and uses per-tile PNGs.
+  async function signImageTilePack(event: AppSyncEvent) {
+    const args = event.arguments;
+    const access = await resolveImageAccess(event.identity, {
+      imageId: requireString(args, 'imageId'),
+      sourceKey: requireString(args, 'sourceKey'),
+      sharedImageId: optionalString(args, 'sharedImageId'),
+    });
+    const key = tilePackKey(access.sourceKey);
+    const lifetime = await signingLifetime();
+    if (!(await headObject('OUTPUTS', key))) {
+      return { url: null, expiresAt: lifetime.expiresAt };
+    }
+    return {
+      url: await getSignedUrl(
+        s3,
+        new GetObjectCommand({ Bucket: bucket('OUTPUTS'), Key: key }),
+        lifetime
+      ),
+      expiresAt: lifetime.expiresAt,
+    };
   }
 
   async function imageDownloadUrl(event: AppSyncEvent) {
@@ -526,6 +551,7 @@ export function createImageAccessHandler(s3 = new S3Client({})) {
     const user = requireStorageUser(event.identity);
     const { fieldName } = event;
     if (fieldName === 'signImageTiles') return signImageTiles(event);
+    if (fieldName === 'signImageTilePack') return signImageTilePack(event);
     if (fieldName === 'imageDownloadUrl') return imageDownloadUrl(event);
     const operation = projectOperations[fieldName];
     if (!operation) throw new Error('Unsupported storage operation');
