@@ -1,3 +1,10 @@
+import { canReloadForMaintenance } from './maintenance/state';
+import { SystemMaintenanceProvider } from './maintenance/SystemMaintenance';
+import { MaintenanceGate } from './maintenance/MaintenanceGate';
+import { uploadOrchestrator } from './upload/core/UploadOrchestrator';
+
+const pauseUploads = () => uploadOrchestrator.pause('availability');
+const resumeUploads = () => uploadOrchestrator.resumeAfterAvailabilityCheck();
 export function graphqlOperation(query: string, variables: any) {
   return { query, variables };
 }
@@ -65,6 +72,7 @@ function App({ signOut = () => { }, user }: AppProps) {
     };
   }, []);
   const alertUser = (e: BeforeUnloadEvent) => {
+    if (canReloadForMaintenance()) return;
     alert(
       'If you use refresh to load new data it may result in some of your work being lost.'
     );
@@ -112,38 +120,45 @@ function App({ signOut = () => { }, user }: AppProps) {
   }, [user]);
 
   return session ? (
-    continueOnMobile ? (
-      <User user={user! as any} cognitoGroups={cognitoGroups}>
-        {user?.userId && <ClientLogger userId={user.userId} />}
-        <UploadManager />
-        <MainNavigation signOut={signOut} />
-      </User>
-    ) : (
-      <>
-        <BrowserView>
+    <SystemMaintenanceProvider
+      key={user?.userId}
+      isSysadmin={cognitoGroups.includes('sysadmin')}
+    >
+      <MaintenanceGate signOut={signOut} pauseUploads={pauseUploads} resumeUploads={resumeUploads}>
+        {continueOnMobile ? (
           <User user={user! as any} cognitoGroups={cognitoGroups}>
             {user?.userId && <ClientLogger userId={user.userId} />}
             <UploadManager />
             <MainNavigation signOut={signOut} />
           </User>
-        </BrowserView>
-        <MobileView>
-          <Logo />
-          <div
-            className='d-flex flex-column justify-content-center align-items-center text-center p-3'
-            style={{
-              height: 'calc(100vh - 64px)',
-            }}
-          >
-            <h1>This application is primarly designed for desktop use.</h1>
-            <p>Are you sure you want to continue?</p>
-            <PrimaryButton onClick={() => setContinueOnMobile(true)}>
-              Continue
-            </PrimaryButton>
-          </div>
-        </MobileView>
-      </>
-    )
+        ) : (
+          <>
+            <BrowserView>
+              <User user={user! as any} cognitoGroups={cognitoGroups}>
+                {user?.userId && <ClientLogger userId={user.userId} />}
+                <UploadManager />
+                <MainNavigation signOut={signOut} />
+              </User>
+            </BrowserView>
+            <MobileView>
+              <Logo />
+              <div
+                className='d-flex flex-column justify-content-center align-items-center text-center p-3'
+                style={{
+                  height: 'calc(100vh - 64px)',
+                }}
+              >
+                <h1>This application is primarly designed for desktop use.</h1>
+                <p>Are you sure you want to continue?</p>
+                <PrimaryButton onClick={() => setContinueOnMobile(true)}>
+                  Continue
+                </PrimaryButton>
+              </div>
+            </MobileView>
+          </>
+        )}
+      </MaintenanceGate>
+    </SystemMaintenanceProvider>
   ) : null;
 }
 
