@@ -1,33 +1,14 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import sharp from 'sharp';
 import { env } from '$amplify/env/generateTile';
 import { decodeForTiling } from '../../functions/shared/tilingDecode.mjs';
-import { resolveImageAccess, db, table } from '../imageAccess/repository';
+import { resolveImageAccess } from '../imageAccess/repository';
 import {
   validTile,
   MAX_GENERATED_TILE_BATCH,
 } from '../../../shared/imageTiles';
 
 const s3 = new S3Client();
-
-async function stampTiledAt(imageId) {
-  try {
-    await db.send(
-      new UpdateCommand({
-        TableName: table('Image'),
-        Key: { id: imageId },
-        UpdateExpression: 'SET tiledAt = :now',
-        ConditionExpression: 'attribute_exists(id)',
-        ExpressionAttributeValues: { ':now': new Date().toISOString() },
-      })
-    );
-  } catch (err) {
-    console.log(
-      JSON.stringify({ msg: 'stamp_tiled_at_failed', imageId, error: err.message })
-    );
-  }
-}
 
 // LRU source cache kept in module scope. Warm invocations that target a
 // recently-seen image skip both the S3 fetch and the JPEG decode. Size 3
@@ -292,10 +273,6 @@ export async function handler(event) {
       );
       timings.uploadTilesMs = performance.now() - uploadStart;
       timings.uploadFailures = uploadFailures;
-
-      if (!access.shared) {
-        await stampTiledAt(imageId);
-      }
     }
 
     const result = tileBuffers.map((buf) => (buf ? buf.toString('base64') : ''));

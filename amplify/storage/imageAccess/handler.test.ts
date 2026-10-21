@@ -198,6 +198,47 @@ test('signs exact legacy tiles using bounded indexed file reads', async (t) => {
   );
 });
 
+test('signs the tile pack only when it exists', async (t) => {
+  const { handler, s3Calls, setObject } = fixture(t);
+  const args = { imageId: 'i', sourceKey: file.key };
+  const found = (await handler(event('signImageTilePack', args))) as {
+    url: string;
+    expiresAt: number;
+  };
+  assert(
+    new URL(found.url).pathname.endsWith(
+      '/slippymaps/old/photo.jpg/tiles.sstile'
+    )
+  );
+  assert(found.expiresAt <= Date.now() + 3600000);
+  assert.deepEqual(s3Calls.at(-1), {
+    command: 'HeadObjectCommand',
+    input: {
+      Bucket: 'test-outputs',
+      Key: 'slippymaps/old/photo.jpg/tiles.sstile',
+    },
+  });
+
+  setObject(null);
+  const missing = (await handler(event('signImageTilePack', args))) as {
+    url: string | null;
+  };
+  assert.equal(missing.url, null);
+
+  await assert.rejects(
+    handler(
+      event('signImageTilePack', { imageId: 'i', sourceKey: 'other/photo.jpg' })
+    ),
+    /Unauthorized/
+  );
+  await assert.rejects(
+    handler(
+      event('signImageTilePack', args, { sub: 'other', groups: ['org-b'] })
+    ),
+    /Unauthorized/
+  );
+});
+
 test('access decisions are cached briefly per identity and never across users', async (t) => {
   const { calls } = fixture(t);
   const args = { imageId: 'i', sourceKey: file.key as string };

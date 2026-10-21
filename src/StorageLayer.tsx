@@ -5,8 +5,18 @@ import {
   MAX_GENERATED_TILE_BATCH,
   type TileCoordinate,
 } from '../shared/imageTiles';
-import { storageOperation, GENERATE_TILE, SIGN_TILES } from './storage/api';
+import {
+  storageOperation,
+  GENERATE_TILE,
+  SIGN_TILES,
+  SIGN_TILE_PACK,
+} from './storage/api';
 import { loadAuthorizedTile } from './storage/tileLoader';
+import {
+  loadPackTile,
+  openSignedTilePack,
+  TilePackRegistry,
+} from './storage/tilePackSource';
 import {
   TileUrlBatcher,
   tileImageKey,
@@ -15,10 +25,6 @@ import {
 } from './storage/tileUrlBatcher';
 
 export type { TileContext } from './storage/tileUrlBatcher';
-
-// Slippy-map tiles: URLs are signed per image by the imageAccess backend,
-// missing tiles are generated on demand, and bytes are cached in IndexedDB
-// keyed by the signed-in identity. Used via the `detweb://` protocol.
 
 const TILE_CACHE_NAME = 'tileCache';
 const TILE_CACHE_STORE = 'authorizedTilesV1';
@@ -63,6 +69,7 @@ Hub.listen('auth', ({ payload }) => {
     sessionEpoch++;
     scopePromise = null;
     urls.invalidate();
+    packs.clear();
     sessionListeners.forEach((listener) => listener());
   } else if (payload.event === 'tokenRefresh') {
     scopePromise = null;
@@ -182,6 +189,22 @@ function generateTile(
   });
 }
 
+const packs = new TilePackRegistry();
+
+function signTilePack(context: TileContext, sourceKey: string) {
+  return storageOperation<{ url: string | null; expiresAt: number }>(
+    SIGN_TILE_PACK,
+    {
+      imageId: context.imageId,
+      sharedImageId: context.sharedImageId,
+      sourceKey,
+    },
+    'signImageTilePack'
+  ).then((signed) =>
+    signed.url ? { url: signed.url, expiresAt: signed.expiresAt } : null
+  );
+}
+
 const TILE_PATH = /^slippymaps\/(.+)\/(\d+)\/(\d+)\/(\d+)\.png$/;
 const blobsInFlight = new Map<string, Promise<Blob>>();
 
@@ -206,17 +229,31 @@ export async function getTileBlob(
   const scope = await sessionScope();
   assertCurrentSession();
 
-  const key = `${tileImageKey(scope, context, sourceKey)}:${path}`;
+  const imageKey = tileImageKey(scope, context, sourceKey);
+  const key = `${imageKey}:${path}`;
   const existing = blobsInFlight.get(key);
   if (existing) return existing;
 
-  const work = loadAuthorizedTile({
-    sign: () => urls.get(scope, context, sourceKey, tile),
-    evict: () => urls.evict(scope, context, sourceKey, tile),
+  const legacy = () =>
+    loadAuthorizedTile({
+      sign: () => urls.get(scope, context, sourceKey, tile),
+      evict: () => urls.evict(scope, context, sourceKey, tile),
+      readCache: () => tileCache.getItem<Blob>(key),
+      writeCache: (blob) => tileCache.setItem(key, blob),
+      fetch: (url) => fetch(url, { cache: 'no-store' }),
+      generate: () => generateTile(sourceKey, context, tile, scope),
+      assertCurrentSession,
+    });
+  const work = loadPackTile({
+    tile,
+    open: () =>
+      packs.get(imageKey, () =>
+        openSignedTilePack(() => signTilePack(context, sourceKey), context)
+      ),
+    forget: () => packs.forget(imageKey),
+    legacy,
     readCache: () => tileCache.getItem<Blob>(key),
     writeCache: (blob) => tileCache.setItem(key, blob),
-    fetch: (url) => fetch(url, { cache: 'no-store' }),
-    generate: () => generateTile(sourceKey, context, tile, scope),
     assertCurrentSession,
   });
   blobsInFlight.set(key, work);

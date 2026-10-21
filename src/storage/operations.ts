@@ -11,6 +11,10 @@ export const SIGN_TILES = `query SignImageTiles($imageId: ID!, $sourceKey: Strin
   signImageTiles(imageId: $imageId, sourceKey: $sourceKey, sharedImageId: $sharedImageId, tiles: $tiles)
 }`;
 
+export const SIGN_TILE_PACK = `query SignImageTilePack($imageId: ID!, $sourceKey: String!, $sharedImageId: ID) {
+  signImageTilePack(imageId: $imageId, sourceKey: $sourceKey, sharedImageId: $sharedImageId)
+}`;
+
 export const GENERATE_TILE = `query GenerateTile($imageKey: String!, $imageId: ID!, $sharedImageId: ID, $zs: [Int!]!, $rows: [Int!]!, $cols: [Int!]!) {
   generateTile(imageKey: $imageKey, imageId: $imageId, sharedImageId: $sharedImageId, zs: $zs, rows: $rows, cols: $cols)
 }`;
