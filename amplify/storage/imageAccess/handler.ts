@@ -220,7 +220,6 @@ export function createImageAccessHandler(s3 = new S3Client({})) {
     return { expiresAt: lifetime.expiresAt, tiles: urls };
   }
 
-  // A null url means the image has no pack and uses per-tile PNGs.
   async function signImageTilePack(event: AppSyncEvent) {
     const args = event.arguments;
     const access = await resolveImageAccess(event.identity, {

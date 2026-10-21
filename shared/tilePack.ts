@@ -1,6 +1,4 @@
-// SSTILE01 (Kestrel's format), little-endian: magic, uint32 JSON length, JSON
-// meta, uint32 offset/length per tile, then tiles in zoom/row/column order on
-// the slippymaps grid.
+// SSTILE01: little-endian JSON metadata and uint32 offset/length entries in zoom/row/column order.
 
 const MAGIC = 'SSTILE01';
 const PREFIX_LENGTH = 12;
@@ -101,7 +99,6 @@ export type DecodedHeader =
       levels: TilePackLevel[];
       entries: TilePackEntry[];
     }
-  // Fetch at least `needed` bytes from the start and decode again.
   | { complete: false; needed: number };
 
 export function decodeHeader(bytes: Uint8Array): DecodedHeader {

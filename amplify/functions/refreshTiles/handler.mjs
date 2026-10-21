@@ -165,13 +165,14 @@ export const handler = async (event) => {
       );
       if (err instanceof Error) throw err;
       const wrapped = new Error(
-        `packExists failed for imageId="${imageId}": ${JSON.stringify(describeError(err))}`
+        `packExists failed for imageId="${imageId}": ${JSON.stringify(
+          describeError(err)
+        )}`
       );
       wrapped.cause = err;
       throw wrapped;
     }
 
-    // Rebuild missing packs, including legacy PNG pyramids.
     if (!exists) {
       console.log(
         JSON.stringify({

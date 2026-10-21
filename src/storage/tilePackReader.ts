@@ -7,7 +7,7 @@ import {
   type TilePackMeta,
 } from '../../shared/tilePack';
 
-/** A signed pack URL and its expiry in epoch milliseconds. */
+// expiresAt uses epoch milliseconds.
 export interface TilePackAccess {
   url: string;
   expiresAt: number;

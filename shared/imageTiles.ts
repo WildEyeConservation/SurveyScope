@@ -1,3 +1,5 @@
+import { maxZoomFor, pyramid, tileIndex } from './tilePack';
+
 /** Coordinates use the stored pyramid order: zoom / row / column. */
 export interface TileCoordinate {
   z: number;
@@ -12,30 +14,27 @@ export interface TileImage {
 export const MAX_TILE_BATCH = 128;
 export const MAX_GENERATED_TILE_BATCH = 8;
 export const tileId = ({ z, row, col }: TileCoordinate) => `${z}/${row}/${col}`;
+const TILE_SIZE = 256;
 export function maxTileZoom(image: TileImage): number {
-  return Math.max(
-    0,
-    Math.ceil(Math.log2(Math.max(image.width, image.height) / 256))
-  );
+  return maxZoomFor(image.width, image.height, TILE_SIZE);
 }
 export function validTile(tile: TileCoordinate, image: TileImage): boolean {
   if (
     ![image.width, image.height].every((v) => Number.isSafeInteger(v) && v > 0)
   )
     return false;
-  const maxZ = maxTileZoom(image);
   if (
     ![tile.z, tile.row, tile.col].every(
       (v) => Number.isSafeInteger(v) && v >= 0
-    ) ||
-    tile.z > maxZ
+    )
   )
     return false;
-  const coverage = 256 * 2 ** (maxZ - tile.z);
-  return (
-    tile.row < Math.ceil(image.height / coverage) &&
-    tile.col < Math.ceil(image.width / coverage)
-  );
+  const { levels } = pyramid({
+    ...image,
+    tileSize: TILE_SIZE,
+    maxZoom: maxTileZoom(image),
+  });
+  return tileIndex(levels, tile.z, tile.row, tile.col) !== undefined;
 }
 /** One tile border (including diagonals), then its parents. Never pre-sign children. */
 export function bufferedTiles(

@@ -26,9 +26,6 @@ import {
 
 export type { TileContext } from './storage/tileUrlBatcher';
 
-// detweb:// tiles come from the image's pack, else from signed slippymaps
-// tiles generated on demand; bytes are cached per identity in IndexedDB.
-
 const TILE_CACHE_NAME = 'tileCache';
 const TILE_CACHE_STORE = 'authorizedTilesV1';
 const TILE_CACHE_SCOPE_KEY = 'tileCache.scope';

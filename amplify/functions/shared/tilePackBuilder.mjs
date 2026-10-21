@@ -11,8 +11,7 @@ const ENCODE_CONCURRENCY = 4;
 // A build never repeats an operation, so the cache would only hold memory.
 sharp.cache(false);
 
-// Repeat edge colours under transparent padding so lossy WebP does not darken
-// the edge; `exact` keeps them.
+// Preserve edge colours under transparent padding to prevent WebP darkening.
 function encodeTile(raster, pictureWidth, pictureHeight, row, column) {
   const left = column * TILE_SIZE;
   const top = row * TILE_SIZE;
