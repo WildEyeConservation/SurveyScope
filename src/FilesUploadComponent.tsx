@@ -242,7 +242,7 @@ const MODEL_OPTIONS: ModelOption[] = [
   { label: 'ScoutBot', value: 'scoutbot' },
   { label: 'Elephant Detection Nadir', value: 'elephant-detection-nadir' },
   { label: 'Marine Animal Detector (MAD AI)', value: 'mad' },
-  { label: 'OWL-D', value: 'owl-d' },
+  { label: 'OWL-D (Overhead Wildlife Locator)', value: 'owl-d' },
   { label: 'Manual (images may be processed later)', value: 'manual' },
 ];
 
