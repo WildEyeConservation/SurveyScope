@@ -4,10 +4,17 @@ import { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { GlobalContext } from '../Context';
 import Select from 'react-select';
 
+const MODEL_OPTIONS = [
+  { label: 'ScoutBot', value: 'scoutbotv3' },
+  { label: 'Elephant Detection Nadir', value: 'elephant' },
+  { label: 'MAD', value: 'mad' },
+  { label: 'OWL-D (Overhead Wildlife Locator)', value: 'owl-d' },
+];
+
 export default function ProcessImages({ projectId, organizationId }: { projectId: string; organizationId: string }) {
   const { client, backend, showModal } = useContext(GlobalContext)!;
   const [model, setModel] = useState<{ label: string; value: string } | null>(
-    null
+    () => MODEL_OPTIONS.find((o) => o.value === 'owl-d')!
   );
   const [loading, setLoading] = useState(false);
   const [unprocessedImages, setUnprocessedImages] = useState<
@@ -262,12 +269,7 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
           <Select
             value={model}
             onChange={(m) => setModel(m)}
-            options={[
-              { label: 'ScoutBot', value: 'scoutbotv3' },
-              { label: 'Elephant Detection Nadir', value: 'elephant' },
-              { label: 'MAD', value: 'mad' },
-              { label: 'OWL-D', value: 'owl-d' },
-            ]}
+            options={MODEL_OPTIONS}
             placeholder='Select a model'
             className='text-black'
           />
