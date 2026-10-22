@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as turf from '@turf/turf';
 import { fetchAllPaginatedResults } from '../utils';
 import { carryStrata, type LatLng } from './transectStrata';
+import { ringToPolygon } from './new-survey/surveyArea';
 
 test('saved strata keep their name when a line moves', () => {
   const west: LatLng[] = [
@@ -49,6 +51,68 @@ test('saved strata keep their name when a line moves', () => {
       ['w', 'West'],
       [undefined, 'Stratum 1'],
     ]
+  );
+});
+
+function assertClipThrows(a: LatLng[], b: LatLng[]) {
+  assert.throws(() =>
+    turf.intersect(
+      turf.featureCollection([ringToPolygon(a)!, ringToPolygon(b)!])
+    )
+  );
+}
+
+test('strata survive clipping that only works on rounded coordinates', () => {
+  const section: LatLng[] = [
+    [-24.899999999395238, 22.47000000048338],
+    [-24.889999999730872, 22.450000000626485],
+    [-24.869999999032117, 22.450000000606106],
+    [-24.879999999464147, 22.450000000020502],
+    [-24.869999999239212, 22.450000000057045],
+  ];
+  const previous: LatLng[] = [
+    [-24.889999999470618, 22.47000000077756],
+    [-24.879999999974135, 22.46000000090847],
+    [-24.89999999913447, 22.47000000071174],
+    [-24.879999999719878, 22.480000000807433],
+    [-24.869999999064436, 22.45000000036853],
+  ];
+  assertClipThrows(section, previous);
+  const carried = carryStrata(
+    [section],
+    [{ id: 'p', name: 'Kept', coords: previous }]
+  );
+  assert.deepEqual(
+    carried.map(({ id, name }) => [id, name]),
+    [[undefined, 'Stratum 1']]
+  );
+});
+
+test('strata fall back to an interior point when clipping keeps failing', () => {
+  const section: LatLng[] = [
+    [1.0000002, 1.0000002],
+    [3.0000001, 1],
+    [3.0000002, 2.0000001],
+    [3.0000001, 1],
+    [1.0000002, 2.0000002],
+    [2, 2.0000002],
+  ];
+  const previous: LatLng[] = [
+    [1, 1.0000001],
+    [2.0000002, 2.0000002],
+    [2.0000001, 1.0000001],
+    [1, 1],
+    [3.0000001, 3],
+    [1e-7, 1],
+  ];
+  assertClipThrows(section, previous);
+  const carried = carryStrata(
+    [section],
+    [{ id: 'p', name: 'Kept', coords: previous }]
+  );
+  assert.deepEqual(
+    carried.map(({ id, name }) => [id, name]),
+    [['p', 'Kept']]
   );
 });
 
