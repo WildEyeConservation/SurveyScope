@@ -5,10 +5,13 @@ export default function CameraOverlap({
   cameraSelection,
   overlaps,
   setOverlaps,
+  lockedOverlaps = [],
 }: {
   cameraSelection: [string, string[]];
   overlaps: { cameraA: string; cameraB: string }[];
   setOverlaps: Dispatch<SetStateAction<{ cameraA: string; cameraB: string }[]>>;
+  // Saved overlaps, shown read-only.
+  lockedOverlaps?: { cameraA: string; cameraB: string }[];
 }) {
   const cameraList = useMemo(() => cameraSelection[1], [cameraSelection]);
 
@@ -24,13 +27,38 @@ export default function CameraOverlap({
         <Form.Label className='mb-0'>Define Overlap Between Cameras</Form.Label>
         <span className='text-muted d-block mb-2' style={{ fontSize: '12px' }}>
           Leave blank if cameras are not overlapping.
+          {lockedOverlaps.length > 0 &&
+            ' Overlaps saved on this survey cannot be changed here.'}
         </span>
+        {lockedOverlaps.map(({ cameraA, cameraB }) => (
+          <div
+            className='d-flex align-items-center mb-2'
+            key={`saved-${cameraA}-${cameraB}`}
+          >
+            <Form.Select
+              aria-label={`Saved overlap camera ${cameraA}`}
+              value={cameraA}
+              disabled
+              className='me-2'
+            >
+              <option value={cameraA}>{cameraA}</option>
+            </Form.Select>
+            <Form.Select
+              aria-label={`Saved overlap camera ${cameraB}`}
+              value={cameraB}
+              disabled
+            >
+              <option value={cameraB}>{cameraB}</option>
+            </Form.Select>
+          </div>
+        ))}
         {overlaps.map((pair, idx) => {
-          const usedPairs = overlaps
-            .filter(
+          const usedPairs = [
+            ...lockedOverlaps,
+            ...overlaps.filter(
               (_, j) => j !== idx && overlaps[j].cameraA && overlaps[j].cameraB
-            )
-            .map(({ cameraA, cameraB }) => [cameraA, cameraB].sort().join('-'));
+            ),
+          ].map(({ cameraA, cameraB }) => [cameraA, cameraB].sort().join('-'));
           const bOptions = cameraList.filter(
             (cam) =>
               cam !== pair.cameraA &&

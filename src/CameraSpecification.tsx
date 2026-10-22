@@ -6,16 +6,22 @@ export default function CameraSpecification({
   cameraSelection,
   cameraSpecs,
   setCameraSpecs,
+  lockedSpecs = {},
 }: {
   cameraSelection: [string, string[]];
   cameraSpecs: Record<string, CameraSpec>;
   setCameraSpecs: React.Dispatch<
     React.SetStateAction<Record<string, CameraSpec>>
   >;
+  // Saved cameras, shown read-only.
+  lockedSpecs?: Record<string, CameraSpec>;
 }) {
   const cameraList = useMemo(
-    () => cameraSelection[1].sort(),
-    [cameraSelection]
+    () => [
+      ...Object.keys(lockedSpecs).sort(),
+      ...cameraSelection[1].filter((name) => !(name in lockedSpecs)).sort(),
+    ],
+    [cameraSelection, lockedSpecs]
   );
 
   function handleCameraSpecChange(
@@ -40,6 +46,8 @@ export default function CameraSpecification({
         <span className='text-muted d-block mb-2' style={{ fontSize: '12px' }}>
           Define camera specifications for each camera. If you have only one
           camera, you can define this later.
+          {Object.keys(lockedSpecs).length > 0 &&
+            ' Cameras saved on this survey cannot be changed here.'}
         </span>
         <div className='d-flex flex-column gap-3'>
           {cameraList.map((camera) => (
@@ -56,7 +64,10 @@ export default function CameraSpecification({
                 <Form.Control
                   type='number'
                   placeholder='Focal Length (mm)'
-                  value={cameraSpecs[camera]?.focalLengthMm ?? 0}
+                  value={
+                    (lockedSpecs[camera] ?? cameraSpecs[camera])?.focalLengthMm ?? 0
+                  }
+                  disabled={camera in lockedSpecs}
                   onChange={(e) =>
                     handleCameraSpecChange(
                       camera,
@@ -72,7 +83,10 @@ export default function CameraSpecification({
                 <Form.Control
                   type='number'
                   placeholder='Sensor Width (mm)'
-                  value={cameraSpecs[camera]?.sensorWidthMm ?? 0}
+                  value={
+                    (lockedSpecs[camera] ?? cameraSpecs[camera])?.sensorWidthMm ?? 0
+                  }
+                  disabled={camera in lockedSpecs}
                   onChange={(e) =>
                     handleCameraSpecChange(
                       camera,
@@ -88,7 +102,10 @@ export default function CameraSpecification({
                 <Form.Control
                   type='number'
                   placeholder='Tilt (degrees)'
-                  value={cameraSpecs[camera]?.tiltDegrees ?? 0}
+                  value={
+                    (lockedSpecs[camera] ?? cameraSpecs[camera])?.tiltDegrees ?? 0
+                  }
+                  disabled={camera in lockedSpecs}
                   onChange={(e) =>
                     handleCameraSpecChange(
                       camera,

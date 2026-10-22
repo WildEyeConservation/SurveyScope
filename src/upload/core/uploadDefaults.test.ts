@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  columnMappingForHeaders,
   fetchUploadDefaults,
   mappingForFolders,
   mergeUploadDefaults,
@@ -121,4 +122,34 @@ test('fetchUploadDefaults returns null when nothing was saved yet', async () => 
     ),
     { trimToBoundary: false }
   );
+});
+
+test('parseUploadDefaults keeps known non-empty column mappings', () => {
+  assert.deepEqual(
+    parseUploadDefaults({
+      columnMapping: { filepath: 'File', lat: 'Lat', alt: '', other: 'X' },
+    }),
+    { columnMapping: { filepath: 'File', lat: 'Lat' } }
+  );
+});
+
+test('columnMappingForHeaders requires every saved column', () => {
+  const mapping = { filepath: 'File', lat: 'Lat', lng: 'Lng' };
+  assert.deepEqual(
+    columnMappingForHeaders(mapping, ['File', 'Lat', 'Lng', 'Alt']),
+    mapping
+  );
+  assert.equal(columnMappingForHeaders(mapping, ['File', 'Lat']), null);
+  assert.equal(columnMappingForHeaders({}, ['File']), null);
+  assert.equal(columnMappingForHeaders(undefined, ['File']), null);
+});
+
+test('mergeUploadDefaults keeps the saved column mapping for GPX uploads', () => {
+  const merged = mergeUploadDefaults(
+    { columnMapping: { filepath: 'File' } },
+    { trimToBoundary: true },
+    [],
+    []
+  );
+  assert.deepEqual(merged.columnMapping, { filepath: 'File' });
 });

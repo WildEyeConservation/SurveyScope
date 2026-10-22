@@ -6,6 +6,24 @@ import {
   type CameraOrientationRotations,
 } from '../../types/Orientation';
 
+export interface ColumnMapping {
+  timestamp?: string;
+  filepath?: string;
+  lat?: string;
+  lng?: string;
+  alt?: string;
+  utm?: string;
+}
+
+const COLUMN_KEYS = [
+  'timestamp',
+  'filepath',
+  'lat',
+  'lng',
+  'alt',
+  'utm',
+] as const;
+
 export interface UploadDefaults {
   altitudeInMeters?: boolean;
   altitudeType?: string;
@@ -18,6 +36,7 @@ export interface UploadDefaults {
   trimToBoundary?: boolean;
   folderCameraMapping?: Record<string, string>;
   rotations?: CameraOrientationRotations;
+  columnMapping?: ColumnMapping;
 }
 
 const ALTITUDE_TYPES = ['egm96', 'wgs84', 'agl'];
@@ -87,7 +106,28 @@ export function parseUploadDefaults(raw: unknown): UploadDefaults | null {
       })
     );
   }
+  if (isRecord(value.columnMapping)) {
+    const mapping = value.columnMapping;
+    result.columnMapping = Object.fromEntries(
+      COLUMN_KEYS.flatMap((key) =>
+        typeof mapping[key] === 'string' && mapping[key] !== ''
+          ? [[key, mapping[key]]]
+          : []
+      )
+    );
+  }
   return result;
+}
+
+// A saved mapping only applies when the file still has every column it names.
+export function columnMappingForHeaders(
+  mapping: ColumnMapping | undefined,
+  headers: string[]
+): ColumnMapping | null {
+  if (!mapping) return null;
+  const columns = Object.values(mapping);
+  if (columns.length === 0) return null;
+  return columns.every((column) => headers.includes(column!)) ? mapping : null;
 }
 
 // Keeps saved entries for cameras and folders this upload does not cover.
@@ -101,8 +141,10 @@ export function mergeUploadDefaults(
   for (const camera of uploadedCameras) delete rotations[camera];
   const mapping = { ...saved?.folderCameraMapping };
   for (const folder of uploadedFolders) delete mapping[folder];
+  const columnMapping = next.columnMapping ?? saved?.columnMapping;
   return {
     ...next,
+    ...(columnMapping && { columnMapping }),
     folderCameraMapping: { ...mapping, ...next.folderCameraMapping },
     rotations: { ...rotations, ...next.rotations },
   };
