@@ -25,6 +25,7 @@ import { runOwlDDetector } from '../functions/runOwlDDetector/resource';
 import { runElephantDetector } from '../functions/runElephantDetector/resource';
 import { launchAnnotationSet } from '../functions/launchAnnotationSet/resource';
 import { recomputeBoundaryStatus } from '../functions/recomputeBoundaryStatus/resource';
+import { getImageManifestChunk } from '../functions/getImageManifestChunk/resource';
 import { launchFalseNegatives } from '../functions/launchFalseNegatives/resource';
 import { requeueProjectQueues } from '../functions/requeueProjectQueues/resource';
 import { monitorScoutbotDlq } from '../functions/monitorScoutbotDlq/resource';
@@ -1376,6 +1377,15 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(queryWorkflowStats)),
+    getImageManifestChunk: a
+      .query()
+      .arguments({
+        projectId: a.string().required(),
+        cursor: a.string(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(getImageManifestChunk)),
     // Pages through the immutable task events behind the daily statistics,
     // for raw exports and time-of-day snapshots. Runs are validated against
     // the project so an export cannot mix in another survey's work.
@@ -1876,6 +1886,10 @@ export type CancelIndividualIdJobHandler = MutationHandler<{ jobId: string }>;
 export type UpdateActiveOrganizationsHandler = MutationHandler<{ activatedOrganizationIds: string[] }>;
 export type LaunchIndividualIdHandler = MutationHandler<{ request: string }>;
 export type RecomputeBoundaryStatusHandler = MutationHandler<{ projectId: string }>;
+export type GetImageManifestChunkHandler = MutationHandler<
+  { projectId: string; cursor?: string | null },
+  { data: string; count: number; cursor: string | null }
+>;
 export type ClaimIndividualIdTransectHandler = MutationHandler<{ jobId: string }>;
 export type CompleteIndividualIdTransectHandler = MutationHandler<{ transectRowId: string }>;
 export type CreateChainShareHandler = MutationHandler<{ annotationSetId: string; shareId: string }>;

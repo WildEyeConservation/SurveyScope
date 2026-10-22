@@ -1,6 +1,7 @@
 import { imageAccess } from './storage/imageAccess/resource';
 import { infoTagWork } from './functions/infoTagWork/resource';
 import { recomputeBoundaryStatus } from './functions/recomputeBoundaryStatus/resource';
+import { getImageManifestChunk } from './functions/getImageManifestChunk/resource';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
@@ -98,6 +99,7 @@ const backend = defineBackend({
   imageAccess,
   infoTagWork,
   recomputeBoundaryStatus,
+  getImageManifestChunk,
   chainMutationGuard,
   revokeChainShare,
   workflowFiles,
@@ -233,6 +235,24 @@ new iam.Policy(Stack.of(recomputeLambda), 'RecomputeBoundaryStatusSelfInvoke', {
     }),
   ],
 });
+
+const manifestLambda = backend.getImageManifestChunk.resources.lambda;
+const manifestProjectTable = backend.data.resources.tables['Project'];
+const manifestImageTable = backend.data.resources.tables['Image'];
+manifestProjectTable.grant(manifestLambda, 'dynamodb:GetItem');
+manifestLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['dynamodb:Query'],
+    resources: [`${manifestImageTable.tableArn}/index/imagesByProjectId`],
+  })
+);
+backend.getImageManifestChunk.addEnvironment(
+  'IMAGE_MANIFEST_TABLES',
+  JSON.stringify({
+    Project: manifestProjectTable.tableName,
+    Image: manifestImageTable.tableName,
+  })
+);
 
 const guardFunction = backend.chainMutationGuard.resources.lambda;
 const snapshotTables: Record<string, string> = {};
