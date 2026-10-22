@@ -30,6 +30,7 @@ import {
   modelForProcessedSources,
 } from './upload/core/modelDispatch.ts';
 import {
+  columnMappingForHeaders,
   fetchUploadDefaults,
   mappingForFolders,
   mergeUploadDefaults,
@@ -352,6 +353,7 @@ export function FileUploadCore({
   );
   const modelTouchedRef = useRef(false);
   const [modelFromSurvey, setModelFromSurvey] = useState(false);
+  const [modelSampling, setModelSampling] = useState(!newProject);
   const [overlaps, setOverlaps] = useState<
     { cameraA: string; cameraB: string }[]
   >([]);
@@ -515,6 +517,7 @@ export function FileUploadCore({
     alt?: string;
   }>({});
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
+  const columnEditsRef = useRef(false);
   // UTM handling
   const [useUtm, setUseUtm] = useState(false);
   const [utmColumn, setUtmColumn] = useState<string | undefined>(undefined);
@@ -532,7 +535,7 @@ export function FileUploadCore({
   // which would defeat an inline display:none, so hidden sections drop the
   // flex class entirely and use d-none instead.
   const sectionClass = (step: UploadWizardStep) =>
-    currentStep === undefined || currentStep === step
+    (currentStep === undefined && step !== 'masks') || currentStep === step
       ? 'd-flex flex-column gap-2'
       : 'd-none';
 
@@ -549,6 +552,20 @@ export function FileUploadCore({
   const [existingCameras, setExistingCameras] = useState<SavedCamera[]>([]);
   const existingCameraNames = useMemo(
     () => existingCameras.map((c) => c.name),
+    [existingCameras]
+  );
+  const existingCameraSpecs = useMemo(
+    () =>
+      Object.fromEntries(
+        existingCameras.map((c) => [
+          c.name,
+          {
+            focalLengthMm: c.focalLengthMm,
+            sensorWidthMm: c.sensorWidthMm,
+            tiltDegrees: c.tiltDegrees,
+          },
+        ])
+      ),
     [existingCameras]
   );
   const [existingOverlaps, setExistingOverlaps] = useState<
@@ -888,6 +905,7 @@ export function FileUploadCore({
         preview: 1,
         skipEmptyLines: true,
         complete: (results) => {
+          columnEditsRef.current = false;
           setHeaderFields(results.meta.fields || []);
 
           const defaultMappings: {
@@ -937,6 +955,20 @@ export function FileUploadCore({
     // Clear any existing CSV data until mapping confirmed
     setCsvData(undefined);
   }, [file]);
+
+  // Late-loading defaults must not replace the user's own column choices.
+  useEffect(() => {
+    if (!headerFields || mappingConfirmed || columnEditsRef.current) return;
+    const saved = columnMappingForHeaders(
+      uploadDefaults?.columnMapping,
+      headerFields
+    );
+    if (!saved) return;
+    const { utm, ...columns } = saved;
+    setColumnMapping(columns);
+    setUtmColumn(utm);
+    setUseUtm(Boolean(utm));
+  }, [headerFields, uploadDefaults, mappingConfirmed]);
 
   useEffect(() => {
     setFilteredImageFiles([]);
@@ -1390,8 +1422,13 @@ export function FileUploadCore({
   }, [client, project?.id, newProject]);
 
   useEffect(() => {
-    if (newProject || existingSurveyImages.length === 0) return;
+    if (newProject || loadingExistingImages) return;
+    if (existingSurveyImages.length === 0) {
+      setModelSampling(false);
+      return;
+    }
     let cancelled = false;
+    setModelSampling(true);
     const sample = strideSamples(existingSurveyImages, MODEL_SAMPLE_SIZE);
     Promise.all(
       sample.map(async (image) => {
@@ -1409,18 +1446,22 @@ export function FileUploadCore({
         }
       })
     ).then((sources) => {
-      if (cancelled || modelTouchedRef.current) return;
+      if (cancelled) return;
+      setModelSampling(false);
       const value = modelForProcessedSources(sources.flat());
-      const option =
-        MODEL_OPTIONS.find((o) => o.value === value) ??
-        MODEL_OPTIONS.find((o) => o.value === DEFAULT_MODEL)!;
-      setModel(option);
-      setModelFromSurvey(option.value === value);
+      const option = MODEL_OPTIONS.find((o) => o.value === value);
+      if (option) {
+        setModel(option);
+        setModelFromSurvey(true);
+      } else if (!modelTouchedRef.current) {
+        setModel(MODEL_OPTIONS.find((o) => o.value === DEFAULT_MODEL)!);
+        setModelFromSurvey(false);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [client, existingSurveyImages, newProject]);
+  }, [client, existingSurveyImages, newProject, loadingExistingImages]);
 
   useEffect(() => {
     if (newProject || !project?.id) return;
@@ -2077,9 +2118,11 @@ export function FileUploadCore({
       !areaPending &&
       hasValidGpsForAllImages &&
       !altitudeFilterBlocking &&
+      !modelSampling &&
       Boolean(csvData && csvData.data.length > 0);
     setReadyToSubmit(hasData);
   }, [
+    modelSampling,
     loadingExistingImages,
     areaPending,
     hasValidGpsForAllImages,
@@ -2454,6 +2497,16 @@ export function FileUploadCore({
             ? folderCameraMapping
             : {},
           rotations: activeRotations,
+          columnMapping: headerFields
+            ? useUtm
+              ? {
+                  ...columnMapping,
+                  lat: undefined,
+                  lng: undefined,
+                  utm: utmColumn,
+                }
+              : columnMapping
+            : undefined,
         },
         folderCameraNames.map(resolveCameraName),
         folderCameraNames
@@ -2533,6 +2586,10 @@ export function FileUploadCore({
       altitudeDeviation,
       altitudeFilterUnit,
       existingImagePathSet,
+      headerFields,
+      columnMapping,
+      useUtm,
+      utmColumn,
     ]
   );
 
@@ -2992,10 +3049,16 @@ export function FileUploadCore({
             setModel(e);
           }}
           placeholder='Select a model'
+          isDisabled={modelFromSurvey || modelSampling}
         />
+        {modelSampling && (
+          <Form.Text className='d-block text-muted' style={{ fontSize: 12 }}>
+            Checking which model this survey's images were processed with...
+          </Form.Text>
+        )}
         {modelFromSurvey && (
           <Form.Text className='d-block text-muted' style={{ fontSize: 12 }}>
-            Matches the model this survey's images were processed with.
+            This survey's images were all processed with this model.
           </Form.Text>
         )}
       </Form.Group>
@@ -3254,12 +3317,13 @@ export function FileUploadCore({
                       }
                       : { label: 'None', value: '' }
                   }
-                  onChange={(opt) =>
+                  onChange={(opt) => {
+                    columnEditsRef.current = true;
                     setColumnMapping({
                       ...columnMapping,
                       filepath: opt ? opt.value : undefined,
-                    })
-                  }
+                    });
+                  }}
                   placeholder='Select FilePath column'
                   className='text-black'
                 />
@@ -3285,12 +3349,13 @@ export function FileUploadCore({
                       }
                       : { label: 'None', value: '' }
                   }
-                  onChange={(opt) =>
+                  onChange={(opt) => {
+                    columnEditsRef.current = true;
                     setColumnMapping({
                       ...columnMapping,
                       timestamp: opt ? opt.value : undefined,
-                    })
-                  }
+                    });
+                  }}
                   placeholder='Select Timestamp column'
                   className='text-black'
                 />
@@ -3307,6 +3372,7 @@ export function FileUploadCore({
                       : null
                   }
                   onChange={(opt) => {
+                    columnEditsRef.current = true;
                     setUseUtm(false);
                     setColumnMapping({
                       ...columnMapping,
@@ -3326,6 +3392,7 @@ export function FileUploadCore({
                         : null
                     }
                     onChange={(opt) => {
+                      columnEditsRef.current = true;
                       setUseUtm(false);
                       setColumnMapping({
                         ...columnMapping,
@@ -3361,6 +3428,7 @@ export function FileUploadCore({
                   }
                   onChange={(opt) => {
                     const val = opt && opt.value ? opt.value : undefined;
+                    columnEditsRef.current = true;
                     setUtmColumn(val);
                     setUseUtm(Boolean(val));
                   }}
@@ -3397,12 +3465,13 @@ export function FileUploadCore({
                       ? { label: columnMapping.alt, value: columnMapping.alt }
                       : { label: 'None', value: '' }
                   }
-                  onChange={(opt) =>
+                  onChange={(opt) => {
+                    columnEditsRef.current = true;
                     setColumnMapping({
                       ...columnMapping,
                       alt: opt && opt.value ? opt.value : undefined,
-                    })
-                  }
+                    });
+                  }}
                   placeholder='Select Altitude column'
                   className='text-black flex-grow-1'
                 />
@@ -3928,31 +3997,6 @@ export function FileUploadCore({
                 This survey already has {existingCameras.length} cameras.
               </Form.Text>
             )}
-            {existingCameras.length > 0 && (
-              <div
-                className='border border-dark p-2 mt-2'
-                style={{ fontSize: 14 }}
-              >
-                <strong>Saved on this survey</strong>
-                <ul className='mb-0 mt-1'>
-                  {existingCameras.map((camera) => (
-                    <li key={camera.name}>
-                      {camera.name} - {formatCameraSpec(camera)}
-                    </li>
-                  ))}
-                  {existingOverlaps.length > 0 && (
-                    <li>
-                      Overlaps:{' '}
-                      {existingOverlaps
-                        .map(
-                          ({ cameraA, cameraB }) => `${cameraA} / ${cameraB}`
-                        )
-                        .join('; ')}
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
             {multipleCameras && (
               <>
                 <FolderStructure
@@ -3964,6 +4008,7 @@ export function FileUploadCore({
                     cameraSelection={cameraSelection}
                     overlaps={overlaps}
                     setOverlaps={setOverlaps}
+                    lockedOverlaps={existingOverlaps}
                   />
                 )}
               </>
@@ -3979,7 +4024,7 @@ export function FileUploadCore({
                   <Form.Check
                     type='checkbox'
                     id='use-folder-camera-mapping'
-                    label='Map folder names to existing cameras'
+                    label='Manually map folder names'
                     checked={useFolderCameraMapping}
                     onChange={(e) => {
                       cameraEditsRef.current = true;
@@ -4080,7 +4125,9 @@ export function FileUploadCore({
                   !(useFolderCameraMapping && folderCameraMapping[n]) &&
                   !existingSet.has(n)
               );
-              if (onlyNew.length === 0) return null;
+              if (onlyNew.length === 0 && existingCameras.length === 0) {
+                return null;
+              }
               return (
                 <CameraSpecification
                   cameraSelection={[
@@ -4089,6 +4136,7 @@ export function FileUploadCore({
                   ]}
                   cameraSpecs={cameraSpecs}
                   setCameraSpecs={setCameraSpecs}
+                  lockedSpecs={existingCameraSpecs}
                 />
               );
             })()}
@@ -4339,7 +4387,6 @@ const MODAL_WIZARD_STEPS = [
   'Survey Area',
   'Filter Images',
   'Cameras',
-  'Masks',
   'Review & Submit',
 ];
 const MODAL_CORE_STEPS: UploadWizardStep[] = [
@@ -4348,7 +4395,6 @@ const MODAL_CORE_STEPS: UploadWizardStep[] = [
   'surveyArea',
   'filter',
   'cameras',
-  'masks',
   'review',
 ];
 

@@ -19,7 +19,6 @@ const WIZARD_STEPS = [
   'Survey Area',
   'Filter Images',
   'Cameras',
-  'Masks',
   'Review & Create',
 ];
 
@@ -32,7 +31,6 @@ const CORE_STEPS: UploadWizardStep[] = [
   'surveyArea',
   'filter',
   'cameras',
-  'masks',
   'review',
 ];
 

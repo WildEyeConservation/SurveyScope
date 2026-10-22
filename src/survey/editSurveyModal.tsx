@@ -6,8 +6,6 @@ import DefineTransects from './DefineTransects';
 import DefineStrata from './DefineStrata';
 import EditInformation from './EditInformation';
 import EditCameras from './EditCameras';
-import EditMasks from './EditMasks';
-import AdvancedOptions from './AdvancedOptions';
 import DeleteImages from './DeleteImages';
 import Logs from './Logs';
 import ManageTiles from './ManageTiles';
@@ -37,9 +35,6 @@ export default function EditSurveyModal({
           <Tab label='Edit Cameras'>
             <EditCameras key={project.id} projectId={project.id} organizationId={project.organizationId} />
           </Tab>
-          <Tab label='Masks'>
-            <EditMasks key={project.id} projectId={project.id} />
-          </Tab>
           <Tab label='Define Strata'>
             <DefineStrata key={project.id} projectId={project.id} organizationId={project.organizationId} />
           </Tab>
@@ -57,9 +52,6 @@ export default function EditSurveyModal({
           </Tab>
           <Tab label='Delete Images'>
             <DeleteImages key={project.id} projectId={project.id} />
-          </Tab>
-          <Tab label='Advanced Options'>
-            <AdvancedOptions key={project.id} projectId={project.id} />
           </Tab>
           <Tab label='Logs'>
             <Logs key={project.id} projectId={project.id} />
