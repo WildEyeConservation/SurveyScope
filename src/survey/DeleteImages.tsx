@@ -29,6 +29,7 @@ import {
   type FeatureCollection,
 } from './surveyMapStyle';
 import './surveyMap.css';
+import { loadProjectImages } from '../projectImages';
 
 type ImageData = {
   id: string;
@@ -313,17 +314,28 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     setDeleteResult(null);
 
     try {
-      const allImages = (await fetchAllPaginatedResults(
-        makeRetrying(client.models.Image.imagesByProjectId, signal),
+      const onProgress = (count: number) => {
+        if (!signal.aborted) {
+          setLoadingStatus(`Fetching images... (${count} fetched)`);
+        }
+      };
+      const allImages = (await loadProjectImages(
+        client,
+        projectId,
+        ['latitude', 'longitude', 'originalPath'],
         {
-          projectId,
-          selectionSet: ['id', 'latitude', 'longitude', 'originalPath'],
-          limit: 10000,
-        },
-        (count) => {
-          if (!signal.aborted) {
-            setLoadingStatus(`Fetching images... (${count} fetched)`);
-          }
+          signal,
+          onProgress,
+          fallback: () =>
+            fetchAllPaginatedResults(
+              makeRetrying(client.models.Image.imagesByProjectId, signal),
+              {
+                projectId,
+                selectionSet: ['id', 'latitude', 'longitude', 'originalPath'],
+                limit: 10000,
+              },
+              onProgress
+            ),
         }
       )) as Array<{
         id: string;

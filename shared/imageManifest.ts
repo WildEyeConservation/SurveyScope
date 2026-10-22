@@ -1,43 +1,54 @@
-export interface ManifestImage {
-  id: string;
-  cameraId: string | null;
-  originalPath: string | null;
-  latitude: number | null;
-  longitude: number | null;
-  altitude_agl: number | null;
-  altitude_wgs84: number | null;
-  timestamp: number | null;
-}
+const FIELD_KINDS = {
+  cameraId: 'dict',
+  transectId: 'dict',
+  boundaryStatus: 'dict',
+  originalPath: 'path',
+  latitude: 'num',
+  longitude: 'num',
+  altitude_agl: 'num',
+  altitude_wgs84: 'num',
+  width: 'num',
+  height: 'num',
+  timestamp: 'delta',
+  phash: 'str',
+} as const;
+
+export type ManifestField = keyof typeof FIELD_KINDS;
+export const MANIFEST_FIELDS = Object.keys(FIELD_KINDS) as ManifestField[];
+
+type Kind = (typeof FIELD_KINDS)[ManifestField];
+type ValueOf<K extends Kind> = K extends 'num' | 'delta' ? number : string;
+
+export type ManifestImage = { id: string } & {
+  [F in ManifestField]: ValueOf<(typeof FIELD_KINDS)[F]> | null;
+};
+export type ManifestRow<F extends ManifestField> = Pick<
+  ManifestImage,
+  'id' | F
+>;
+
+type Column =
+  | { values: string[]; index: number[] }
+  | { dirs: string[]; dir: number[]; names: string[] }
+  | (number | null)[]
+  | (string | null)[];
 
 export interface ManifestChunk {
-  v: 1;
+  v: 2;
   ids: string[];
-  cameras: string[];
-  camera: number[];
-  dirs: string[];
-  dir: number[];
-  names: string[];
-  lat: (number | null)[];
-  lon: (number | null)[];
-  agl: (number | null)[];
-  wgs: (number | null)[];
-  // Each value is the difference from the previous non-null timestamp.
-  ts: (number | null)[];
+  columns: Partial<Record<ManifestField, Column>>;
 }
 
-export const MANIFEST_FIELDS = [
-  'id',
-  'cameraId',
-  'originalPath',
-  'latitude',
-  'longitude',
-  'altitude_agl',
-  'altitude_wgs84',
-  'timestamp',
-] as const;
+export function isManifestField(field: unknown): field is ManifestField {
+  return (
+    typeof field === 'string' &&
+    Object.prototype.hasOwnProperty.call(FIELD_KINDS, field)
+  );
+}
 
 const num = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
+const str = (value: unknown) => (typeof value === 'string' ? value : null);
 
 function indexer() {
   const values: string[] = [];
@@ -56,70 +67,105 @@ function indexer() {
   };
 }
 
-// Sorting by time keeps the timestamp deltas small; callers do not rely on order.
-export function encodeManifest(rows: ManifestImage[]): ManifestChunk {
-  const sorted = [...rows].sort(
-    (a, b) =>
-      (num(a.timestamp) ?? Infinity) - (num(b.timestamp) ?? Infinity) ||
-      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-  );
-  const cameras = indexer();
-  const dirs = indexer();
-  const chunk: ManifestChunk = {
-    v: 1,
-    ids: [],
-    cameras: cameras.values,
-    camera: [],
-    dirs: dirs.values,
-    dir: [],
-    names: [],
-    lat: [],
-    lon: [],
-    agl: [],
-    wgs: [],
-    ts: [],
-  };
-  let previous = 0;
-  for (const row of sorted) {
-    chunk.ids.push(row.id);
-    chunk.camera.push(row.cameraId ? cameras.index(row.cameraId) : -1);
-    const path = row.originalPath;
-    if (typeof path === 'string') {
-      const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1;
-      chunk.dir.push(dirs.index(path.slice(0, cut)));
-      chunk.names.push(path.slice(cut));
-    } else {
-      chunk.dir.push(-1);
-      chunk.names.push('');
+function encodeColumn(kind: Kind, values: unknown[]): Column {
+  switch (kind) {
+    case 'dict': {
+      const dict = indexer();
+      const index = values.map((v) => {
+        const s = str(v);
+        return s === null ? -1 : dict.index(s);
+      });
+      return { values: dict.values, index };
     }
-    chunk.lat.push(num(row.latitude));
-    chunk.lon.push(num(row.longitude));
-    chunk.agl.push(num(row.altitude_agl));
-    chunk.wgs.push(num(row.altitude_wgs84));
-    const ts = num(row.timestamp);
-    chunk.ts.push(ts === null ? null : ts - previous);
-    if (ts !== null) previous = ts;
+    case 'path': {
+      const dirs = indexer();
+      const dir: number[] = [];
+      const names: string[] = [];
+      for (const v of values) {
+        const path = str(v);
+        if (path === null) {
+          dir.push(-1);
+          names.push('');
+          continue;
+        }
+        const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1;
+        dir.push(dirs.index(path.slice(0, cut)));
+        names.push(path.slice(cut));
+      }
+      return { dirs: dirs.values, dir, names };
+    }
+    case 'num':
+      return values.map(num);
+    case 'delta': {
+      let previous = 0;
+      return values.map((v) => {
+        const n = num(v);
+        if (n === null) return null;
+        const delta = n - previous;
+        previous = n;
+        return delta;
+      });
+    }
+    case 'str':
+      return values.map(str);
   }
-  return chunk;
+}
+
+function decodeColumn(kind: Kind, column: Column): unknown[] {
+  switch (kind) {
+    case 'dict': {
+      const { values, index } = column as { values: string[]; index: number[] };
+      return index.map((i) => (i < 0 ? null : values[i]));
+    }
+    case 'path': {
+      const { dirs, dir, names } = column as {
+        dirs: string[];
+        dir: number[];
+        names: string[];
+      };
+      return dir.map((i, row) => (i < 0 ? null : dirs[i] + names[row]));
+    }
+    case 'delta': {
+      let previous = 0;
+      return (column as (number | null)[]).map((delta) => {
+        if (delta === null) return null;
+        previous += delta;
+        return previous;
+      });
+    }
+    default:
+      return column as unknown[];
+  }
+}
+
+// Sorting by time keeps the timestamp deltas small; callers do not rely on order.
+export function encodeManifest(
+  rows: Record<string, unknown>[],
+  fields: readonly ManifestField[]
+): ManifestChunk {
+  const sorted = fields.includes('timestamp')
+    ? [...rows].sort(
+        (a, b) =>
+          (num(a.timestamp) ?? Infinity) - (num(b.timestamp) ?? Infinity)
+      )
+    : rows;
+  const columns: ManifestChunk['columns'] = {};
+  for (const field of fields) {
+    columns[field] = encodeColumn(
+      FIELD_KINDS[field],
+      sorted.map((row) => row[field])
+    );
+  }
+  return { v: 2, ids: sorted.map((row) => String(row.id)), columns };
 }
 
 export function decodeManifest(chunk: ManifestChunk): ManifestImage[] {
-  if (chunk.v !== 1) throw new Error(`Unsupported manifest version ${chunk.v}`);
-  let previous = 0;
-  return chunk.ids.map((id, i) => {
-    const delta = chunk.ts[i];
-    const timestamp = delta === null ? null : previous + delta;
-    if (timestamp !== null) previous = timestamp;
-    return {
-      id,
-      cameraId: chunk.camera[i] < 0 ? null : chunk.cameras[chunk.camera[i]],
-      originalPath:
-        chunk.dir[i] < 0 ? null : chunk.dirs[chunk.dir[i]] + chunk.names[i],
-      latitude: chunk.lat[i],
-      longitude: chunk.lon[i],
-      altitude_agl: chunk.agl[i],
-      altitude_wgs84: chunk.wgs[i],
-      timestamp,
-    };
-  });
+  if (chunk.v !== 2) throw new Error(`Unsupported manifest version ${chunk.v}`);
+  const rows = chunk.ids.map((id) => ({ id } as Record<string, unknown>));
+  for (const [field, column] of Object.entries(chunk.columns)) {
+    if (!isManifestField(field) || !column) continue;
+    const values = decodeColumn(FIELD_KINDS[field], column);
+    values.forEach((value, i) => (rows[i][field] = value));
+  }
+  return rows as ManifestImage[];
 }

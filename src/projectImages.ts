@@ -1,11 +1,13 @@
 import {
   decodeManifest,
   type ManifestChunk,
-  type ManifestImage,
-} from '../../shared/imageManifest';
+  type ManifestField,
+  type ManifestRow,
+} from '../shared/imageManifest';
+import { fetchAllPaginatedResults } from './utils';
 
 type ChunkQuery = (
-  input: { projectId: string; cursor?: string },
+  input: { projectId: string; cursor?: string; fields: string[] },
   options: { signal?: AbortSignal }
 ) => Promise<{ data?: unknown; errors?: { message?: string }[] }>;
 
@@ -13,6 +15,12 @@ interface ChunkPage {
   data: string;
   count: number;
   cursor: string | null;
+}
+
+export interface LoadImagesOptions {
+  signal?: AbortSignal;
+  onProgress?: (count: number) => void;
+  fallback?: () => Promise<unknown[]>;
 }
 
 // Resolved at runtime because the generated client may predate this query.
@@ -32,19 +40,20 @@ async function gunzipJson(base64: string): Promise<ManifestChunk> {
   return new Response(stream).json();
 }
 
-export async function fetchImageManifest(
+export async function fetchImageManifest<F extends ManifestField>(
   client: unknown,
   projectId: string,
-  signal?: AbortSignal
-): Promise<ManifestImage[] | null> {
+  fields: readonly F[],
+  { signal, onProgress }: LoadImagesOptions = {}
+): Promise<ManifestRow<F>[] | null> {
   const query = resolveChunkQuery(client);
   if (!query) return null;
 
-  const images: ManifestImage[] = [];
+  const images: ManifestRow<F>[] = [];
   let cursor: string | null = null;
   do {
     const { data, errors } = await query(
-      { projectId, cursor: cursor ?? undefined },
+      { projectId, cursor: cursor ?? undefined, fields: [...fields] },
       { signal }
     );
     if (errors?.length) {
@@ -61,7 +70,42 @@ export async function fetchImageManifest(
     for (const image of decodeManifest(chunk)) {
       images.push(image);
     }
+    onProgress?.(images.length);
     cursor = page.cursor;
   } while (cursor);
   return images;
+}
+
+export async function loadProjectImages<F extends ManifestField>(
+  client: unknown,
+  projectId: string,
+  fields: readonly F[],
+  options: LoadImagesOptions = {}
+): Promise<ManifestRow<F>[]> {
+  const { signal, onProgress, fallback } = options;
+  const manifest = await fetchImageManifest(
+    client,
+    projectId,
+    fields,
+    options
+  ).catch((error) => {
+    if (signal?.aborted) throw error;
+    console.warn('Image manifest failed, paginating instead', error);
+    return null;
+  });
+  if (manifest) return manifest;
+  const images = fallback
+    ? await fallback()
+    : await fetchAllPaginatedResults(
+        (client as { models: { Image: { imagesByProjectId: never } } }).models
+          .Image.imagesByProjectId,
+        {
+          projectId,
+          selectionSet: ['id', ...fields],
+          limit: 10000,
+          signal,
+        },
+        onProgress
+      );
+  return images as ManifestRow<F>[];
 }

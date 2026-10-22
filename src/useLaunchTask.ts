@@ -13,6 +13,7 @@ import {
   parseCameraMasks,
   type CameraMasks,
 } from './types/CameraMask';
+import { loadProjectImages } from './projectImages';
 
 export const LEGACY_STORMFLY_BOX_SIZE = 64;
 
@@ -110,14 +111,11 @@ export function useLaunchTask(
     if (masksByCamera.size === 0) return locations;
 
     onProgress?.('Applying camera masks...');
-    const images = await fetchAllPaginatedResults(
-      client.models.Image.imagesByProjectId,
-      {
-        projectId: options.projectId,
-        limit: 10000,
-        selectionSet: ['id', 'cameraId', 'width', 'height'] as const,
-      }
-    );
+    const images = await loadProjectImages(client, options.projectId, [
+      'cameraId',
+      'width',
+      'height',
+    ]);
     const imageById = new Map(images.map((image) => [image.id, image]));
     const kept = locations.filter((location) => {
       const image = imageById.get(location.imageId);
@@ -125,7 +123,8 @@ export function useLaunchTask(
         ? masksByCamera.get(image.cameraId)
         : undefined;
       return !(
-        image &&
+        image?.width &&
+        image.height &&
         isPointMasked(masks, location.x, location.y, image.width, image.height)
       );
     });

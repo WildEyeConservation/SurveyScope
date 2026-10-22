@@ -105,6 +105,7 @@ import {
 } from './utils/shapefileUtils';
 import { resplitStrata } from './survey/strataStore';
 import { clearJollyResults } from './survey/transectStrata';
+import { loadProjectImages } from './projectImages';
 
 // Configure a dedicated storage instance for file paths
 const fileStore = localforage.createInstance({
@@ -1361,19 +1362,11 @@ export function FileUploadCore({
     async function fetchExistingImages() {
       setLoadingExistingImages(true);
       try {
-        const imgs = await fetchAllPaginatedResults(
-          client.models.Image.imagesByProjectId,
-          {
-            projectId,
-            limit: 10000,
-            selectionSet: [
-              'id',
-              'originalPath',
-              'latitude',
-              'longitude',
-            ] as const,
-          } as any
-        );
+        const imgs = await loadProjectImages(client, projectId, [
+          'originalPath',
+          'latitude',
+          'longitude',
+        ]);
         if (!cancelled) {
           setExistingSurveyImages(
             imgs as {

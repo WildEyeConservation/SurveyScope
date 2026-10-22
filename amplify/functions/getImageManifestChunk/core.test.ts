@@ -4,6 +4,8 @@ import { gunzipSync } from 'node:zlib';
 import { decodeManifest } from '../../../shared/imageManifest';
 import { readChunk, type QueryPage } from './core';
 
+const FIELDS = ['cameraId', 'originalPath', 'latitude', 'timestamp'] as const;
+
 const items = Array.from({ length: 500 }, (_, i) => ({
   id: `img-${String(i).padStart(4, '0')}`,
   cameraId: 'cam',
@@ -43,7 +45,13 @@ test('trimmed chunks resume after the last packed row', async () => {
   let cursor: string | null = null;
   let chunks = 0;
   do {
-    const chunk = await readChunk(fakeIndex(items, 37), 'p', cursor, options);
+    const chunk = await readChunk(
+      fakeIndex(items, 37),
+      'p',
+      cursor,
+      FIELDS,
+      options
+    );
     assert.ok(chunk.data.length <= options.maxPayloadBytes);
     if (chunk.cursor) assert.ok(chunk.count < options.rowTarget);
     const rows = unpack(chunk.data);
@@ -60,7 +68,7 @@ test('trimmed chunks resume after the last packed row', async () => {
 });
 
 test('an empty project returns one empty, final chunk', async () => {
-  const chunk = await readChunk(fakeIndex([], 10), 'p', null, {
+  const chunk = await readChunk(fakeIndex([], 10), 'p', null, FIELDS, {
     maxPayloadBytes: 3000,
     rowTarget: 100,
     readDeadlineMs: 60_000,
@@ -78,13 +86,20 @@ test('stops reading at the deadline and continues from the cursor', async () => 
     readDeadlineMs: 10,
     now: () => (clock += 6),
   };
-  const first = await readChunk(fakeIndex(items, 50), 'p', null, options);
+  const first = await readChunk(
+    fakeIndex(items, 50),
+    'p',
+    null,
+    FIELDS,
+    options
+  );
   assert.equal(first.count, 100);
   assert.ok(first.cursor);
   const second = await readChunk(
     fakeIndex(items, 50),
     'p',
     first.cursor,
+    FIELDS,
     options
   );
   assert.equal(unpack(second.data)[0].id >= 'img-0100', true);

@@ -3,6 +3,7 @@ import { useState, useEffect, useContext } from 'react';
 import { Footer } from '../Modal';
 import { GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
+import { loadProjectImages } from '../projectImages';
 
 interface CameraFormData {
   focalLengthMm?: number;
@@ -123,9 +124,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
 
       if (newCamera) {
         // Fetch all project images and link them to the new camera
-        const { data: images } = await client.models.Image.imagesByProjectId({
-          projectId,
-        });
+        const images = await loadProjectImages(client, projectId, []);
 
         // Update each image to link to the new camera
         await Promise.all(

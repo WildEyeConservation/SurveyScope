@@ -9,10 +9,10 @@ import {
 import Form from 'react-bootstrap/Form';
 import Spinner from 'react-bootstrap/Spinner';
 import { GlobalContext } from './Context';
-import { fetchAllPaginatedResults } from './utils';
 import LabeledToggleSwitch from './LabeledToggleSwitch';
 import type { TiledLaunchRequest } from './types/LaunchTask';
 import Papa from 'papaparse';
+import { loadProjectImages } from './projectImages';
 
 type Nullable<T> = T | null;
 
@@ -461,24 +461,19 @@ export default function TileConfiguration({
     async function getAllImages() {
       setLoadingImages(true);
       setImagesLoaded(0);
-      const all = await fetchAllPaginatedResults(
-        (client as any).models.Image.imagesByProjectId,
-        {
-          projectId,
-          selectionSet: [
-            'width',
-            'height',
-            'id',
-            'timestamp',
-            'originalPath',
-            'transectId',
-            'latitude',
-            'longitude',
-          ],
-          limit: 10000,
-          signal,
-        } as any,
-        (count) => setImagesLoaded(count)
+      const all = await loadProjectImages(
+        client,
+        projectId,
+        [
+          'width',
+          'height',
+          'timestamp',
+          'originalPath',
+          'transectId',
+          'latitude',
+          'longitude',
+        ],
+        { signal, onProgress: (count) => setImagesLoaded(count) }
       );
       if (signal.aborted) return;
       const imagesArr: ImageData[] = (all as any[]).map((img: any) => ({

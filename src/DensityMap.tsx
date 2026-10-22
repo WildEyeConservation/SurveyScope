@@ -14,6 +14,7 @@ import {
 import { Spinner, Form } from 'react-bootstrap';
 import { useInfoTagData } from './useInfoTags';
 import { formatInfoTagsForDisplay } from './infoTags';
+import { loadProjectImages } from './projectImages';
 
 /**
  * A single (survey, annotation set) pair whose annotations should be plotted.
@@ -236,11 +237,12 @@ export default function DensityMap({
       staleTime: 30 * 60 * 1000,
       queryFn: async () => {
         const [images, strata, exclusions] = await Promise.all([
-          fetchAllPaginatedResults(client.models.Image.imagesByProjectId, {
-            projectId: sid,
-            limit: 10000,
-            selectionSet: ['id', 'latitude', 'longitude', 'transectId', 'timestamp'],
-          }),
+          loadProjectImages(client, sid, [
+            'latitude',
+            'longitude',
+            'transectId',
+            'timestamp',
+          ]),
           fetchAllPaginatedResults(client.models.Stratum.strataByProjectId, {
             projectId: sid,
             limit: 10000,

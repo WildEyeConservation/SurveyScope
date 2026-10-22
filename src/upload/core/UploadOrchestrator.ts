@@ -39,6 +39,7 @@ import {
   type UploadBackend,
   type UploadClient,
 } from './types';
+import { loadProjectImages } from '../../projectImages';
 
 const MAX_SESSION_ATTEMPTS = 20;
 const THROUGHPUT_WINDOW_MS = 30000;
@@ -644,14 +645,12 @@ export class UploadOrchestrator {
       localPaths,
     });
 
-    const dbRawImages = (await fetchAllPaginatedResults(
-      client.models.Image.imagesByProjectId,
-      {
-        projectId,
-        selectionSet: ['id', 'originalPath', 'timestamp', 'cameraId', 'phash'],
-        limit: 10000,
-      }
-    )) as {
+    const dbRawImages = (await loadProjectImages(client, projectId, [
+      'originalPath',
+      'timestamp',
+      'cameraId',
+      'phash',
+    ])) as {
       id: string;
       originalPath: string;
       timestamp: number;
