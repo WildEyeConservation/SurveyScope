@@ -77,12 +77,14 @@ export default function UploadProgress() {
     projectId,
   } = snapshot;
 
+  // Floor so one unfinished file in a large survey never reads as 100%.
   const percent =
     bytesTotal > 0
-      ? Math.min(100, Math.round((bytesUploaded / bytesTotal) * 100))
+      ? Math.min(100, Math.floor((bytesUploaded / bytesTotal) * 100))
       : total > 0
-      ? Math.round((processed / total) * 100)
+      ? Math.floor((processed / total) * 100)
       : 0;
+  const remaining = total - processed;
 
   const dotColor =
     phase === 'failed'
@@ -122,14 +124,22 @@ export default function UploadProgress() {
     case 'uploading':
       statusContent = (
         <div className='d-flex flex-column'>
-          <p className='m-0'>{`${percent}% uploaded`}</p>
-          {(throughputBps !== null || etaSeconds !== null) && (
-            <p className='m-0' style={{ fontSize: 12 }}>
-              {throughputBps !== null && `${formatRate(throughputBps)}`}
-              {throughputBps !== null && etaSeconds !== null && ' • '}
-              {etaSeconds !== null && `${formatDuration(etaSeconds)} left`}
-            </p>
-          )}
+          <p className='m-0'>
+            {snapshot.statusMessage ??
+              (percent === 100 && remaining > 0
+                ? `Finishing ${remaining} remaining image${
+                    remaining === 1 ? '' : 's'
+                  }...`
+                : `${percent}% uploaded`)}
+          </p>
+          {!snapshot.statusMessage &&
+            (throughputBps !== null || etaSeconds !== null) && (
+              <p className='m-0' style={{ fontSize: 12 }}>
+                {throughputBps !== null && `${formatRate(throughputBps)}`}
+                {throughputBps !== null && etaSeconds !== null && ' • '}
+                {etaSeconds !== null && `${formatDuration(etaSeconds)} left`}
+              </p>
+            )}
         </div>
       );
       controls = controlButton(<Pause size={16} />, 'Pause upload', () =>

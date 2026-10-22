@@ -12,6 +12,9 @@ interface QueueEntry {
   file: File;
 }
 
+// Consecutive crashes before hashing is abandoned, e.g. when the script 404s.
+const MAX_CONSECUTIVE_CRASHES = 3;
+
 type WorkerMessage =
   | { id: number; phash: string }
   | { id: number; error: string };
@@ -20,36 +23,15 @@ export class PhashService {
   private workers: Worker[] = [];
   private idle: Worker[] = [];
   private pending = new Map<number, PendingJob>();
+  private running = new Map<Worker, number>();
   private queue: QueueEntry[] = [];
   private nextId = 0;
+  private crashes = 0;
   private destroyed = false;
 
   constructor(workerCount = 4) {
     const count = Math.max(1, workerCount);
-    for (let i = 0; i < count; i++) {
-      const worker = new Worker(
-        new URL('./phashWorker.ts', import.meta.url),
-        { type: 'module' }
-      );
-      worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-        const data = event.data;
-        const cb = this.pending.get(data.id);
-        this.pending.delete(data.id);
-        if (cb) {
-          cb.resolve('phash' in data ? data.phash : null);
-        }
-        this.idle.push(worker);
-        this.dispatch();
-      };
-      worker.onerror = () => {
-        // Resolve any in-flight job for this worker as null and recycle it.
-        // The next dispatch will route work to remaining idle workers.
-        this.idle.push(worker);
-        this.dispatch();
-      };
-      this.workers.push(worker);
-      this.idle.push(worker);
-    }
+    for (let i = 0; i < count; i++) this.spawn();
   }
 
   hash(file: File): Promise<string | null> {
@@ -67,15 +49,54 @@ export class PhashService {
     for (const w of this.workers) w.terminate();
     this.workers = [];
     this.idle = [];
+    this.running.clear();
     for (const job of this.pending.values()) job.resolve(null);
     this.pending.clear();
     this.queue.length = 0;
+  }
+
+  private spawn(): void {
+    const worker = new Worker(new URL('./phashWorker.ts', import.meta.url), {
+      type: 'module',
+    });
+    worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+      const data = event.data;
+      this.running.delete(worker);
+      this.crashes = 0;
+      this.settle(data.id, 'phash' in data ? data.phash : null);
+      this.idle.push(worker);
+      this.dispatch();
+    };
+    worker.onerror = () => {
+      const id = this.running.get(worker);
+      this.running.delete(worker);
+      if (id !== undefined) this.settle(id, null);
+      worker.terminate();
+      this.workers = this.workers.filter((w) => w !== worker);
+      this.idle = this.idle.filter((w) => w !== worker);
+      if (this.destroyed) return;
+      if (++this.crashes >= MAX_CONSECUTIVE_CRASHES) {
+        this.destroy();
+        return;
+      }
+      this.spawn();
+      this.dispatch();
+    };
+    this.workers.push(worker);
+    this.idle.push(worker);
+  }
+
+  private settle(id: number, phash: string | null): void {
+    const job = this.pending.get(id);
+    this.pending.delete(id);
+    job?.resolve(phash);
   }
 
   private dispatch(): void {
     while (this.idle.length > 0 && this.queue.length > 0) {
       const worker = this.idle.pop()!;
       const job = this.queue.shift()!;
+      this.running.set(worker, job.id);
       worker.postMessage({ id: job.id, file: job.file });
     }
   }

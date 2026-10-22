@@ -2,6 +2,7 @@ import { getUrl } from 'aws-amplify/storage';
 
 // SRTM elevation lookup with a promise cache for concurrent tile requests.
 const MAX_CACHED_TILES = 8;
+const FETCH_TIMEOUT_MS = 30_000;
 
 export class ElevationService {
   private tiles = new Map<string, Promise<ArrayBuffer>>();
@@ -57,7 +58,9 @@ export class ElevationService {
         },
       },
     });
-    const response = await fetch(urlResult.url.toString());
+    const response = await fetch(urlResult.url.toString(), {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new Error(`HGT fetch failed with status ${response.status}`);
     }

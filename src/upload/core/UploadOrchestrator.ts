@@ -397,6 +397,7 @@ export class UploadOrchestrator {
     for (;;) {
       let phashService: PhashService | null = null;
       try {
+        session.statusMessage = undefined;
         this.setPhase(session, 'preparing');
         const plan = await this.prepare(session);
         if (await this.handleInterrupt(session)) return;
@@ -445,6 +446,9 @@ export class UploadOrchestrator {
         phashService = null;
         await session.store.flush();
         if (await this.handleInterrupt(session)) return;
+
+        session.statusMessage = 'Checking all files reached storage...';
+        this.emit(session);
 
         // Prune hash duplicates skipped by the transfer engine.
         await this.pruneDuplicates(session);
