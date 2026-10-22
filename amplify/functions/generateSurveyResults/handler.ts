@@ -4,6 +4,7 @@ import { Amplify } from 'aws-amplify';
 import { generateClient, type GraphQLResult } from 'aws-amplify/data';
 import type { GenerateSurveyResultsHandler } from '../../data/resource';
 import { authorizeRequest } from '../shared/authorizeRequest';
+import { boundaryRecomputePending } from '../../../shared/boundaryStatus';
 import {
   ConditionalCheckFailedException,
   DynamoDBClient,
@@ -60,7 +61,11 @@ const stepFunctions = new SFNClient(sdkConfig);
 
 const getProjectOrganizationId = /* GraphQL */ `
   query GetProject($id: ID!) {
-    getProject(id: $id) { organizationId }
+    getProject(id: $id) {
+      organizationId
+      boundaryRecomputeRequested
+      boundaryRecomputeLeaseUntil
+    }
   }
 `;
 
@@ -304,15 +309,26 @@ export const handler: GenerateSurveyResultsHandler = async (event) => {
     query: getProjectOrganizationId,
     variables: { id: surveyId },
   });
-  const organizationId = (
+  const project = (
     projectResponse as GraphQLResult<{
-      getProject?: { organizationId?: string | null } | null;
+      getProject?: {
+        organizationId?: string | null;
+        boundaryRecomputeRequested?: boolean | null;
+        boundaryRecomputeLeaseUntil?: string | null;
+      } | null;
     }>
-  ).data?.getProject?.organizationId;
+  ).data?.getProject;
+  const organizationId = project?.organizationId;
   if (!organizationId) {
     throw new Error('Project does not have an organizationId');
   }
   authorizeRequest(event.identity, organizationId);
+  // Strata and transect assignments are incomplete until the recompute ends.
+  if (boundaryRecomputePending(project)) {
+    throw new Error(
+      'The survey area and strata are still being applied to the images. Try again in a few minutes.'
+    );
+  }
 
   const { jobTableName, stateMachineArn } = requireJollyPipeline();
   const bucketName = requiredEnvironment('OUTPUTS_BUCKET_NAME');

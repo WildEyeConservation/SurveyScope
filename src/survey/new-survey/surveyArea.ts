@@ -8,6 +8,7 @@ import type {
 } from 'geojson';
 import { simplifyPolygonToRange } from '../../utils/shapefileUtils';
 import { createBoundaryClassifier } from '../../../shared/boundaryStatus';
+import type { StrataNetwork } from '../strataNetwork';
 
 // Rings are open and ordered [lat, lng].
 export type LatLng = [number, number];
@@ -17,6 +18,8 @@ export type AreaRole = 'boundary' | 'exclusion' | 'ignore';
 export interface SurveyArea {
   boundary: LatLng[] | null;
   exclusions: LatLng[][];
+  // Null keeps strata saved before networks were stored.
+  network?: StrataNetwork | null;
 }
 
 export const EMPTY_AREA: SurveyArea = { boundary: null, exclusions: [] };
@@ -244,6 +247,7 @@ export function applyImport(
 ): SurveyArea {
   const boundary = polygons.find((polygon) => polygon.role === 'boundary');
   return {
+    ...area,
     boundary: boundary ? boundary.ring : area.boundary,
     exclusions: [
       ...area.exclusions,

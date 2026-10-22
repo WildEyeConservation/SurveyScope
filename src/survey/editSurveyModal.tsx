@@ -2,7 +2,6 @@ import { Modal, Header, Title, Body } from '../Modal';
 import { Schema } from '../amplify/client-schema';
 import { Tabs, Tab } from '../Tabs';
 import ProcessImages from './ProcessImages';
-import EditShapeFile from './EditShapeFile';
 import DefineTransects from './DefineTransects';
 import DefineStrata from './DefineStrata';
 import EditInformation from './EditInformation';
@@ -41,14 +40,11 @@ export default function EditSurveyModal({
           <Tab label='Masks'>
             <EditMasks key={project.id} projectId={project.id} />
           </Tab>
-          <Tab label='Edit Shape File'>
-            <EditShapeFile key={project.id} projectId={project.id} organizationId={project.organizationId} />
+          <Tab label='Define Strata'>
+            <DefineStrata key={project.id} projectId={project.id} organizationId={project.organizationId} />
           </Tab>
           <Tab label='Define Transects'>
             <DefineTransects key={project.id} projectId={project.id} organizationId={project.organizationId} />
-          </Tab>
-          <Tab label='Define Strata'>
-            <DefineStrata key={project.id} projectId={project.id} organizationId={project.organizationId} />
           </Tab>
           <Tab label='Manage Tiles'>
             <ManageTiles key={project.id} project={project} />

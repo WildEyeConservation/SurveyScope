@@ -1,18 +1,12 @@
 import * as turf from '@turf/turf';
 
-// finds the average transect heading and returns the orthogonal baseline heading
+// Track points must be in flight order.
 export function getBaselineBearing(
-  transectIds: number[],
-  segmentedImages: Array<{
-    longitude: number;
-    latitude: number;
-    transectId: number;
-  }>
+  tracks: Array<Array<{ longitude: number; latitude: number }>>
 ): number {
   // average transect heading
   const headings: number[] = [];
-  transectIds.forEach((id) => {
-    const imgs = segmentedImages.filter((si) => si.transectId === id);
+  tracks.forEach((imgs) => {
     if (imgs.length >= 2) {
       const start = imgs[0];
       const end = imgs[imgs.length - 1];

@@ -28,19 +28,19 @@ import {
   surveySaveSettled,
   useSurveySaving,
 } from './surveySaves';
-import { loadSurveyArea } from '../utils/shapefileUtils';
 import {
-  assignTransectsToStrata,
+  loadSurveyArea,
+  recomputeBoundaryStatus,
+} from '../utils/shapefileUtils';
+import {
   clearJollyResults,
   closedLngLatRing,
   isValidLatLng,
   loadOnEffortImages,
   loadStrata,
   segmentBySavedTransect,
-  stratumMetrics,
   strataColors,
   transectColors,
-  transectsByStratum,
   type LatLng,
   type SavedStratum,
   type SegmentedImage,
@@ -279,18 +279,11 @@ function DefineTransectsEditor({
             { id: data.id, name: 'Stratum 1', coords: boundary },
           ];
         }
-        const assignment = assignTransectsToStrata(
-          segmentedImages,
-          currentStrata.map((st) => st.coords)
-        );
-
         const transectMap: Record<number, string> = {};
         for (const tid of transectIds) {
-          const index = assignment.get(tid);
-          if (index == null) continue;
           const { data } = await (client.models.Transect.create as any)({
             projectId,
-            stratumId: currentStrata[index].id,
+            stratumId: currentStrata[0].id,
             group: organizationId,
           });
           transectMap[tid] = data.id;
@@ -352,23 +345,10 @@ function DefineTransectsEditor({
             .map((id) => (client.models.Transect.delete as any)({ id }))
         );
 
-        const groups = transectsByStratum(assignment, currentStrata.length);
-        await Promise.all(
-          currentStrata.map((st, i) =>
-            (client.models.Stratum.update as any)({
-              id: st.id,
-              ...stratumMetrics(
-                st.coords,
-                exclusions,
-                groups[i],
-                segmentedImages
-              ),
-            })
-          )
-        );
         setStrata(currentStrata);
 
         await clearJollyResults(client, projectId);
+        await recomputeBoundaryStatus(client as any, projectId);
       });
     } catch (err) {
       console.error('Failed to save transects:', err);
@@ -953,7 +933,7 @@ function DefineTransectsEditor({
         )}
         {!loading && !loadError && !boundary && strata.length === 0 && (
           <div className='alert alert-warning mb-0'>
-            Add a survey boundary in Edit Shape File before saving transects.
+            Add a survey boundary in Define Strata before saving transects.
           </div>
         )}
         {saveError && (

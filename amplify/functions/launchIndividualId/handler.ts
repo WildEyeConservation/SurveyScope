@@ -597,7 +597,7 @@ async function fetchAllPages<T>(
   return all;
 }
 
-// Area edits and transect saves delete these rows.
+// Transect saves delete the outside transect.
 async function ensureOutsideTransect(
   projectId: string,
   organizationId: string

@@ -17,6 +17,7 @@ import {
   TerraDrawRenderMode,
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
+import * as turf from '@turf/turf';
 import FileInput from '../FileInput';
 import { BASE_STYLE, EMPTY_FC, type FeatureCollection } from './surveyMapStyle';
 import './surveyMap.css';
@@ -33,6 +34,16 @@ import {
   type SurveyArea,
 } from './new-survey/surveyArea';
 import { AREA_FILE_TYPES, readAreaFiles } from './new-survey/surveyAreaImport';
+import {
+  connect,
+  EMPTY_NETWORK,
+  moveNode,
+  removeEdge,
+  removeNode,
+  type NetworkTarget,
+  type StrataNetwork,
+} from './strataNetwork';
+import { strataColors } from './transectStrata';
 
 export type AreaPoint = {
   lat: number;
@@ -40,12 +51,22 @@ export type AreaPoint = {
   state: 'upload' | 'skipped' | 'uploaded';
 };
 
+export interface StrataEditing {
+  sections: LatLng[][];
+  names: string[];
+  onNameChange: (index: number, name: string) => void;
+  invalid?: boolean[];
+  dangling?: boolean;
+  status?: ReactNode;
+}
+
 interface SurveyAreaEditorProps {
   value: SurveyArea;
   onChange: (area: SurveyArea) => void;
   points?: AreaPoint[];
   locked?: boolean;
   children?: ReactNode;
+  strata?: StrataEditing;
 }
 
 // Separate polygon modes allow different boundary and exclusion styles.
@@ -60,6 +81,18 @@ const IGNORED_COLOR = '#6c757d';
 
 const SRC_POINTS = 'area-points';
 const LYR_POINTS = 'area-points-circles';
+const SRC_STRATA = 'area-strata';
+const LYR_STRATA_FILL = 'area-strata-fill';
+const LYR_STRATA_LABEL = 'area-strata-label';
+const SRC_NETWORK = 'area-network';
+const LYR_NETWORK_LINE = 'area-network-line';
+const LYR_NETWORK_NODE = 'area-network-node';
+const SRC_PREVIEW = 'area-preview';
+const LYR_PREVIEW_LINE = 'area-preview-line';
+const LYR_PREVIEW_NODE = 'area-preview-node';
+const NETWORK_COLOR = '#1f78d1';
+const SNAP_PX = 10;
+const DRAG_PX = 3;
 const SRC_IMPORT = 'area-import';
 const LYR_IMPORT_FILL = 'area-import-fill';
 const LYR_IMPORT_LINE = 'area-import-line';
@@ -67,7 +100,33 @@ const LYR_IMPORT_LABEL = 'area-import-label';
 
 const HISTORY_LIMIT = 30;
 
-type Tool = 'boundary' | 'exclusion' | 'edit';
+type Tool = 'boundary' | 'exclusion' | 'edit' | 'strata';
+
+type Hit = NetworkTarget & { snapped: boolean };
+
+type Preview = { from: LatLng | null; to: LatLng; snapped: boolean };
+
+// Nearest point on a-b to p, as a fraction along a-b and a pixel distance.
+function nearestOnSegment(
+  p: maplibregl.Point,
+  a: maplibregl.Point,
+  b: maplibregl.Point
+): { t: number; d: number } {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  const t =
+    len2 === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+  return { t, d: Math.hypot(a.x + dx * t - p.x, a.y + dy * t - p.y) };
+}
+
+// Interpolated in degrees so the point lies on the stored straight segment.
+const along = (a: LatLng, b: LatLng, t: number): LatLng => [
+  a[0] + (b[0] - a[0]) * t,
+  a[1] + (b[1] - a[1]) * t,
+];
 
 const ROLE_COLOR = [
   'match',
@@ -146,6 +205,7 @@ export default function SurveyAreaEditor({
   points,
   locked = false,
   children,
+  strata,
 }: SurveyAreaEditorProps) {
   const inputId = useId();
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -160,6 +220,9 @@ export default function SurveyAreaEditor({
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
   const [importCount, setImportCount] = useState(0);
+  const [highlighted, setHighlighted] = useState<number | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [dragNetwork, setDragNetwork] = useState<StrataNetwork | null>(null);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -174,6 +237,12 @@ export default function SurveyAreaEditor({
   onChangeRef.current = onChange;
   const pointsRef = useRef(points);
   pointsRef.current = points;
+  const toolRef = useRef(activeTool);
+  toolRef.current = activeTool;
+  const chainRef = useRef<NetworkTarget | null>(null);
+  const dragRef = useRef<{ index: number; x: number; y: number } | null>(null);
+  const dragNetworkRef = useRef<StrataNetwork | null>(null);
+  const suppressClickRef = useRef(false);
 
   const commit = useCallback((next: SurveyArea, fromDraw = false) => {
     const previous = valueRef.current;
@@ -243,6 +312,7 @@ export default function SurveyAreaEditor({
       const boundary = areaPolygons(draw, MODE_BOUNDARY)[0];
       commit(
         {
+          ...valueRef.current,
           boundary: boundary ? drawFeatureToRing(boundary) : null,
           exclusions: areaPolygons(draw, MODE_EXCLUSION).map(drawFeatureToRing),
         },
@@ -250,7 +320,212 @@ export default function SurveyAreaEditor({
       );
     };
 
+    const hitTest = (lngLat: maplibregl.LngLat, skipNode?: number): Hit => {
+      const p = map.project(lngLat);
+      const area = valueRef.current;
+      const { nodes, edges } = area.network ?? EMPTY_NETWORK;
+      const px = ([lat, lng]: LatLng) => map.project([lng, lat]);
+      let best: { hit: Hit; d: number } | null = null;
+      nodes.forEach((node, index) => {
+        if (index === skipNode) return;
+        const d = px(node).dist(p);
+        if (d <= SNAP_PX && (!best || d < best.d)) {
+          best = { hit: { kind: 'node', index, snapped: true }, d };
+        }
+      });
+      if (best) return (best as { hit: Hit }).hit;
+      edges.forEach(([a, b], edge) => {
+        if (a === skipNode || b === skipNode) return;
+        const { t, d } = nearestOnSegment(p, px(nodes[a]), px(nodes[b]));
+        if (d <= SNAP_PX && (!best || d < best.d)) {
+          const point = along(nodes[a], nodes[b], t);
+          best = { hit: { kind: 'edge', edge, point, snapped: true }, d };
+        }
+      });
+      const ring = area.boundary ?? [];
+      ring.forEach((a, i) => {
+        const b = ring[(i + 1) % ring.length];
+        const { t, d } = nearestOnSegment(p, px(a), px(b));
+        if (d <= SNAP_PX && (!best || d < best.d)) {
+          const point = along(a, b, t);
+          best = { hit: { kind: 'point', point, snapped: true }, d };
+        }
+      });
+      if (best) return (best as { hit: Hit }).hit;
+      return { kind: 'point', point: [lngLat.lat, lngLat.lng], snapped: false };
+    };
+
+    const hitPoint = (hit: NetworkTarget): LatLng =>
+      hit.kind === 'node'
+        ? (valueRef.current.network ?? EMPTY_NETWORK).nodes[hit.index]
+        : hit.point;
+
+    map.on('mousemove', (e) => {
+      if (toolRef.current !== 'strata') return;
+      const drag = dragRef.current;
+      if (drag) {
+        if (
+          !dragNetworkRef.current &&
+          Math.hypot(e.point.x - drag.x, e.point.y - drag.y) < DRAG_PX
+        ) {
+          return;
+        }
+        const hit = hitTest(e.lngLat, drag.index);
+        const next = moveNode(
+          valueRef.current.network ?? EMPTY_NETWORK,
+          drag.index,
+          hit.kind === 'edge' ? hit.point : hitPoint(hit)
+        );
+        dragNetworkRef.current = next;
+        setDragNetwork(next);
+        return;
+      }
+      const hit = hitTest(e.lngLat);
+      const chain = chainRef.current;
+      setPreview({
+        from: chain ? hitPoint(chain) : null,
+        to: hitPoint(hit),
+        snapped: hit.snapped,
+      });
+    });
+
+    map.on('mousedown', (e) => {
+      suppressClickRef.current = false;
+      if (
+        toolRef.current !== 'strata' ||
+        chainRef.current ||
+        e.originalEvent.button !== 0
+      ) {
+        return;
+      }
+      const hit = hitTest(e.lngLat);
+      if (hit.kind !== 'node') return;
+      // Keeps the map from panning while a point is dragged.
+      e.preventDefault();
+      dragRef.current = { index: hit.index, x: e.point.x, y: e.point.y };
+    });
+
+    map.on('mouseup', () => {
+      if (!dragRef.current) return;
+      dragRef.current = null;
+      const moved = dragNetworkRef.current;
+      dragNetworkRef.current = null;
+      setDragNetwork(null);
+      if (!moved) return;
+      suppressClickRef.current = true;
+      commit({ ...valueRef.current, network: moved });
+    });
+
+    map.on('click', (e) => {
+      if (toolRef.current !== 'strata') return;
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
+      const hit = hitTest(e.lngLat);
+      const chain = chainRef.current;
+      if (!chain) {
+        chainRef.current = hit;
+        return;
+      }
+      const area = valueRef.current;
+      const { network, end } = connect(
+        area.network ?? EMPTY_NETWORK,
+        chain,
+        hit
+      );
+      commit({ ...area, network });
+      chainRef.current = hit.snapped ? null : { kind: 'node', index: end };
+      setPreview(null);
+    });
+
+    map.on('contextmenu', (e) => {
+      if (toolRef.current !== 'strata') return;
+      chainRef.current = null;
+      setPreview(null);
+      const hit = hitTest(e.lngLat);
+      const area = valueRef.current;
+      const network = area.network ?? EMPTY_NETWORK;
+      if (hit.kind === 'node') {
+        commit({ ...area, network: removeNode(network, hit.index) });
+      } else if (hit.kind === 'edge') {
+        commit({ ...area, network: removeEdge(network, hit.edge) });
+      }
+    });
+
     map.on('load', () => {
+      for (const src of [SRC_STRATA, SRC_NETWORK, SRC_PREVIEW]) {
+        map.addSource(src, { type: 'geojson', data: EMPTY_FC });
+      }
+      map.addLayer({
+        id: LYR_STRATA_FILL,
+        type: 'fill',
+        source: SRC_STRATA,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: {
+          'fill-color': ['get', 'color'],
+          'fill-opacity': ['case', ['get', 'highlighted'], 0.4, 0.18],
+        },
+      });
+      map.addLayer({
+        id: LYR_NETWORK_LINE,
+        type: 'line',
+        source: SRC_NETWORK,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: { 'line-color': NETWORK_COLOR, 'line-width': 3 },
+      });
+      map.addLayer({
+        id: LYR_PREVIEW_LINE,
+        type: 'line',
+        source: SRC_PREVIEW,
+        filter: ['==', ['geometry-type'], 'LineString'],
+        paint: {
+          'line-color': NETWORK_COLOR,
+          'line-width': 2,
+          'line-dasharray': [2, 2],
+        },
+      });
+      map.addLayer({
+        id: LYR_NETWORK_NODE,
+        type: 'circle',
+        source: SRC_NETWORK,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#fff',
+          'circle-stroke-color': NETWORK_COLOR,
+          'circle-stroke-width': 3,
+        },
+      });
+      map.addLayer({
+        id: LYR_PREVIEW_NODE,
+        type: 'circle',
+        source: SRC_PREVIEW,
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-radius': ['case', ['get', 'snapped'], 7, 4],
+          'circle-color': NETWORK_COLOR,
+          'circle-opacity': 0.5,
+        },
+      });
+      map.addLayer({
+        id: LYR_STRATA_LABEL,
+        type: 'symbol',
+        source: SRC_STRATA,
+        filter: ['==', ['geometry-type'], 'Point'],
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': 14,
+          'text-allow-overlap': true,
+        },
+        paint: {
+          'text-color': '#000',
+          'text-halo-color': '#fff',
+          'text-halo-width': 2,
+        },
+      });
+
       map.addSource(SRC_POINTS, { type: 'geojson', data: EMPTY_FC as any });
       map.addLayer({
         id: LYR_POINTS,
@@ -409,11 +684,21 @@ export default function SurveyAreaEditor({
     }
     setActiveTool(null);
     setSelectedFeatureId(null);
+    chainRef.current = null;
+    setPreview(null);
   }, []);
 
   useEffect(() => {
     const draw = drawRef.current;
-    if (!mapLoaded || !draw || syncedRef.current === value) return;
+    const synced = syncedRef.current;
+    if (!mapLoaded || !draw) return;
+    if (
+      synced &&
+      synced.boundary === value.boundary &&
+      synced.exclusions === value.exclusions
+    ) {
+      return;
+    }
     stopTool();
     const stale = [
       ...areaPolygons(draw, MODE_BOUNDARY),
@@ -504,6 +789,110 @@ export default function SurveyAreaEditor({
     )?.setData(importFC as any);
   }, [mapLoaded, importFC]);
 
+  const network = dragNetwork ?? value.network ?? null;
+  const sections = strata?.sections;
+  const names = strata?.names;
+
+  const strataFC = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: (sections ?? []).flatMap((ring, i) => {
+        const polygon = ringToPolygon(ring);
+        if (!polygon) return [];
+        return [
+          {
+            ...polygon,
+            properties: {
+              color: strataColors[i % strataColors.length],
+              highlighted: highlighted === i,
+            },
+          },
+          {
+            ...turf.pointOnFeature(polygon),
+            properties: { label: names?.[i] ?? '' },
+          },
+        ];
+      }),
+    }),
+    [sections, names, highlighted]
+  );
+
+  const networkFC = useMemo<FeatureCollection>(() => {
+    if (!strata || !network) return EMPTY_FC;
+    const lngLat = ([lat, lng]: LatLng) => [lng, lat];
+    return {
+      type: 'FeatureCollection',
+      features: [
+        ...network.edges.map(([a, b]) => ({
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: [lngLat(network.nodes[a]), lngLat(network.nodes[b])],
+          },
+        })),
+        ...network.nodes.map((node) => ({
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'Point', coordinates: lngLat(node) },
+        })),
+      ],
+    } as FeatureCollection;
+  }, [strata, network]);
+
+  const previewFC = useMemo<FeatureCollection>(() => {
+    if (!preview || activeTool !== 'strata') return EMPTY_FC;
+    const lngLat = ([lat, lng]: LatLng) => [lng, lat];
+    return {
+      type: 'FeatureCollection',
+      features: [
+        ...(preview.from
+          ? [
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'LineString',
+                  coordinates: [lngLat(preview.from), lngLat(preview.to)],
+                },
+              },
+            ]
+          : []),
+        {
+          type: 'Feature',
+          properties: { snapped: preview.snapped },
+          geometry: { type: 'Point', coordinates: lngLat(preview.to) },
+        },
+      ],
+    } as FeatureCollection;
+  }, [preview, activeTool]);
+
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const map = mapRef.current;
+    const sources: [string, FeatureCollection][] = [
+      [SRC_STRATA, strataFC],
+      [SRC_NETWORK, networkFC],
+      [SRC_PREVIEW, previewFC],
+    ];
+    for (const [id, data] of sources) {
+      (map?.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(
+        data
+      );
+    }
+  }, [mapLoaded, strataFC, networkFC, previewFC]);
+
+  useEffect(() => {
+    if (activeTool !== 'strata') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'Enter') return;
+      chainRef.current = null;
+      setPreview(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTool]);
+
   useEffect(() => {
     if (locked) {
       stopTool();
@@ -519,13 +908,20 @@ export default function SurveyAreaEditor({
       return;
     }
     setSelectedFeatureId(null);
+    chainRef.current = null;
+    setPreview(null);
     draw.setMode(
-      tool === 'edit'
+      tool === 'strata'
+        ? MODE_IDLE
+        : tool === 'edit'
         ? MODE_SELECT
         : tool === 'boundary'
         ? MODE_BOUNDARY
         : MODE_EXCLUSION
     );
+    if (tool === 'strata' && !value.network) {
+      commit({ ...value, network: EMPTY_NETWORK });
+    }
     setActiveTool(tool);
   };
 
@@ -554,6 +950,8 @@ export default function SurveyAreaEditor({
     const previous = history[history.length - 1];
     if (!previous) return;
     setHistory(history.slice(0, -1));
+    chainRef.current = null;
+    setPreview(null);
     onChange(previous);
   };
 
@@ -629,7 +1027,9 @@ export default function SurveyAreaEditor({
   );
 
   const toolHint =
-    activeTool === 'edit'
+    activeTool === 'strata'
+      ? 'Click to place points; a line finishes when it reaches the boundary or another line, or press Esc. Drag a point to move it. Right-click a point or line to delete it.'
+      : activeTool === 'edit'
       ? 'Click a shape to select it, then drag it or its points. Right-click a point to delete it.'
       : activeTool
       ? 'Click on the map to place points, then click the first point to finish.'
@@ -779,6 +1179,55 @@ export default function SurveyAreaEditor({
           </div>
         ))}
         {children}
+        {strata && !pendingImport && (
+          <>
+            <Form.Label className='mb-0 mt-2'>Strata</Form.Label>
+            <Form.Text className='d-block mt-0' style={{ fontSize: 12 }}>
+              {value.boundary
+                ? 'Draw lines across the survey area to divide it into strata, then name each one. Without lines the whole area is one stratum.'
+                : 'Add a boundary to define strata.'}
+            </Form.Text>
+            {strata.status}
+            {strata.sections.map((ring, i) => (
+              <div
+                key={i}
+                className='d-flex align-items-center gap-2 border border-dark p-2'
+                onMouseEnter={() => setHighlighted(i)}
+                onMouseLeave={() => setHighlighted(null)}
+              >
+                <span
+                  style={{
+                    width: 12,
+                    height: 12,
+                    flex: '0 0 auto',
+                    background: strataColors[i % strataColors.length],
+                  }}
+                />
+                <Form.Control
+                  size='sm'
+                  aria-label={`Name of stratum ${i + 1}`}
+                  value={strata.names[i] ?? ''}
+                  disabled={locked}
+                  isInvalid={strata.invalid?.[i]}
+                  onChange={(e) => strata.onNameChange(i, e.target.value)}
+                />
+                <Button
+                  size='sm'
+                  variant='outline-light'
+                  onClick={() => fitToRings([ring])}
+                >
+                  Show
+                </Button>
+              </div>
+            ))}
+            {strata.dangling && (
+              <span className='text-warning' style={{ fontSize: 12 }}>
+                Some strata lines do not reach the boundary or another line at
+                both ends, so they do not divide the area.
+              </span>
+            )}
+          </>
+        )}
       </div>
       <div
         className='d-flex flex-column gap-2'
@@ -812,6 +1261,22 @@ export default function SurveyAreaEditor({
                 ? 'Drawing exclusions…'
                 : 'Draw exclusion'}
             </Button>
+            {strata && (
+              <Button
+                size='sm'
+                variant={
+                  activeTool === 'strata' ? 'primary' : 'outline-primary'
+                }
+                onClick={() => toggleTool('strata')}
+                disabled={!mapLoaded || !value.boundary}
+              >
+                {activeTool === 'strata'
+                  ? 'Drawing strata lines…'
+                  : value.network
+                  ? 'Draw strata lines'
+                  : 'Redraw strata'}
+              </Button>
+            )}
             <Button
               size='sm'
               variant={activeTool === 'edit' ? 'primary' : 'outline-primary'}

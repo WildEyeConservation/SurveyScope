@@ -236,46 +236,4 @@ export async function recomputeBoundaryStatus(
   }
 }
 
-export function boundaryRecomputePending(
-  project: {
-    boundaryRecomputeRequested?: boolean | null;
-    boundaryRecomputeLeaseUntil?: string | null;
-  },
-  now = Date.now()
-): boolean {
-  if (project.boundaryRecomputeRequested) return true;
-  const until = Date.parse(project.boundaryRecomputeLeaseUntil ?? '');
-  return Number.isFinite(until) && until > now;
-}
-
-type JollyKey = {
-  stratumId: string;
-  annotationSetId: string;
-  categoryId: string;
-};
-
-// Strata and Jolly results are derived from the area, so a new area voids them.
-export async function clearAreaDerivedResults(
-  client: any,
-  projectId: string
-): Promise<void> {
-  const [strataResult, jollyResult] = await Promise.all([
-    client.models.Stratum.strataByProjectId({ projectId }),
-    client.models.JollyResult.jollyResultsBySurveyId({ surveyId: projectId }),
-  ]);
-  await Promise.all(
-    (unwrap<Array<{ id: string }>>(strataResult) ?? []).map((stratum) =>
-      client.models.Stratum.delete({ id: stratum.id })
-    )
-  );
-  await Promise.all(
-    (unwrap<JollyKey[]>(jollyResult) ?? []).map((result) =>
-      client.models.JollyResult.delete({
-        surveyId: projectId,
-        stratumId: result.stratumId,
-        annotationSetId: result.annotationSetId,
-        categoryId: result.categoryId,
-      })
-    )
-  );
-}
+export { boundaryRecomputePending } from '../../shared/boundaryStatus';
