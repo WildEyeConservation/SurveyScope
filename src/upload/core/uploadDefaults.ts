@@ -119,7 +119,6 @@ export function parseUploadDefaults(raw: unknown): UploadDefaults | null {
   return result;
 }
 
-// A saved mapping only applies when the file still has every column it names.
 export function columnMappingForHeaders(
   mapping: ColumnMapping | undefined,
   headers: string[]

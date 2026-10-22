@@ -353,6 +353,7 @@ export function FileUploadCore({
   );
   const modelTouchedRef = useRef(false);
   const [modelFromSurvey, setModelFromSurvey] = useState(false);
+  const [modelSampling, setModelSampling] = useState(!newProject);
   const [overlaps, setOverlaps] = useState<
     { cameraA: string; cameraB: string }[]
   >([]);
@@ -1421,8 +1422,13 @@ export function FileUploadCore({
   }, [client, project?.id, newProject]);
 
   useEffect(() => {
-    if (newProject || existingSurveyImages.length === 0) return;
+    if (newProject || loadingExistingImages) return;
+    if (existingSurveyImages.length === 0) {
+      setModelSampling(false);
+      return;
+    }
     let cancelled = false;
+    setModelSampling(true);
     const sample = strideSamples(existingSurveyImages, MODEL_SAMPLE_SIZE);
     Promise.all(
       sample.map(async (image) => {
@@ -1440,18 +1446,22 @@ export function FileUploadCore({
         }
       })
     ).then((sources) => {
-      if (cancelled || modelTouchedRef.current) return;
+      if (cancelled) return;
+      setModelSampling(false);
       const value = modelForProcessedSources(sources.flat());
-      const option =
-        MODEL_OPTIONS.find((o) => o.value === value) ??
-        MODEL_OPTIONS.find((o) => o.value === DEFAULT_MODEL)!;
-      setModel(option);
-      setModelFromSurvey(option.value === value);
+      const option = MODEL_OPTIONS.find((o) => o.value === value);
+      if (option) {
+        setModel(option);
+        setModelFromSurvey(true);
+      } else if (!modelTouchedRef.current) {
+        setModel(MODEL_OPTIONS.find((o) => o.value === DEFAULT_MODEL)!);
+        setModelFromSurvey(false);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [client, existingSurveyImages, newProject]);
+  }, [client, existingSurveyImages, newProject, loadingExistingImages]);
 
   useEffect(() => {
     if (newProject || !project?.id) return;
@@ -2108,9 +2118,11 @@ export function FileUploadCore({
       !areaPending &&
       hasValidGpsForAllImages &&
       !altitudeFilterBlocking &&
+      !modelSampling &&
       Boolean(csvData && csvData.data.length > 0);
     setReadyToSubmit(hasData);
   }, [
+    modelSampling,
     loadingExistingImages,
     areaPending,
     hasValidGpsForAllImages,
@@ -3037,8 +3049,13 @@ export function FileUploadCore({
             setModel(e);
           }}
           placeholder='Select a model'
-          isDisabled={modelFromSurvey}
+          isDisabled={modelFromSurvey || modelSampling}
         />
+        {modelSampling && (
+          <Form.Text className='d-block text-muted' style={{ fontSize: 12 }}>
+            Checking which model this survey's images were processed with...
+          </Form.Text>
+        )}
         {modelFromSurvey && (
           <Form.Text className='d-block text-muted' style={{ fontSize: 12 }}>
             This survey's images were all processed with this model.

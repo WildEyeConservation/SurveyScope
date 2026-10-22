@@ -10,7 +10,6 @@ export default function CameraOverlap({
   cameraSelection: [string, string[]];
   overlaps: { cameraA: string; cameraB: string }[];
   setOverlaps: Dispatch<SetStateAction<{ cameraA: string; cameraB: string }[]>>;
-  // Saved overlaps, shown read-only.
   lockedOverlaps?: { cameraA: string; cameraB: string }[];
 }) {
   const cameraList = useMemo(() => cameraSelection[1], [cameraSelection]);

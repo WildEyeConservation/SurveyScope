@@ -13,7 +13,6 @@ export default function CameraSpecification({
   setCameraSpecs: React.Dispatch<
     React.SetStateAction<Record<string, CameraSpec>>
   >;
-  // Saved cameras, shown read-only.
   lockedSpecs?: Record<string, CameraSpec>;
 }) {
   const cameraList = useMemo(
@@ -65,7 +64,8 @@ export default function CameraSpecification({
                   type='number'
                   placeholder='Focal Length (mm)'
                   value={
-                    (lockedSpecs[camera] ?? cameraSpecs[camera])?.focalLengthMm ?? 0
+                    (lockedSpecs[camera] ?? cameraSpecs[camera])
+                      ?.focalLengthMm ?? 0
                   }
                   disabled={camera in lockedSpecs}
                   onChange={(e) =>
@@ -84,7 +84,8 @@ export default function CameraSpecification({
                   type='number'
                   placeholder='Sensor Width (mm)'
                   value={
-                    (lockedSpecs[camera] ?? cameraSpecs[camera])?.sensorWidthMm ?? 0
+                    (lockedSpecs[camera] ?? cameraSpecs[camera])
+                      ?.sensorWidthMm ?? 0
                   }
                   disabled={camera in lockedSpecs}
                   onChange={(e) =>
@@ -103,7 +104,8 @@ export default function CameraSpecification({
                   type='number'
                   placeholder='Tilt (degrees)'
                   value={
-                    (lockedSpecs[camera] ?? cameraSpecs[camera])?.tiltDegrees ?? 0
+                    (lockedSpecs[camera] ?? cameraSpecs[camera])?.tiltDegrees ??
+                    0
                   }
                   disabled={camera in lockedSpecs}
                   onChange={(e) =>
