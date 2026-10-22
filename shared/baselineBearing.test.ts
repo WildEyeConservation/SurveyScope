@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getBaselineBearing } from './baselineBearing';
+import { getBaselineBearing as bearingOfTracks } from './baselineBearing';
 
 type Point = { longitude: number; latitude: number; transectId: number };
+
+function getBaselineBearing(transectIds: number[], images: Point[]): number {
+  return bearingOfTracks(
+    transectIds.map((id) => images.filter((img) => img.transectId === id))
+  );
+}
 
 function line(
   transectId: number,

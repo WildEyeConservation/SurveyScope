@@ -1,14 +1,7 @@
 import * as turf from '@turf/turf';
-import proj4 from 'proj4';
-import type {
-  Feature as GeoJSONFeature,
-  Polygon as GeoJSONPolygon,
-  LineString as GeoJSONLineString,
-} from 'geojson';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from '../utils';
 import { isOnEffort } from '../../shared/boundaryStatus';
-import { getBaselineBearing } from './baselineBearing';
 import { ringToPolygon } from './new-survey/surveyArea';
 
 export type LatLng = [number, number];
@@ -227,107 +220,6 @@ export function closedLngLatRing(coords: LatLng[]): [number, number][] {
   return ring;
 }
 
-function getUTMProjection(lon: number, lat: number) {
-  const zone = Math.floor((lon + 180) / 6) + 1;
-  return `+proj=utm +zone=${zone} +datum=WGS84 +units=m +no_defs ${
-    lat >= 0 ? '' : '+south'
-  }`;
-}
-
-function getProjectedDirectionalBaseline(
-  polygon: GeoJSONFeature<GeoJSONPolygon>,
-  bearing: number
-): { baseline: GeoJSONFeature<GeoJSONLineString>; length: number } {
-  const center = turf.centerOfMass(polygon).geometry.coordinates;
-  const projStr = getUTMProjection(center[0], center[1]);
-  const coords = turf.getCoords(polygon)[0] as [number, number][];
-  const projected = coords.map(
-    (pt) => proj4('WGS84', projStr, pt) as [number, number]
-  );
-  const centerXY = proj4('WGS84', projStr, center);
-  const theta = (bearing * Math.PI) / 180;
-  const yVals = projected.map(([x, y]) => {
-    const dx = x - centerXY[0];
-    const dy = y - centerXY[1];
-    return dx * Math.sin(theta) + dy * Math.cos(theta);
-  });
-  const minY = Math.min(...yVals);
-  const maxY = Math.max(...yVals);
-  const pt1 = proj4(projStr, 'WGS84', [
-    centerXY[0] + minY * Math.sin(theta),
-    centerXY[1] + minY * Math.cos(theta),
-  ]);
-  const pt2 = proj4(projStr, 'WGS84', [
-    centerXY[0] + maxY * Math.sin(theta),
-    centerXY[1] + maxY * Math.cos(theta),
-  ]);
-  const baseline = turf.lineString([pt1, pt2]);
-  return { baseline, length: turf.length(baseline, { units: 'meters' }) };
-}
-
-// Overlapping exclusions are subtracted in full.
-export function stratumMetrics(
-  coords: LatLng[],
-  exclusions: LatLng[][],
-  transectIds: number[],
-  segmented: SegmentedImage[]
-): { area: number; baselineLength: number } {
-  const poly = ringToPolygon(coords)!;
-  let exclusionArea = 0;
-  for (const ring of exclusions) {
-    const exclusion = ringToPolygon(ring);
-    if (exclusion && turf.booleanIntersects(poly, exclusion)) {
-      exclusionArea += turf.area(exclusion);
-    }
-  }
-  const { length } = getProjectedDirectionalBaseline(
-    poly,
-    getBaselineBearing(transectIds, segmented)
-  );
-  return {
-    area: (turf.area(poly) - exclusionArea) / 1e6,
-    baselineLength: length,
-  };
-}
-
-// Fall back to the nearest centroid when the first image is outside all strata.
-export function assignTransectsToStrata(
-  segmented: SegmentedImage[],
-  strata: LatLng[][]
-): Map<number, number | null> {
-  const polys = strata.map((coords) => ringToPolygon(coords)!);
-  const centroids = polys.map((poly) => turf.centroid(poly));
-  const assignment = new Map<number, number | null>();
-  for (const img of segmented) {
-    if (assignment.has(img.transectId)) continue;
-    const pt = turf.point([img.longitude, img.latitude]);
-    let index = polys.findIndex((poly) => turf.booleanPointInPolygon(pt, poly));
-    if (index === -1 && polys.length) {
-      let best = Infinity;
-      centroids.forEach((c, i) => {
-        const d = turf.distance(pt, c);
-        if (d < best) {
-          best = d;
-          index = i;
-        }
-      });
-    }
-    assignment.set(img.transectId, index === -1 ? null : index);
-  }
-  return assignment;
-}
-
-export function transectsByStratum(
-  assignment: Map<number, number | null>,
-  strataCount: number
-): number[][] {
-  const groups: number[][] = Array.from({ length: strataCount }, () => []);
-  for (const [tid, index] of assignment) {
-    if (index !== null) groups[index].push(tid);
-  }
-  return groups;
-}
-
 export async function clearJollyResults(client: DataClient, projectId: string) {
   const jollyResults = (await fetchAllPaginatedResults(
     client.models.JollyResult.jollyResultsBySurveyId as any,
@@ -349,108 +241,48 @@ export async function clearJollyResults(client: DataClient, projectId: string) {
   );
 }
 
-export function splitPolygon(poly: LatLng[], line: LatLng[]): LatLng[][] {
-  if (poly.length < 3 || line.length < 2) return [poly];
-  const ringLngLat = closedLngLatRing(poly);
-  const lineLngLat = line.map(([lat, lng]) => [lng, lat] as [number, number]);
+export type NamedStratum = { id?: string; name: string; coords: LatLng[] };
 
-  const polyFC = turf.polygon([ringLngLat]);
-  const lineFC = turf.lineString(lineLngLat);
-  const intersections = turf.lineIntersect(lineFC, turf.polygonToLine(polyFC));
-
-  const uniquePtsMap: Record<string, any> = {};
-  intersections.features.forEach((f) => {
-    const [x, y] = f.geometry.coordinates;
-    uniquePtsMap[`${x.toFixed(10)},${y.toFixed(10)}`] = f;
+// New sections keep the id of the previous stratum they mostly cover.
+export function carryStrata(
+  sections: LatLng[][],
+  previous: NamedStratum[]
+): NamedStratum[] {
+  const polys = sections.map(ringToPolygon);
+  const prevPolys = previous.map((st) => ringToPolygon(st.coords));
+  const pairs: { i: number; j: number; overlap: number }[] = [];
+  polys.forEach((a, i) =>
+    prevPolys.forEach((b, j) => {
+      if (!a || !b) return;
+      const shared = turf.intersect(turf.featureCollection([a, b]));
+      const overlap = shared ? turf.area(shared) : 0;
+      if (overlap > 0.5 * Math.min(turf.area(a), turf.area(b))) {
+        pairs.push({ i, j, overlap });
+      }
+    })
+  );
+  pairs.sort((p, q) => q.overlap - p.overlap);
+  const matched = new Map<number, number>();
+  const taken = new Set<number>();
+  for (const { i, j } of pairs) {
+    if (matched.has(i) || taken.has(j)) continue;
+    matched.set(i, j);
+    taken.add(j);
+  }
+  // Default names follow the list order; typed names stay with their area.
+  const isDefault = (name: string) => /^Stratum \d+$/.test(name.trim());
+  const used = new Set(
+    [...matched.values()]
+      .map((j) => previous[j].name)
+      .filter((name) => !isDefault(name))
+  );
+  let next = 1;
+  return sections.map((coords, i) => {
+    const j = matched.get(i);
+    const kept = j === undefined ? undefined : previous[j];
+    if (kept && !isDefault(kept.name)) return { ...kept, coords };
+    while (used.has(`Stratum ${next}`)) next++;
+    used.add(`Stratum ${next}`);
+    return { ...(kept && { id: kept.id }), name: `Stratum ${next}`, coords };
   });
-  const uniquePts = Object.values(uniquePtsMap);
-  if (uniquePts.length < 2) return [poly];
-
-  const withLoc = uniquePts
-    .map((pt) => ({
-      pt,
-      location: (turf.nearestPointOnLine(lineFC, pt).properties as any)
-        .location as number,
-    }))
-    .sort((a, b) => a.location - b.location);
-  const aPt = withLoc[0].pt;
-  const bPt = withLoc[withLoc.length - 1].pt;
-
-  const ringLine = turf.lineString(ringLngLat);
-  const aOnRing = turf.nearestPointOnLine(ringLine, aPt);
-  const bOnRing = turf.nearestPointOnLine(ringLine, bPt);
-  const aIdx = (aOnRing.properties as any).index as number;
-  const bIdx = (bOnRing.properties as any).index as number;
-
-  const lineSliceCoords = turf.getCoords(turf.lineSlice(aPt, bPt, lineFC)) as [
-    number,
-    number
-  ][];
-
-  const ringNoClose = ringLngLat.slice(0, ringLngLat.length - 1);
-  const ringLen = ringNoClose.length;
-  const collectRingPath = (
-    startIdx: number,
-    endIdx: number,
-    startCoord: [number, number],
-    endCoord: [number, number]
-  ): [number, number][] => {
-    const path: [number, number][] = [startCoord];
-    let i = (startIdx + 1) % ringLen;
-    for (;;) {
-      path.push(ringNoClose[i]);
-      if (i === endIdx) break;
-      i = (i + 1) % ringLen;
-    }
-    const last = path[path.length - 1];
-    if (last[0] !== endCoord[0] || last[1] !== endCoord[1]) path.push(endCoord);
-    return path;
-  };
-
-  const aCoord = aPt.geometry.coordinates as [number, number];
-  const bCoord = bPt.geometry.coordinates as [number, number];
-  const aT = ((aOnRing.properties as any)?.t as number | undefined) ?? 0;
-  const bT = ((bOnRing.properties as any)?.t as number | undefined) ?? 1;
-
-  // Both intersections on one edge need the short/long way round handled.
-  let path1: [number, number][];
-  let path2: [number, number][];
-  if (aIdx === bIdx) {
-    if (aT <= bT) {
-      path1 = [aCoord, bCoord];
-      path2 = collectRingPath(bIdx, aIdx, bCoord, aCoord);
-    } else {
-      path1 = collectRingPath(aIdx, bIdx, aCoord, bCoord);
-      path2 = [bCoord, aCoord];
-    }
-  } else {
-    path1 = collectRingPath(aIdx, bIdx, aCoord, bCoord);
-    path2 = collectRingPath(bIdx, aIdx, bCoord, aCoord);
-  }
-
-  const segBtoA = lineSliceCoords.slice().reverse();
-  const toLatLng = (coords: [number, number][]): LatLng[] => {
-    const out = coords.map(([x, y]) => [y, x] as LatLng);
-    const first = out[0];
-    const last = out[out.length - 1];
-    if (out.length && first[0] === last[0] && first[1] === last[1]) out.pop();
-    return out;
-  };
-  const r1 = toLatLng([...path1, ...segBtoA.slice(1, -1)]);
-  const r2 = toLatLng([...path2, ...lineSliceCoords.slice(1, -1)]);
-  const results = [r1, r2].filter((r) => r.length >= 3);
-  return results.length ? results : [poly];
-}
-
-export function splitBoundary(
-  boundary: LatLng[],
-  lines: LatLng[][]
-): LatLng[][] {
-  let regions: LatLng[][] = [boundary];
-  for (const line of lines) {
-    regions = regions.flatMap((region) =>
-      splitPolygon(region, line).filter((p) => p.length >= 3)
-    );
-  }
-  return regions;
 }

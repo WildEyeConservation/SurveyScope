@@ -204,6 +204,8 @@ for (const model of [
   'Image',
   'Shapefile',
   'ShapefileExclusions',
+  'Stratum',
+  'Transect',
 ] as const) {
   const table = backend.data.resources.tables[model];
   boundaryTables[model] = table.tableName;
@@ -214,12 +216,17 @@ for (const model of [
     })
   );
 }
-for (const model of ['Project', 'Image'] as const) {
+for (const model of ['Project', 'Image', 'Stratum', 'Transect'] as const) {
   backend.data.resources.tables[model].grant(
     backend.recomputeBoundaryStatus.resources.lambda,
     'dynamodb:UpdateItem'
   );
 }
+backend.data.resources.tables.Stratum.grant(
+  backend.recomputeBoundaryStatus.resources.lambda,
+  'dynamodb:PutItem',
+  'dynamodb:DeleteItem'
+);
 backend.recomputeBoundaryStatus.addEnvironment(
   'BOUNDARY_TABLES',
   JSON.stringify(boundaryTables)

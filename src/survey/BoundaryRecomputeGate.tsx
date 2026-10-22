@@ -56,10 +56,11 @@ export default function BoundaryRecomputeGate({
     <div className='d-flex flex-column align-items-center gap-3 p-4'>
       <div className='d-flex align-items-center gap-2'>
         <Spinner animation='border' />
-        <span>Applying the survey area to the images</span>
+        <span>Applying the survey area and strata to the images</span>
       </div>
       <span className='text-muted' style={{ fontSize: 14 }}>
-        {what} open once every image has been checked against the boundary.
+        {what} open once every image and transect has been checked against the
+        survey area and strata.
       </span>
       <Button variant='outline-secondary' onClick={() => setReady(true)}>
         Continue without waiting

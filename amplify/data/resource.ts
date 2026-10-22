@@ -110,7 +110,9 @@ const schema = a
         pretileManifestS3Key: a.string(),
         // JSON UploadDefaults from the last upload, used to prefill the next.
         uploadDefaults: a.string(),
-        // Set while image boundary statuses are being recomputed.
+        // Lines dividing the boundary into strata: { nodes: [lat, lng][], edges }.
+        strataNetwork: a.json(),
+        // Set while image boundary statuses and strata are being recomputed.
         boundaryRecomputeRequested: a.boolean(),
         boundaryRecomputeLeaseUntil: a.datetime(),
         group: a.string(),

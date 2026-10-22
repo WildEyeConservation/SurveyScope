@@ -15,6 +15,18 @@ export function isOnEffort(status: BoundaryStatus | null | undefined): boolean {
   return status !== 'outside' && status !== 'excluded';
 }
 
+export function boundaryRecomputePending(
+  project: {
+    boundaryRecomputeRequested?: boolean | null;
+    boundaryRecomputeLeaseUntil?: string | null;
+  },
+  now = Date.now()
+): boolean {
+  if (project.boundaryRecomputeRequested) return true;
+  const until = Date.parse(project.boundaryRecomputeLeaseUntil ?? '');
+  return Number.isFinite(until) && until > now;
+}
+
 const METERS_PER_DEGREE_LAT = 110574;
 const METERS_PER_DEGREE_LNG = 111320;
 // Points on an edge count as inside it.

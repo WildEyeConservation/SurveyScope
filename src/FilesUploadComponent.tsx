@@ -91,7 +91,6 @@ import OrientationReview, {
 } from './survey/new-survey/OrientationReview';
 import StepIndicator from './survey/new-survey/StepIndicator';
 import SurveyAreaEditor, { type AreaPoint } from './survey/SurveyAreaEditor';
-import SurveyAreaMargin from './survey/SurveyAreaMargin';
 import {
   EMPTY_AREA,
   outsideAreaKeys,
@@ -100,11 +99,12 @@ import {
   type SurveyArea,
 } from './survey/new-survey/surveyArea';
 import {
-  clearAreaDerivedResults,
   loadSurveyArea,
   recomputeBoundaryStatus,
   saveSurveyArea,
 } from './utils/shapefileUtils';
+import { resplitStrata } from './survey/strataStore';
+import { clearJollyResults } from './survey/transectStrata';
 
 // Configure a dedicated storage instance for file paths
 const fileStore = localforage.createInstance({
@@ -501,10 +501,6 @@ export function FileUploadCore({
   }, [fullCsvData, csvData, areaOutsideKeys]);
   const handleAreaChange = useCallback((area: SurveyArea) => {
     setSurveyArea(area);
-    setAreaDirty(true);
-  }, []);
-  const handleMarginChange = useCallback((value: string) => {
-    setTrimMarginInput(value);
     setAreaDirty(true);
   }, []);
 
@@ -2207,7 +2203,8 @@ export function FileUploadCore({
             organizationId,
             trimMarginM
           );
-          await clearAreaDerivedResults(client, projectId);
+          await resplitStrata(client, projectId, surveyArea, organizationId);
+          await clearJollyResults(client as any, projectId);
           await recomputeBoundaryStatus(client, projectId);
         }
       } catch (err) {
@@ -3561,7 +3558,7 @@ export function FileUploadCore({
               {!newProject && !resumingUpload && (
                 <div className='alert alert-info mb-0'>
                   This is the survey&apos;s saved area. To change it, use the
-                  Edit Shape File tab under Edit Survey.
+                  Define Strata tab under Edit Survey.
                 </div>
               )}
               {resumingUpload && areaLocked && (
@@ -3595,11 +3592,6 @@ export function FileUploadCore({
               >
                 {surveyArea.boundary && (
                   <div className='d-flex flex-column gap-1 mt-2'>
-                    <SurveyAreaMargin
-                      value={trimMarginInput}
-                      onChange={handleMarginChange}
-                      disabled={areaLocked}
-                    />
                     <Form.Check
                       type='switch'
                       id='trim-to-survey-area'
