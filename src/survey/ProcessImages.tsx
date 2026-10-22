@@ -26,13 +26,12 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
   const [imagesLoaded, setImagesLoaded] = useState<number | null>(null);
   const [scanned, setScanned] = useState(false);
   const [disabled, setDisabled] = useState(false);
-  const isActiveRef = useRef(true);
+  const scanAbortRef = useRef(new AbortController());
 
   useEffect(() => {
-    isActiveRef.current = true;
-    return () => {
-      isActiveRef.current = false;
-    };
+    const controller = new AbortController();
+    scanAbortRef.current = controller;
+    return () => controller.abort();
   }, []);
 
   const findLocationSetByName = useCallback(
@@ -69,19 +68,22 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
     if (!model) return;
     // New elephant results use the legacy 'heatmap' source.
     const processedSource = model.value === 'elephant' ? 'heatmap' : model.value;
+    const { signal } = scanAbortRef.current;
     setLoading(true);
     let unprocessed: { id: string; originalPath: string }[] = [];
     let nextToken: string | null | undefined = undefined;
     let imgCount = 0;
     do {
-      if (!isActiveRef.current) {
-        setLoading(false);
-        return;
+      let res;
+      try {
+        res = await client.models.Image.imagesByProjectId(
+          { projectId },
+          { selectionSet: ['id', 'originalPath', 'processedBy.source'], nextToken, limit: 10000, signal }
+        );
+      } catch (error) {
+        if (signal.aborted) return;
+        throw error;
       }
-      const res = await client.models.Image.imagesByProjectId(
-        { projectId },
-        { selectionSet: ['id', 'originalPath', 'processedBy.source'], nextToken, limit: 10000 }
-      );
       const page = (res.data ?? []).flatMap((img) =>
         img?.id && img?.originalPath && !img.processedBy?.some((p: { source: string }) => p.source === processedSource)
           ? [{ id: img.id, originalPath: img.originalPath }]
@@ -93,10 +95,6 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
       setImagesLoaded(imgCount);
     } while (nextToken);
 
-    if (!isActiveRef.current) {
-      setLoading(false);
-      return;
-    }
     setUnprocessedImages(unprocessed);
     setLoading(false);
     setScanned(true);

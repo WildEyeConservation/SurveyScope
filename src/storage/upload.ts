@@ -21,6 +21,7 @@ const PART_URL_BATCH = 32;
 const MAX_ATTEMPTS = 4;
 const BASE_DELAY_MS = 500;
 const URL_EXPIRY_MARGIN_MS = 2 * 60 * 1000;
+const STALL_TIMEOUT_MS = 60 * 1000;
 
 export interface PutResult {
   status: number;
@@ -85,20 +86,36 @@ export function xhrPut({
     for (const [key, value] of Object.entries(headers)) {
       request.setRequestHeader(key, value);
     }
-    request.upload.onprogress = (event) => onProgress(event.loaded);
+    // A silently dropped connection never fires load or error.
+    let stalled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const armStallTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        stalled = true;
+        request.abort();
+      }, STALL_TIMEOUT_MS);
+    };
+    request.upload.onprogress = (event) => {
+      armStallTimer();
+      onProgress(event.loaded);
+    };
+    request.onloadend = () => clearTimeout(timer);
     request.onload = () =>
       resolve({
         status: request.status,
         eTag: request.getResponseHeader('ETag'),
       });
     request.onerror = () => reject(new Error('Image upload network error'));
-    request.onabort = () => reject(abortError());
+    request.onabort = () =>
+      reject(stalled ? new Error('Image upload stalled') : abortError());
     signal.addEventListener('abort', () => request.abort(), { once: true });
     if (signal.aborted) {
       reject(abortError());
       return;
     }
     request.send(body);
+    armStallTimer();
   });
 }
 

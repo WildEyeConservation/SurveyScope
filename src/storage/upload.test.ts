@@ -1,10 +1,11 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import pLimit from 'p-limit';
 import {
   isAbortError,
   PART_SIZE,
   uploadOriginal,
+  xhrPut,
   type PutResult,
   type UploadDependencies,
 } from './upload';
@@ -354,4 +355,83 @@ test('part URLs near expiry are re-signed before use', async () => {
       .map((c) => c.variables.partNumbers),
     [[1, 2, 3], [2, 3], [3]]
   );
+});
+
+class FakeXhr {
+  static last: FakeXhr;
+  status = 0;
+  aborted = false;
+  upload: { onprogress?: (event: { loaded: number }) => void } = {};
+  onload?: () => void;
+  onerror?: () => void;
+  onabort?: () => void;
+  onloadend?: () => void;
+  constructor() {
+    FakeXhr.last = this;
+  }
+  open() {}
+  setRequestHeader() {}
+  send() {}
+  getResponseHeader() {
+    return '"etag"';
+  }
+  abort() {
+    this.aborted = true;
+    this.onabort?.();
+    this.onloadend?.();
+  }
+  respond(status: number) {
+    this.status = status;
+    this.onload?.();
+    this.onloadend?.();
+  }
+}
+
+function startXhrPut(t: TestContext, signal = new AbortController().signal) {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const original = globalThis.XMLHttpRequest;
+  globalThis.XMLHttpRequest = FakeXhr as unknown as typeof XMLHttpRequest;
+  t.after(() => {
+    globalThis.XMLHttpRequest = original;
+  });
+  const result = xhrPut({
+    url: 'https://s3/put',
+    headers: {},
+    body: new Blob(['x']),
+    onProgress: () => {},
+    signal,
+  });
+  return { result, xhr: FakeXhr.last };
+}
+
+test('a PUT with no response after full progress is aborted as stalled', async (t) => {
+  const { result, xhr } = startXhrPut(t);
+  xhr.upload.onprogress?.({ loaded: 1 });
+  t.mock.timers.tick(59_000);
+  assert.equal(xhr.aborted, false);
+  t.mock.timers.tick(1_000);
+  await assert.rejects(result, (error) => {
+    assert.equal(isAbortError(error), false);
+    assert.match((error as Error).message, /stalled/);
+    return true;
+  });
+});
+
+test('progress resets the stall deadline and completion clears it', async (t) => {
+  const { result, xhr } = startXhrPut(t);
+  t.mock.timers.tick(50_000);
+  xhr.upload.onprogress?.({ loaded: 1 });
+  t.mock.timers.tick(50_000);
+  assert.equal(xhr.aborted, false);
+  xhr.respond(200);
+  t.mock.timers.tick(120_000);
+  assert.equal(xhr.aborted, false);
+  assert.deepEqual(await result, { status: 200, eTag: '"etag"' });
+});
+
+test('cancelling a PUT still reports AbortError', async (t) => {
+  const controller = new AbortController();
+  const { result } = startXhrPut(t, controller.signal);
+  controller.abort();
+  await assert.rejects(result, (error) => isAbortError(error));
 });

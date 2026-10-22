@@ -40,7 +40,7 @@ export default function ManageUsers({
     message: string;
   } | null>(null);
 
-  const fetchData = useCallback(async function fetchData() {
+  const fetchData = useCallback(async function fetchData(signal?: AbortSignal) {
     if (!users) return;
     setIsLoading(true);
 
@@ -52,6 +52,7 @@ export default function ManageUsers({
           {
             organizationId,
             selectionSet: ['userId', 'isAdmin'] as const,
+            signal,
           }
         ),
         fetchAllPaginatedResults(
@@ -60,6 +61,7 @@ export default function ManageUsers({
           {
             projectId,
             selectionSet: ['id', 'userId', 'isAdmin'] as const,
+            signal,
           }
         ),
       ]);
@@ -93,12 +95,16 @@ export default function ManageUsers({
       setPermissions(userPermissions);
       setOriginalPermissions(userPermissions);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   }, [users, client, projectId, organizationId]);
 
   useEffect(() => {
-    fetchData();
+    const controller = new AbortController();
+    fetchData(controller.signal).catch((error) => {
+      if (!controller.signal.aborted) console.error('Failed to load users', error);
+    });
+    return () => controller.abort();
   }, [fetchData]);
 
   const hasChanges = permissions.some(

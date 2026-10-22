@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState, useMemo } from 'react';
+import { useContext, useEffect, useState, useMemo, useRef } from 'react';
 import { Button, Form, Card, Spinner } from 'react-bootstrap';
 import { GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
@@ -29,6 +29,13 @@ export default function Logs({ projectId }: { projectId: string }) {
   const [startTime, setStartTime] = useState<string>('00:00');
   const [endTime, setEndTime] = useState<string>('23:59');
 
+  const abortRef = useRef(new AbortController());
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    return () => controller.abort();
+  }, []);
+
   // Set default date range to today
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -42,6 +49,7 @@ export default function Logs({ projectId }: { projectId: string }) {
       return;
     }
 
+    const { signal } = abortRef.current;
     setLoading(true);
     setError(null);
 
@@ -64,8 +72,10 @@ export default function Logs({ projectId }: { projectId: string }) {
             },
           },
           selectionSet: ['id', 'userId', 'message', 'createdAt', 'projectId'],
+          signal,
         }
-      ).catch(async () => {
+      ).catch(async (err) => {
+        if (signal.aborted) throw err;
         // Fallback: if query fails, try listing all and filtering client-side
         const allProjectLogs = await fetchAllPaginatedResults(
           client.models.AdminActionLog.list,
@@ -74,6 +84,7 @@ export default function Logs({ projectId }: { projectId: string }) {
               projectId: { eq: projectId },
             },
             selectionSet: ['id', 'userId', 'message', 'createdAt', 'projectId'],
+            signal,
           }
         );
         return allProjectLogs.filter((log) => {
@@ -93,10 +104,11 @@ export default function Logs({ projectId }: { projectId: string }) {
 
       setLogs(sortedLogs);
     } catch (err) {
+      if (signal.aborted) return;
       console.error('Error fetching logs:', err);
       setError('Failed to fetch logs. Please try again.');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   };
 

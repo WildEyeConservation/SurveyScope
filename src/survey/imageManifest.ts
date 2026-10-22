@@ -4,10 +4,10 @@ import {
   type ManifestImage,
 } from '../../shared/imageManifest';
 
-type ChunkQuery = (input: {
-  projectId: string;
-  cursor?: string;
-}) => Promise<{ data?: unknown; errors?: { message?: string }[] }>;
+type ChunkQuery = (
+  input: { projectId: string; cursor?: string },
+  options: { signal?: AbortSignal }
+) => Promise<{ data?: unknown; errors?: { message?: string }[] }>;
 
 interface ChunkPage {
   data: string;
@@ -34,7 +34,8 @@ async function gunzipJson(base64: string): Promise<ManifestChunk> {
 
 export async function fetchImageManifest(
   client: unknown,
-  projectId: string
+  projectId: string,
+  signal?: AbortSignal
 ): Promise<ManifestImage[] | null> {
   const query = resolveChunkQuery(client);
   if (!query) return null;
@@ -42,10 +43,10 @@ export async function fetchImageManifest(
   const images: ManifestImage[] = [];
   let cursor: string | null = null;
   do {
-    const { data, errors } = await query({
-      projectId,
-      cursor: cursor ?? undefined,
-    });
+    const { data, errors } = await query(
+      { projectId, cursor: cursor ?? undefined },
+      { signal }
+    );
     if (errors?.length) {
       throw new Error(
         errors.map((entry) => entry.message ?? 'Unknown error').join('; ')
@@ -55,7 +56,9 @@ export async function fetchImageManifest(
       | ChunkPage
       | undefined;
     if (!page) throw new Error('Empty image manifest response');
-    for (const image of decodeManifest(await gunzipJson(page.data))) {
+    const chunk = await gunzipJson(page.data);
+    signal?.throwIfAborted();
+    for (const image of decodeManifest(chunk)) {
       images.push(image);
     }
     cursor = page.cursor;

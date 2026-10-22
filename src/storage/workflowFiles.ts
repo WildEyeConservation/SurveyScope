@@ -22,8 +22,8 @@ interface UploadGrant {
 export type FalseNegativeFileKind = 'pool' | 'history';
 export type WorkflowUploadKind = 'launch-payload' | 'queue-manifest';
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { cache: 'no-store' });
+async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(url, { cache: 'no-store', signal });
   if (!response.ok) {
     throw new Error(`Workflow file download failed: ${response.status}`);
   }
@@ -33,17 +33,19 @@ async function fetchJson<T>(url: string): Promise<T> {
 /** Resolves to null when the file does not exist. */
 export async function readFalseNegativeFile<T>(
   annotationSetId: string,
-  kind: FalseNegativeFileKind
+  kind: FalseNegativeFileKind,
+  signal?: AbortSignal
 ): Promise<T | null> {
   const file = await storageOperation<FileUrl>(
     `query FalseNegativeFileUrl($annotationSetId: ID!, $kind: String!) {
     falseNegativeFileUrl(annotationSetId: $annotationSetId, kind: $kind)
   }`,
     { annotationSetId, kind },
-    'falseNegativeFileUrl'
+    'falseNegativeFileUrl',
+    signal
   );
   if (!file.exists || !file.url) return null;
-  return fetchJson<T>(file.url);
+  return fetchJson<T>(file.url, signal);
 }
 
 export async function deleteFalseNegativeFiles(

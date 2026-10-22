@@ -4,6 +4,7 @@ import { Tabs, Tab } from '../Tabs';
 import ProcessImages from './ProcessImages';
 import EditShapeFile from './EditShapeFile';
 import DefineTransects from './DefineTransects';
+import DefineStrata from './DefineStrata';
 import EditInformation from './EditInformation';
 import EditCameras from './EditCameras';
 import EditMasks from './EditMasks';
@@ -43,8 +44,11 @@ export default function EditSurveyModal({
           <Tab label='Edit Shape File'>
             <EditShapeFile key={project.id} projectId={project.id} organizationId={project.organizationId} />
           </Tab>
-          <Tab label='Define Transects & Strata'>
+          <Tab label='Define Transects'>
             <DefineTransects key={project.id} projectId={project.id} organizationId={project.organizationId} />
+          </Tab>
+          <Tab label='Define Strata'>
+            <DefineStrata key={project.id} projectId={project.id} organizationId={project.organizationId} />
           </Tab>
           <Tab label='Manage Tiles'>
             <ManageTiles key={project.id} project={project} />

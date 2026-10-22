@@ -55,12 +55,16 @@ export default function EditInformation({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
     async function getProject() {
       setFetching(true);
 
-      const { data: project } = await client.models.Project.get({
-        id: projectId,
-      });
+      const { data: project } = await client.models.Project.get(
+        { id: projectId },
+        { signal }
+      );
 
       if (project) {
         setOldProjectName(project.name);
@@ -75,14 +79,20 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
       try {
         const { data: cameras } =
-          await client.models.Camera.camerasByProjectId({ projectId });
+          await client.models.Camera.camerasByProjectId(
+            { projectId },
+            { signal }
+          );
 
-        const manifest = await fetchImageManifest(client, projectId).catch(
-          (error) => {
-            console.warn('Image manifest failed, paginating instead', error);
-            return null;
-          }
-        );
+        const manifest = await fetchImageManifest(
+          client,
+          projectId,
+          signal
+        ).catch((error) => {
+          if (signal.aborted) throw error;
+          console.warn('Image manifest failed, paginating instead', error);
+          return null;
+        });
         const images =
           manifest ??
           (await fetchAllPaginatedResults(
@@ -91,6 +101,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
               projectId,
               selectionSet: [...MANIFEST_FIELDS],
               limit: 10000,
+              signal,
             }
           ));
 
@@ -155,12 +166,16 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
         setStructure(nextStructure);
       } finally {
-        setStructureFetching(false);
+        if (!signal.aborted) setStructureFetching(false);
       }
     }
 
-    getProject();
-    buildSurveyStructure();
+    const reportError = (error: unknown) => {
+      if (!signal.aborted) console.error('Failed to load survey information', error);
+    };
+    getProject().catch(reportError);
+    buildSurveyStructure().catch(reportError);
+    return () => controller.abort();
   }, [client, projectId]);
 
   return (
