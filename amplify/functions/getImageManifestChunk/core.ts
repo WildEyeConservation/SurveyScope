@@ -1,7 +1,7 @@
 import { gzipSync } from 'node:zlib';
 import {
   encodeManifest,
-  type ManifestImage,
+  type ManifestField,
 } from '../../../shared/imageManifest';
 
 export type QueryPage = (
@@ -19,14 +19,14 @@ export interface ChunkOptions {
   now?: () => number;
 }
 
-const pack = (rows: ManifestImage[]) =>
-  gzipSync(JSON.stringify(encodeManifest(rows))).toString('base64');
+type Row = Record<string, unknown> & { id: string };
 
 // The cursor only carries an image id, so it cannot reach another project.
 export async function readChunk(
   queryPage: QueryPage,
   projectId: string,
   cursor: string | null | undefined,
+  fields: readonly ManifestField[],
   { maxPayloadBytes, rowTarget, readDeadlineMs, now = Date.now }: ChunkOptions
 ) {
   let startKey: Record<string, unknown> | undefined = cursor
@@ -35,11 +35,13 @@ export async function readChunk(
         id: JSON.parse(Buffer.from(cursor, 'base64url').toString()).id,
       }
     : undefined;
-  const rows: ManifestImage[] = [];
+  const pack = (rows: Row[]) =>
+    gzipSync(JSON.stringify(encodeManifest(rows, fields))).toString('base64');
+  const rows: Row[] = [];
   const started = now();
   do {
     const page = await queryPage(startKey, rowTarget - rows.length);
-    rows.push(...((page.Items ?? []) as unknown as ManifestImage[]));
+    rows.push(...((page.Items ?? []) as Row[]));
     startKey = page.LastEvaluatedKey;
   } while (
     startKey &&

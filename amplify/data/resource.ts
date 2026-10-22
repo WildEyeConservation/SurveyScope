@@ -1384,6 +1384,7 @@ const schema = a
       .arguments({
         projectId: a.string().required(),
         cursor: a.string(),
+        fields: a.string().array().required(),
       })
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
@@ -1889,7 +1890,7 @@ export type UpdateActiveOrganizationsHandler = MutationHandler<{ activatedOrgani
 export type LaunchIndividualIdHandler = MutationHandler<{ request: string }>;
 export type RecomputeBoundaryStatusHandler = MutationHandler<{ projectId: string }>;
 export type GetImageManifestChunkHandler = MutationHandler<
-  { projectId: string; cursor?: string | null },
+  { projectId: string; cursor?: string | null; fields: (string | null)[] },
   { data: string; count: number; cursor: string | null }
 >;
 export type ClaimIndividualIdTransectHandler = MutationHandler<{ jobId: string }>;

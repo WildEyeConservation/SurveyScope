@@ -3,9 +3,7 @@ import { Footer } from '../Modal';
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { useQueryClient } from '@tanstack/react-query';
-import { fetchAllPaginatedResults } from '../utils';
-import { MANIFEST_FIELDS } from '../../shared/imageManifest';
-import { fetchImageManifest } from './imageManifest';
+import { loadProjectImages } from '../projectImages';
 import SurveyStructure, { Camera } from './SurveyStructure';
 
 export default function EditInformation({ projectId }: { projectId: string }) {
@@ -84,26 +82,20 @@ export default function EditInformation({ projectId }: { projectId: string }) {
             { signal }
           );
 
-        const manifest = await fetchImageManifest(
+        const images = await loadProjectImages(
           client,
           projectId,
-          signal
-        ).catch((error) => {
-          if (signal.aborted) throw error;
-          console.warn('Image manifest failed, paginating instead', error);
-          return null;
-        });
-        const images =
-          manifest ??
-          (await fetchAllPaginatedResults(
-            client.models.Image.imagesByProjectId,
-            {
-              projectId,
-              selectionSet: [...MANIFEST_FIELDS],
-              limit: 10000,
-              signal,
-            }
-          ));
+          [
+            'cameraId',
+            'originalPath',
+            'latitude',
+            'longitude',
+            'altitude_agl',
+            'altitude_wgs84',
+            'timestamp',
+          ],
+          { signal }
+        );
 
         const surveyCameras =
           cameras.length === 0

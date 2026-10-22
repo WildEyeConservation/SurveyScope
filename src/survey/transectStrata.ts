@@ -3,6 +3,7 @@ import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from '../utils';
 import { isOnEffort } from '../../shared/boundaryStatus';
 import { ringToPolygon } from './new-survey/surveyArea';
+import { loadProjectImages } from '../projectImages';
 
 export type LatLng = [number, number];
 
@@ -130,22 +131,18 @@ export async function loadOnEffortImages(
   imputedIds: Set<string>;
   dbTransectIds: Map<string, string | null>;
 }> {
-  const rawImgs = (await fetchAllPaginatedResults(
-    client.models.Image.imagesByProjectId as any,
-    {
-      projectId,
-      limit: 10000,
-      selectionSet: [
-        'id',
-        'timestamp',
-        'cameraId',
-        'latitude',
-        'longitude',
-        'transectId',
-        'boundaryStatus',
-      ],
-      signal,
-    } as any
+  const rawImgs = (await loadProjectImages(
+    client,
+    projectId,
+    [
+      'timestamp',
+      'cameraId',
+      'latitude',
+      'longitude',
+      'transectId',
+      'boundaryStatus',
+    ],
+    { signal }
   )) as any[];
   const dbTransectIds = new Map<string, string | null>(
     rawImgs.map((img) => [img.id, img.transectId ?? null])

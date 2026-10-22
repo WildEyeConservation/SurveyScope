@@ -19,6 +19,7 @@ import type {
   RegistrationRows,
   TaskRow,
 } from './types';
+import { loadProjectImages } from '../projectImages';
 
 const client = generateClient({ authMode: 'userPool' });
 const limit = pLimit(8);
@@ -262,19 +263,29 @@ export async function loadRegistration(
   return { progress: progress.getRegistrationProgress, buckets };
 }
 
-export function loadImages(
+export async function loadImages(
   projectId: string,
   ctx: LoadContext,
   totalHint?: number
 ) {
-  return fetchAll<ImageRow>(
-    'imagesByProjectId',
-    BY_PROJECT,
-    'id width height timestamp originalPath cameraId',
-    { projectId },
-    ctx.signal,
-    counted(ctx, totalHint)
-  );
+  return (await loadProjectImages(
+    client,
+    projectId,
+    ['width', 'height', 'timestamp', 'originalPath', 'cameraId'],
+    {
+      signal: ctx.signal,
+      onProgress: (count) => ctx.onProgress(count, totalHint),
+      fallback: () =>
+        fetchAll<ImageRow>(
+          'imagesByProjectId',
+          BY_PROJECT,
+          'id width height timestamp originalPath cameraId',
+          { projectId },
+          ctx.signal,
+          counted(ctx, totalHint)
+        ),
+    }
+  )) as ImageRow[];
 }
 
 const NEIGHBOUR_FIELDS =
