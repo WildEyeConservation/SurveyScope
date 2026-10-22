@@ -24,10 +24,12 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
   const [disabled, setDisabled] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
     async function getCameras() {
-      const { data: cameras } = await client.models.Camera.camerasByProjectId({
-        projectId,
-      });
+      const { data: cameras } = await client.models.Camera.camerasByProjectId(
+        { projectId },
+        { signal: controller.signal }
+      );
       setCameras(cameras);
 
       // Populate form with camera data
@@ -56,7 +58,10 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
       setIsLoading(false);
     }
 
-    getCameras();
+    getCameras().catch((error) => {
+      if (!controller.signal.aborted) console.error('Failed to load cameras', error);
+    });
+    return () => controller.abort();
   }, [projectId]);
 
   const handleFormChange = (

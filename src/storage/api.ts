@@ -1,5 +1,6 @@
 import { generateClient } from 'aws-amplify/api';
 import { runWithClientLimit } from '../limitedClient';
+import { startCancellable } from '../clientCancellation';
 
 export * from './operations';
 
@@ -8,10 +9,15 @@ const client = generateClient({ authMode: 'userPool' });
 export async function storageOperation<T>(
   query: string,
   variables: Record<string, unknown>,
-  field: string
+  field: string,
+  signal?: AbortSignal
 ): Promise<T> {
-  const result = (await runWithClientLimit(
-    async () => await client.graphql({ query, variables })
+  const result = (await runWithClientLimit(() =>
+    startCancellable(
+      () => client.graphql({ query, variables }) as Promise<unknown>,
+      signal,
+      (request) => client.cancel(request)
+    )
   )) as { data?: Record<string, unknown>; errors?: { message: string }[] };
   if (result.errors?.length) {
     throw new Error(result.errors.map((e) => e.message).join('; '));

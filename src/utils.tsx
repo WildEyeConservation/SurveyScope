@@ -45,14 +45,19 @@ export async function fetchAllPaginatedResults<T>(
   let nextToken: string | null | undefined = undefined;
   let stepCount = 0;
 
-  const { input, options: baseOptions } = splitInputAndOptions(params);
+  const { signal, ...queryParams } = params ?? {};
+  const { input, options: baseOptions } = splitInputAndOptions(
+    params ? queryParams : undefined
+  );
+  const callOptions = signal ? [{ signal }] : [];
 
   do {
+    signal?.throwIfAborted();
     const options: Record<string, any> = { ...baseOptions, nextToken };
     const result: PaginatedQueryResult<T> =
       input === undefined
-        ? await (queryFn as any)(options)
-        : await (queryFn as any)(input, options);
+        ? await (queryFn as any)(options, ...callOptions)
+        : await (queryFn as any)(input, options, ...callOptions);
     allResults = allResults.concat(result.data);
     nextToken = result.nextToken;
     stepCount += result.data.length;

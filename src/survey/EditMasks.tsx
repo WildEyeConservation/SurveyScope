@@ -40,11 +40,16 @@ export default function EditMasks({ projectId }: { projectId: string }) {
   const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     async function load() {
       const cameraRows =
-        (await client.models.Camera.camerasByProjectId({ projectId })).data ??
-        [];
+        (
+          await client.models.Camera.camerasByProjectId(
+            { projectId },
+            { signal }
+          )
+        ).data ?? [];
       const grouped: Record<string, SampleImage[]> = {};
       let nextToken: string | null | undefined;
       do {
@@ -60,6 +65,7 @@ export default function EditMasks({ projectId }: { projectId: string }) {
               'height',
               'originalPath',
             ] as const,
+            signal,
           }
         );
         for (const image of result.data ?? []) {
@@ -72,8 +78,8 @@ export default function EditMasks({ projectId }: { projectId: string }) {
           if (group.length < SAMPLES_KEPT_PER_GROUP) group.push(image);
         }
         nextToken = result.nextToken;
-      } while (nextToken && !cancelled);
-      if (cancelled) return;
+      } while (nextToken && !signal.aborted);
+      if (signal.aborted) return;
       setCameras(cameraRows.map((c) => ({ id: c.id, name: c.name })));
       setMasks(
         Object.fromEntries(
@@ -92,15 +98,14 @@ export default function EditMasks({ projectId }: { projectId: string }) {
     }
     load()
       .catch((error: unknown) => {
+        if (signal.aborted) return;
         console.error('Failed to load camera masks', error);
-        if (!cancelled) setLoadFailed(true);
+        setLoadFailed(true);
       })
       .finally(() => {
-        if (!cancelled) setIsLoading(false);
+        if (!signal.aborted) setIsLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [client, projectId]);
 
   const targets = useMemo<MaskTarget[]>(

@@ -5,6 +5,11 @@ Amplify.configure(outputs);
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
 import type { DataClient } from '../amplify/shared/data-schema.generated';
+import {
+  splitCallOptions,
+  startCancellable,
+  type ClientCallOptions,
+} from './clientCancellation';
 
 /* Here we generate a graphQL client with the Amplify API module, and then we wrap the client methods
 to limit the number of concurrent requests to the GraphQL API, as well as to check for errors.
@@ -16,9 +21,10 @@ for error responses from the server.
 The pLimit module is used to limit the number of concurrent requests to the GraphQL API. 
 */
 
-const client = generateClient<Schema>({
+const rawClient = generateClient<Schema>({
   authMode: 'userPool',
-}) as unknown as DataClient;
+});
+const client = rawClient as unknown as DataClient;
 
 // Create a pLimit instance with a concurrency limit (adjust as needed)
 const limit = pLimit(15);
@@ -50,6 +56,7 @@ export function checkForErrors<T>(result: T): T {
 
 async function executeWithRetry<T>(
   operation: () => Promise<T>,
+  signal?: AbortSignal,
   maxRetries: number = 4,
   baseDelay: number = 1000,
   maxDelay: number = 30000
@@ -64,7 +71,7 @@ async function executeWithRetry<T>(
     } catch (error) {
       // GraphQL validation and resolver errors are deterministic responses.
       // Retrying the same operation only delays surfacing the real error.
-      if (error instanceof GraphQLError) {
+      if (error instanceof GraphQLError || signal?.aborted) {
         throw error;
       }
 
@@ -87,16 +94,14 @@ async function executeWithRetry<T>(
 }
 
 // Options that can be passed as the last argument to any wrapped client method.
-export type ClientCallOptions = {
-  /** Set to false to skip retry logic (e.g. for long-running launch mutations). Defaults to true. */
-  retry?: boolean;
-};
+export type { ClientCallOptions };
 
 // Augment the generated OperationOptions so callers can pass { retry: false }
 // without casting. The limitedClient wrapper consumes this at runtime.
 declare module '../amplify/shared/data-schema.generated' {
   interface OperationOptions {
     retry?: boolean;
+    signal?: AbortSignal;
   }
 
   // amplify_outputs.json is refreshed by the next backend deployment. Keep the
@@ -132,20 +137,23 @@ function wrapClientMethods(obj: unknown): unknown {
         wrappedObj[key] = value;
       } else {
         wrappedObj[key] = async (...args: unknown[]) => {
-          // Check if the last argument is a ClientCallOptions object
-          const lastArg = args[args.length - 1];
-          const hasOptions =
-            lastArg && typeof lastArg === 'object' && 'retry' in lastArg;
-          const options: ClientCallOptions = hasOptions
-            ? (args.pop() as ClientCallOptions)
-            : {};
+          const { args: callArgs, options } = splitCallOptions(args);
           const shouldRetry = options.retry !== false;
+          const { signal } = options;
 
-          const execute = () => limit(() => value(...args));
+          const execute = () =>
+            limit(() =>
+              startCancellable(
+                () => value(...callArgs),
+                signal,
+                (request) => rawClient.cancel(request)
+              )
+            );
 
           const result = shouldRetry
-            ? await executeWithRetry(execute)
+            ? await executeWithRetry(execute, signal)
             : await execute();
+          signal?.throwIfAborted();
           const checkedResult = checkForErrors(result);
           return wrapClientMethods(checkedResult);
         };

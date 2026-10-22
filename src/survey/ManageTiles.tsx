@@ -41,14 +41,18 @@ export default function ManageTiles({
   const [checkingFnData, setCheckingFnData] = useState(true);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const isActiveRef = useRef(true);
+  const pollAbortRef = useRef<AbortController | null>(null);
 
   // Get the tiled location set ID from project
   const tiledLocationSetId = project.tiledLocationSetId;
 
   useEffect(() => {
     isActiveRef.current = true;
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
     return () => {
       isActiveRef.current = false;
+      controller.abort();
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
@@ -57,6 +61,8 @@ export default function ManageTiles({
 
   // Load current tile count
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
     async function loadTileCount() {
       if (!tiledLocationSetId) {
         setCurrentTileCount(0);
@@ -66,20 +72,24 @@ export default function ManageTiles({
       try {
         const { data } = await client.models.LocationSet.get(
           { id: tiledLocationSetId },
-          { selectionSet: ['locationCount'] }
+          { selectionSet: ['locationCount'], signal }
         );
         setCurrentTileCount(data?.locationCount ?? 0);
       } catch (err) {
+        if (signal.aborted) return;
         console.error('Failed to load tile count', err);
         setCurrentTileCount(0);
       }
       setLoadingTileCount(false);
     }
     loadTileCount();
+    return () => controller.abort();
   }, [client.models.LocationSet, tiledLocationSetId]);
 
   // Check for active tiling tasks on mount
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
     async function checkActiveTilingTask() {
       if (!tiledLocationSetId) return;
       try {
@@ -96,6 +106,7 @@ export default function ManageTiles({
                 'locationSetId',
               ],
               limit: 10,
+              signal,
             }
           );
 
@@ -117,44 +128,46 @@ export default function ManageTiles({
           startPollingProgress(activeTask.id);
         }
       } catch (err) {
+        if (signal.aborted) return;
         console.error('Failed to check active tiling tasks', err);
       }
     }
     checkActiveTilingTask();
+    return () => controller.abort();
   }, [client.models.TilingTask, project.id, tiledLocationSetId]);
 
   // Check if any annotation sets in this project have FN data
   useEffect(() => {
-    let mounted = true;
+    const controller = new AbortController();
+    const { signal } = controller;
     async function checkForFnData() {
       setCheckingFnData(true);
       try {
         const { data: annotationSets } =
           await client.models.AnnotationSet.annotationSetsByProjectId(
             { projectId: project.id },
-            { selectionSet: ['id'], limit: 100 }
+            { selectionSet: ['id'], limit: 100, signal }
           );
-        if (!annotationSets?.length || !mounted) return;
+        if (!annotationSets?.length) return;
 
         for (const as of annotationSets) {
-          const pool = await readFalseNegativeFile(as.id, 'pool').catch(
+          if (signal.aborted) return;
+          const pool = await readFalseNegativeFile(as.id, 'pool', signal).catch(
             () => null
           );
           if (pool) {
-            if (mounted) setHasFnData(true);
+            if (!signal.aborted) setHasFnData(true);
             return;
           }
         }
       } catch (err) {
-        console.error('Failed to check for FN data', err);
+        if (!signal.aborted) console.error('Failed to check for FN data', err);
       } finally {
-        if (mounted) setCheckingFnData(false);
+        if (!signal.aborted) setCheckingFnData(false);
       }
     }
     checkForFnData();
-    return () => {
-      mounted = false;
-    };
+    return () => controller.abort();
   }, [client.models.AnnotationSet, project.id]);
 
   const startPollingProgress = useCallback(
@@ -169,12 +182,14 @@ export default function ManageTiles({
           return;
         }
 
+        const signal = pollAbortRef.current?.signal;
         try {
           const { data: task } = await
             client.models.TilingTask
               .get(
                 { id: tilingTaskId },
                 {
+                  signal,
                   selectionSet: [
                     'id',
                     'status',
@@ -203,7 +218,7 @@ export default function ManageTiles({
             if (tiledLocationSetId) {
               const { data: ls } = await client.models.LocationSet.get(
                 { id: tiledLocationSetId },
-                { selectionSet: ['locationCount'] }
+                { selectionSet: ['locationCount'], signal }
               );
               setCurrentTileCount(ls?.locationCount ?? 0);
             }
@@ -214,6 +229,7 @@ export default function ManageTiles({
             setError(task.errorMessage ?? 'Tiling failed');
           }
         } catch (err) {
+          if (signal?.aborted) return;
           console.error('Error polling tiling task', err);
         }
       }, 3000); // Poll every 3 seconds
@@ -239,12 +255,14 @@ export default function ManageTiles({
       }
 
       attempts++;
+      const signal = pollAbortRef.current?.signal;
       try {
         const { data: tasks } = await
           client.models.TilingTask
             .tilingTasksByProjectId(
               { projectId: project.id },
               {
+                signal,
                 selectionSet: [
                   'id',
                   'status',
@@ -284,7 +302,7 @@ export default function ManageTiles({
           if (tiledLocationSetId) {
             const { data: ls } = await client.models.LocationSet.get(
               { id: tiledLocationSetId },
-              { selectionSet: ['locationCount'] }
+              { selectionSet: ['locationCount'], signal }
             );
             const newCount = ls?.locationCount ?? 0;
             if (newCount > 0 && newCount !== currentTileCount) {
@@ -300,6 +318,7 @@ export default function ManageTiles({
           }
         }
       } catch (err) {
+        if (signal?.aborted) return;
         console.error('Error polling for tiling task', err);
       }
     }, 3000);

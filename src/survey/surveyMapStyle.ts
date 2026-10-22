@@ -1,12 +1,5 @@
 import type { StyleSpecification } from 'maplibre-gl';
 
-/**
- * Shared MapLibre setup for the Edit Survey map tabs (Delete Images, Edit Shape
- * File, Define Transects & Strata). Keeping the basemap style and a couple of
- * tiny helpers in one place means the three maps stay visually identical and we
- * don't drift four copies of the same OSM raster style around the codebase.
- */
-
 export type FeatureCollection = { type: 'FeatureCollection'; features: any[] };
 
 export const EMPTY_FC: FeatureCollection = {

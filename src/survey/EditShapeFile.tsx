@@ -27,24 +27,24 @@ export default function EditShapeFile({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     setLoading(true);
-    loadSurveyArea(client, projectId)
+    loadSurveyArea(client, projectId, signal)
       .then((loaded) => {
-        if (cancelled) return;
+        if (signal.aborted) return;
         setArea(loaded);
         setMarginInput(String(loaded.marginM ?? 0));
       })
       .catch((err) => {
+        if (signal.aborted) return;
         console.error('Failed to load shapefile/exclusions:', err);
-        if (!cancelled) setLoadFailed(true);
+        setLoadFailed(true);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!signal.aborted) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [client, projectId]);
 
   const saveShapefile = async () => {
