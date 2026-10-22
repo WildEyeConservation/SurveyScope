@@ -241,6 +241,31 @@ export async function clearJollyResults(client: DataClient, projectId: string) {
   );
 }
 
+type PolygonFeature = NonNullable<ReturnType<typeof ringToPolygon>>;
+
+function intersectArea(a: PolygonFeature, b: PolygonFeature): number {
+  const shared = turf.intersect(turf.featureCollection([a, b]));
+  return shared ? turf.area(shared) : 0;
+}
+
+// Near-degenerate rings can make clipping throw.
+function overlapArea(a: PolygonFeature, b: PolygonFeature): number {
+  try {
+    return intersectArea(a, b);
+  } catch {
+    try {
+      const round = (f: PolygonFeature) =>
+        turf.cleanCoords(turf.truncate(f, { precision: 7 }));
+      return intersectArea(round(a), round(b));
+    } catch {
+      const inside =
+        turf.booleanPointInPolygon(turf.pointOnFeature(a), b) ||
+        turf.booleanPointInPolygon(turf.pointOnFeature(b), a);
+      return inside ? Math.min(turf.area(a), turf.area(b)) : 0;
+    }
+  }
+}
+
 export type NamedStratum = { id?: string; name: string; coords: LatLng[] };
 
 // New sections keep the id of the previous stratum they mostly cover.
@@ -254,8 +279,7 @@ export function carryStrata(
   polys.forEach((a, i) =>
     prevPolys.forEach((b, j) => {
       if (!a || !b) return;
-      const shared = turf.intersect(turf.featureCollection([a, b]));
-      const overlap = shared ? turf.area(shared) : 0;
+      const overlap = overlapArea(a, b);
       if (overlap > 0.5 * Math.min(turf.area(a), turf.area(b))) {
         pairs.push({ i, j, overlap });
       }
