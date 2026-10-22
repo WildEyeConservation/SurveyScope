@@ -456,6 +456,8 @@ export default function TileConfiguration({
   ]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
     async function getAllImages() {
       setLoadingImages(true);
       setImagesLoaded(0);
@@ -474,9 +476,11 @@ export default function TileConfiguration({
             'longitude',
           ],
           limit: 10000,
+          signal,
         } as any,
         (count) => setImagesLoaded(count)
       );
+      if (signal.aborted) return;
       const imagesArr: ImageData[] = (all as any[]).map((img: any) => ({
         timestamp: (img?.timestamp ?? null) as Nullable<number>,
         width: img.width as number,
@@ -519,8 +523,11 @@ export default function TileConfiguration({
     }
 
     if (projectId) {
-      getAllImages();
+      getAllImages().catch((err) => {
+        if (!signal.aborted) console.error('Failed to load images', err);
+      });
     }
+    return () => controller.abort();
   }, [projectId, client.models.Image]);
 
   useEffect(() => {

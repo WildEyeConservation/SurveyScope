@@ -113,13 +113,15 @@ type StoredRing = {
 
 export async function loadSurveyArea(
   client: any,
-  projectId: string
+  projectId: string,
+  signal?: AbortSignal
 ): Promise<SurveyArea & { marginM: number | null }> {
   const [boundaryResult, exclusionResult] = await Promise.all([
-    client.models.Shapefile.shapefilesByProjectId({ projectId }),
-    client.models.ShapefileExclusions.shapefileExclusionsByProjectId({
-      projectId,
-    }),
+    client.models.Shapefile.shapefilesByProjectId({ projectId }, { signal }),
+    client.models.ShapefileExclusions.shapefileExclusionsByProjectId(
+      { projectId },
+      { signal }
+    ),
   ]);
   const stored = unwrap<StoredRing[]>(boundaryResult)?.[0];
   const boundary = unflatten(stored?.coordinates ?? null);

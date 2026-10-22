@@ -53,12 +53,16 @@ export default function EditInformation({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
     async function getProject() {
       setFetching(true);
 
-      const { data: project } = await client.models.Project.get({
-        id: projectId,
-      });
+      const { data: project } = await client.models.Project.get(
+        { id: projectId },
+        { signal }
+      );
 
       if (project) {
         setOldProjectName(project.name);
@@ -73,7 +77,10 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
       try {
         const { data: cameras } =
-          await client.models.Camera.camerasByProjectId({ projectId });
+          await client.models.Camera.camerasByProjectId(
+            { projectId },
+            { signal }
+          );
 
         const images = await fetchAllPaginatedResults(
           client.models.Image.imagesByProjectId,
@@ -90,6 +97,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
               'timestamp',
             ],
             limit: 10000,
+            signal,
           }
         );
 
@@ -154,12 +162,16 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
         setStructure(nextStructure);
       } finally {
-        setStructureFetching(false);
+        if (!signal.aborted) setStructureFetching(false);
       }
     }
 
-    getProject();
-    buildSurveyStructure();
+    const reportError = (error: unknown) => {
+      if (!signal.aborted) console.error('Failed to load survey information', error);
+    };
+    getProject().catch(reportError);
+    buildSurveyStructure().catch(reportError);
+    return () => controller.abort();
   }, [
     client.models.Camera,
     client.models.Image.imagesByProjectId,

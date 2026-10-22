@@ -222,7 +222,10 @@ async function runOp<T>(
  * resulting rows, as the rest of this file does).
  */
 function makeRetrying(queryFn: any, signal?: AbortSignal): any {
-  return (...args: any[]) => runOp(() => queryFn(...args), { signal });
+  return (...args: any[]) =>
+    runOp(() => (signal ? queryFn(...args, { signal }) : queryFn(...args)), {
+      signal,
+    });
 }
 
 /**
@@ -285,7 +288,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [drawing, setDrawing] = useState(false);
 
-  const isActiveRef = useRef(true);
+  const loadAbortRef = useRef(new AbortController());
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
@@ -303,7 +306,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
 
   // Fetch images with GPS coordinates
   const fetchImages = useCallback(async (): Promise<ImageData[]> => {
-    isActiveRef.current = true;
+    const { signal } = loadAbortRef.current;
     setLoading(true);
     setError(null);
     setLoadingStatus('Fetching images...');
@@ -311,14 +314,14 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
 
     try {
       const allImages = (await fetchAllPaginatedResults(
-        makeRetrying(client.models.Image.imagesByProjectId),
+        makeRetrying(client.models.Image.imagesByProjectId, signal),
         {
           projectId,
           selectionSet: ['id', 'latitude', 'longitude', 'originalPath'],
           limit: 10000,
         },
         (count) => {
-          if (isActiveRef.current) {
+          if (!signal.aborted) {
             setLoadingStatus(`Fetching images... (${count} fetched)`);
           }
         }
@@ -329,7 +332,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         originalPath?: string | null;
       }>;
 
-      if (!isActiveRef.current) return [];
+      if (signal.aborted) return [];
 
       // Filter to only images with valid GPS coordinates
       const gpsImages: ImageData[] = allImages
@@ -356,6 +359,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       );
       return gpsImages;
     } catch (err) {
+      if (signal.aborted) return [];
       console.error('Failed to fetch images:', err);
       setError(
         `Failed to fetch images: ${err instanceof Error ? err.message : String(err)
@@ -363,26 +367,32 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       );
       return [];
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, [client, projectId]);
 
   // Initial fetch
   useEffect(() => {
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
     fetchImages();
-    return () => {
-      isActiveRef.current = false;
-    };
+    return () => controller.abort();
   }, [fetchImages]);
 
   // Load the project's saved shapefile, if any
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     async function loadShapefile() {
       setLoadingShapefile(true);
       try {
-        const result = (await runOp(() =>
-          (client.models.Shapefile.shapefilesByProjectId as any)({ projectId })
+        const result = (await runOp(
+          () =>
+            (client.models.Shapefile.shapefilesByProjectId as any)(
+              { projectId },
+              { signal }
+            ),
+          { signal }
         )) as any;
         const data = (result?.data ?? []) as Array<{
           coordinates: (number | null)[] | null;
@@ -395,23 +405,22 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           for (let i = 0; i + 1 < flat.length; i += 2) {
             coords.push([flat[i], flat[i + 1]]);
           }
-          if (!cancelled) {
+          if (!signal.aborted) {
             setShapefileCoords(coords.length >= 3 ? coords : null);
           }
-        } else if (!cancelled) {
+        } else if (!signal.aborted) {
           setShapefileCoords(null);
         }
       } catch (err) {
+        if (signal.aborted) return;
         console.error('Failed to load shapefile:', err);
-        if (!cancelled) setShapefileCoords(null);
+        setShapefileCoords(null);
       } finally {
-        if (!cancelled) setLoadingShapefile(false);
+        if (!signal.aborted) setLoadingShapefile(false);
       }
     }
     loadShapefile();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [client, projectId]);
 
   // Ray-casting point-in-polygon over [lat, lng] ring (shapefile selection).
