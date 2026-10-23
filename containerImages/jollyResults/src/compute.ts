@@ -5,6 +5,7 @@ import {
   trimmedMean,
   vincentyDistance,
 } from './math.js';
+import { createStratumAssigner } from './strata.js';
 import type {
   AnnotationRecord,
   CameraRecord,
@@ -18,8 +19,9 @@ import type {
 
 interface ValidImage {
   id: string;
-  transectId: string;
   cameraId: string;
+  // Index in the camera's whole-transect track.
+  sequence?: number;
   latitude: number;
   longitude: number;
   altitude_agl: number;
@@ -43,8 +45,16 @@ interface CameraStripMetrics {
   animalCounts: Record<string, number>;
 }
 
-interface ImageStrip {
+// The part of a transect that lies in one stratum is that stratum's sample.
+interface SampleUnit {
+  key: string;
   transectId: string;
+  stratumId: string;
+  images: ValidImage[];
+}
+
+interface ImageStrip {
+  unitKey: string;
   cameraId: string;
 }
 
@@ -63,8 +73,12 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function cameraStripKey(transectId: string, cameraId: string): string {
-  return `${transectId}\u0000${cameraId}`;
+function unitKey(transectId: string, stratumId: string): string {
+  return `${transectId}\u0000${stratumId}`;
+}
+
+function cameraStripKey(unitKey: string, cameraId: string): string {
+  return `${unitKey}\u0000${cameraId}`;
 }
 
 export class SurveyAccumulator {
@@ -76,8 +90,12 @@ export class SurveyAccumulator {
   private readonly cameraMap: Map<string, CameraRecord>;
   private readonly stratumMap: Map<string, StratumRecord>;
   private readonly transectMap: Map<string, TransectRecord>;
+  private readonly locateStratum: (
+    lat: number,
+    lng: number
+  ) => StratumRecord | null;
   private readonly now: () => string;
-  private readonly imagesByTransect = new Map<string, ValidImage[]>();
+  private readonly units = new Map<string, SampleUnit>();
   private readonly imageToStrip = new Map<string, ImageStrip>();
   private readonly countsByCameraStrip = new Map<
     string,
@@ -110,11 +128,18 @@ export class SurveyAccumulator {
         .filter((stratum) => !stratum.offEffort)
         .map((stratum) => [stratum.id, stratum])
     );
+    // Saved stratum links only identify off-effort transects.
+    const offEffortStrata = new Set(
+      options.strata
+        .filter((stratum) => stratum.offEffort)
+        .map((stratum) => stratum.id)
+    );
     this.transectMap = new Map(
       options.transects
-        .filter((transect) => this.stratumMap.has(transect.stratumId))
+        .filter((transect) => !offEffortStrata.has(transect.stratumId))
         .map((transect) => [transect.id, transect])
     );
+    this.locateStratum = createStratumAssigner([...this.stratumMap.values()]);
     this.now = options.now ?? (() => new Date().toISOString());
 
     if (this.categoryIds.length === 0) {
@@ -128,6 +153,14 @@ export class SurveyAccumulator {
     }
     if (this.transectMap.size === 0) {
       throw new Error('No transects found for survey');
+    }
+    if (
+      this.stratumMap.size > 1 &&
+      ![...this.stratumMap.values()].some(
+        (stratum) => (stratum.coordinates?.length ?? 0) >= 6
+      )
+    ) {
+      throw new Error('The survey strata have no saved shapes');
     }
   }
 
@@ -185,22 +218,32 @@ export class SurveyAccumulator {
       return;
     }
 
-    const validImage: ValidImage = {
+    const stratum = this.locateStratum(image.latitude, image.longitude);
+    if (!stratum) {
+      exclude('missingPosition');
+      return;
+    }
+
+    const key = unitKey(image.transectId, stratum.id);
+    let unit = this.units.get(key);
+    if (!unit) {
+      unit = {
+        key,
+        transectId: image.transectId,
+        stratumId: stratum.id,
+        images: [],
+      };
+      this.units.set(key, unit);
+    }
+    unit.images.push({
       id: image.id,
-      transectId: image.transectId,
       cameraId: image.cameraId,
       latitude: image.latitude,
       longitude: image.longitude,
       altitude_agl: image.altitude_agl,
       timestamp: image.timestamp,
-    };
-    const images = this.imagesByTransect.get(image.transectId) ?? [];
-    images.push(validImage);
-    this.imagesByTransect.set(image.transectId, images);
-    this.imageToStrip.set(image.id, {
-      transectId: image.transectId,
-      cameraId: image.cameraId,
     });
+    this.imageToStrip.set(image.id, { unitKey: key, cameraId: image.cameraId });
   }
 
   addAnnotation(annotation: AnnotationRecord): void {
@@ -215,7 +258,7 @@ export class SurveyAccumulator {
       this.validation.annotationsForExcludedImages += 1;
       return;
     }
-    const key = cameraStripKey(strip.transectId, strip.cameraId);
+    const key = cameraStripKey(strip.unitKey, strip.cameraId);
     const counts = this.countsByCameraStrip.get(key) ?? {};
     counts[annotation.categoryId] =
       (counts[annotation.categoryId] ?? 0) + 1;
@@ -246,12 +289,13 @@ export class SurveyAccumulator {
       );
     }
 
+    this.numberCameraTracks();
     const metricsByStratum = new Map<string, TransectMetrics[]>();
-    for (const [transectId, images] of this.imagesByTransect.entries()) {
-      const metrics = this.calculateTransect(transectId, images, warnings);
+    for (const unit of this.units.values()) {
+      const metrics = this.calculateTransect(unit, warnings);
       if (!metrics) {
         warnings.push(
-          `Transect ${transectId} was excluded because it had insufficient usable track data`
+          `Transect ${unit.transectId} in stratum ${this.stratumName(unit.stratumId)} was excluded because it had insufficient usable track data`
         );
         continue;
       }
@@ -376,24 +420,36 @@ export class SurveyAccumulator {
     };
   }
 
+  private numberCameraTracks(): void {
+    const tracks = new Map<string, ValidImage[]>();
+    for (const unit of this.units.values()) {
+      for (const image of unit.images) {
+        const key = cameraStripKey(unit.transectId, image.cameraId);
+        const track = tracks.get(key) ?? [];
+        track.push(image);
+        tracks.set(key, track);
+      }
+    }
+    for (const track of tracks.values()) {
+      track
+        .sort((first, second) => first.timestamp - second.timestamp)
+        .forEach((image, index) => {
+          image.sequence = index;
+        });
+    }
+  }
+
+  private stratumName(stratumId: string): string {
+    return this.stratumMap.get(stratumId)?.name ?? stratumId;
+  }
+
   private calculateTransect(
-    transectId: string,
-    images: ValidImage[],
+    unit: SampleUnit,
     warnings: string[]
   ): TransectMetrics | null {
-    const transect = this.transectMap.get(transectId);
-    if (!transect || !this.stratumMap.has(transect.stratumId)) {
-      return null;
-    }
+    const { transectId, images } = unit;
 
-    // A camera is a physical sub-strip of the parent flight transect. Its
-    // geometry is calculated from its own timestamp series, so cameras do not
-    // need synchronized shutters. The sub-strip areas and primary-annotation
-    // counts are combined below while the flight transect remains one Jolly
-    // sampling unit. Survey data can identify overlapping camera pairs, but it
-    // does not store the overlap extent or geometry needed by this calculation.
-    // Camera strips are therefore treated as non-overlapping and their complete
-    // areas are summed.
+    // Camera strips use independent timestamps and assume no overlap.
     const imagesByCamera = new Map<string, ValidImage[]>();
     for (const image of images) {
       const cameraImages = imagesByCamera.get(image.cameraId) ?? [];
@@ -404,13 +460,13 @@ export class SurveyAccumulator {
     const cameraStrips: CameraStripMetrics[] = [];
     for (const [cameraId, cameraImages] of imagesByCamera.entries()) {
       const strip = this.calculateCameraStrip(
-        transectId,
+        unit.key,
         cameraId,
         cameraImages
       );
       if (!strip) {
         warnings.push(
-          `Camera ${cameraId} on transect ${transectId} was excluded because it had insufficient usable track data`
+          `Camera ${cameraId} on transect ${transectId} in stratum ${this.stratumName(unit.stratumId)} was excluded because it had insufficient usable track data`
         );
         continue;
       }
@@ -444,7 +500,7 @@ export class SurveyAccumulator {
     );
 
     return {
-      stratumId: transect.stratumId,
+      stratumId: unit.stratumId,
       transectId,
       distance,
       widthAverage,
@@ -454,7 +510,7 @@ export class SurveyAccumulator {
   }
 
   private calculateCameraStrip(
-    transectId: string,
+    unitKey: string,
     cameraId: string,
     images: ValidImage[]
   ): CameraStripMetrics | null {
@@ -474,16 +530,17 @@ export class SurveyAccumulator {
     const meanDelta = trimmedMean(deltas);
     const sections: ValidImage[][] = [[]];
     for (let index = 0; index < orderedImages.length; index += 1) {
+      const current = orderedImages[index]!;
+      const previous = orderedImages[index - 1];
       if (
-        index > 0 &&
-        meanDelta > 0 &&
-        orderedImages[index]!.timestamp -
-          orderedImages[index - 1]!.timestamp >
-          3 * meanDelta
+        previous &&
+        ((meanDelta > 0 &&
+          current.timestamp - previous.timestamp > 3 * meanDelta) ||
+          current.sequence !== previous.sequence! + 1)
       ) {
         sections.push([]);
       }
-      sections[sections.length - 1]!.push(orderedImages[index]!);
+      sections[sections.length - 1]!.push(current);
     }
 
     const distance = sections.reduce((total, section) => {
@@ -522,7 +579,7 @@ export class SurveyAccumulator {
     }
 
     const existingCounts =
-      this.countsByCameraStrip.get(cameraStripKey(transectId, cameraId)) ??
+      this.countsByCameraStrip.get(cameraStripKey(unitKey, cameraId)) ??
       {};
     const animalCounts = Object.fromEntries(
       this.categoryIds.map((categoryId) => [

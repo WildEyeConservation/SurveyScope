@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SurveyAccumulator } from './compute.js';
 
+// [lat, lng] corners flattened the way strata are stored.
+function box(north: number, south: number, west: number, east: number) {
+  return [north, west, north, east, south, east, south, west];
+}
+
+const STRATUM_SHAPE = box(-32.9, -33.5, 17.9, 18.1);
+
 function createAccumulator(
   transectIds: string[] = ['transect-1']
 ): SurveyAccumulator {
@@ -30,6 +37,7 @@ function createAccumulator(
         name: 'Stratum 1',
         area: 10,
         baselineLength: 1_000,
+        coordinates: STRATUM_SHAPE,
       },
     ],
     transects: transectIds.map((id) => ({
@@ -303,7 +311,13 @@ test('images outside the survey area and off-effort strata are left out', () => 
       { id: 'camera-1', focalLengthMm: 50, sensorWidthMm: 36, tiltDegrees: 0 },
     ],
     strata: [
-      { id: 'stratum-1', name: 'Stratum 1', area: 10, baselineLength: 1_000 },
+      {
+        id: 'stratum-1',
+        name: 'Stratum 1',
+        area: 10,
+        baselineLength: 1_000,
+        coordinates: STRATUM_SHAPE,
+      },
       { id: 'outside', name: 'Outside boundary', offEffort: true },
     ],
     transects: [
@@ -349,4 +363,149 @@ test('images outside the survey area and off-effort strata are left out', () => 
   assert.ok(
     !output.warnings.some((warning) => warning.includes('missing or invalid'))
   );
+});
+
+function createTwoStrataAccumulator(): SurveyAccumulator {
+  return new SurveyAccumulator({
+    surveyId: 'survey-1',
+    annotationSetId: 'set-1',
+    organizationId: 'org-1',
+    categoryIds: ['seen'],
+    cameras: [
+      { id: 'camera-1', focalLengthMm: 50, sensorWidthMm: 36, tiltDegrees: 0 },
+    ],
+    strata: [
+      {
+        id: 'north',
+        name: 'North',
+        area: 10,
+        baselineLength: 1_000,
+        coordinates: box(-32.9, -33, 17.9, 18.1),
+      },
+      {
+        id: 'south',
+        name: 'South',
+        area: 10,
+        baselineLength: 1_000,
+        coordinates: box(-33, -33.1, 17.9, 18.1),
+      },
+    ],
+    // The saved link points every transect at the wrong stratum.
+    transects: [{ id: 'transect-1', stratumId: 'south' }],
+    now: () => '2026-07-30T00:00:00.000Z',
+  });
+}
+
+test('a transect crossing strata counts each part in the stratum it lies in', () => {
+  const accumulator = createTwoStrataAccumulator();
+  // Six images flying south across the border at -33.
+  const latitudes = [-32.97, -32.98, -32.99, -33.01, -33.02, -33.03];
+  latitudes.forEach((latitude, step) => {
+    accumulator.addImage({
+      id: `image-${step}`,
+      transectId: 'transect-1',
+      cameraId: 'camera-1',
+      latitude,
+      longitude: 18,
+      altitude_agl: 100,
+      timestamp: step + 1,
+    });
+  });
+  for (const [id, imageId] of [
+    ['north-1', 'image-0'],
+    ['north-2', 'image-1'],
+    ['south-1', 'image-4'],
+  ]) {
+    accumulator.addAnnotation({ id, objectId: id, imageId, categoryId: 'seen' });
+  }
+
+  const output = accumulator.calculate();
+  const north = output.results.find((row) => row.stratumId === 'north')!;
+  const south = output.results.find((row) => row.stratumId === 'south')!;
+  assert.equal(north.animals, 2);
+  assert.equal(south.animals, 1);
+  assert.equal(north.numSamples, 1);
+  assert.equal(south.numSamples, 1);
+  // Each part covers only its own 2 km of track, not the whole transect.
+  assert.ok(
+    Math.abs(north.areaSurveyed / south.areaSurveyed - 1) < 0.001
+  );
+});
+
+test('images outside every stratum count in the nearest one', () => {
+  const accumulator = createTwoStrataAccumulator();
+  const latitudes = [-32.95, -32.96, -33.04, -33.05, -33.2, -33.21];
+  latitudes.forEach((latitude, step) => {
+    accumulator.addImage({
+      id: `image-${step}`,
+      transectId: 'transect-1',
+      cameraId: 'camera-1',
+      latitude,
+      longitude: 18,
+      altitude_agl: 100,
+      timestamp: step + 1,
+    });
+  });
+  accumulator.addAnnotation({
+    id: 'beyond',
+    objectId: 'beyond',
+    imageId: 'image-5',
+    categoryId: 'seen',
+  });
+
+  const output = accumulator.calculate();
+  assert.equal(output.validation.excludedImages, 0);
+  assert.equal(
+    output.results.find((row) => row.stratumId === 'south')!.animals,
+    1
+  );
+});
+
+test('a transect re-entering a stratum does not count the gap between visits', () => {
+  const accumulator = new SurveyAccumulator({
+    surveyId: 'survey-1',
+    annotationSetId: 'set-1',
+    organizationId: 'org-1',
+    categoryIds: ['seen'],
+    cameras: [
+      { id: 'camera-1', focalLengthMm: 50, sensorWidthMm: 36, tiltDegrees: 0 },
+    ],
+    // The inner stratum is listed first, so it wins where the two overlap.
+    strata: [
+      {
+        id: 'inner',
+        name: 'Inner',
+        area: 10,
+        baselineLength: 1_000,
+        coordinates: box(-32.975, -32.995, 17.9, 18.1),
+      },
+      {
+        id: 'outer',
+        name: 'Outer',
+        area: 10,
+        baselineLength: 1_000,
+        coordinates: box(-32.9, -33.1, 17.9, 18.1),
+      },
+    ],
+    transects: [{ id: 'transect-1', stratumId: 'outer' }],
+    now: () => '2026-07-30T00:00:00.000Z',
+  });
+  const latitudes = [-32.95, -32.96, -32.97, -32.98, -32.99, -33, -33.01, -33.02];
+  latitudes.forEach((latitude, step) => {
+    accumulator.addImage({
+      id: `image-${step}`,
+      transectId: 'transect-1',
+      cameraId: 'camera-1',
+      latitude,
+      longitude: 18,
+      altitude_agl: 100,
+      timestamp: step + 1,
+    });
+  });
+
+  const output = accumulator.calculate();
+  const outer = output.results.find((row) => row.stratumId === 'outer')!;
+  const inner = output.results.find((row) => row.stratumId === 'inner')!;
+  // Outer covers two 2-step sections, inner one step.
+  assert.ok(Math.abs(outer.areaSurveyed / inner.areaSurveyed - 4) < 0.01);
 });
