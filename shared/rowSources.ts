@@ -102,6 +102,14 @@ export const ROW_SOURCES = {
     key: ['imageId', 'source'],
     fields: { imageId: 'str', source: 'dict' },
   },
+  categoriesByProjectId: {
+    model: 'Category',
+    index: 'categoriesByProjectId',
+    scope: 'project',
+    partitionKey: 'projectId',
+    key: ['id'],
+    fields: { id: 'str', name: 'str' },
+  },
   categoriesByAnnotationSetId: {
     model: 'Category',
     index: 'categoriesByAnnotationSetId',
