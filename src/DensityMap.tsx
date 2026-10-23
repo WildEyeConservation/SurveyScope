@@ -301,13 +301,16 @@ export default function DensityMap({
 
   // Informational tags for every set on the map: used both to filter and to
   // show what a sighting was tagged with in its popup.
-  const { namesFor: infoTagNamesFor, dataSig: infoTagSig } = useInfoTagData(
-    uniqueSetSources.map((s) => s.annotationSetId)
-  );
+  const {
+    namesFor: infoTagNamesFor,
+    dataSig: infoTagSig,
+    isLoading: infoTagsLoading,
+  } = useInfoTagData(uniqueSetSources.map((s) => s.annotationSetId));
 
   const loading =
     surveyQueries.some((q) => q.isLoading) ||
-    annotationQueries.some((q) => q.isLoading);
+    annotationQueries.some((q) => q.isLoading) ||
+    infoTagsLoading;
   const fetching =
     surveyQueries.some((q) => q.isFetching) ||
     annotationQueries.some((q) => q.isFetching);
@@ -1023,15 +1026,26 @@ export default function DensityMap({
         />
       </div>
 
-      {/* Loading / status overlay */}
-      {(loading || fetching) && (
+      {/* Partial data would give a misleading map. */}
+      {(loading || !mapLoaded) && (
+        <div
+          className='position-absolute d-flex flex-column align-items-center justify-content-center'
+          style={{ inset: 0, zIndex: 2, background: 'rgba(255,255,255,0.85)', color: '#000' }}
+        >
+          <Spinner />
+          <span className='mt-2' style={{ fontSize: 14 }}>
+            Loading map data…
+          </span>
+        </div>
+      )}
+      {!loading && mapLoaded && fetching && (
         <div
           className='position-absolute bg-white rounded shadow-sm px-2 py-1 d-flex align-items-center'
           style={{ top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }}
         >
           <Spinner size='sm' />
           <span className='ms-2' style={{ fontSize: 13, color: '#000' }}>
-            {loading ? 'Loading map data…' : 'Updating…'}
+            Updating…
           </span>
         </div>
       )}
