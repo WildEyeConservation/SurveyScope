@@ -1,7 +1,11 @@
 import { useState, useEffect, useContext, useRef, useMemo } from 'react';
-import maplibregl, { type StyleSpecification } from 'maplibre-gl';
+import maplibregl, {
+  type ExpressionSpecification,
+  type StyleSpecification,
+} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQueries } from '@tanstack/react-query';
+import { pointOnFeature } from '@turf/turf';
 import { fetchAllPaginatedResults } from './utils';
 import { GlobalContext } from './Context';
 import ImageViewerModal from './ImageViewerModal';
@@ -16,6 +20,12 @@ import { useInfoTagData } from './useInfoTags';
 import { formatInfoTagsForDisplay } from './infoTags';
 import { loadProjectImages } from './projectImages';
 import { loadRows } from './rowChunks';
+import {
+  DEFAULT_HEAT_RADIUS_KM,
+  HEAT_COLOR_RAMP,
+  heatIntensity,
+  heatRadiusExpression,
+} from './densityHeat';
 
 /**
  * A single (survey, annotation set) pair whose annotations should be plotted.
@@ -58,6 +68,8 @@ interface DensityMapProps {
   onTransectsLoaded?: (
     transects: { id: string; surveyId: string; number: number }[]
   ) => void;
+  highlightedStratumId?: string | null;
+  onStratumHover?: (stratumId: string | null) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,8 +77,11 @@ interface DensityMapProps {
 // ---------------------------------------------------------------------------
 
 const SRC_ANNOTATIONS = 'annotations';
+// Unclustered, so the heatmap shows density rather than one blob per cluster.
+const SRC_HEAT = 'annotations-unclustered';
 const SRC_IMAGES = 'images';
 const SRC_STRATA = 'strata';
+const SRC_STRATA_LABELS = 'strata-labels';
 const SRC_EXCLUSIONS = 'exclusions';
 
 const LYR_HEATMAP = 'annotations-heat';
@@ -74,7 +89,9 @@ const LYR_CLUSTERS = 'annotations-clusters';
 const LYR_CLUSTER_COUNT = 'annotations-cluster-count';
 const LYR_POINTS = 'annotations-points';
 const LYR_IMAGES = 'images-points';
+const LYR_STRATA_FILL = 'strata-fill';
 const LYR_STRATA_LINE = 'strata-line';
+const LYR_STRATA_LABEL = 'strata-label';
 const LYR_EXCLUSIONS_FILL = 'exclusions-fill';
 const LYR_EXCLUSIONS_LINE = 'exclusions-line';
 
@@ -179,6 +196,8 @@ export default function DensityMap({
   dropFalseNegatives = false,
   primaryAnnotationSetId,
   onTransectsLoaded,
+  highlightedStratumId = null,
+  onStratumHover,
 }: DensityMapProps) {
   const { client } = useContext(GlobalContext)!;
 
@@ -214,6 +233,7 @@ export default function DensityMap({
   const [showClusters, setShowClusters] = useState(true);
   const [showImages, setShowImages] = useState(false);
   const [showStrata, setShowStrata] = useState(true);
+  const [heatRadiusKm, setHeatRadiusKm] = useState(DEFAULT_HEAT_RADIUS_KM);
 
   // Viewer modal state
   const [viewerImageId, setViewerImageId] = useState<string | null>(null);
@@ -294,13 +314,16 @@ export default function DensityMap({
 
   // Informational tags for every set on the map: used both to filter and to
   // show what a sighting was tagged with in its popup.
-  const { namesFor: infoTagNamesFor, dataSig: infoTagSig } = useInfoTagData(
-    uniqueSetSources.map((s) => s.annotationSetId)
-  );
+  const {
+    namesFor: infoTagNamesFor,
+    dataSig: infoTagSig,
+    isLoading: infoTagsLoading,
+  } = useInfoTagData(uniqueSetSources.map((s) => s.annotationSetId));
 
   const loading =
     surveyQueries.some((q) => q.isLoading) ||
-    annotationQueries.some((q) => q.isLoading);
+    annotationQueries.some((q) => q.isLoading) ||
+    infoTagsLoading;
   const fetching =
     surveyQueries.some((q) => q.isFetching) ||
     annotationQueries.some((q) => q.isFetching);
@@ -559,13 +582,25 @@ export default function DensityMap({
         features.push({
           type: 'Feature',
           geometry: { type: 'Polygon', coordinates: [ring] },
-          properties: { name: s.name ?? 'Stratum' },
+          properties: { id: s.id, name: s.name ?? 'Stratum' },
         });
       }
     }
     return { type: 'FeatureCollection', features };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyDataSig]);
+
+  // Labels sit at a point guaranteed to be inside each (possibly concave) stratum.
+  const strataLabelsFC = useMemo<FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: strataFC.features.map((f) => ({
+        ...pointOnFeature(f),
+        properties: f.properties,
+      })),
+    }),
+    [strataFC]
+  );
 
   const exclusionsFC = useMemo<FeatureCollection>(() => {
     const features: GeoJSON.Feature[] = [];
@@ -596,6 +631,10 @@ export default function DensityMap({
   };
   const openViewerRef = useRef(openViewer);
   openViewerRef.current = openViewer;
+
+  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(null);
+  const onStratumHoverRef = useRef(onStratumHover);
+  onStratumHoverRef.current = onStratumHover;
 
   // -----------------------------------------------------------------------
   // Map initialisation (once)
@@ -631,8 +670,14 @@ export default function DensityMap({
         clusterMaxZoom: 16,
         clusterRadius: 50,
       });
+      map.addSource(SRC_HEAT, { type: 'geojson', data: EMPTY_FC });
       map.addSource(SRC_IMAGES, { type: 'geojson', data: EMPTY_FC });
-      map.addSource(SRC_STRATA, { type: 'geojson', data: EMPTY_FC });
+      map.addSource(SRC_STRATA, {
+        type: 'geojson',
+        data: EMPTY_FC,
+        promoteId: 'id',
+      });
+      map.addSource(SRC_STRATA_LABELS, { type: 'geojson', data: EMPTY_FC });
       map.addSource(SRC_EXCLUSIONS, { type: 'geojson', data: EMPTY_FC });
 
       // Polygons (drawn underneath the points).
@@ -648,11 +693,28 @@ export default function DensityMap({
         source: SRC_EXCLUSIONS,
         paint: { 'line-color': '#FF0000', 'line-width': 2 },
       });
+      const strataHovered: ExpressionSpecification = [
+        'boolean',
+        ['feature-state', 'hover'],
+        false,
+      ];
+      map.addLayer({
+        id: LYR_STRATA_FILL,
+        type: 'fill',
+        source: SRC_STRATA,
+        paint: {
+          'fill-color': '#3357FF',
+          'fill-opacity': ['case', strataHovered, 0.25, 0],
+        },
+      });
       map.addLayer({
         id: LYR_STRATA_LINE,
         type: 'line',
         source: SRC_STRATA,
-        paint: { 'line-color': '#3357FF', 'line-width': 2 },
+        paint: {
+          'line-color': '#3357FF',
+          'line-width': ['case', strataHovered, 4, 2],
+        },
       });
 
       // Image markers, coloured by transect.
@@ -670,21 +732,14 @@ export default function DensityMap({
         },
       });
 
-      // Heatmap (reads the clustered source; weight by cluster size).
       map.addLayer({
         id: LYR_HEATMAP,
         type: 'heatmap',
-        source: SRC_ANNOTATIONS,
+        source: SRC_HEAT,
         layout: { visibility: 'none' },
         paint: {
-          'heatmap-weight': [
-            'case',
-            ['has', 'point_count'],
-            ['min', ['/', ['get', 'point_count'], 50], 5],
-            1,
-          ],
-          'heatmap-radius': 20,
-          'heatmap-opacity': 0.7,
+          'heatmap-color': HEAT_COLOR_RAMP,
+          'heatmap-opacity': 0.8,
         },
       });
 
@@ -728,6 +783,23 @@ export default function DensityMap({
           'circle-radius': 5,
           'circle-stroke-width': 1,
           'circle-stroke-color': '#ffffff',
+        },
+      });
+
+      // Above the sightings so names stay readable.
+      map.addLayer({
+        id: LYR_STRATA_LABEL,
+        type: 'symbol',
+        source: SRC_STRATA_LABELS,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 13,
+          'text-font': ['Open Sans Regular'],
+        },
+        paint: {
+          'text-color': '#1a2b8c',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
         },
       });
 
@@ -819,6 +891,15 @@ export default function DensityMap({
           .addTo(map);
       });
 
+      const hoverStratum = (id: string | null) => {
+        setMapHoveredStratumId(id);
+        onStratumHoverRef.current?.(id);
+      };
+      map.on('mousemove', LYR_STRATA_FILL, (e) => {
+        hoverStratum(e.features?.[0]?.properties?.id ?? null);
+      });
+      map.on('mouseleave', LYR_STRATA_FILL, () => hoverStratum(null));
+
       for (const lyr of [LYR_CLUSTERS, LYR_POINTS, LYR_IMAGES, LYR_STRATA_LINE]) {
         map.on('mouseenter', lyr, () => {
           map.getCanvas().style.cursor = 'pointer';
@@ -849,6 +930,37 @@ export default function DensityMap({
     );
   }, [mapLoaded, annotationsFC]);
 
+  const heatPoints = useMemo(
+    () =>
+      annotationsFC.features
+        .map((f) => (f.geometry as GeoJSON.Point).coordinates as [number, number])
+        .filter((c) => isValidLatLng(c[1], c[0])),
+    [annotationsFC]
+  );
+  const heatScale = useMemo(() => {
+    if (!showHeatmap || heatPoints.length === 0) return null;
+    const latitude =
+      heatPoints.reduce((sum, [, lat]) => sum + lat, 0) / heatPoints.length;
+    return {
+      radius: heatRadiusExpression(heatRadiusKm, latitude),
+      intensity: heatIntensity(heatPoints, heatRadiusKm),
+    };
+  }, [showHeatmap, heatPoints, heatRadiusKm]);
+
+  useEffect(() => {
+    if (!mapLoaded) return;
+    (mapRef.current?.getSource(SRC_HEAT) as maplibregl.GeoJSONSource)?.setData(
+      annotationsFC
+    );
+  }, [mapLoaded, annotationsFC]);
+
+  useEffect(() => {
+    if (!mapLoaded || !heatScale) return;
+    const map = mapRef.current!;
+    map.setPaintProperty(LYR_HEATMAP, 'heatmap-radius', heatScale.radius);
+    map.setPaintProperty(LYR_HEATMAP, 'heatmap-intensity', heatScale.intensity);
+  }, [mapLoaded, heatScale]);
+
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_IMAGES) as maplibregl.GeoJSONSource)?.setData(
@@ -861,7 +973,21 @@ export default function DensityMap({
     (mapRef.current?.getSource(SRC_STRATA) as maplibregl.GeoJSONSource)?.setData(
       strataFC
     );
-  }, [mapLoaded, strataFC]);
+    (mapRef.current?.getSource(SRC_STRATA_LABELS) as maplibregl.GeoJSONSource)?.setData(
+      strataLabelsFC
+    );
+  }, [mapLoaded, strataFC, strataLabelsFC]);
+
+  const activeStratumId = mapHoveredStratumId ?? highlightedStratumId;
+  useEffect(() => {
+    if (!mapLoaded || !activeStratumId) return;
+    const map = mapRef.current!;
+    const target = { source: SRC_STRATA, id: activeStratumId };
+    map.setFeatureState(target, { hover: true });
+    return () => {
+      if (mapRef.current === map) map.setFeatureState(target, { hover: false });
+    };
+  }, [mapLoaded, activeStratumId, strataFC]);
 
   useEffect(() => {
     if (!mapLoaded) return;
@@ -884,7 +1010,9 @@ export default function DensityMap({
     set(LYR_POINTS, showClusters);
     set(LYR_HEATMAP, showHeatmap);
     set(LYR_IMAGES, showImages);
+    set(LYR_STRATA_FILL, showStrata);
     set(LYR_STRATA_LINE, showStrata);
+    set(LYR_STRATA_LABEL, showStrata);
     set(LYR_EXCLUSIONS_FILL, showStrata);
     set(LYR_EXCLUSIONS_LINE, showStrata);
   }, [mapLoaded, showClusters, showHeatmap, showImages, showStrata]);
@@ -956,6 +1084,21 @@ export default function DensityMap({
           onChange={(e) => setShowHeatmap(e.target.checked)}
           style={{ fontSize: 13 }}
         />
+        {showHeatmap && (
+          <div className='ms-4 mb-1' style={{ fontSize: 12 }}>
+            <label htmlFor='dm-heat-radius' className='d-block'>
+              Radius: {heatRadiusKm} km
+            </label>
+            <Form.Range
+              id='dm-heat-radius'
+              min={1}
+              max={15}
+              step={1}
+              value={heatRadiusKm}
+              onChange={(e) => setHeatRadiusKm(Number(e.target.value))}
+            />
+          </div>
+        )}
         <Form.Check
           type='checkbox'
           id='dm-images'
@@ -974,15 +1117,26 @@ export default function DensityMap({
         />
       </div>
 
-      {/* Loading / status overlay */}
-      {(loading || fetching) && (
+      {/* Partial data would give a misleading map. */}
+      {(loading || !mapLoaded) && (
+        <div
+          className='position-absolute d-flex flex-column align-items-center justify-content-center'
+          style={{ inset: 0, zIndex: 2, background: 'rgba(255,255,255,0.85)', color: '#000' }}
+        >
+          <Spinner />
+          <span className='mt-2' style={{ fontSize: 14 }}>
+            Loading map data…
+          </span>
+        </div>
+      )}
+      {!loading && mapLoaded && fetching && (
         <div
           className='position-absolute bg-white rounded shadow-sm px-2 py-1 d-flex align-items-center'
           style={{ top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }}
         >
           <Spinner size='sm' />
           <span className='ms-2' style={{ fontSize: 13, color: '#000' }}>
-            {loading ? 'Loading map data…' : 'Updating…'}
+            Updating…
           </span>
         </div>
       )}

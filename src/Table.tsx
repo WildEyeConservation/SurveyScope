@@ -1,6 +1,6 @@
 import Table from 'react-bootstrap/Table';
 import type { CSSProperties } from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Button from 'react-bootstrap/esm/Button';
 import Form from 'react-bootstrap/Form';
 import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
@@ -19,6 +19,8 @@ interface TableObject {
   pagination?: boolean;
   itemsPerPage?: number;
   emptyMessage?: string;
+  onRowHover?: (id: string | null) => void;
+  highlightedRowIds?: Set<string>;
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -32,8 +34,9 @@ export default function MyTable(input: TableObject) {
     pagination = false,
     itemsPerPage: initialItemsPerPage = 5,
     emptyMessage = null,
+    onRowHover,
+    highlightedRowIds,
   } = input;
-  const [sortedData, setSortedData] = useState(tableData);
   const [sortConfig, setSortConfig] = useState<{
     index: number;
     direction: SortDirection;
@@ -67,7 +70,14 @@ export default function MyTable(input: TableObject) {
       direction = 'desc';
     }
 
-    const sorted = [...sortedData].sort((a, b) => {
+    setSortConfig({ index, direction });
+    setCurrentPage(0);
+  };
+
+  const sortedData = useMemo(() => {
+    if (!sortConfig) return tableData;
+    const { index, direction } = sortConfig;
+    return [...tableData].sort((a, b) => {
       const aValue = a.rowData[index];
       const bValue = b.rowData[index];
 
@@ -89,11 +99,7 @@ export default function MyTable(input: TableObject) {
       if (aStr > bStr) return direction === 'asc' ? 1 : -1;
       return 0;
     });
-
-    setSortedData(sorted);
-    setSortConfig({ index, direction });
-    setCurrentPage(0);
-  };
+  }, [tableData, sortConfig]);
 
   const renderSortIndicator = (index: number) => {
     if (!sortConfig || sortConfig.index !== index) return null;
@@ -123,8 +129,6 @@ export default function MyTable(input: TableObject) {
       prevDataRef.current.length !== tableData.length || 
       prevIds !== currentIds;
 
-    setSortedData(tableData);
-    
     if (dataChanged) {
       setCurrentPage(0); // reset to first page when data actually changes (e.g., search/filter)
     }
@@ -193,11 +197,20 @@ export default function MyTable(input: TableObject) {
         )}
         <tbody>
           {paginatedData?.map((row) => (
-            <tr key={row.id} className='align-middle'>
+            <tr
+              key={row.id}
+              className='align-middle'
+              onMouseEnter={onRowHover && (() => onRowHover(row.id))}
+              onMouseLeave={onRowHover && (() => onRowHover(null))}
+            >
               {row.rowData.map((content, index) => (
                 <td
                   key={`column${index}`}
-                  style={{ backgroundColor: '#6F7B89' }}
+                  style={{
+                    backgroundColor: highlightedRowIds?.has(row.id)
+                      ? '#8794A3'
+                      : '#6F7B89',
+                  }}
                 >
                   {content}
                 </td>
