@@ -81,7 +81,14 @@ async function main(): Promise<void> {
         indexName: stratumIndex,
         hashAttribute: 'projectId',
         hashValue: job.surveyId,
-        fields: ['id', 'name', 'area', 'baselineLength', 'offEffort'],
+        fields: [
+          'id',
+          'name',
+          'area',
+          'baselineLength',
+          'offEffort',
+          'coordinates',
+        ],
       }),
       queryByHash<TransectRecord>({
         tableName: environment.transectTableName,

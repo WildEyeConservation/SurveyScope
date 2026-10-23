@@ -11,6 +11,7 @@ export interface StratumRecord {
   area?: number | null;
   baselineLength?: number | null;
   offEffort?: boolean | null;
+  coordinates?: number[] | null;
 }
 
 export interface TransectRecord {
