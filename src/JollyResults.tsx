@@ -48,6 +48,12 @@ export default function JollyResults() {
   const [isCopying, setIsCopying] = useState(false);
   const [moreInfo, setMoreInfo] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [tableHoveredStratumId, setTableHoveredStratumId] = useState<
+    string | null
+  >(null);
+  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<
+    string | null
+  >(null);
   const { users } = useUsers();
   const adminProjects = myProjectsHook.data?.filter((p) => p.isAdmin);
   const isProjectAdmin = adminProjects?.some((p) => p.projectId === surveyId);
@@ -408,8 +414,19 @@ export default function JollyResults() {
   const totalLower95 = totalEstimate - tValue * totalStdError;
   const totalUpper95 = totalEstimate + tValue * totalStdError;
 
+  const rowId = (r: { stratumId: string; categoryId: string }) =>
+    `${r.stratumId}-${r.categoryId}`;
+  const rowStratumIds = new Map(
+    filteredResults.map((r) => [rowId(r), r.stratumId])
+  );
+  const highlightedRowIds = new Set(
+    filteredResults
+      .filter((r) => r.stratumId === mapHoveredStratumId)
+      .map(rowId)
+  );
+
   const tableData = filteredResults.map((r) => ({
-    id: `${r.stratumId}-${r.categoryId}`,
+    id: rowId(r),
     rowData: [
       r.stratumName,
       categoryOptions.find((c) => c.value === r.categoryId)?.label,
@@ -610,6 +627,8 @@ export default function JollyResults() {
                   }
                   primaryOnly
                   dropFalseNegatives
+                  highlightedStratumId={tableHoveredStratumId}
+                  onStratumHover={setMapHoveredStratumId}
                 />
               </div>
             </Card.Body>
@@ -626,6 +645,12 @@ export default function JollyResults() {
                 tableData={tableData}
                 pagination={false}
                 emptyMessage='No Jolly results found.'
+                onRowHover={(id) =>
+                  setTableHoveredStratumId(
+                    id ? rowStratumIds.get(id) ?? null : null
+                  )
+                }
+                highlightedRowIds={highlightedRowIds}
               />
               <div className='mt-3 p-2 border-top'>
                 <h5>Totals</h5>
