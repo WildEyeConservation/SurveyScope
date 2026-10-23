@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import maplibregl, { type StyleSpecification } from 'maplibre-gl';
+import type { FeatureCollection as GeoJSONFeatureCollection } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQueries } from '@tanstack/react-query';
 import { fetchAllPaginatedResults } from './utils';
@@ -15,6 +16,12 @@ import { Spinner, Form } from 'react-bootstrap';
 import { useInfoTagData } from './useInfoTags';
 import { formatInfoTagsForDisplay } from './infoTags';
 import { loadProjectImages } from './projectImages';
+import {
+  DEFAULT_HEAT_RADIUS_KM,
+  HEAT_COLOR_RAMP,
+  heatIntensity,
+  heatRadiusExpression,
+} from './densityHeat';
 
 /**
  * A single (survey, annotation set) pair whose annotations should be plotted.
@@ -64,6 +71,8 @@ interface DensityMapProps {
 // ---------------------------------------------------------------------------
 
 const SRC_ANNOTATIONS = 'annotations';
+// Unclustered, so the heatmap shows density rather than one blob per cluster.
+const SRC_HEAT = 'annotations-unclustered';
 const SRC_IMAGES = 'images';
 const SRC_STRATA = 'strata';
 const SRC_EXCLUSIONS = 'exclusions';
@@ -215,6 +224,7 @@ export default function DensityMap({
   const [showClusters, setShowClusters] = useState(true);
   const [showImages, setShowImages] = useState(false);
   const [showStrata, setShowStrata] = useState(true);
+  const [heatRadiusKm, setHeatRadiusKm] = useState(DEFAULT_HEAT_RADIUS_KM);
 
   // Viewer modal state
   const [viewerImageId, setViewerImageId] = useState<string | null>(null);
@@ -628,6 +638,10 @@ export default function DensityMap({
         clusterMaxZoom: 16,
         clusterRadius: 50,
       });
+      map.addSource(SRC_HEAT, {
+        type: 'geojson',
+        data: EMPTY_FC as GeoJSONFeatureCollection,
+      });
       map.addSource(SRC_IMAGES, { type: 'geojson', data: EMPTY_FC as any });
       map.addSource(SRC_STRATA, { type: 'geojson', data: EMPTY_FC as any });
       map.addSource(SRC_EXCLUSIONS, { type: 'geojson', data: EMPTY_FC as any });
@@ -667,21 +681,14 @@ export default function DensityMap({
         },
       });
 
-      // Heatmap (reads the clustered source; weight by cluster size).
       map.addLayer({
         id: LYR_HEATMAP,
         type: 'heatmap',
-        source: SRC_ANNOTATIONS,
+        source: SRC_HEAT,
         layout: { visibility: 'none' },
         paint: {
-          'heatmap-weight': [
-            'case',
-            ['has', 'point_count'],
-            ['min', ['/', ['get', 'point_count'], 50], 5],
-            1,
-          ],
-          'heatmap-radius': 20,
-          'heatmap-opacity': 0.7,
+          'heatmap-color': HEAT_COLOR_RAMP,
+          'heatmap-opacity': 0.8,
         },
       });
 
@@ -843,6 +850,39 @@ export default function DensityMap({
     );
   }, [mapLoaded, annotationsFC]);
 
+  const heatPoints = useMemo(
+    () =>
+      annotationsFC.features
+        .map((f) => f.geometry?.coordinates as [number, number] | undefined)
+        .filter(
+          (c): c is [number, number] => !!c && isValidLatLng(c[1], c[0])
+        ),
+    [annotationsFC]
+  );
+  const heatScale = useMemo(() => {
+    if (!showHeatmap || heatPoints.length === 0) return null;
+    const latitude =
+      heatPoints.reduce((sum, [, lat]) => sum + lat, 0) / heatPoints.length;
+    return {
+      radius: heatRadiusExpression(heatRadiusKm, latitude),
+      intensity: heatIntensity(heatPoints, heatRadiusKm),
+    };
+  }, [showHeatmap, heatPoints, heatRadiusKm]);
+
+  useEffect(() => {
+    if (!mapLoaded) return;
+    (mapRef.current?.getSource(SRC_HEAT) as maplibregl.GeoJSONSource)?.setData(
+      annotationsFC as GeoJSONFeatureCollection
+    );
+  }, [mapLoaded, annotationsFC]);
+
+  useEffect(() => {
+    if (!mapLoaded || !heatScale) return;
+    const map = mapRef.current!;
+    map.setPaintProperty(LYR_HEATMAP, 'heatmap-radius', heatScale.radius);
+    map.setPaintProperty(LYR_HEATMAP, 'heatmap-intensity', heatScale.intensity);
+  }, [mapLoaded, heatScale]);
+
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_IMAGES) as maplibregl.GeoJSONSource)?.setData(
@@ -950,6 +990,21 @@ export default function DensityMap({
           onChange={(e) => setShowHeatmap(e.target.checked)}
           style={{ fontSize: 13 }}
         />
+        {showHeatmap && (
+          <div className='ms-4 mb-1' style={{ fontSize: 12 }}>
+            <label htmlFor='dm-heat-radius' className='d-block'>
+              Radius: {heatRadiusKm} km
+            </label>
+            <Form.Range
+              id='dm-heat-radius'
+              min={1}
+              max={15}
+              step={1}
+              value={heatRadiusKm}
+              onChange={(e) => setHeatRadiusKm(Number(e.target.value))}
+            />
+          </div>
+        )}
         <Form.Check
           type='checkbox'
           id='dm-images'
