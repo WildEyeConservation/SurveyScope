@@ -17,6 +17,13 @@ import {
   isOnEffort,
   type LatLngRing,
 } from '../shared/boundaryStatus';
+import {
+  hasDistanceInputs,
+  perpendicularDistance,
+} from '../shared/distanceSampling';
+
+const formatDistance = (distance: number | null) =>
+  distance === null ? '' : Math.round(distance * 100) / 100;
 
 function flatToRing(coordinates: (number | null)[] | null | undefined) {
   const flat = (coordinates ?? []).filter(
@@ -121,6 +128,10 @@ export default function AnnotationSetResults({
               'image.longitude',
               'image.transectId',
               'image.boundaryStatus',
+              'image.altitude_agl',
+              'image.width',
+              'image.height',
+              'image.cameraId',
             ] as const,
             limit: 10000,
           },
@@ -176,6 +187,21 @@ export default function AnnotationSetResults({
       return index === null ? 'Unknown' : strata[index].name || 'Unknown';
     };
 
+    setExportStatus('Fetching cameras...');
+    const cameras = await fetchAllPaginatedResults(
+      client.models.Camera.camerasByProjectId,
+      {
+        projectId: surveyId,
+        selectionSet: [
+          'id',
+          'focalLengthMm',
+          'sensorWidthMm',
+          'tiltDegrees',
+        ] as const,
+      }
+    );
+    const cameraById = new Map(cameras.map((camera) => [camera.id, camera]));
+
     const infoTagsBySet = await Promise.all(
       annotationSets.map((set) =>
         fetchAllInfoTagsForSet(client, set.id, (count) => {
@@ -192,8 +218,16 @@ export default function AnnotationSetResults({
 
       const fileName = `SurveyScope-${survey.name}-${annotationSets[i].name}`;
       const exportType = exportFromJSON.types.csv;
+      const distanceInputs = annotations.map((anno) => ({
+        y: anno.y,
+        imageWidth: anno.image.width,
+        imageHeight: anno.image.height,
+        altitudeAgl: anno.image.altitude_agl,
+        camera: cameraById.get(anno.image.cameraId ?? ''),
+      }));
+      const includeDistance = distanceInputs.every(hasDistanceInputs);
       exportFromJSON({
-        data: annotations.map((anno) => {
+        data: annotations.map((anno, index) => {
           return {
             category: anno.category?.name || 'Unknown',
             image: anno.image.originalPath || 'Unknown',
@@ -208,6 +242,13 @@ export default function AnnotationSetResults({
             isPrimary: anno.objectId === anno.id,
             x: anno.x,
             y: anno.y,
+            ...(includeDistance
+              ? {
+                  perpendicularDistanceM: formatDistance(
+                    perpendicularDistance(distanceInputs[index])
+                  ),
+                }
+              : {}),
             source: anno.source,
             infoTags: formatInfoTagsForCsv(
               infoTagsBySet[i].get(anno.id) ?? []
