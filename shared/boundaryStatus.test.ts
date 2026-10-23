@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
   createBoundaryClassifier,
+  createStratumAssigner,
   isOnEffort,
   type LatLngRing,
 } from './boundaryStatus.ts';
@@ -109,4 +110,23 @@ test('points on an edge or vertex count as inside it', () => {
   ] as const) {
     assert.equal(classify(...point), 'excluded', point.join(','));
   }
+});
+
+test('points take the stratum they are in, else the nearest one', () => {
+  const east: LatLngRing = [
+    [0, 0.01],
+    [0, 0.02],
+    [0.01, 0.02],
+    [0.01, 0.01],
+  ];
+  const assign = createStratumAssigner([square, null, east]);
+  assert.equal(assign(0.005, 0.005), 0);
+  assert.equal(assign(0.005, 0.015), 2);
+  assert.equal(assign(0.005, 0.03), 2);
+  assert.equal(assign(-0.001, 0.002), 0);
+});
+
+test('a single stratum without a shape takes every point', () => {
+  assert.equal(createStratumAssigner([null])(5, 5), 0);
+  assert.equal(createStratumAssigner([null, null])(5, 5), null);
 });

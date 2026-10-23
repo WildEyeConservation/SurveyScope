@@ -12,6 +12,20 @@ import {
   fetchAllInfoTagsForSet,
   formatInfoTagsForCsv,
 } from './infoTags';
+import {
+  createStratumAssigner,
+  isOnEffort,
+  type LatLngRing,
+} from '../shared/boundaryStatus';
+
+function flatToRing(coordinates: (number | null)[] | null | undefined) {
+  const flat = (coordinates ?? []).filter(
+    (n): n is number => typeof n === 'number' && Number.isFinite(n)
+  );
+  const ring: LatLngRing = [];
+  for (let i = 0; i + 1 < flat.length; i += 2) ring.push([flat[i], flat[i + 1]]);
+  return ring.length >= 3 ? ring : null;
+}
 
 export default function AnnotationSetResults({
   show,
@@ -134,20 +148,33 @@ export default function AnnotationSetResults({
       return acc;
     }, {} as Record<string, string>);
 
-    setExportStatus('Fetching transects...');
-    const transects = await fetchAllPaginatedResults(
-      client.models.Transect.transectsByProjectId,
-      {
+    setExportStatus('Fetching strata...');
+    const strata = (
+      await fetchAllPaginatedResults(client.models.Stratum.strataByProjectId, {
         projectId: surveyId,
-        selectionSet: ['id', 'stratumId'],
+        selectionSet: ['name', 'coordinates', 'offEffort'],
         limit: 1000,
-      }
+      })
+    ).filter((stratum) => !stratum.offEffort);
+    // Matches the Jolly calculation: by position, not by transect.
+    const assignStratum = createStratumAssigner(
+      strata.map((stratum) => flatToRing(stratum.coordinates))
     );
-
-    const stratumByTransectId = transects.reduce((acc, transect) => {
-      acc[transect.id] = transect.stratumId;
-      return acc;
-    }, {} as Record<string, string>);
+    const stratumName = (image: {
+      latitude?: number | null;
+      longitude?: number | null;
+      boundaryStatus?: 'inside' | 'outside' | 'excluded' | null;
+    }) => {
+      if (!isOnEffort(image.boundaryStatus)) return 'None';
+      if (
+        typeof image.latitude !== 'number' ||
+        typeof image.longitude !== 'number'
+      ) {
+        return 'Unknown';
+      }
+      const index = assignStratum(image.latitude, image.longitude);
+      return index === null ? 'Unknown' : strata[index].name || 'Unknown';
+    };
 
     const infoTagsBySet = await Promise.all(
       annotationSets.map((set) =>
@@ -171,8 +198,7 @@ export default function AnnotationSetResults({
             category: anno.category?.name || 'Unknown',
             image: anno.image.originalPath || 'Unknown',
             transect: anno.image.transectId || 'Unknown',
-            stratum:
-              stratumByTransectId[anno.image.transectId ?? ''] || 'Unknown',
+            stratum: stratumName(anno.image),
             surveyArea: anno.image.boundaryStatus ?? 'inside',
             timestamp: anno.image.timestamp,
             latitude: anno.image.latitude,
