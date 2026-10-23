@@ -162,3 +162,29 @@ export function createBoundaryClassifier(
     return 'inside';
   };
 }
+
+// Points outside all polygons use the nearest stratum.
+export function createStratumAssigner(
+  strata: (LatLngRing | null)[]
+): (lat: number, lng: number) => number | null {
+  const rings = strata
+    .map((points, index) => ({ index, ring: toRing(points) }))
+    .filter((entry): entry is { index: number; ring: Ring } => !!entry.ring);
+  if (rings.length === 0) {
+    return strata.length === 1 ? () => 0 : () => null;
+  }
+  return (lat, lng) => {
+    const inside = rings.find(({ ring }) => inRing(lat, lng, ring));
+    if (inside) return inside.index;
+    let best: number | null = null;
+    let bestDistance = Infinity;
+    for (const { index, ring } of rings) {
+      const distance = distanceToRingM(lat, lng, ring);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = index;
+      }
+    }
+    return best;
+  };
+}
