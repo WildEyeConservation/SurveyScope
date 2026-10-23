@@ -1,54 +1,37 @@
-const FIELD_KINDS = {
-  cameraId: 'dict',
-  transectId: 'dict',
-  boundaryStatus: 'dict',
-  originalPath: 'path',
-  latitude: 'num',
-  longitude: 'num',
-  altitude_agl: 'num',
-  altitude_wgs84: 'num',
-  width: 'num',
-  height: 'num',
-  timestamp: 'delta',
-  phash: 'str',
-} as const;
+export type ColumnKind =
+  | 'dict'
+  | 'path'
+  | 'num'
+  | 'delta'
+  | 'str'
+  | 'bool'
+  | 'floats';
 
-export type ManifestField = keyof typeof FIELD_KINDS;
-export const MANIFEST_FIELDS = Object.keys(FIELD_KINDS) as ManifestField[];
-
-type Kind = (typeof FIELD_KINDS)[ManifestField];
-type ValueOf<K extends Kind> = K extends 'num' | 'delta' ? number : string;
-
-export type ManifestImage = { id: string } & {
-  [F in ManifestField]: ValueOf<(typeof FIELD_KINDS)[F]> | null;
-};
-export type ManifestRow<F extends ManifestField> = Pick<
-  ManifestImage,
-  'id' | F
->;
+export type ValueOfKind<K> = K extends 'num' | 'delta'
+  ? number
+  : K extends 'bool'
+  ? boolean
+  : K extends 'floats'
+  ? (number | null)[]
+  : string;
 
 type Column =
   | { values: string[]; index: number[] }
   | { dirs: string[]; dir: number[]; names: string[] }
-  | (number | null)[]
-  | (string | null)[];
+  | unknown[];
 
-export interface ManifestChunk {
-  v: 2;
-  ids: string[];
-  columns: Partial<Record<ManifestField, Column>>;
-}
-
-export function isManifestField(field: unknown): field is ManifestField {
-  return (
-    typeof field === 'string' &&
-    Object.prototype.hasOwnProperty.call(FIELD_KINDS, field)
-  );
+export interface RowChunk {
+  v: 3;
+  n: number;
+  columns: Record<string, Column>;
 }
 
 const num = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 const str = (value: unknown) => (typeof value === 'string' ? value : null);
+const bool = (value: unknown) => (typeof value === 'boolean' ? value : null);
+const floats = (value: unknown) =>
+  Array.isArray(value) ? value.map(num) : null;
 
 function indexer() {
   const values: string[] = [];
@@ -67,7 +50,7 @@ function indexer() {
   };
 }
 
-function encodeColumn(kind: Kind, values: unknown[]): Column {
+function encodeColumn(kind: ColumnKind, values: unknown[]): Column {
   switch (kind) {
     case 'dict': {
       const dict = indexer();
@@ -108,10 +91,14 @@ function encodeColumn(kind: Kind, values: unknown[]): Column {
     }
     case 'str':
       return values.map(str);
+    case 'bool':
+      return values.map(bool);
+    case 'floats':
+      return values.map(floats);
   }
 }
 
-function decodeColumn(kind: Kind, column: Column): unknown[] {
+function decodeColumn(kind: ColumnKind, column: Column, n: number): unknown[] {
   switch (kind) {
     case 'dict': {
       const { values, index } = column as { values: string[]; index: number[] };
@@ -134,38 +121,47 @@ function decodeColumn(kind: Kind, column: Column): unknown[] {
       });
     }
     default:
-      return column as unknown[];
+      return Array.isArray(column) ? column : new Array(n).fill(null);
   }
 }
 
-// Sorting by time keeps the timestamp deltas small; callers do not rely on order.
-export function encodeManifest(
+// Sorting by sortBy keeps its deltas small; callers do not rely on order.
+export function encodeRows(
   rows: Record<string, unknown>[],
-  fields: readonly ManifestField[]
-): ManifestChunk {
-  const sorted = fields.includes('timestamp')
-    ? [...rows].sort(
-        (a, b) =>
-          (num(a.timestamp) ?? Infinity) - (num(b.timestamp) ?? Infinity)
-      )
-    : rows;
-  const columns: ManifestChunk['columns'] = {};
+  kinds: Record<string, ColumnKind>,
+  fields: readonly string[],
+  sortBy?: string
+): RowChunk {
+  const sorted =
+    sortBy && fields.includes(sortBy)
+      ? [...rows].sort(
+          (a, b) => (num(a[sortBy]) ?? Infinity) - (num(b[sortBy]) ?? Infinity)
+        )
+      : rows;
+  const columns: RowChunk['columns'] = {};
   for (const field of fields) {
     columns[field] = encodeColumn(
-      FIELD_KINDS[field],
+      kinds[field],
       sorted.map((row) => row[field])
     );
   }
-  return { v: 2, ids: sorted.map((row) => String(row.id)), columns };
+  return { v: 3, n: rows.length, columns };
 }
 
-export function decodeManifest(chunk: ManifestChunk): ManifestImage[] {
-  if (chunk.v !== 2) throw new Error(`Unsupported manifest version ${chunk.v}`);
-  const rows = chunk.ids.map((id) => ({ id } as Record<string, unknown>));
+export function decodeRows(
+  chunk: RowChunk,
+  kinds: Record<string, ColumnKind>
+): Record<string, unknown>[] {
+  if (chunk.v !== 3)
+    throw new Error(`Unsupported row chunk version ${chunk.v}`);
+  const rows = Array.from(
+    { length: chunk.n },
+    () => ({} as Record<string, unknown>)
+  );
   for (const [field, column] of Object.entries(chunk.columns)) {
-    if (!isManifestField(field) || !column) continue;
-    const values = decodeColumn(FIELD_KINDS[field], column);
+    if (!Object.prototype.hasOwnProperty.call(kinds, field)) continue;
+    const values = decodeColumn(kinds[field], column, chunk.n);
     values.forEach((value, i) => (rows[i][field] = value));
   }
-  return rows as ManifestImage[];
+  return rows;
 }

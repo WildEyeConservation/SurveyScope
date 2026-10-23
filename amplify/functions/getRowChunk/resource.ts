@@ -1,7 +1,7 @@
 import { defineFunction } from '@aws-amplify/backend';
 
-export const getImageManifestChunk = defineFunction({
-  name: 'getImageManifestChunk',
+export const getRowChunk = defineFunction({
+  name: 'getRowChunk',
   // Reads the model tables directly; in the data stack to avoid a cycle.
   resourceGroupName: 'data',
   entry: './handler.ts',

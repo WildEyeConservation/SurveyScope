@@ -1,7 +1,8 @@
 import { imageAccess } from './storage/imageAccess/resource';
 import { infoTagWork } from './functions/infoTagWork/resource';
 import { recomputeBoundaryStatus } from './functions/recomputeBoundaryStatus/resource';
-import { getImageManifestChunk } from './functions/getImageManifestChunk/resource';
+import { getRowChunk } from './functions/getRowChunk/resource';
+import { ROW_SOURCES, SCOPE_MODELS } from '../shared/rowSources';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
@@ -99,7 +100,7 @@ const backend = defineBackend({
   imageAccess,
   infoTagWork,
   recomputeBoundaryStatus,
-  getImageManifestChunk,
+  getRowChunk,
   chainMutationGuard,
   revokeChainShare,
   workflowFiles,
@@ -243,22 +244,26 @@ new iam.Policy(Stack.of(recomputeLambda), 'RecomputeBoundaryStatusSelfInvoke', {
   ],
 });
 
-const manifestLambda = backend.getImageManifestChunk.resources.lambda;
-const manifestProjectTable = backend.data.resources.tables['Project'];
-const manifestImageTable = backend.data.resources.tables['Image'];
-manifestProjectTable.grant(manifestLambda, 'dynamodb:GetItem');
-manifestLambda.addToRolePolicy(
+const rowChunkLambda = backend.getRowChunk.resources.lambda;
+const rowChunkTables: Record<string, string> = {};
+for (const model of Object.values(SCOPE_MODELS)) {
+  const table = backend.data.resources.tables[model];
+  table.grant(rowChunkLambda, 'dynamodb:GetItem');
+  rowChunkTables[model] = table.tableName;
+}
+rowChunkLambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: ['dynamodb:Query'],
-    resources: [`${manifestImageTable.tableArn}/index/imagesByProjectId`],
+    resources: Object.values(ROW_SOURCES).map((source) => {
+      const table = backend.data.resources.tables[source.model];
+      rowChunkTables[source.model] = table.tableName;
+      return `${table.tableArn}/index/${source.index}`;
+    }),
   })
 );
-backend.getImageManifestChunk.addEnvironment(
-  'IMAGE_MANIFEST_TABLES',
-  JSON.stringify({
-    Project: manifestProjectTable.tableName,
-    Image: manifestImageTable.tableName,
-  })
+backend.getRowChunk.addEnvironment(
+  'ROW_CHUNK_TABLES',
+  JSON.stringify(rowChunkTables)
 );
 
 const guardFunction = backend.chainMutationGuard.resources.lambda;

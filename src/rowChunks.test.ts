@@ -1,11 +1,17 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { encodeManifest } from '../shared/imageManifest';
+import { encodeRows } from '../shared/rowChunk';
+import { ROW_SOURCES } from '../shared/rowSources';
 import { loadProjectImages } from './projectImages';
+import { loadRows, streamRows } from './rowChunks';
 
 const pack = (rows: Record<string, unknown>[]) =>
-  gzipSync(JSON.stringify(encodeManifest(rows, ['width']))).toString('base64');
+  gzipSync(
+    JSON.stringify(
+      encodeRows(rows, ROW_SOURCES.imagesByProjectId.fields, ['id', 'width'])
+    )
+  ).toString('base64');
 
 const fallbackRows = [{ id: 'fallback', width: 1 }];
 const fallback = async () => fallbackRows;
@@ -21,7 +27,7 @@ test('follows cursors and reports progress', async () => {
   };
   const client = {
     queries: {
-      getImageManifestChunk: async (input: { cursor?: string }) => {
+      getRowChunk: async (input: { cursor?: string }) => {
         calls.push(input);
         return { data: JSON.stringify(pages[input.cursor ?? 'start']) };
       },
@@ -38,8 +44,18 @@ test('follows cursors and reports progress', async () => {
   ]);
   assert.deepEqual(progress, [1, 2]);
   assert.deepEqual(calls, [
-    { projectId: 'p', cursor: undefined, fields: ['width'] },
-    { projectId: 'p', cursor: 'next', fields: ['width'] },
+    {
+      source: 'imagesByProjectId',
+      scopeId: 'p',
+      fields: ['width'],
+      cursor: undefined,
+    },
+    {
+      source: 'imagesByProjectId',
+      scopeId: 'p',
+      fields: ['width'],
+      cursor: 'next',
+    },
   ]);
 });
 
@@ -53,7 +69,7 @@ test('falls back when the query is missing or fails', async () => {
     );
     const failing = {
       queries: {
-        getImageManifestChunk: async () => ({ errors: [{ message: 'boom' }] }),
+        getRowChunk: async () => ({ errors: [{ message: 'boom' }] }),
       },
     };
     assert.deepEqual(
@@ -115,7 +131,7 @@ test('does not fall back once cancelled', async () => {
   const controller = new AbortController();
   const client = {
     queries: {
-      getImageManifestChunk: async () => {
+      getRowChunk: async () => {
         controller.abort();
         throw new Error('aborted');
       },
@@ -132,4 +148,92 @@ test('does not fall back once cancelled', async () => {
     })
   );
   assert.equal(fellBack, false);
+});
+
+test('paginates sort-key prefixes through the matching model query', async () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const calls: unknown[][] = [];
+    const client = {
+      queries: {},
+      models: {
+        Location: {
+          locationsByProjectIdAndSource: async (...args: unknown[]) => {
+            calls.push(args);
+            return { data: [{ id: 'l', source: 'mad-v1' }], nextToken: null };
+          },
+        },
+      },
+    };
+    const rows = await loadRows(
+      client,
+      'locationsByProjectIdAndSource',
+      'p',
+      ['x'],
+      { beginsWith: 'mad' }
+    );
+    assert.deepEqual(rows, [{ id: 'l', source: 'mad-v1' }]);
+    assert.deepEqual(calls[0][0], {
+      projectId: 'p',
+      source: { beginsWith: 'mad' },
+    });
+    assert.deepEqual((calls[0][1] as { selectionSet: string[] }).selectionSet, [
+      'id',
+      'source',
+      'x',
+    ]);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test('streams fall back only before the first chunk', async () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const failing = {
+      queries: { getRowChunk: async () => ({ errors: [{ message: 'boom' }] }) },
+    };
+    const seen: unknown[] = [];
+    await streamRows(
+      failing,
+      'imagesByProjectId',
+      'p',
+      ['width'],
+      (rows) => seen.push(...rows),
+      {
+        fallback: async (onRows) => onRows([{ id: 'f', width: 1 }]),
+      }
+    );
+    assert.deepEqual(seen, [{ id: 'f', width: 1 }]);
+
+    let calls = 0;
+    const halfway = {
+      queries: {
+        getRowChunk: async () =>
+          calls++ === 0
+            ? {
+                data: {
+                  data: pack([{ id: 'a', width: 1 }]),
+                  count: 1,
+                  cursor: 'next',
+                },
+              }
+            : { errors: [{ message: 'boom' }] },
+      },
+    };
+    let fellBack = false;
+    await assert.rejects(
+      streamRows(halfway, 'imagesByProjectId', 'p', ['width'], () => {}, {
+        fallback: async () => {
+          fellBack = true;
+        },
+      }),
+      /boom/
+    );
+    assert.equal(fellBack, false);
+  } finally {
+    console.warn = warn;
+  }
 });

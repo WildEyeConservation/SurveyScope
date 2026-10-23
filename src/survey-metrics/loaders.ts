@@ -19,7 +19,12 @@ import type {
   RegistrationRows,
   TaskRow,
 } from './types';
-import { loadProjectImages } from '../projectImages';
+import {
+  ROW_SOURCES,
+  type FieldOf,
+  type RowSourceName,
+} from '../../shared/rowSources';
+import { forEachRowChunk, loadRows, streamRows } from '../rowChunks';
 
 const client = generateClient({ authMode: 'userPool' });
 const limit = pLimit(8);
@@ -176,6 +181,31 @@ function counted(ctx: LoadContext, total?: number) {
 
 const BY_PROJECT = { projectId: 'ID!' };
 
+function loadChunked<S extends RowSourceName>(
+  source: S,
+  args: Record<string, string>,
+  fields: readonly FieldOf<S>[],
+  scopeId: string,
+  ctx: LoadContext,
+  total?: number
+): Promise<unknown[]> {
+  const variables = { [ROW_SOURCES[source].partitionKey]: scopeId };
+  ctx.onProgress(0, total);
+  return loadRows(client, source, scopeId, fields, {
+    signal: ctx.signal,
+    onProgress: (count) => ctx.onProgress(count, total),
+    fallback: () =>
+      fetchAll(
+        source,
+        args,
+        fields.join(' '),
+        variables,
+        ctx.signal,
+        counted(ctx, total)
+      ),
+  });
+}
+
 export async function loadProject(
   projectId: string,
   ctx: LoadContext
@@ -263,29 +293,19 @@ export async function loadRegistration(
   return { progress: progress.getRegistrationProgress, buckets };
 }
 
-export async function loadImages(
+export function loadImages(
   projectId: string,
   ctx: LoadContext,
   totalHint?: number
 ) {
-  return (await loadProjectImages(
-    client,
+  return loadChunked(
+    'imagesByProjectId',
+    BY_PROJECT,
+    ['id', 'width', 'height', 'timestamp', 'originalPath', 'cameraId'],
     projectId,
-    ['width', 'height', 'timestamp', 'originalPath', 'cameraId'],
-    {
-      signal: ctx.signal,
-      onProgress: (count) => ctx.onProgress(count, totalHint),
-      fallback: () =>
-        fetchAll<ImageRow>(
-          'imagesByProjectId',
-          BY_PROJECT,
-          'id width height timestamp originalPath cameraId',
-          { projectId },
-          ctx.signal,
-          counted(ctx, totalHint)
-        ),
-    }
-  )) as ImageRow[];
+    ctx,
+    totalHint
+  ) as Promise<ImageRow[]>;
 }
 
 const NEIGHBOUR_FIELDS =
@@ -313,11 +333,7 @@ function neighbourBatchQuery(size: number) {
   )}) { ${fields.join(' ')} }`;
 }
 
-// No project index; each pair is stored under one image1Id.
-export async function loadNeighbours(
-  imageIds: string[],
-  ctx: LoadContext
-): Promise<NeighbourRow[]> {
+function neighbourCollector(imageIds: string[] = []) {
   const rows: NeighbourRow[] = [];
   const interned = new Map<string, string>(imageIds.map((id) => [id, id]));
   const intern = (value: string) => {
@@ -339,6 +355,50 @@ export async function loadNeighbours(
       registrationFailed: Boolean(raw.registrationFailedAt),
     });
   };
+  return { rows, add };
+}
+
+// Match the per-image fallback by excluding pairs whose image1 left the survey.
+export async function loadNeighbours(
+  projectId: string,
+  loadImages: () => Promise<ImageRow[]>,
+  ctx: LoadContext
+): Promise<NeighbourRow[]> {
+  const { rows, add } = neighbourCollector();
+  const images = loadImages();
+  ctx.onProgress(0);
+  const loaded = await forEachRowChunk(
+    client,
+    'imageNeighboursByProjectId',
+    projectId,
+    NEIGHBOUR_FIELDS.split(' ') as (keyof RawNeighbour)[],
+    (page) => {
+      for (const raw of page) add(raw as RawNeighbour);
+      ctx.onProgress(rows.length);
+    },
+    { signal: ctx.signal }
+  ).catch((error) => {
+    if (ctx.signal.aborted) throw error;
+    console.warn('Neighbour chunks failed, querying per image instead', error);
+    return false;
+  });
+  const imageIds = (await images).map((image) => image.id);
+  if (!loaded) return loadNeighboursByImage(imageIds, ctx);
+  const current = new Map(imageIds.map((id) => [id, id]));
+  return rows.filter((row) => {
+    const image1Id = current.get(row.image1Id);
+    if (image1Id === undefined) return false;
+    row.image1Id = image1Id;
+    row.image2Id = current.get(row.image2Id) ?? row.image2Id;
+    return true;
+  });
+}
+
+async function loadNeighboursByImage(
+  imageIds: string[],
+  ctx: LoadContext
+): Promise<NeighbourRow[]> {
+  const { rows, add } = neighbourCollector(imageIds);
 
   let scanned = 0;
   ctx.onProgress(0, imageIds.length);
@@ -384,14 +444,13 @@ export async function loadNeighbours(
 }
 
 export function loadProcessedBy(projectId: string, ctx: LoadContext) {
-  return fetchAll<ProcessedByRow>(
+  return loadChunked(
     'processedByProjectIdAndSource',
     BY_PROJECT,
-    'imageId source',
-    { projectId },
-    ctx.signal,
-    counted(ctx)
-  );
+    ['imageId', 'source'],
+    projectId,
+    ctx
+  ) as Promise<ProcessedByRow[]>;
 }
 
 // Source-prefix queries exclude the much larger tile grid.
@@ -402,18 +461,41 @@ export async function scanDetectorLocations(
 ): Promise<number> {
   const onRows = counted(ctx);
   let total = 0;
+  const handle = (rows: unknown[]) => {
+    onPage(rows as LocationRow[]);
+    total += rows.length;
+    onRows(rows.length);
+  };
+  const fields = [
+    'id',
+    'imageId',
+    'x',
+    'y',
+    'width',
+    'height',
+    'source',
+    'confidence',
+  ] as const;
   await Promise.all(
     DETECTORS.map((detector) =>
-      forEachPage<LocationRow>(
+      streamRows(
+        client,
         'locationsByProjectIdAndSource',
-        { ...BY_PROJECT, source: 'ModelStringKeyConditionInput' },
-        'id imageId x y width height source confidence',
-        { projectId, source: { beginsWith: detector.prefix } },
-        ctx.signal,
-        (rows) => {
-          onPage(rows);
-          total += rows.length;
-          onRows(rows.length);
+        projectId,
+        fields,
+        handle,
+        {
+          signal: ctx.signal,
+          beginsWith: detector.prefix,
+          fallback: (onPage) =>
+            forEachPage(
+              'locationsByProjectIdAndSource',
+              { ...BY_PROJECT, source: 'ModelStringKeyConditionInput' },
+              fields.join(' '),
+              { projectId, source: { beginsWith: detector.prefix } },
+              ctx.signal,
+              onPage
+            ),
         }
       )
     )
@@ -422,36 +504,47 @@ export async function scanDetectorLocations(
 }
 
 export function loadAnnotations(setId: string, ctx: LoadContext) {
-  return fetchAll<AnnotationRow>(
+  return loadChunked(
     'annotationsByAnnotationSetId',
     { setId: 'ID!' },
-    'id imageId categoryId objectId x y source oov obscured owner reviewedBy infoTaggedBy createdAt',
-    { setId },
-    ctx.signal,
-    counted(ctx)
-  );
+    [
+      'id',
+      'imageId',
+      'categoryId',
+      'objectId',
+      'x',
+      'y',
+      'source',
+      'oov',
+      'obscured',
+      'owner',
+      'reviewedBy',
+      'infoTaggedBy',
+      'createdAt',
+    ],
+    setId,
+    ctx
+  ) as Promise<AnnotationRow[]>;
 }
 
 export function loadObservations(setId: string, ctx: LoadContext) {
-  return fetchAll<ObservationRow>(
+  return loadChunked(
     'observationsByAnnotationSetId',
     { annotationSetId: 'ID!' },
-    'locationId owner source createdAt',
-    { annotationSetId: setId },
-    ctx.signal,
-    counted(ctx)
-  );
+    ['locationId', 'owner', 'source', 'createdAt'],
+    setId,
+    ctx
+  ) as Promise<ObservationRow[]>;
 }
 
 export function loadCategories(setId: string, ctx: LoadContext) {
-  return fetchAll<CategoryRow>(
+  return loadChunked(
     'categoriesByAnnotationSetId',
     { annotationSetId: 'ID!' },
-    'id name',
-    { annotationSetId: setId },
-    ctx.signal,
-    counted(ctx)
-  );
+    ['id', 'name'],
+    setId,
+    ctx
+  ) as Promise<CategoryRow[]>;
 }
 
 export function loadTasks(setId: string, ctx: LoadContext) {

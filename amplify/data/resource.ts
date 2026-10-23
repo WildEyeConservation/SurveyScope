@@ -25,7 +25,7 @@ import { runOwlDDetector } from '../functions/runOwlDDetector/resource';
 import { runElephantDetector } from '../functions/runElephantDetector/resource';
 import { launchAnnotationSet } from '../functions/launchAnnotationSet/resource';
 import { recomputeBoundaryStatus } from '../functions/recomputeBoundaryStatus/resource';
-import { getImageManifestChunk } from '../functions/getImageManifestChunk/resource';
+import { getRowChunk } from '../functions/getRowChunk/resource';
 import { launchFalseNegatives } from '../functions/launchFalseNegatives/resource';
 import { requeueProjectQueues } from '../functions/requeueProjectQueues/resource';
 import { monitorScoutbotDlq } from '../functions/monitorScoutbotDlq/resource';
@@ -492,6 +492,7 @@ const schema = a
       .secondaryIndexes((index) => [
         index('image1Id').queryField('imageNeighboursByImage1key'),
         index('image2Id').queryField('imageNeighboursByImage2key'),
+        index('projectId').queryField('imageNeighboursByProjectId'),
         // Same-camera rows (null cameraPairKey) are intentionally not projected.
         index('cameraPairKey')
           .sortKeys(['bucketIndex'])
@@ -1379,16 +1380,18 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(queryWorkflowStats)),
-    getImageManifestChunk: a
+    getRowChunk: a
       .query()
       .arguments({
-        projectId: a.string().required(),
-        cursor: a.string(),
+        source: a.string().required(),
+        scopeId: a.string().required(),
         fields: a.string().array().required(),
+        beginsWith: a.string(),
+        cursor: a.string(),
       })
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
-      .handler(a.handler.function(getImageManifestChunk)),
+      .handler(a.handler.function(getRowChunk)),
     // Pages through the immutable task events behind the daily statistics,
     // for raw exports and time-of-day snapshots. Runs are validated against
     // the project so an export cannot mix in another survey's work.
@@ -1889,8 +1892,14 @@ export type CancelIndividualIdJobHandler = MutationHandler<{ jobId: string }>;
 export type UpdateActiveOrganizationsHandler = MutationHandler<{ activatedOrganizationIds: string[] }>;
 export type LaunchIndividualIdHandler = MutationHandler<{ request: string }>;
 export type RecomputeBoundaryStatusHandler = MutationHandler<{ projectId: string }>;
-export type GetImageManifestChunkHandler = MutationHandler<
-  { projectId: string; cursor?: string | null; fields: (string | null)[] },
+export type GetRowChunkHandler = MutationHandler<
+  {
+    source: string;
+    scopeId: string;
+    fields: (string | null)[];
+    beginsWith?: string | null;
+    cursor?: string | null;
+  },
   { data: string; count: number; cursor: string | null }
 >;
 export type ClaimIndividualIdTransectHandler = MutationHandler<{ jobId: string }>;

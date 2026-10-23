@@ -3,7 +3,6 @@ import maplibregl, {
   type ExpressionSpecification,
   type StyleSpecification,
 } from 'maplibre-gl';
-import type { FeatureCollection as GeoJSONFeatureCollection } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useQueries } from '@tanstack/react-query';
 import { pointOnFeature } from '@turf/turf';
@@ -20,6 +19,7 @@ import { Spinner, Form } from 'react-bootstrap';
 import { useInfoTagData } from './useInfoTags';
 import { formatInfoTagsForDisplay } from './infoTags';
 import { loadProjectImages } from './projectImages';
+import { loadRows } from './rowChunks';
 import {
   DEFAULT_HEAT_RADIUS_KM,
   HEAT_COLOR_RAMP,
@@ -124,10 +124,8 @@ const BASE_STYLE: StyleSpecification = {
   layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
 };
 
-type FeatureCollection = {
-  type: 'FeatureCollection';
-  features: any[];
-};
+type FeatureCollection = GeoJSON.FeatureCollection;
+type Outline = { id: string; coordinates: number[] | null };
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -264,12 +262,15 @@ export default function DensityMap({
             'transectId',
             'timestamp',
           ]),
-          fetchAllPaginatedResults(client.models.Stratum.strataByProjectId, {
-            projectId: sid,
-            limit: 10000,
-            selectionSet: ['id', 'name', 'coordinates'],
-          }),
-          fetchAllPaginatedResults(
+          fetchAllPaginatedResults<Outline & { name: string | null }>(
+            client.models.Stratum.strataByProjectId,
+            {
+              projectId: sid,
+              limit: 10000,
+              selectionSet: ['id', 'name', 'coordinates'],
+            }
+          ),
+          fetchAllPaginatedResults<Outline>(
             client.models.ShapefileExclusions.shapefileExclusionsByProjectId,
             {
               projectId: sid,
@@ -288,23 +289,24 @@ export default function DensityMap({
       queryKey: ['densitymap', 'annotations', setId],
       staleTime: 30 * 60 * 1000,
       queryFn: async () => {
-        const annotations = await fetchAllPaginatedResults(
-          client.models.Annotation.annotationsByAnnotationSetId,
-          {
-            setId,
-            limit: 10000,
-            selectionSet: [
-              'id',
-              'imageId',
-              'setId',
-              'category.name',
-              'category.id',
-              'objectId',
-              'source',
-              'owner',
-            ],
-          } as any
+        const [rows, surveyCategories] = await Promise.all([
+          loadRows(client, 'annotationsByAnnotationSetId', setId, [
+            'imageId',
+            'categoryId',
+            'objectId',
+            'source',
+            'owner',
+          ]),
+          loadRows(client, 'categoriesByProjectId', sid, ['name']),
+        ]);
+        const categories = new Map(
+          surveyCategories.map((c) => [c.id, { id: c.id, name: c.name ?? '' }])
         );
+        const annotations = rows.map((a) => ({
+          ...a,
+          setId,
+          category: (a.categoryId && categories.get(a.categoryId)) || null,
+        }));
         return { surveyId: sid, annotationSetId: setId, annotations };
       },
     })),
@@ -351,7 +353,7 @@ export default function DensityMap({
     >();
     for (const q of surveyQueries) {
       if (!q.data) continue;
-      for (const img of q.data.images as any[]) {
+      for (const img of q.data.images) {
         if (img.latitude == null || img.longitude == null) continue;
         map.set(img.id, {
           lat: img.latitude,
@@ -416,7 +418,7 @@ export default function DensityMap({
     for (const q of surveyQueries) {
       if (!q.data) continue;
       let next = 0;
-      for (const img of q.data.images as any[]) {
+      for (const img of q.data.images) {
         if (img.latitude == null || img.longitude == null) continue;
         const t = img.transectId;
         if (!t || lookup.has(t)) continue;
@@ -457,11 +459,11 @@ export default function DensityMap({
     const transectIdSet = new Set(transectIds);
     const infoTagSet = new Set(infoTagNames);
     const hasCatFilter = catIdSet.size > 0 || catNameSet.size > 0;
-    const features: any[] = [];
+    const features: GeoJSON.Feature[] = [];
 
     for (const q of annotationQueries) {
       if (!q.data) continue;
-      for (const a of q.data.annotations as any[]) {
+      for (const a of q.data.annotations) {
         if (
           primaryOnly &&
           !(
@@ -475,7 +477,7 @@ export default function DensityMap({
           const uid = extractUserIdFromOwner(a.owner);
           if (!uid || !userIdSet.has(uid)) continue;
         }
-        if (!a.category) continue;
+        if (!a.category || !a.imageId) continue;
         if (
           hasCatFilter &&
           !catIdSet.has(a.category.id) &&
@@ -541,10 +543,10 @@ export default function DensityMap({
   // Image points GeoJSON, coloured by transect (per survey) and transect-filtered.
   const imagesFC = useMemo<FeatureCollection>(() => {
     const transectIdSet = new Set(transectIds);
-    const features: any[] = [];
+    const features: GeoJSON.Feature[] = [];
     for (const q of surveyQueries) {
       if (!q.data) continue;
-      for (const img of q.data.images as any[]) {
+      for (const img of q.data.images) {
         if (img.latitude == null || img.longitude == null) continue;
         const t = img.transectId;
         if (transectIdSet.size && (!t || !transectIdSet.has(t))) continue;
@@ -571,10 +573,10 @@ export default function DensityMap({
   }, [surveyDataSig, adjustedPositions, transectInfo, transectKey]);
 
   const strataFC = useMemo<FeatureCollection>(() => {
-    const features: any[] = [];
+    const features: GeoJSON.Feature[] = [];
     for (const q of surveyQueries) {
       if (!q.data) continue;
-      for (const s of q.data.strata as any[]) {
+      for (const s of q.data.strata) {
         const ring = coordsToRing(s.coordinates);
         if (!ring) continue;
         features.push({
@@ -601,10 +603,10 @@ export default function DensityMap({
   );
 
   const exclusionsFC = useMemo<FeatureCollection>(() => {
-    const features: any[] = [];
+    const features: GeoJSON.Feature[] = [];
     for (const q of surveyQueries) {
       if (!q.data) continue;
-      for (const e of q.data.exclusions as any[]) {
+      for (const e of q.data.exclusions) {
         const ring = coordsToRing(e.coordinates);
         if (!ring) continue;
         features.push({
@@ -663,26 +665,20 @@ export default function DensityMap({
       // Sources (start empty; data is pushed via setData below).
       map.addSource(SRC_ANNOTATIONS, {
         type: 'geojson',
-        data: EMPTY_FC as any,
+        data: EMPTY_FC,
         cluster: true,
         clusterMaxZoom: 16,
         clusterRadius: 50,
       });
-      map.addSource(SRC_HEAT, {
-        type: 'geojson',
-        data: EMPTY_FC as GeoJSONFeatureCollection,
-      });
-      map.addSource(SRC_IMAGES, { type: 'geojson', data: EMPTY_FC as any });
+      map.addSource(SRC_HEAT, { type: 'geojson', data: EMPTY_FC });
+      map.addSource(SRC_IMAGES, { type: 'geojson', data: EMPTY_FC });
       map.addSource(SRC_STRATA, {
         type: 'geojson',
-        data: EMPTY_FC as GeoJSONFeatureCollection,
+        data: EMPTY_FC,
         promoteId: 'id',
       });
-      map.addSource(SRC_STRATA_LABELS, {
-        type: 'geojson',
-        data: EMPTY_FC as GeoJSONFeatureCollection,
-      });
-      map.addSource(SRC_EXCLUSIONS, { type: 'geojson', data: EMPTY_FC as any });
+      map.addSource(SRC_STRATA_LABELS, { type: 'geojson', data: EMPTY_FC });
+      map.addSource(SRC_EXCLUSIONS, { type: 'geojson', data: EMPTY_FC });
 
       // Polygons (drawn underneath the points).
       map.addLayer({
@@ -816,7 +812,10 @@ export default function DensityMap({
         const src = map.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource;
         src.getClusterExpansionZoom(clusterId).then((zoom) => {
           map.easeTo({
-            center: (feature.geometry as any).coordinates,
+            center: (feature.geometry as GeoJSON.Point).coordinates as [
+              number,
+              number,
+            ],
             zoom,
           });
         });
@@ -846,7 +845,7 @@ export default function DensityMap({
       map.on('click', LYR_POINTS, (e) => {
         const f = e.features?.[0];
         if (!f) return;
-        const p = f.properties as any;
+        const p = f.properties;
         const name = uniqueNamesGenerator({
           dictionaries: [adjectives, names],
           seed: p.id,
@@ -854,7 +853,7 @@ export default function DensityMap({
           separator: ' ',
         });
         pointPopup(
-          (f.geometry as any).coordinates.slice(),
+          (f.geometry as GeoJSON.Point).coordinates.slice() as [number, number],
           name,
           `<div><strong>Label:</strong> ${escapeHtml(p.categoryName ?? '')}</div>` +
             (p.infoTags
@@ -868,8 +867,8 @@ export default function DensityMap({
       map.on('click', LYR_IMAGES, (e) => {
         const f = e.features?.[0];
         if (!f) return;
-        const p = f.properties as any;
-        const [lng, lat] = (f.geometry as any).coordinates;
+        const p = f.properties;
+        const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
         pointPopup(
           [lng, lat],
           `Transect ${p.transect}`,
@@ -886,7 +885,7 @@ export default function DensityMap({
           .setLngLat(e.lngLat)
           .setHTML(
             `<div style="color:#000"><strong>Stratum:</strong> ${
-              (f.properties as any)?.name ?? ''
+              f.properties?.name ?? ''
             }</div>`
           )
           .addTo(map);
@@ -927,17 +926,15 @@ export default function DensityMap({
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource)?.setData(
-      annotationsFC as any
+      annotationsFC
     );
   }, [mapLoaded, annotationsFC]);
 
   const heatPoints = useMemo(
     () =>
       annotationsFC.features
-        .map((f) => f.geometry?.coordinates as [number, number] | undefined)
-        .filter(
-          (c): c is [number, number] => !!c && isValidLatLng(c[1], c[0])
-        ),
+        .map((f) => (f.geometry as GeoJSON.Point).coordinates as [number, number])
+        .filter((c) => isValidLatLng(c[1], c[0])),
     [annotationsFC]
   );
   const heatScale = useMemo(() => {
@@ -953,7 +950,7 @@ export default function DensityMap({
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_HEAT) as maplibregl.GeoJSONSource)?.setData(
-      annotationsFC as GeoJSONFeatureCollection
+      annotationsFC
     );
   }, [mapLoaded, annotationsFC]);
 
@@ -967,17 +964,17 @@ export default function DensityMap({
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_IMAGES) as maplibregl.GeoJSONSource)?.setData(
-      imagesFC as any
+      imagesFC
     );
   }, [mapLoaded, imagesFC]);
 
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_STRATA) as maplibregl.GeoJSONSource)?.setData(
-      strataFC as any
+      strataFC
     );
     (mapRef.current?.getSource(SRC_STRATA_LABELS) as maplibregl.GeoJSONSource)?.setData(
-      strataLabelsFC as GeoJSONFeatureCollection
+      strataLabelsFC
     );
   }, [mapLoaded, strataFC, strataLabelsFC]);
 
@@ -995,7 +992,7 @@ export default function DensityMap({
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_EXCLUSIONS) as maplibregl.GeoJSONSource)?.setData(
-      exclusionsFC as any
+      exclusionsFC
     );
   }, [mapLoaded, exclusionsFC]);
 
