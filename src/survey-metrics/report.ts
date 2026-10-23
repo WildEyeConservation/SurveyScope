@@ -92,7 +92,7 @@ const ENTITY_LABELS: Record<EntityKey, string> = {
   queues: 'Queues',
   registration: 'Registration counters',
   images: 'Images',
-  neighbours: 'Image pairs (images scanned)',
+  neighbours: 'Image pairs',
   processedBy: 'Processed-by records',
   locationScan: 'Detector locations',
   annotations: 'Annotations',
@@ -436,7 +436,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
       try {
         const needs: Dependencies = {};
         if (entity === 'neighbours') {
-          needs.images = (await load('images')) as ImageRow[];
+          needs.images = () => load('images') as Promise<ImageRow[]>;
         }
         if (entity === 'locationScan' && wantsCoverage) {
           try {
@@ -575,7 +575,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
 }
 
 type Dependencies = {
-  images?: ImageRow[];
+  images?: () => Promise<ImageRow[]>;
   observations?: ObservationRow[];
   annotations?: AnnotationRow[];
 };
@@ -623,10 +623,7 @@ function fetchEntity(
     case 'images':
       return loadImages(surveyId, ctx, request.imageCountHint);
     case 'neighbours':
-      return loadNeighbours(
-        (needs.images ?? []).map((image) => image.id),
-        ctx
-      );
+      return loadNeighbours(surveyId, needs.images ?? (async () => []), ctx);
     case 'processedBy':
       return loadProcessedBy(surveyId, ctx);
     case 'locationScan':

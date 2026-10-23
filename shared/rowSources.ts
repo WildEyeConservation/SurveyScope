@@ -110,6 +110,24 @@ export const ROW_SOURCES = {
     key: ['id'],
     fields: { id: 'str', name: 'str' },
   },
+  imageNeighboursByProjectId: {
+    model: 'ImageNeighbour',
+    index: 'imageNeighboursByProjectId',
+    scope: 'project',
+    partitionKey: 'projectId',
+    key: ['image1Id', 'image2Id'],
+    fields: {
+      image1Id: 'dict',
+      image2Id: 'dict',
+      homography: 'floats',
+      homographySource: 'dict',
+      skipped: 'bool',
+      suggestedPointsKept: 'num',
+      cameraPairKey: 'dict',
+      registrationProcessedAt: 'str',
+      registrationFailedAt: 'str',
+    },
+  },
 } as const satisfies Record<string, RowSource>;
 
 export type RowSourceName = keyof typeof ROW_SOURCES;

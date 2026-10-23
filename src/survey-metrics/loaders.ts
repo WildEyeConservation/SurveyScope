@@ -24,7 +24,7 @@ import {
   type FieldOf,
   type RowSourceName,
 } from '../../shared/rowSources';
-import { loadRows, streamRows } from '../rowChunks';
+import { forEachRowChunk, loadRows, streamRows } from '../rowChunks';
 
 const client = generateClient({ authMode: 'userPool' });
 const limit = pLimit(8);
@@ -333,11 +333,7 @@ function neighbourBatchQuery(size: number) {
   )}) { ${fields.join(' ')} }`;
 }
 
-// No project index; each pair is stored under one image1Id.
-export async function loadNeighbours(
-  imageIds: string[],
-  ctx: LoadContext
-): Promise<NeighbourRow[]> {
+function neighbourCollector(imageIds: string[] = []) {
   const rows: NeighbourRow[] = [];
   const interned = new Map<string, string>(imageIds.map((id) => [id, id]));
   const intern = (value: string) => {
@@ -359,6 +355,50 @@ export async function loadNeighbours(
       registrationFailed: Boolean(raw.registrationFailedAt),
     });
   };
+  return { rows, add };
+}
+
+// Match the per-image fallback by excluding pairs whose image1 left the survey.
+export async function loadNeighbours(
+  projectId: string,
+  loadImages: () => Promise<ImageRow[]>,
+  ctx: LoadContext
+): Promise<NeighbourRow[]> {
+  const { rows, add } = neighbourCollector();
+  const images = loadImages();
+  ctx.onProgress(0);
+  const loaded = await forEachRowChunk(
+    client,
+    'imageNeighboursByProjectId',
+    projectId,
+    NEIGHBOUR_FIELDS.split(' ') as (keyof RawNeighbour)[],
+    (page) => {
+      for (const raw of page) add(raw as RawNeighbour);
+      ctx.onProgress(rows.length);
+    },
+    { signal: ctx.signal }
+  ).catch((error) => {
+    if (ctx.signal.aborted) throw error;
+    console.warn('Neighbour chunks failed, querying per image instead', error);
+    return false;
+  });
+  const imageIds = (await images).map((image) => image.id);
+  if (!loaded) return loadNeighboursByImage(imageIds, ctx);
+  const current = new Map(imageIds.map((id) => [id, id]));
+  return rows.filter((row) => {
+    const image1Id = current.get(row.image1Id);
+    if (image1Id === undefined) return false;
+    row.image1Id = image1Id;
+    row.image2Id = current.get(row.image2Id) ?? row.image2Id;
+    return true;
+  });
+}
+
+async function loadNeighboursByImage(
+  imageIds: string[],
+  ctx: LoadContext
+): Promise<NeighbourRow[]> {
+  const { rows, add } = neighbourCollector(imageIds);
 
   let scanned = 0;
   ctx.onProgress(0, imageIds.length);

@@ -492,6 +492,7 @@ const schema = a
       .secondaryIndexes((index) => [
         index('image1Id').queryField('imageNeighboursByImage1key'),
         index('image2Id').queryField('imageNeighboursByImage2key'),
+        index('projectId').queryField('imageNeighboursByProjectId'),
         // Same-camera rows (null cameraPairKey) are intentionally not projected.
         index('cameraPairKey')
           .sortKeys(['bucketIndex'])
