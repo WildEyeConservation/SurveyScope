@@ -126,7 +126,11 @@ export function Combobox(props: ComboboxProps) {
   }
 
   return (
-    <Popover open={open} onOpenChange={(next) => !disabled && setOpen(next)}>
+    <Popover
+      modal
+      open={open}
+      onOpenChange={(next) => !disabled && setOpen(next)}
+    >
       <PopoverTrigger asChild>
         <div
           id={id}
@@ -238,7 +242,7 @@ export function Combobox(props: ComboboxProps) {
         align='start'
         sideOffset={2}
         className={cn(
-          'w-(--radix-popover-trigger-width) min-w-[10rem] p-0',
+          'w-(--radix-popover-trigger-width) min-w-[10rem] border-black/15 bg-white p-0 text-[#212529] shadow-lg',
           contentClassName
         )}
         onOpenAutoFocus={(event) => {
@@ -252,10 +256,10 @@ export function Combobox(props: ComboboxProps) {
           }
         }}
       >
-        <Command>
+        <Command className='bg-white text-[#212529] [&_[data-slot=command-input-wrapper]]:border-black/15'>
           <CommandInput
             placeholder={searchPlaceholder}
-            className='h-9 py-2 text-base'
+            className='h-9 py-2 text-base placeholder:text-[#6c757d]'
             autoFocus
           />
           <CommandList>
@@ -272,7 +276,11 @@ export function Combobox(props: ComboboxProps) {
                   keywords={[option.label]}
                   disabled={option.disabled}
                   onSelect={() => select(option)}
-                  className='text-base'
+                  className={cn(
+                    'text-base text-[#212529] data-[selected=true]:bg-[#deebff] data-[selected=true]:text-[#212529]',
+                    isSelected(option) &&
+                      'bg-[#2684ff] text-white data-[selected=true]:bg-[#2684ff] data-[selected=true]:text-white'
+                  )}
                 >
                   <CheckIcon
                     aria-hidden='true'
