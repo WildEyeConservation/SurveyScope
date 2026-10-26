@@ -8,6 +8,7 @@ const Table = React.forwardRef(function Table({
   bordered = false,
   borderless = false,
   size,
+  variant,
   responsive = false,
   ...props
 }: React.ComponentProps<"table"> & {
@@ -16,22 +17,23 @@ const Table = React.forwardRef(function Table({
   bordered?: boolean
   borderless?: boolean
   size?: "sm"
+  variant?: "dark"
   responsive?: boolean
 }, ref: React.ForwardedRef<any>) {
   const table = (
     <table
+      ref={ref}
       data-slot="table"
+      data-striped={striped || undefined}
+      data-hover={hover || undefined}
+      data-bordered={bordered || undefined}
+      data-borderless={borderless || undefined}
+      data-size={size}
+      data-variant={variant}
       className={cn(
-        "mb-4 w-full caption-bottom border-collapse align-top text-foreground",
-        "[&_td]:border-b [&_td]:border-black/15 [&_th]:border-b [&_th]:border-black/15",
-        size === "sm" ? "[&_td]:p-1 [&_th]:p-1" : "[&_td]:p-2 [&_th]:p-2",
-        striped && "[&>tbody>tr:nth-of-type(odd)>*]:bg-white/5",
-        hover && "[&>tbody>tr:hover>*]:bg-white/[0.075]",
-        bordered && "[&_td]:border [&_th]:border",
-        borderless && "[&_td]:border-0 [&_th]:border-0",
+        "mb-4 w-full caption-bottom border-collapse align-top text-sm text-white",
         className
       )}
-      ref={ref}
       {...props}
     />
   )

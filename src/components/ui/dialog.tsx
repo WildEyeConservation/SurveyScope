@@ -70,6 +70,7 @@ const DialogContent = React.forwardRef(function DialogContent({
   onPointerDownOutside,
   onEscapeKeyDown,
   onInteractOutside,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   size?: DialogSize
@@ -99,6 +100,13 @@ const DialogContent = React.forwardRef(function DialogContent({
               if (isStatic || !target?.closest?.("[data-slot=dialog-overlay]"))
                 e.preventDefault()
               onPointerDownOutside?.(e)
+            }}
+            onOpenAutoFocus={(e) => {
+              onOpenAutoFocus?.(e)
+              if (e.defaultPrevented) return
+              e.preventDefault()
+              const content = e.currentTarget as HTMLElement
+              if (!content.contains(document.activeElement)) content.focus()
             }}
             onInteractOutside={(e) => {
               const target = e.target as Element | null
@@ -180,7 +188,7 @@ const DialogFooter = React.forwardRef(function DialogFooter({ className, ...prop
     <div
       data-slot="dialog-footer"
       className={cn(
-        "flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-black/20 p-3",
+        "flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-black/20 p-4",
         className
       )}
       ref={ref}

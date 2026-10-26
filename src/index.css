@@ -132,6 +132,38 @@
   background-size: 16px 12px;
 }
 
+/* Superhero table cells; in a lower layer so bg utilities on cells and rows still win. */
+@layer components {
+  [data-slot="table"] {
+    --table-bg: #0f2537;
+    --table-accent: rgba(255, 255, 255, 0.05);
+  }
+  [data-slot="table"][data-variant="dark"] {
+    --table-bg: var(--dark);
+  }
+  [data-slot="table"] :where(td, th) {
+    padding: 0.5rem;
+    background-color: var(--table-bg);
+    box-shadow: inset 0 0 0 9999px var(--table-accent);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+  }
+  [data-slot="table"][data-size="sm"] :where(td, th) {
+    padding: 0.25rem;
+  }
+  [data-slot="table"][data-striped] > tbody > tr:nth-of-type(odd) {
+    --table-accent: rgba(0, 0, 0, 0.05);
+  }
+  [data-slot="table"][data-hover] > tbody > tr:hover {
+    --table-accent: rgba(255, 255, 255, 0.075);
+  }
+  [data-slot="table"][data-bordered] :where(td, th) {
+    border: 1px solid rgba(0, 0, 0, 0.15);
+  }
+  [data-slot="table"][data-borderless] :where(td, th) {
+    border: 0;
+  }
+}
+
 /* Bootstrap reboot typography, so headings, paragraphs and lists keep their old spacing. */
 @layer base {
   * {
@@ -191,7 +223,10 @@
     border-top: 1px solid;
     opacity: 0.25;
   }
-  label { display: inline-block; }
+  label {
+    display: inline-block;
+    font-size: 0.875rem;
+  }
   legend { font-size: 1.5rem; margin-bottom: 0.5rem; }
   th { text-align: inherit; }
   img, svg { vertical-align: middle; }

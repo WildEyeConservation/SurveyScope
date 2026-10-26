@@ -90,7 +90,7 @@ export default function BlockedUploadModal({
             style={{ maxHeight: 260, overflowY: 'auto' }}
             className='border border-secondary '
           >
-            <Table size='sm' className='m-0 bg-dark'>
+            <Table size='sm' variant='dark' className='m-0'>
               <thead>
                 <tr>
                   <th>Image</th>

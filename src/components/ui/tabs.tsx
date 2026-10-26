@@ -41,7 +41,7 @@ const TabsTrigger = React.forwardRef(function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "-mb-px inline-flex items-center gap-1.5 border border-transparent px-4 py-2 text-foreground transition-colors outline-none hover:border-secondary focus-visible:ring-[0.25rem] focus-visible:ring-primary/25 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:border-secondary data-[state=active]:border-b-transparent data-[state=active]:bg-card [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "-mb-px inline-flex items-center gap-1.5 border border-transparent px-4 py-2 text-foreground transition-colors outline-none hover:border-secondary focus-visible:ring-[0.25rem] focus-visible:ring-primary/25 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:border-secondary data-[state=active]:border-b-transparent data-[state=active]:bg-[#0f2537] [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       ref={ref}

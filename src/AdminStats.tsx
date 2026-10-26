@@ -144,7 +144,7 @@ function OrgRow(props: {
       </tr>
       {open &&
         org.projects.map((p) => (
-          <tr key={p.projectId} className='bg-light text-black'>
+          <tr key={p.projectId} className='[--table-bg:var(--light)]'>
             <td></td>
             <td className='ps-6'>{p.projectName}</td>
             <td className='text-right'>{p.totals.surveys}</td>
