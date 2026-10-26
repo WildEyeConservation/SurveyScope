@@ -6,10 +6,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react-hooks/recommended',
   ],
-  // hello-world is an unused AWS toolkit scaffold carrying its own eslintrc
-  // that pulls in a plugin this repo does not install, which blocked the lint
-  // run for the whole repository.
-  ignorePatterns: ['dist', '.eslintrc.cjs', 'amplify/functions/hello-world'],
+  ignorePatterns: ['dist', '.eslintrc.cjs'],
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh'],
   rules: {
