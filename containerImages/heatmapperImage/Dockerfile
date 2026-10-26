@@ -1,7 +1,7 @@
 # Unified elephant heatmap + point-finder worker (GPU).
 #
 # tf.compat.v1 preserves compatibility with the TF1 MobileNet checkpoint.
-FROM tensorflow/tensorflow:2.21.0-gpu
+FROM tensorflow/tensorflow:2.17.0-gpu
 
 WORKDIR /workspace
 COPY code/ /workspace/
