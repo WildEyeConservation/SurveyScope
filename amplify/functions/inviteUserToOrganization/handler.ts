@@ -7,7 +7,24 @@ import {
   CognitoIdentityProviderClient,
   ListUsersCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
+import {
+  DynamoDBClient,
+  TransactionCanceledException,
+} from '@aws-sdk/client-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  TransactWriteCommand,
+} from '@aws-sdk/lib-dynamodb';
+import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { authorizeOrgAdmin } from '../shared/authorizeOrgAdmin';
+import {
+  InviteLimitError,
+  SENDER,
+  isValidEmail,
+  limitUpdates,
+  organizationInviteEmail,
+  type LimitUpdate,
+} from './core';
 
 const getOrganizationQuery = /* GraphQL */ `
   query GetOrganization($id: ID!) {
@@ -69,6 +86,75 @@ Amplify.configure(
 
 const gqlClient = generateClient({ authMode: 'iam' });
 const cognitoClient = new CognitoIdentityProviderClient();
+const documentClient = DynamoDBDocumentClient.from(new DynamoDBClient());
+const sesClient = new SESv2Client();
+
+async function reserveInvite(updates: LimitUpdate[]): Promise<void> {
+  const TableName = process.env.INVITE_LIMITS_TABLE;
+  try {
+    await documentClient.send(
+      new TransactWriteCommand({
+        TransactItems: updates.map((update) => ({
+          Update:
+            update.limit === 'recipient'
+              ? {
+                  TableName,
+                  Key: { pk: update.key },
+                  UpdateExpression: 'SET expiresAt = :expiresAt',
+                  ConditionExpression: 'attribute_not_exists(pk) OR expiresAt < :now',
+                  ExpressionAttributeValues: {
+                    ':expiresAt': update.expiresAt,
+                    ':now': update.now,
+                  },
+                }
+              : {
+                  TableName,
+                  Key: { pk: update.key },
+                  UpdateExpression: 'SET expiresAt = :expiresAt ADD inviteCount :one',
+                  ConditionExpression:
+                    'attribute_not_exists(inviteCount) OR inviteCount < :max',
+                  ExpressionAttributeValues: {
+                    ':expiresAt': update.expiresAt,
+                    ':one': 1,
+                    ':max': update.max,
+                  },
+                },
+        })),
+      })
+    );
+  } catch (error) {
+    if (error instanceof TransactionCanceledException) {
+      const index = error.CancellationReasons?.findIndex(
+        (reason) => reason.Code === 'ConditionalCheckFailed'
+      );
+      if (index !== undefined && index >= 0) {
+        throw new InviteLimitError(updates[index].limit);
+      }
+    }
+    throw error;
+  }
+}
+
+async function sendInviteEmail(to: string, organizationName: string): Promise<void> {
+  const { subject, html, text } = organizationInviteEmail(organizationName);
+  const replyTo = process.env.INVITE_REPLY_TO_EMAIL;
+  await sesClient.send(
+    new SendEmailCommand({
+      FromEmailAddress: SENDER,
+      Destination: { ToAddresses: [to] },
+      ReplyToAddresses: replyTo ? [replyTo] : undefined,
+      Content: {
+        Simple: {
+          Subject: { Data: subject, Charset: 'UTF-8' },
+          Body: {
+            Html: { Data: html, Charset: 'UTF-8' },
+            Text: { Data: text, Charset: 'UTF-8' },
+          },
+        },
+      },
+    })
+  );
+}
 
 function serializeError(err: unknown): string {
   if (err === null || err === undefined) return String(err);
@@ -138,10 +224,15 @@ async function fetchAllPages<T, K extends string>(
 export const handler: InviteUserToOrganizationHandler = async (event) => {
   try {
     console.log('Invoked inviteUserToOrganization with event:', JSON.stringify(event));
-    const { organizationId, email } = event.arguments;
+    const { organizationId } = event.arguments;
+    const email = event.arguments.email.trim();
 
     // 1. Authorize caller as org admin
     await authorizeOrgAdmin(event.identity, organizationId, executeGraphql);
+
+    if (!isValidEmail(email)) {
+      throw new Error('Enter a valid email address');
+    }
 
     // 2. Look up user by email in Cognito
     const listResult = await cognitoClient.send(
@@ -153,41 +244,52 @@ export const handler: InviteUserToOrganizationHandler = async (event) => {
     );
 
     const cognitoUser = listResult.Users?.[0];
-    if (!cognitoUser?.Username) {
-      throw new Error(`User with email ${email} not found`);
+    const userId = cognitoUser?.Username;
+
+    if (userId) {
+      // 3. Check if user is already a member
+      const membershipData = await executeGraphql<{
+        getOrganizationMembership?: { organizationId: string; userId: string } | null;
+      }>(getOrganizationMembershipQuery, { organizationId, userId });
+
+      if (membershipData.getOrganizationMembership) {
+        throw new Error('User is already a member of this organization');
+      }
+
+      // 4. Check for existing pending invite
+      const allInvites = await fetchAllPages<
+        { id: string; organizationId: string; status: string },
+        'organizationInvitesByUsername'
+      >(organizationInvitesByUsernameQuery, { username: userId, limit: 100 }, 'organizationInvitesByUsername');
+
+      const existingPending = allInvites.find(
+        (inv) => inv.organizationId === organizationId && inv.status === 'pending'
+      );
+      if (existingPending) {
+        throw new Error('User already has a pending invitation to this organization');
+      }
     }
-    const userId = cognitoUser.Username;
 
-    // 3. Check if user is already a member
-    const membershipData = await executeGraphql<{
-      getOrganizationMembership?: { organizationId: string; userId: string } | null;
-    }>(getOrganizationMembershipQuery, { organizationId, userId });
-
-    if (membershipData.getOrganizationMembership) {
-      throw new Error('User is already a member of this organization');
+    // 5. Rate limit org admins, counting addresses without an account too
+    const identity = event.identity as { sub?: string; groups?: string[] | null } | null;
+    if (identity?.sub && !identity.groups?.includes('sysadmin')) {
+      await reserveInvite(limitUpdates(organizationId, email, Date.now()));
     }
 
-    // 4. Check for existing pending invite
-    const allInvites = await fetchAllPages<
-      { id: string; organizationId: string; status: string },
-      'organizationInvitesByUsername'
-    >(organizationInvitesByUsernameQuery, { username: userId, limit: 100 }, 'organizationInvitesByUsername');
-
-    const existingPending = allInvites.find(
-      (inv) => inv.organizationId === organizationId && inv.status === 'pending'
-    );
-    if (existingPending) {
-      throw new Error('User already has a pending invitation to this organization');
+    // The same response either way, so invites can't reveal who has an account.
+    if (!userId) {
+      console.log(`No account for the invited address to org ${organizationId}`);
+      return JSON.stringify({ success: true });
     }
 
-    // 5. Get organization name
+    // 6. Get organization name
     const orgData = await executeGraphql<{
       getOrganization?: { id: string; name: string } | null;
     }>(getOrganizationQuery, { id: organizationId });
 
     const organizationName = orgData.getOrganization?.name ?? 'Unknown Organization';
 
-    // 6. Create invite
+    // 7. Create invite
     await executeGraphql(createOrganizationInviteMutation, {
       input: {
         organizationId,
@@ -198,7 +300,16 @@ export const handler: InviteUserToOrganizationHandler = async (event) => {
       },
     });
 
-    console.log(`Invite created for ${email} to org ${organizationId}`);
+    // 8. Email the invitee; the invite stands even if this fails
+    const recipient =
+      cognitoUser?.Attributes?.find((attribute) => attribute.Name === 'email')?.Value ?? email;
+    try {
+      await sendInviteEmail(recipient, organizationName);
+    } catch (error) {
+      console.error('Failed to send the invite email:', serializeError(error));
+    }
+
+    console.log(`Invite created for ${userId} to org ${organizationId}`);
     return JSON.stringify({ success: true });
   } catch (err) {
     console.error('inviteUserToOrganization failed:', JSON.stringify(err, Object.getOwnPropertyNames(err)));

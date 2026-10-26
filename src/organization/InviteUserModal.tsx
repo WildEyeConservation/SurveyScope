@@ -39,7 +39,13 @@ export default function InviteUserModal({
         alert(errors[0].message);
       } else {
         showModal(null);
-        setTimeout(() => alert('Invite sent!'), 300);
+        setTimeout(
+          () =>
+            alert(
+              `If ${email} has a SurveyScope account, they've been sent an invite.`
+            ),
+          300
+        );
       }
     } catch (err: any) {
       alert(err.message ?? 'Failed to send invite');
@@ -67,11 +73,13 @@ export default function InviteUserModal({
             Send Invite
           </Button>
           <Form.Text className='d-block mt-3'>
-            This will send an invite to the user's SurveyScope inbox.
+            The user will get the invite by email and in their SurveyScope
+            inbox.
           </Form.Text>
           <Form.Text className='d-block'>
-            If the user doesn't have an account, please contact WildEye support
-            with the email of the user that requires an account.
+            Only people with a SurveyScope account receive invites. If the user
+            doesn't have one, please contact WildEye support with the email of
+            the user that requires an account.
           </Form.Text>
         </Form>
       </Modal.Body>
