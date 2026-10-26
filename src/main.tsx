@@ -1,3 +1,4 @@
+import './maplibreWorker';
 import ReactDOM from 'react-dom/client';
 import AppWithAuthenticator from './App.tsx';
 import './index.css';

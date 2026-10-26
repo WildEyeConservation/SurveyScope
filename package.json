@@ -61,7 +61,7 @@
     "localforage": "^1.10.0",
     "lucide-react": "^0.475.0",
     "luxon": "^3.5.0",
-    "maplibre-gl": "^5.20.2",
+    "maplibre-gl": "^6.16.0",
     "mathjs": "^15.2.0",
     "mdb-react-ui-kit": "^8.0.0",
     "munkres-js": "^1.2.2",
@@ -89,7 +89,7 @@
     "sharp": "^0.35.5",
     "shpjs": "^6.1.0",
     "terra-draw": "^1.31.2",
-    "terra-draw-maplibre-gl-adapter": "^1.4.1",
+    "terra-draw-maplibre-gl-adapter": "^1.5.0",
     "unique-names-generator": "^4.7.1",
     "utm-latlng": "^1.0.8"
   },

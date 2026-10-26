@@ -10,7 +10,7 @@ import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
 import { Form, Spinner, Button } from 'react-bootstrap';
 import { Footer } from '../Modal';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   TerraDraw,

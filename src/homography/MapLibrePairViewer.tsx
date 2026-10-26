@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useContext, useEffect } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { ImageType } from '../schemaTypes';
 import type { Point } from './ManualHomographyEditor';
 import { MapLibreImageViewer, POINT_COLORS, type MapLibreMenuItem } from '../maplibre-viewer/MapLibreImageViewer';

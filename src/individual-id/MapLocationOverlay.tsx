@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import type { Feature, Point, Polygon } from 'geojson';
 import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
