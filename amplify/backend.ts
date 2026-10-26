@@ -12,7 +12,7 @@ import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { addUserToGroup } from './functions/add-user-to-group/resource';
-import { ArnFormat, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { ArnFormat, Aspects, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { outputBucket, inputBucket } from './storage/resource';
@@ -22,6 +22,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import { AutoProcessor } from './autoProcessor';
 import { postDeploy } from './functions/postDeploy/resource';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import type { IConstruct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { updateUserStats } from './functions/updateUserStats/resource';
 import { Policy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
@@ -316,6 +317,51 @@ installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
 for (const table of Object.values(backend.data.resources.cfnResources.amplifyDynamoDbTables)) {
   table.sseSpecification = { sseEnabled: true };
 }
+
+// Newer storage constructs rename these policies; keep the deployed names so CloudFormation updates
+// them in place instead of briefly doubling the sysadmin role's inline policies past IAM's limit.
+const deployedStorageAccessPolicies: Record<number, string> = {
+  3: 'storageAccess472A5D2AC',
+  4: 'storageAccess524979CAB',
+  5: 'storageAccess6EC622D4F',
+  6: 'storageAccess7F1BC521E',
+  7: 'storageAccess88C62AFCE',
+  8: 'storageAccess9320E39B2',
+  9: 'storageAccess1095206323',
+  10: 'storageAccess11E714650A',
+  11: 'storageAccess129A593C0E',
+  12: 'storageAccess13FDD69442',
+  13: 'storageAccess14A4903EF5',
+  14: 'storageAccess154EA1D574',
+  15: 'storageAccess16ACD6002A',
+  16: 'storageAccess17A7480C16',
+  17: 'storageAccess18D35BB1A5',
+  18: 'storageAccess198921F442',
+  19: 'storageAccess20A1A7EB98',
+  20: 'storageAccess2197BF4D53',
+  21: 'storageAccess22D15B92CA',
+  22: 'storageAccess23C33B2DF7',
+  23: 'storageAccess246D32F733',
+  24: 'storageAccess25DEFE3768',
+  25: 'storageAccess26D2892142',
+  26: 'storageAccess2776898E5F',
+  30: 'storageAccess31CBCD62C4',
+  31: 'storageAccess328D13CFDB',
+  32: 'storageAccess33F4F530D3',
+  33: 'storageAccess342CB53227',
+  34: 'storageAccess3522037AC8',
+};
+Aspects.of(Stack.of(backend.outputBucket.resources.bucket)).add({
+  visit(node: IConstruct) {
+    const index = /--storageAccess(\d+)$/.exec(node.node.id)?.[1];
+    const name = index && deployedStorageAccessPolicies[Number(index)];
+    if (name && node instanceof Policy) {
+      const policy = node.node.defaultChild as iam.CfnPolicy;
+      policy.overrideLogicalId(name);
+      policy.policyName = name;
+    }
+  },
+});
 
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
 userPoolClient.accessTokenValidity = 24 * 60;
