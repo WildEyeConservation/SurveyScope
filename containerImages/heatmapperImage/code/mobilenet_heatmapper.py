@@ -5,11 +5,7 @@ Ported from the Heatmapper4 EC2 AMI worker
 fully convolutional: a full-resolution RGB image goes in, a stride-32
 (H/32 x W/32 x 2) softmax map comes out, and channel 1 is the elephant class.
 
-The graph reproduces the original tf.contrib.slim MobileNet-v1 (slim defaults: ReLU,
-SAME padding, batch norm without gamma, epsilon 1e-3) in plain tf.compat.v1 ops with
-the same variable names, so the TF1 checkpoint loads unchanged on TF2. The input is an
-already-decoded uint8 RGB array, so the image can be decoded and rotated with PIL/numpy
-before inference.
+Variable names and batch-normalization defaults must match the TF1 checkpoint.
 """
 
 import tensorflow.compat.v1 as tf

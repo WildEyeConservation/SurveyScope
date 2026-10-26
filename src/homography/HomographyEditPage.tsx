@@ -12,6 +12,7 @@ import { inv, matrix } from 'mathjs';
 import { GlobalContext } from '../Context';
 import type { ImageType } from '../schemaTypes';
 import { array2Matrix, makeTransform } from '../utils';
+import { sameAppPath } from './backHref';
 import { HomographyWorkbench } from './HomographyWorkbench';
 import { type Point } from './ManualHomographyEditor';
 import {
@@ -38,12 +39,7 @@ export default function HomographyEditPage() {
   const image1Id = searchParams.get('image1Id') ?? undefined;
   const image2Id = searchParams.get('image2Id') ?? undefined;
   const annotationSetId = searchParams.get('annotationSetId') ?? undefined;
-  // Only same-app paths; react-router 6 still follows `/\host` and `//host` off-site.
-  const rawBackHref = searchParams.get('backHref');
-  const backHref =
-    rawBackHref && /^\/(?!\/)/.test(rawBackHref) && !/[\\\x00-\x20\x7f]/.test(rawBackHref)
-      ? rawBackHref
-      : undefined;
+  const backHref = sameAppPath(searchParams.get('backHref'));
 
   const [images, setImages] = useState<[ImageType, ImageType] | null>(null);
   const [imagesError, setImagesError] = useState<string | null>(null);
