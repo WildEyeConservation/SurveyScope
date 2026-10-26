@@ -1132,13 +1132,9 @@ export default function Surveys() {
               {!isMobile && (
                 <Button
                   variant='info'
-                  // size='sm'
+                  size='icon'
                   onClick={() => setCompactMode(!compactMode)}
                   title={compactMode ? 'Expand view' : 'Compact view'}
-                  style={{
-                    minWidth: 'fit-content',
-                    whiteSpace: 'nowrap',
-                  }}
                 >
                   {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
                 </Button>
