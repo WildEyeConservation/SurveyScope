@@ -4,7 +4,7 @@ backend:
     build:
       commands:
         - n "${NODE_22_VERSION:-22}" && node -v
-        - npm install --cache .npm --prefer-offline
+        - npm ci --cache .npm --prefer-offline
         # NOTE: Amplify executes the console build-spec override, not this file. Keep
         # the two in sync. Only master deploys the backend; other branches reuse
         # master's outputs. On master, pull the gitignored scoutbot model files
@@ -37,4 +37,3 @@ frontend:
   cache:
     paths:
       - .npm/**/*
-      - node_modules/**/*
