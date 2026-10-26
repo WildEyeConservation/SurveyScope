@@ -108,11 +108,11 @@
     "@types/react-dom": "^18.2.22",
     "@typescript-eslint/eslint-plugin": "^7.2.0",
     "@typescript-eslint/parser": "^7.2.0",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-react": "^4.7.0",
     "aws-cdk": "^2.1146.1",
     "aws-cdk-lib": "^2.274.0",
     "constructs": "^10.8.1",
-    "esbuild": "^0.20.2",
+    "esbuild": "^0.28.2",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
@@ -120,7 +120,7 @@
     "rxjs": "^7.8.1",
     "tsx": "^4.7.2",
     "typescript": "^5.4.5",
-    "vite": "^5.2.0"
+    "vite": "^6.4.5"
   },
   "overrides": {
     "@parcel/watcher": "2.4.1"
