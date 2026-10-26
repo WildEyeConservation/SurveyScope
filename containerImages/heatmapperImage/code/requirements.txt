@@ -1,7 +1,7 @@
-# TensorFlow comes from the base image (tensorflow/tensorflow:2.21.0-gpu, Python 3.11).
+# TensorFlow comes from the base image (tensorflow/tensorflow:2.17.0-gpu, Python 3.11).
 boto3==1.43.118
 Pillow==13.0.0
-numpy==2.4.6
+numpy==1.26.4
 scipy==1.17.1
 scikit-image==0.26.0
 requests==2.34.2
