@@ -32,24 +32,32 @@ export class InviteLimitError extends Error {
 
 export type LimitUpdate =
   | { limit: 'recipient'; key: string; expiresAt: number; now: number }
-  | { limit: 'organization' | 'repeat'; key: string; expiresAt: number; max: number };
+  | {
+      limit: 'organization' | 'repeat';
+      key: string;
+      expiresAt: number;
+      max: number;
+    };
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
 export function isValidEmail(email: string): boolean {
-  return email.length <= 254 && /^[^\s@"\\]+@[^\s@"\\]+\.[^\s@"\\]+$/.test(email);
+  return (
+    email.length <= 254 && /^[^\s@"\\]+@[^\s@"\\]+\.[^\s@"\\]+$/.test(email)
+  );
 }
 
-// Keyed by the address rather than the account, so a rejection looks the same
-// whether or not the address has an account.
+// Apply identical limits whether or not the address has an account.
 export function limitUpdates(
   organizationId: string,
   email: string,
   nowMs: number
 ): LimitUpdate[] {
-  const recipient = createHash('sha256').update(normalizeEmail(email)).digest('hex');
+  const recipient = createHash('sha256')
+    .update(normalizeEmail(email))
+    .digest('hex');
   const day = Math.floor(nowMs / ORGANIZATION_WINDOW_MS);
   const period = Math.floor(nowMs / REPEAT_WINDOW_MS);
   return [
@@ -90,4 +98,45 @@ export function organizationInviteEmail(organizationName: string): {
     ),
     text: `${intro}\n\n${APP_URL}\n\nIf you weren't expecting this email, you can ignore it.`,
   };
+}
+
+export type InviteDependencies = {
+  reserve: (updates: LimitUpdate[]) => Promise<void>;
+  findUser: (
+    email: string
+  ) => Promise<{ userId: string; email?: string } | null>;
+  isMember: (userId: string) => Promise<boolean>;
+  hasPendingInvite: (userId: string) => Promise<boolean>;
+  createInvite: (userId: string) => Promise<string>;
+  sendEmail: (to: string, organizationName: string) => Promise<void>;
+};
+
+export async function processInvite(
+  dependencies: InviteDependencies,
+  organizationId: string,
+  rawEmail: string,
+  limited: boolean,
+  nowMs: number = Date.now()
+): Promise<void> {
+  const email = rawEmail.trim();
+  if (!isValidEmail(email)) {
+    throw new Error('Enter a valid email address');
+  }
+  // Before any lookup, so a rejection doesn't depend on the account.
+  if (limited) {
+    await dependencies.reserve(limitUpdates(organizationId, email, nowMs));
+  }
+  const user = await dependencies.findUser(email);
+  if (!user) return;
+  // Members are already visible to the admin.
+  if (await dependencies.isMember(user.userId)) {
+    throw new Error('User is already a member of this organization');
+  }
+  if (await dependencies.hasPendingInvite(user.userId)) return;
+  const organizationName = await dependencies.createInvite(user.userId);
+  try {
+    await dependencies.sendEmail(user.email ?? email, organizationName);
+  } catch (error) {
+    console.error('Failed to send the invite email', error);
+  }
 }

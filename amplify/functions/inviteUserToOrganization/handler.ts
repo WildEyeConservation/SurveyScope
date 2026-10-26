@@ -20,9 +20,8 @@ import { authorizeOrgAdmin } from '../shared/authorizeOrgAdmin';
 import {
   InviteLimitError,
   SENDER,
-  isValidEmail,
-  limitUpdates,
   organizationInviteEmail,
+  processInvite,
   type LimitUpdate,
 } from './core';
 
@@ -224,92 +223,69 @@ async function fetchAllPages<T, K extends string>(
 export const handler: InviteUserToOrganizationHandler = async (event) => {
   try {
     console.log('Invoked inviteUserToOrganization with event:', JSON.stringify(event));
-    const { organizationId } = event.arguments;
-    const email = event.arguments.email.trim();
+    const { organizationId, email } = event.arguments;
 
     // 1. Authorize caller as org admin
     await authorizeOrgAdmin(event.identity, organizationId, executeGraphql);
 
-    if (!isValidEmail(email)) {
-      throw new Error('Enter a valid email address');
-    }
-
-    // 2. Look up user by email in Cognito
-    const listResult = await cognitoClient.send(
-      new ListUsersCommand({
-        UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
-        Filter: `email = "${email}"`,
-        Limit: 1,
-      })
+    const identity = event.identity as { sub?: string; groups?: string[] | null } | null;
+    await processInvite(
+      {
+        reserve: reserveInvite,
+        findUser: async (address) => {
+          const listResult = await cognitoClient.send(
+            new ListUsersCommand({
+              UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
+              Filter: `email = "${address}"`,
+              Limit: 1,
+            })
+          );
+          const cognitoUser = listResult.Users?.[0];
+          if (!cognitoUser?.Username) return null;
+          return {
+            userId: cognitoUser.Username,
+            email: cognitoUser.Attributes?.find((attribute) => attribute.Name === 'email')?.Value,
+          };
+        },
+        isMember: async (userId) => {
+          const membershipData = await executeGraphql<{
+            getOrganizationMembership?: { organizationId: string; userId: string } | null;
+          }>(getOrganizationMembershipQuery, { organizationId, userId });
+          return Boolean(membershipData.getOrganizationMembership);
+        },
+        hasPendingInvite: async (userId) => {
+          const allInvites = await fetchAllPages<
+            { id: string; organizationId: string; status: string },
+            'organizationInvitesByUsername'
+          >(organizationInvitesByUsernameQuery, { username: userId, limit: 100 }, 'organizationInvitesByUsername');
+          return allInvites.some(
+            (inv) => inv.organizationId === organizationId && inv.status === 'pending'
+          );
+        },
+        createInvite: async (userId) => {
+          const orgData = await executeGraphql<{
+            getOrganization?: { id: string; name: string } | null;
+          }>(getOrganizationQuery, { id: organizationId });
+          const organizationName = orgData.getOrganization?.name ?? 'Unknown Organization';
+          await executeGraphql(createOrganizationInviteMutation, {
+            input: {
+              organizationId,
+              username: userId,
+              invitedBy: event.identity!.sub,
+              organizationName,
+              group: organizationId,
+            },
+          });
+          return organizationName;
+        },
+        sendEmail: sendInviteEmail,
+      },
+      organizationId,
+      email,
+      Boolean(identity?.sub && !identity.groups?.includes('sysadmin'))
     );
 
-    const cognitoUser = listResult.Users?.[0];
-    const userId = cognitoUser?.Username;
-
-    if (userId) {
-      // 3. Check if user is already a member
-      const membershipData = await executeGraphql<{
-        getOrganizationMembership?: { organizationId: string; userId: string } | null;
-      }>(getOrganizationMembershipQuery, { organizationId, userId });
-
-      if (membershipData.getOrganizationMembership) {
-        throw new Error('User is already a member of this organization');
-      }
-
-      // 4. Check for existing pending invite
-      const allInvites = await fetchAllPages<
-        { id: string; organizationId: string; status: string },
-        'organizationInvitesByUsername'
-      >(organizationInvitesByUsernameQuery, { username: userId, limit: 100 }, 'organizationInvitesByUsername');
-
-      const existingPending = allInvites.find(
-        (inv) => inv.organizationId === organizationId && inv.status === 'pending'
-      );
-      if (existingPending) {
-        throw new Error('User already has a pending invitation to this organization');
-      }
-    }
-
-    // 5. Rate limit org admins, counting addresses without an account too
-    const identity = event.identity as { sub?: string; groups?: string[] | null } | null;
-    if (identity?.sub && !identity.groups?.includes('sysadmin')) {
-      await reserveInvite(limitUpdates(organizationId, email, Date.now()));
-    }
-
-    // The same response either way, so invites can't reveal who has an account.
-    if (!userId) {
-      console.log(`No account for the invited address to org ${organizationId}`);
-      return JSON.stringify({ success: true });
-    }
-
-    // 6. Get organization name
-    const orgData = await executeGraphql<{
-      getOrganization?: { id: string; name: string } | null;
-    }>(getOrganizationQuery, { id: organizationId });
-
-    const organizationName = orgData.getOrganization?.name ?? 'Unknown Organization';
-
-    // 7. Create invite
-    await executeGraphql(createOrganizationInviteMutation, {
-      input: {
-        organizationId,
-        username: userId,
-        invitedBy: event.identity!.sub,
-        organizationName,
-        group: organizationId,
-      },
-    });
-
-    // 8. Email the invitee; the invite stands even if this fails
-    const recipient =
-      cognitoUser?.Attributes?.find((attribute) => attribute.Name === 'email')?.Value ?? email;
-    try {
-      await sendInviteEmail(recipient, organizationName);
-    } catch (error) {
-      console.error('Failed to send the invite email:', serializeError(error));
-    }
-
-    console.log(`Invite created for ${userId} to org ${organizationId}`);
+    console.log(`Invite processed for org ${organizationId}`);
     return JSON.stringify({ success: true });
   } catch (err) {
     console.error('inviteUserToOrganization failed:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
