@@ -407,7 +407,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
             <CardHeader>
               <CardTitle className='mb-0 flex items-center'>
                 <Button
-                  className='p-0 mb-0'
+                  className='p-0 mb-0 hover:bg-transparent'
                   variant='ghost'
                   onClick={() => setShowFilters(!showFilters)}
                 >
@@ -519,7 +519,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 <div className='w-full border-t pt-2 mt-1'>
                   <Button
                     variant='ghost'
-                    className='p-0 flex items-center gap-1 w-full text-left'
+                    className='p-0 flex items-center gap-1 w-full text-left hover:bg-transparent'
                     onClick={() => setShowAdvanced(!showAdvanced)}
                     style={{ boxShadow: 'none' }}
                   >

@@ -293,7 +293,7 @@ export default function Settings({ signOut }: { signOut: () => void }) {
             >
               {saving ? (
                 <>
-                  <Spinner size='sm' className='me-2' />
+                  <Spinner size='sm' />
                   Saving...
                 </>
               ) : (

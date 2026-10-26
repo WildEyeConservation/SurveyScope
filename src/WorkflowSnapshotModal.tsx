@@ -126,7 +126,10 @@ export default function WorkflowSnapshotModal({
 
   return (
     <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
-      <DialogContent size='xl' static>
+      <DialogContent
+        size='xl'
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
       <DialogHeader closeButton>
         <DialogTitle>Snapshot for {projectLabel}</DialogTitle>
       </DialogHeader>

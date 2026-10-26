@@ -69,7 +69,7 @@ function MetricChart(props: {
             <ChartTooltip content={<ChartTooltipContent />} />
             <Line
               dataKey='value'
-              type='linear'
+              type='monotoneX'
               stroke='var(--color-value)'
               strokeWidth={2}
               dot={{ r: 3, fill: 'var(--color-value)' }}

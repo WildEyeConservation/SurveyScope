@@ -12,7 +12,7 @@ import { useContext, useState, useEffect } from 'react';
 import { GlobalContext, TestingContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
 import MyTable from '../Table';
-import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, Cell, XAxis, YAxis } from 'recharts';
 import { Tab, Tabs } from '../Tabs';
 import exportFromJSON from 'export-from-json';
 import { useUpdateProgress } from '../useUpdateProgress';
@@ -446,7 +446,6 @@ export default function Results() {
                       data={accuracyByCategory}
                       margin={{ top: 20, right: 20, bottom: 20, left: 0 }}
                     >
-                      <CartesianGrid vertical={false} />
                       <XAxis
                         dataKey='name'
                         interval={0}

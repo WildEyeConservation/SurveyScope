@@ -175,7 +175,10 @@ export default function SnapshotStatsModal({
 
   return (
     <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
-      <DialogContent size='xl' static>
+      <DialogContent
+        size='xl'
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
       <DialogHeader>
         <DialogTitle>Snapshot Stats for {projectLabel}</DialogTitle>
       </DialogHeader>

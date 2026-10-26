@@ -12,6 +12,12 @@ const fieldSizes = {
 
 type FieldSize = keyof typeof fieldSizes
 
+const fileSizes = {
+  sm: "file:-my-1 file:-ml-2 file:mr-2 file:px-2 file:py-1",
+  default: "file:-my-1.5 file:-ml-3 file:mr-3 file:px-3 file:py-1.5",
+  lg: "file:-my-2 file:-ml-4 file:mr-4 file:px-4 file:py-2",
+}
+
 const Input = React.forwardRef(function Input({
   className,
   type,
@@ -31,7 +37,8 @@ const Input = React.forwardRef(function Input({
         fieldBase,
         fieldSizes[size],
         type === "file" &&
-          "file:-my-1.5 file:-ml-3 file:mr-3 file:border-0 file:border-r file:border-inherit file:bg-[#e9ecef] file:px-3 file:py-1.5 file:text-field-foreground hover:file:bg-[#dde0e3]",
+          "file:border-0 file:border-r file:border-inherit file:bg-[#e9ecef] file:text-field-foreground hover:file:bg-[#dde0e3]",
+        type === "file" && fileSizes[size],
         type === "color" && "h-[38px] w-12 p-1.5",
         className
       )}

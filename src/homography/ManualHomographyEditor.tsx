@@ -224,7 +224,7 @@ export function ManualHomographyEditor({
               <Info size={16} />
               <span className='font-bold text-sm'>Instructions</span>
             </div>
-            <ul className='text-sm ps-6' style={{ opacity: 0.9, lineHeight: '1.6' }}>
+            <ul className='text-sm ps-4' style={{ opacity: 0.9, lineHeight: '1.6' }}>
               <li>Select at least {MIN_HOMOGRAPHY_POINTS} corresponding points on both images. More points typically yield a better fit.</li>
               <li>Aim to cover as much area as possible.</li>
               <li>Avoid placing points in straight lines.</li>
@@ -235,7 +235,7 @@ export function ManualHomographyEditor({
               <Target size={14} />
               <span className='font-bold text-sm'>Shortcuts</span>
             </div>
-            <ul className='text-sm mb-0 list-none ps-6' style={{ lineHeight: '1.6' }}>
+            <ul className='text-sm mb-0 list-none ps-4' style={{ lineHeight: '1.6' }}>
               <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl + Z</kbd> Undo</li>
               <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl + Y</kbd> / <kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl+Shift+Z</kbd> Redo</li>
               <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Esc</kbd> Close context menu</li>

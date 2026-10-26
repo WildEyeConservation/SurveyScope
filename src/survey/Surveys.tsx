@@ -764,7 +764,7 @@ export default function Surveys() {
       new Date(project.updatedAt ?? '').getTime() < Date.now() - 1000 * 60 * 5;
 
     const gapClass = compactMode ? 'gap-1' : 'gap-2';
-    const columnGapClass = compactMode ? 'gap-1' : 'gap-3';
+    const columnGapClass = compactMode ? 'gap-1' : 'gap-4';
     const badgeFontSize = compactMode ? '11px' : '14px';
 
     return {
@@ -1081,7 +1081,7 @@ export default function Surveys() {
             >
               <h4 className='mb-0'>Your Surveys</h4>
             </CardTitle>
-            <div className='flex flex-col lg:flex-row gap-2 w-full lg:w-auto lg:ms-auto lg:justify-end lg:items-center'>
+            <div className='flex flex-col lg:flex-row gap-2 w-full lg:ms-auto lg:justify-end lg:items-center'>
               <Input
                 className='w-full'
                 type='text'
@@ -1095,7 +1095,7 @@ export default function Surveys() {
                 onChange={(e) => setSearch(e.target.value)}
               />
               <NativeSelect
-                className='w-full lg:w-auto'
+                className='w-full'
                 value={organizationFilter}
                 onChange={(e) => setOrganizationFilter(e.target.value)}
                 style={{
@@ -1112,7 +1112,7 @@ export default function Surveys() {
                 ))}
               </NativeSelect>
               <NativeSelect
-                className='w-full lg:w-auto'
+                className='w-full'
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 style={{

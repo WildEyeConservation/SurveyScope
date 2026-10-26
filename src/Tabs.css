@@ -1,42 +1,43 @@
-.tabs-header {
-  display: flex;
-  flex-wrap: nowrap;
-  position: relative;
-}
+@layer components {
+  .tabs-header {
+    display: flex;
+    flex-wrap: nowrap;
+    position: relative;
+  }
 
-.tab-label {
-  padding: 5px 15px;
-  cursor: pointer;
-  transition: background-color 0.15s ease-in-out;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
+  .tab-label {
+    padding: 5px 15px;
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
 
-.tab-label:hover {
-  background-color: #677481;
-}
+  .tab-label:hover {
+    background-color: #677481;
+  }
 
-.tab-label.active {
-  background-color: #fff;
-  border-color: #ccc;
-  border-bottom-color: #fff;
-  margin-bottom: -1px;
-}
+  .tab-label.active {
+    background-color: #fff;
+    border-color: #ccc;
+    border-bottom-color: #fff;
+    margin-bottom: -1px;
+  }
 
-.tabs-measure-row {
-  position: absolute;
-  visibility: hidden;
-  pointer-events: none;
-  white-space: nowrap;
-  display: flex;
-  top: 0;
-  left: 0;
-}
+  .tabs-measure-row {
+    position: absolute;
+    visibility: hidden;
+    pointer-events: none;
+    white-space: nowrap;
+    display: flex;
+    top: 0;
+    left: 0;
+  }
 
-.tab-more-toggle {
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  flex-shrink: 0;
+  .tab-more-toggle {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
 }
-

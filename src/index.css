@@ -239,161 +239,164 @@
   }
 }
 
-.icon {
-  max-width: 70%;
-  max-height: 70%;
-  margin: 4px;
-}
-
-.transectWarning{
-    color: red;
-}
-
-.transectSlider {
-  width: 100%;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
-
-.marker>div {
-  width: 1.5rem;
-  height: 1.5rem;
-  display: block;
-  left: -0.75rem;
-  top: -0.75rem;
-  opacity: 1;
-  position: relative;
-  border-radius: 0.75rem;
-  border: 2px solid;
-  transform-origin: center;
-  perspective: 1000px;
-  transform-style: preserve-3d;
-}
-
-.marker[selected]>div,.marker[candidate]>div {
-      opacity: 1;
-}
-
-.markerLabel { position: absolute;
-                top: 0.2rem;
-                left: -0rem;
-                font-weight: bolder;
-                font-size: 0.5rem;
-                color: #FFFFFF;
-                text-align: center;
-                width: 3rem;} 
-
-@keyframes spin {
-  from   {transform: translateX(-50%) rotateY(0deg) translateX(50%)}
-  to {transform: translateX(-50%) rotateY(180deg) translateX(50%)}
-}
-
-@keyframes spinSmall {
-  from   {transform: translateX(-50%) scale(0.7) rotateY(0deg) translateX(50%)}
-  to {transform: translateX(-50%) scale(0.7) rotateY(180deg) translateX(50%)}
-}
-
-@keyframes throb {
-  from {transform: scale(1,1)}
-  to {transform: scale(1.1,1.1)}
-}
-
-@keyframes dim {
-  from {opacity: 0.8}
-  to {opacity: 0.2}
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-.spinning {
-  animation: rotate 1s linear infinite;
-}
-
-/* ChainLinker toolbar: on wide screens the pairing radius is pinned to the
-   centre of the single row; below the lg breakpoint it becomes a
-   second, full-width row with the slider stretched. */
-@media (min-width: 992px) {
-  .ii-toolbar-centre {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+/* App styles sit below utilities, as Bootstrap utilities used !important. */
+@layer components {
+  .icon {
+    max-width: 70%;
+    max-height: 70%;
+    margin: 4px;
   }
-  .ii-toolbar-slider {
-    width: 140px;
+
+  .transectWarning{
+      color: red;
   }
-}
-@media (max-width: 991.98px) {
-  .ii-toolbar-slider {
-    flex: 1 1 auto;
-    min-width: 0;
+
+  .transectSlider {
+    width: 100%;
   }
-}
 
-.marker[withnote] {animation-name: throb;
-           animation-duration: 1s;
-           animation-iteration-count: infinite;
-           animation-direction: alternate;} 
+  code {
+    font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+      monospace;
+  }
 
-.marker[obscured] {animation-name: dim;
-                   animation-duration: 1s;
-                   animation-iteration-count: infinite;
-                   animation-direction: alternate;}
+  .marker>div {
+    width: 1.5rem;
+    height: 1.5rem;
+    display: block;
+    left: -0.75rem;
+    top: -0.75rem;
+    opacity: 1;
+    position: relative;
+    border-radius: 0.75rem;
+    border: 2px solid;
+    transform-origin: center;
+    perspective: 1000px;
+    transform-style: preserve-3d;
+  }
 
-                   
-.marker[shadow] {transform: scale(0.7);}
- 
+  .marker[selected]>div,.marker[candidate]>div {
+        opacity: 1;
+  }
 
-.marker[selected]
-            {animation-name: spin;
-           animation-duration: 1.5s;
-           animation-timing-function: ease-in-out;
-           animation-iteration-count: infinite;
-           animation-direction: alternate;
-           transform-origin: 50% 50%;
-           transform-style: preserve-3d;}
+  .markerLabel { position: absolute;
+                  top: 0.2rem;
+                  left: -0rem;
+                  font-weight: bolder;
+                  font-size: 0.5rem;
+                  color: #FFFFFF;
+                  text-align: center;
+                  width: 3rem;} 
 
- .marker[shadow][selected] {
-          animation-name: spinSmall;
-          animation-duration: 1.5s;
-          animation-timing-function: ease-in-out;
-          animation-iteration-count: infinite;
-          animation-direction: alternate;
-          transform-origin: 50% 50%;
-          transform-style: preserve-3d;
-}
+  @keyframes spin {
+    from   {transform: translateX(-50%) rotateY(0deg) translateX(50%)}
+    to {transform: translateX(-50%) rotateY(180deg) translateX(50%)}
+  }
 
-.legend {
-    line-height: 18px;
-    color: #555;
-}
+  @keyframes spinSmall {
+    from   {transform: translateX(-50%) scale(0.7) rotateY(0deg) translateX(50%)}
+    to {transform: translateX(-50%) scale(0.7) rotateY(180deg) translateX(50%)}
+  }
 
-.legend i {
-    width: 15px;
-    height: 15px;
-    float: left;
-    margin-right: 8px;
-    opacity: 0.7;
-}
+  @keyframes throb {
+    from {transform: scale(1,1)}
+    to {transform: scale(1.1,1.1)}
+  }
 
-.info {
-    padding: 6px 8px;
-    font: 14px/16px Arial, Helvetica, sans-serif;
-    background: white;
-    background: rgba(255, 255, 255, 0.8);
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
-    border-radius: 5px;
-}
+  @keyframes dim {
+    from {opacity: 0.8}
+    to {opacity: 0.2}
+  }
 
-.info h4 {
-    margin: 0 0 5px;
-    color: #777;
+  @keyframes rotate {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  .spinning {
+    animation: rotate 1s linear infinite;
+  }
+
+  /* ChainLinker toolbar: on wide screens the pairing radius is pinned to the
+     centre of the single row; below the lg breakpoint it becomes a
+     second, full-width row with the slider stretched. */
+  @media (min-width: 992px) {
+    .ii-toolbar-centre {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
+    .ii-toolbar-slider {
+      width: 140px;
+    }
+  }
+  @media (max-width: 991.98px) {
+    .ii-toolbar-slider {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+  }
+
+  .marker[withnote] {animation-name: throb;
+             animation-duration: 1s;
+             animation-iteration-count: infinite;
+             animation-direction: alternate;} 
+
+  .marker[obscured] {animation-name: dim;
+                     animation-duration: 1s;
+                     animation-iteration-count: infinite;
+                     animation-direction: alternate;}
+
+
+  .marker[shadow] {transform: scale(0.7);}
+
+
+  .marker[selected]
+              {animation-name: spin;
+             animation-duration: 1.5s;
+             animation-timing-function: ease-in-out;
+             animation-iteration-count: infinite;
+             animation-direction: alternate;
+             transform-origin: 50% 50%;
+             transform-style: preserve-3d;}
+
+   .marker[shadow][selected] {
+            animation-name: spinSmall;
+            animation-duration: 1.5s;
+            animation-timing-function: ease-in-out;
+            animation-iteration-count: infinite;
+            animation-direction: alternate;
+            transform-origin: 50% 50%;
+            transform-style: preserve-3d;
+  }
+
+  .legend {
+      line-height: 18px;
+      color: #555;
+  }
+
+  .legend i {
+      width: 15px;
+      height: 15px;
+      float: left;
+      margin-right: 8px;
+      opacity: 0.7;
+  }
+
+  .info {
+      padding: 6px 8px;
+      font: 14px/16px Arial, Helvetica, sans-serif;
+      background: white;
+      background: rgba(255, 255, 255, 0.8);
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+      border-radius: 5px;
+  }
+
+  .info h4 {
+      margin: 0 0 5px;
+      color: #777;
+  }
 }
 
 @keyframes progress-stripes {

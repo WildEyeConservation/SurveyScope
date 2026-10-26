@@ -1,19 +1,21 @@
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 10px; /* Space between elements */
-  padding: 10px; /* Padding around the container */
-  background-color: #2c2c2c; /* Optional: background color */
-}
+@layer components {
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px; /* Space between elements */
+    padding: 10px; /* Padding around the container */
+    background-color: #2c2c2c; /* Optional: background color */
+  }
 
-.category-select {
-  flex: 1; /* Allow the dropdown to grow */
-  min-width: 400px; /* Minimum width */
-  max-width: 400px; /* Maximum width */
-}
+  .category-select {
+    flex: 1; /* Allow the dropdown to grow */
+    min-width: 400px; /* Minimum width */
+    max-width: 400px; /* Maximum width */
+  }
 
-.annotation-set-dropdown {
-  flex: 1; /* Allow the dropdown to grow */
-  min-width: 400px; /* Minimum width */
-  max-width: 100%; /* Maximum width */
+  .annotation-set-dropdown {
+    flex: 1; /* Allow the dropdown to grow */
+    min-width: 400px; /* Minimum width */
+    max-width: 100%; /* Maximum width */
+  }
 }

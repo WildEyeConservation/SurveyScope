@@ -143,7 +143,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
     >
       <nav className='sticky top-0 z-[1020] flex flex-wrap items-center justify-between bg-secondary px-4 py-2 text-white lg:flex-nowrap lg:justify-start'>
         <div
-          className='me-4 flex flex-row flex-nowrap items-center py-[0.3125rem] text-xl whitespace-nowrap'
+          className='me-2 flex flex-row flex-nowrap items-center py-[0.3125rem] text-xl whitespace-nowrap'
           onClick={() => {
             if (!isAnnotatePath) {
               navigate(

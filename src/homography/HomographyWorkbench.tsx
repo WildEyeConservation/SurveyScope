@@ -259,7 +259,7 @@ export function HomographyWorkbench({
                 </Label>
               </div>
             )}
-            <div className='flex items-center gap-1 border-l ps-6 border-secondary'>
+            <div className='flex items-center gap-1 border-l ps-4 border-secondary'>
               <Button
                 size='sm'
                 variant='outline-secondary'

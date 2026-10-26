@@ -97,7 +97,8 @@ function CustomModal({
   });
 
   const header = modalHeader as ReactElement<any> | null;
-  const isStatic = strict || backdrop === 'static' || keyboard === false;
+  const blockOutside = strict || backdrop === 'static';
+  const blockEscape = strict || keyboard === false;
 
   return (
     <Dialog
@@ -110,7 +111,8 @@ function CustomModal({
         size={size}
         centered={centered}
         fullscreen={fullscreen}
-        static={isStatic}
+        onPointerDownOutside={(e) => blockOutside && e.preventDefault()}
+        onEscapeKeyDown={(e) => blockEscape && e.preventDefault()}
         className={cn(className, dialogClassName, contentClassName)}
         style={style}
       >

@@ -66,6 +66,8 @@ const DialogContent = React.forwardRef(function DialogContent({
   fullscreen = false,
   scrollable = false,
   static: isStatic = false,
+  staticBackdrop = false,
+  keyboard = true,
   showCloseButton = false,
   onPointerDownOutside,
   onEscapeKeyDown,
@@ -78,6 +80,8 @@ const DialogContent = React.forwardRef(function DialogContent({
   fullscreen?: boolean
   scrollable?: boolean
   static?: boolean
+  staticBackdrop?: boolean
+  keyboard?: boolean
   showCloseButton?: boolean
 }, ref: React.ForwardedRef<any>) {
   return (
@@ -97,7 +101,11 @@ const DialogContent = React.forwardRef(function DialogContent({
             aria-describedby={undefined}
             onPointerDownOutside={(e) => {
               const target = e.target as Element | null
-              if (isStatic || !target?.closest?.("[data-slot=dialog-overlay]"))
+              if (
+                isStatic ||
+                staticBackdrop ||
+                !target?.closest?.("[data-slot=dialog-overlay]")
+              )
                 e.preventDefault()
               onPointerDownOutside?.(e)
             }}
@@ -114,7 +122,7 @@ const DialogContent = React.forwardRef(function DialogContent({
               onInteractOutside?.(e)
             }}
             onEscapeKeyDown={(e) => {
-              if (isStatic) e.preventDefault()
+              if (isStatic || !keyboard) e.preventDefault()
               onEscapeKeyDown?.(e)
             }}
             className={cn(
@@ -204,7 +212,7 @@ const DialogTitle = React.forwardRef(function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("mb-0 text-xl leading-normal font-medium", className)}
+      className={cn("mb-0 text-[calc(1.275rem+0.3vw)] leading-normal font-medium xl:text-2xl", className)}
       ref={ref}
       {...props}
     />

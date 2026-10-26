@@ -154,14 +154,14 @@ export const Tabs: React.FC<TabsProps> = ({
                 ref={(el) => {
                   tabRefs.current[i] = el;
                 }}
-                className='tab-label py-2 px-4'
+                className='tab-label py-2! px-4!'
               >
                 {child.props.label}
               </div>
             ))}
             <div
               ref={moreRef}
-              className='tab-label py-2 px-4'
+              className='tab-label py-2! px-4!'
             >
               More <ChevronDown size={14} />
             </div>
@@ -172,8 +172,8 @@ export const Tabs: React.FC<TabsProps> = ({
         {visibleIndices.map((index) => (
           <div
             key={index}
-            className={`tab-label py-2 px-4 ${
-              activeTab === index ? 'bg-primary' : ''
+            className={`tab-label py-2! px-4! ${
+              activeTab === index ? 'bg-primary!' : ''
             }`}
             onClick={() => handleTabClick(index)}
           >
@@ -187,8 +187,8 @@ export const Tabs: React.FC<TabsProps> = ({
             <DropdownMenuTrigger asChild>
               <div
                 className={cn(
-                  'tab-label tab-more-toggle py-2 px-4',
-                  overflowIndices.includes(activeTab) && 'bg-primary'
+                  'tab-label tab-more-toggle py-2! px-4!',
+                  overflowIndices.includes(activeTab) && 'bg-primary!'
                 )}
               >
                 More <ChevronDown size={14} style={{ verticalAlign: 'middle' }} />
@@ -198,7 +198,7 @@ export const Tabs: React.FC<TabsProps> = ({
               {overflowIndices.map((index) => (
                 <DropdownMenuItem
                   key={index}
-                  className={cn(activeTab === index && 'bg-primary text-white')}
+                  className={cn(activeTab === index && 'bg-primary! text-white!')}
                   onSelect={() => handleTabClick(index)}
                 >
                   {childrenArray[index].props.label}

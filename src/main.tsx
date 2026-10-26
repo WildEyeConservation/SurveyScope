@@ -1,6 +1,6 @@
+import './index.css';
 import ReactDOM from 'react-dom/client';
 import AppWithAuthenticator from './App.tsx';
-import './index.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { Progress } from './UserContext';
