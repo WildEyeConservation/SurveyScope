@@ -321,6 +321,17 @@ userPoolClient.tokenValidityUnits = {
   refreshToken: 'days',
 };
 
+// Amplify points SES at the from address; send under the verified domain
+// identity from infra/email instead.
+backend.auth.resources.cfnResources.cfnUserPool.addPropertyOverride(
+  'EmailConfiguration.SourceArn',
+  Stack.of(backend.auth.resources.userPool).formatArn({
+    service: 'ses',
+    resource: 'identity',
+    resourceName: 'surveyscope.org',
+  })
+);
+
 const observationTable = backend.data.resources.tables['Observation'];
 const statsDataStack = Stack.of(observationTable);
 const statsFunction = backend.updateUserStats.resources.lambda;

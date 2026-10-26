@@ -1,5 +1,6 @@
 import { defineAuth } from "@aws-amplify/backend";
 import { handleNewUser } from "../functions/handleNewUser/resource";
+import { customMessage } from "../functions/customMessage/resource";
 import { addUserToGroup } from "../functions/add-user-to-group/resource";
 import { createGroup } from "../data/create-group/resource";
 import { listUsers } from "../data/list-users/resource";
@@ -36,8 +37,16 @@ export const auth = defineAuth({
       required: true,
     },
   },
+  senders: {
+    email: {
+      fromEmail: "no-reply@surveyscope.org",
+      fromName: "SurveyScope",
+      // Set AUTH_REPLY_TO_EMAIL in the Amplify branch environment.
+      replyTo: process.env.AUTH_REPLY_TO_EMAIL || undefined,
+    },
+  },
   groups: ["sysadmin", "orgadmin"],
-  triggers: { postConfirmation: handleNewUser },
+  triggers: { postConfirmation: handleNewUser, customMessage },
   access: (allow) => [
     allow.resource(handleNewUser).to(["addUserToGroup", "listUsers"]),
     allow.resource(createGroup).to(["createGroup"]),
