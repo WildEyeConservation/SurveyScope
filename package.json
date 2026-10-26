@@ -86,7 +86,7 @@
     "react-organizational-chart": "^2.2.1",
     "react-router-dom": "^6.30.6",
     "react-select": "^5.8.0",
-    "sharp": "^0.35.5",
+    "sharp": "0.35.5",
     "shpjs": "^6.1.0",
     "terra-draw": "^1.31.2",
     "terra-draw-maplibre-gl-adapter": "^1.5.0",
