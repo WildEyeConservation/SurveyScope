@@ -1769,6 +1769,20 @@ if (enableEcs) {
   }
 
   if (enableElephantDetector) {
+    const elephantPipeline = {
+      downloadThreads: 2,
+      prefetch: 2,
+      postQueue: 16,
+      postThreads: 3,
+    };
+    // Every pipeline slot plus the GPU thread can hold a message at once.
+    const elephantMaxInFlight =
+      elephantPipeline.downloadThreads +
+      elephantPipeline.prefetch +
+      1 +
+      elephantPipeline.postQueue +
+      elephantPipeline.postThreads;
+
     const elephantDetectorAutoProcessor = new AutoProcessor(
       ecsStack,
       'ElephantDetectorAutoProcessor',
@@ -1785,11 +1799,16 @@ if (enableEcs) {
         environment: {
           API_ENDPOINT: backend.data.graphqlUrl,
           BUCKET: backend.inputBucket.resources.bucket.bucketName,
+          ELEPHANT_DOWNLOAD_THREADS: String(elephantPipeline.downloadThreads),
+          ELEPHANT_PREFETCH: String(elephantPipeline.prefetch),
+          ELEPHANT_POST_QUEUE: String(elephantPipeline.postQueue),
+          ELEPHANT_POST_THREADS: String(elephantPipeline.postThreads),
         },
         machineImage: ecs.EcsOptimizedImage.amazonLinux2(
           ecs.AmiHardwareType.GPU
         ),
         rootVolumeSize: 100,
+        inFlightPerTask: elephantMaxInFlight,
       }
     );
 
