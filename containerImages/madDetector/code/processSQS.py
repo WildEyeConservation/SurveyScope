@@ -153,6 +153,7 @@ def _load_model():
     model.to(_device)
     return model
 
+@torch.no_grad()
 def _run_mad_on_image(pil_image: Image.Image, min_score_thresh: float = 0.7, iou_threshold: float = 0.5, overlap: float = 0.33, window_batch_size: int = 16):
     model = _load_model()
     device = _device
