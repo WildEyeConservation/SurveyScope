@@ -6,15 +6,18 @@ import {
   useMemo,
   useRef,
   useCallback,
+  useId,
 } from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { AnnotationSetDropdown } from './AnnotationSetDropDown';
 import Select, { MultiValue, type CSSObjectWithLabel } from 'react-select';
 import { ProjectContext, ManagementContext, GlobalContext } from './Context';
-import { Form } from 'react-bootstrap';
 import './Review.css';
-import { Card } from 'react-bootstrap';
-import Button from 'react-bootstrap/Button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormText, Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { PanelBottom, ChevronRight } from 'lucide-react';
 import { Tab, Tabs } from './Tabs';
 import ReviewCarousel from './ReviewCarousel';
@@ -57,6 +60,8 @@ export function Review({ showAnnotationSetDropdown = true }) {
   const [imageBased] = useState(true);
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
+  const primaryOnlyId = useId();
+  const transectModeId = useId();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { client } = useContext(GlobalContext)!;
   const {
@@ -371,20 +376,20 @@ export function Review({ showAnnotationSetDropdown = true }) {
         marginBottom: '16px',
       }}
     >
-      <div className='w-100 h-100 d-flex flex-column flex-sm-row gap-2'>
+      <div className='w-full h-full flex flex-col sm:flex-row gap-2'>
         <div
-          className='d-flex flex-column gap-2 w-100'
+          className='flex flex-col gap-2 w-full'
           style={{
             maxWidth: '300px',
             maxHeight: 'calc(100vh - 32px)',
             overflow: 'hidden',
           }}
         >
-          <Card className='d-sm-block d-none w-100'>
-            <Card.Header>
-              <Card.Title className='mb-0'>Information</Card.Title>
-            </Card.Header>
-            <Card.Body className='d-flex flex-column gap-2'>
+          <Card className='sm:block hidden w-full'>
+            <CardHeader>
+              <CardTitle className='mb-0'>Information</CardTitle>
+            </CardHeader>
+            <CardContent className='flex flex-col gap-2'>
               <p className='mb-0'>
                 <strong>Survey:</strong> {project.name}
               </p>
@@ -393,21 +398,21 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 {annotationSets?.find((set) => set.id === selectedAnnotationSet)
                   ?.name ?? 'Unknown'}
               </p>
-            </Card.Body>
+            </CardContent>
           </Card>
           <Card
-            className='w-100 flex-grow-1 d-flex flex-column'
+            className='w-full grow flex flex-col'
             style={{ minHeight: 0 }}
           >
-            <Card.Header>
-              <Card.Title className='mb-0 d-flex align-items-center'>
+            <CardHeader>
+              <CardTitle className='mb-0 flex items-center'>
                 <Button
                   className='p-0 mb-0'
-                  variant='outline'
+                  variant='ghost'
                   onClick={() => setShowFilters(!showFilters)}
                 >
                   <PanelBottom
-                    className='d-sm-none'
+                    className='sm:hidden size-6'
                     style={{
                       transform: showFilters
                         ? 'rotate(180deg)'
@@ -416,15 +421,15 @@ export function Review({ showAnnotationSetDropdown = true }) {
                   />
                 </Button>
                 Filters
-              </Card.Title>
-            </Card.Header>
+              </CardTitle>
+            </CardHeader>
             {showFilters && (
-              <Card.Body
-                className='d-flex flex-column gap-2'
+              <CardContent
+                className='flex flex-col gap-2'
                 style={{ overflowY: 'auto', minHeight: 0 }}
               >
-                <div className='w-100'>
-                  <Form.Label>Labels</Form.Label>
+                <div className='w-full'>
+                  <Label>Labels</Label>
                   <Select
                     value={selectedCategories}
                     onChange={(newValue: MultiValue<Option>) =>
@@ -440,26 +445,30 @@ export function Review({ showAnnotationSetDropdown = true }) {
                         label: q.name,
                         value: q.id,
                       }))}
-                    className='text-black w-100'
+                    className='text-black w-full'
                     closeMenuOnSelect={false}
                     menuPortalTarget={document.body}
                     styles={menuPortalStyles}
                   />
                   {tab === 'map' && (
-                    <Form.Switch
-                      label='Primary sightings only'
-                      className='mt-3'
-                      checked={primaryOnly}
-                      onChange={(e) => setPrimaryOnly(e.target.checked)}
-                    />
+                    <div className='mt-4 flex items-center gap-2'>
+                      <Switch
+                        id={primaryOnlyId}
+                        checked={primaryOnly}
+                        onCheckedChange={(c) => setPrimaryOnly(c)}
+                      />
+                      <Label htmlFor={primaryOnlyId} className='mb-0'>
+                        Primary sightings only
+                      </Label>
+                    </div>
                   )}
                 </div>
 
                 {/* Only surveys that have been informationally tagged get the
                     filter - everyone else would see an empty control. */}
                 {infoTagOptions.length > 0 && (
-                  <div className='w-100'>
-                    <Form.Label>Info Tags</Form.Label>
+                  <div className='w-full'>
+                    <Label>Info Tags</Label>
                     <Select
                       value={selectedInfoTags}
                       onChange={(newValue: MultiValue<Option>) =>
@@ -468,20 +477,20 @@ export function Review({ showAnnotationSetDropdown = true }) {
                       isMulti
                       name='Info tags to review'
                       options={infoTagOptions}
-                      className='text-black w-100'
+                      className='text-black w-full'
                       closeMenuOnSelect={false}
                       placeholder='Any tags'
                       menuPortalTarget={document.body}
                       styles={menuPortalStyles}
                     />
-                    <Form.Text muted>
+                    <FormText>
                       Keeps sightings carrying any of the selected tags.
-                    </Form.Text>
+                    </FormText>
                   </div>
                 )}
 
-                <div className='w-100'>
-                  <Form.Label>Users</Form.Label>
+                <div className='w-full'>
+                  <Label>Users</Label>
                   <Select
                     value={selectedUsers}
                     onChange={(newValue: MultiValue<Option>) =>
@@ -490,7 +499,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     isMulti
                     name='Users to filter'
                     options={userOptions}
-                    className='text-black w-100'
+                    className='text-black w-full'
                     closeMenuOnSelect={false}
                     placeholder='All users'
                     menuPortalTarget={document.body}
@@ -507,10 +516,10 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 )}
 
                 {/* Advanced: overlay data from other surveys on the map. */}
-                <div className='w-100 border-top pt-2 mt-1'>
+                <div className='w-full border-t pt-2 mt-1'>
                   <Button
-                    variant='outline'
-                    className='p-0 d-flex align-items-center gap-1 w-100 text-start'
+                    variant='ghost'
+                    className='p-0 flex items-center gap-1 w-full text-left'
                     onClick={() => setShowAdvanced(!showAdvanced)}
                     style={{ boxShadow: 'none' }}
                   >
@@ -523,13 +532,13 @@ export function Review({ showAnnotationSetDropdown = true }) {
                           : 'rotate(0deg)',
                       }}
                     />
-                    <span className='fw-semibold'>Advanced</span>
+                    <span className='font-semibold'>Advanced</span>
                   </Button>
 
                   {showAdvanced && (
-                    <div className='d-flex flex-column gap-2 mt-2'>
-                      <div className='w-100'>
-                        <Form.Label className='mb-1'>Surveys</Form.Label>
+                    <div className='flex flex-col gap-2 mt-2'>
+                      <div className='w-full'>
+                        <Label className='mb-1'>Surveys</Label>
                         <Select
                           value={selectedSurveyIds.map((id) => ({
                             label: surveyLabel(id),
@@ -540,23 +549,23 @@ export function Review({ showAnnotationSetDropdown = true }) {
                           name='Surveys to overlay'
                           options={surveyOptions}
                           isLoading={orgSurveysQuery.isLoading}
-                          className='text-black w-100'
+                          className='text-black w-full'
                           closeMenuOnSelect={false}
                           placeholder='Add surveys…'
                           menuPortalTarget={document.body}
                           styles={menuPortalStyles}
                         />
-                        <Form.Text muted>
+                        <FormText>
                           Overlay sightings from other surveys in this
                           organization.
-                        </Form.Text>
+                        </FormText>
                       </div>
 
                       {selectedSurveyIds.map((sid, i) => (
-                        <div className='w-100' key={sid}>
-                          <Form.Label className='mb-1'>
+                        <div className='w-full' key={sid}>
+                          <Label className='mb-1'>
                             {surveyLabel(sid)}
-                          </Form.Label>
+                          </Label>
                           <Select
                             value={(setsBySurvey[sid] ?? []).map((aid) => ({
                               label:
@@ -572,7 +581,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                             name={`Annotation sets for ${surveyLabel(sid)}`}
                             options={setOptionsBySurvey[sid] ?? []}
                             isLoading={setQueries[i]?.isLoading}
-                            className='text-black w-100'
+                            className='text-black w-full'
                             closeMenuOnSelect={false}
                             placeholder='Select annotation sets…'
                             menuPortalTarget={document.body}
@@ -581,19 +590,24 @@ export function Review({ showAnnotationSetDropdown = true }) {
                         </div>
                       ))}
 
-                      <div className='w-100'>
-                        <div className='d-flex align-items-center justify-content-between mb-1'>
-                          <Form.Label className='mb-0'>Transects</Form.Label>
-                          <Form.Switch
-                            label='Enter id'
-                            checked={transectInputMode === 'input'}
-                            onChange={(e) =>
-                              handleTransectModeToggle(e.target.checked)
-                            }
-                          />
+                      <div className='w-full'>
+                        <div className='flex items-center justify-between mb-1'>
+                          <Label className='mb-0'>Transects</Label>
+                          <div className='flex items-center gap-2'>
+                            <Switch
+                              id={transectModeId}
+                              checked={transectInputMode === 'input'}
+                              onCheckedChange={(c) =>
+                                handleTransectModeToggle(c)
+                              }
+                            />
+                            <Label htmlFor={transectModeId} className='mb-0'>
+                              Enter id
+                            </Label>
+                          </div>
                         </div>
                         {transectInputMode === 'input' ? (
-                          <Form.Control
+                          <Input
                             type='text'
                             value={transectInputText}
                             onChange={(e) =>
@@ -618,7 +632,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                             name='Transects to filter'
                             options={transectOptions}
                             isDisabled={transectOptions.length === 0}
-                            className='text-black w-100'
+                            className='text-black w-full'
                             closeMenuOnSelect={false}
                             placeholder={
                               transectOptions.length === 0
@@ -633,12 +647,12 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     </div>
                   )}
                 </div>
-              </Card.Body>
+              </CardContent>
             )}
           </Card>
         </div>
-        <Card className='h-100 w-100'>
-          <Card.Body>
+        <Card className='h-full w-full'>
+          <CardContent>
             <Tabs
               onTabChange={(tab) => {
                 switch (tab) {
@@ -652,7 +666,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
               }}
             >
               <Tab label='Map'>
-                <div className='h-100 w-100 pt-3'>
+                <div className='h-full w-full pt-4'>
                   <DensityMap
                     sources={mapSources}
                     primaryAnnotationSetId={selectedAnnotationSet}
@@ -676,7 +690,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 />
               </Tab>
             </Tabs>
-          </Card.Body>
+          </CardContent>
         </Card>
       </div>
     </div>

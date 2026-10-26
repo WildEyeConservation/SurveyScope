@@ -1,4 +1,4 @@
-import { Form } from 'react-bootstrap';
+import { Label } from '@/components/ui/label';
 import Select from 'react-select';
 import { useEffect } from 'react';
 
@@ -27,9 +27,9 @@ export default function ImageSetDropdown({
   }
 
   return (
-    <Form.Group>
-      <Form.Label className='mb-0'>Image Sets</Form.Label>
-      <span className='text-muted d-block mb-1' style={{ fontSize: '12px' }}>
+    <div>
+      <Label className='mb-0'>Image Sets</Label>
+      <span className='text-muted-foreground block mb-1' style={{ fontSize: '12px' }}>
         Select the image sets you want to use.
       </span>
       <Select
@@ -55,6 +55,6 @@ export default function ImageSetDropdown({
         }
         isMulti
       />
-    </Form.Group>
+    </div>
   );
 }

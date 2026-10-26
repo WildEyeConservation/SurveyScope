@@ -3,7 +3,9 @@ import { inv } from 'mathjs';
 import type { Matrix } from 'mathjs';
 import { makeTransform } from '../utils';
 import type { ImageType } from '../schemaTypes';
-import { Form, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Undo2, Redo2 } from 'lucide-react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import {
@@ -204,10 +206,10 @@ export function HomographyWorkbench({
     points2.length >= MIN_HOMOGRAPHY_POINTS;
 
   return (
-    <div className='w-100 h-100 d-flex flex-column flex-md-row gap-3'>
+    <div className='w-full h-full flex flex-col md:flex-row gap-4'>
       {/* Sidebar */}
       <div
-        className='d-flex flex-column gap-3 w-100'
+        className='flex flex-col gap-4 w-full'
         style={{ maxWidth: '360px' }}
       >
         <ManualHomographyEditor
@@ -225,40 +227,46 @@ export function HomographyWorkbench({
       </div>
 
       {/* Main content */}
-      <div className='d-flex flex-column align-items-center h-100 w-100'>
-        <div className='mb-2 d-flex align-items-center w-100'>
+      <div className='flex flex-col items-center h-full w-full'>
+        <div className='mb-2 flex items-center w-full'>
           {/* Left: navigation */}
-          <div className='d-flex align-items-center gap-2'>
+          <div className='flex items-center gap-2'>
             {headerLeft}
           </div>
 
           {/* Center: preview toggle + undo/redo */}
-          <div className='d-flex align-items-center gap-3 mx-auto'>
-            <Form.Check
-              type='switch'
-              id='preview-homography'
-              label='Preview'
-              checked={previewHomography}
-              onChange={(e) => setPreviewHomography(e.target.checked)}
-              disabled={!canPreview}
-            />
-            {savedTransforms && (
-              <Form.Check
-                type='switch'
-                id='view-saved-homography'
-                label='View saved homography (red)'
-                checked={showSavedHomography}
-                onChange={(e) => setShowSavedHomography(e.target.checked)}
+          <div className='flex items-center gap-4 mx-auto'>
+            <div className='flex items-center gap-2'>
+              <Switch
+                id='preview-homography'
+                checked={previewHomography}
+                onCheckedChange={setPreviewHomography}
+                disabled={!canPreview}
               />
+              <Label htmlFor='preview-homography' className='mb-0'>
+                Preview
+              </Label>
+            </div>
+            {savedTransforms && (
+              <div className='flex items-center gap-2'>
+                <Switch
+                  id='view-saved-homography'
+                  checked={showSavedHomography}
+                  onCheckedChange={setShowSavedHomography}
+                />
+                <Label htmlFor='view-saved-homography' className='mb-0'>
+                  View saved homography (red)
+                </Label>
+              </div>
             )}
-            <div className='d-flex align-items-center gap-1 border-start ps-3 border-secondary'>
+            <div className='flex items-center gap-1 border-l ps-6 border-secondary'>
               <Button
                 size='sm'
                 variant='outline-secondary'
                 onClick={undo}
                 disabled={history.length === 0}
                 title='Undo (Ctrl+Z)'
-                className='p-1 d-flex align-items-center'
+                className='p-1 flex items-center'
               >
                 <Undo2 size={16} />
               </Button>
@@ -268,7 +276,7 @@ export function HomographyWorkbench({
                 onClick={redo}
                 disabled={redoStack.length === 0}
                 title='Redo (Ctrl+Y / Ctrl+Shift+Z)'
-                className='p-1 d-flex align-items-center'
+                className='p-1 flex items-center'
               >
                 <Redo2 size={16} />
               </Button>
@@ -276,7 +284,7 @@ export function HomographyWorkbench({
           </div>
 
           {/* Right: save & exit */}
-          <div className='d-flex align-items-center gap-2'>
+          <div className='flex items-center gap-2'>
             {headerRight}
           </div>
         </div>

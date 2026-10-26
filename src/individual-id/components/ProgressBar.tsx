@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Form } from 'react-bootstrap';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import type { PairCompletionState } from '../types';
 import type { Lane } from '../utils/lanes';
 import { completionColor } from '../utils/completion';
@@ -158,7 +159,7 @@ function LaneBar({
   };
 
   return (
-    <div ref={wrapperRef} className='w-100'>
+    <div ref={wrapperRef} className='w-full'>
       <canvas
         ref={canvasRef}
         onMouseMove={(e) => onHover(xToIndex(e.clientX))}
@@ -224,10 +225,10 @@ export function ProgressBar({
         color: '#f8f9fa',
         userSelect: 'none',
       }}
-      className='w-100 d-flex flex-column pt-2 pb-3'
+      className='w-full flex flex-col pt-2 pb-4'
     >
       <div
-        className='d-flex flex-row align-items-center px-3 pb-1'
+        className='flex flex-row items-center px-4 pb-1'
         style={{ fontSize: 11 }}
       >
         <span style={{ flex: 1, opacity: 0.85 }}>{headerLeft}</span>
@@ -237,19 +238,24 @@ export function ProgressBar({
         <div
           style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}
         >
-          <Form.Check
-            type='switch'
-            id='ii-simple-view'
-            label='Simple view'
-            checked={simpleView}
-            onChange={(e) => onSimpleViewChange(e.target.checked)}
+          <div
+            className='flex items-center gap-2'
             title='Simple view: show only pairs that still need attention plus their 3 nearest neighbours on each side. Turn off to see every pair.'
             style={{ fontSize: 11 }}
-          />
+          >
+            <Switch
+              id='ii-simple-view'
+              checked={simpleView}
+              onCheckedChange={(c) => onSimpleViewChange(c === true)}
+            />
+            <Label htmlFor='ii-simple-view' className='mb-0'>
+              Simple view
+            </Label>
+          </div>
         </div>
       </div>
 
-      <div className='d-flex flex-column' style={{ gap: multi ? 6 : 0 }}>
+      <div className='flex flex-col' style={{ gap: multi ? 6 : 0 }}>
         {lanes.map((lane, laneIdx) => {
           const laneStates = lane.entries.map((i) => states[i]);
           // Simple view can filter a lane down to nothing — don't render an
@@ -275,7 +281,7 @@ export function ProgressBar({
             >
               {multi && (
                 <div
-                  className='d-flex flex-row align-items-center px-3'
+                  className='flex flex-row items-center px-4'
                   style={{ fontSize: 11, opacity: 0.85, gap: 6 }}
                 >
                   <span

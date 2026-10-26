@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Alert } from 'react-bootstrap';
+import { Alert, type AlertVariant } from '@/components/ui/alert';
 import {
   HOMOGRAPHY_BUCKETS,
   type ChainLinkSummary,
@@ -549,7 +549,7 @@ function SetHomographies({ data }: { data: SetHomographySummary }) {
 
 const RECOMMENDATIONS: Record<
   ChainLinkSummary['verdict']['recommendation'],
-  { label: string; variant: string }
+  { label: string; variant: AlertVariant }
 > = {
   'run-chain-linker': { label: 'Run Chain Linker', variant: 'warning' },
   skip: { label: 'No chain linking needed', variant: 'success' },
@@ -561,7 +561,7 @@ function ChainLinking({ data }: { data: ChainLinkSummary }) {
   const recommendation = RECOMMENDATIONS[data.verdict.recommendation];
   return (
     <>
-      <Alert variant={recommendation.variant} className='mb-3'>
+      <Alert variant={recommendation.variant} className='mb-4'>
         <strong>{recommendation.label}.</strong> {data.verdict.reason}
       </Alert>
       <Facts

@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   show: boolean;
@@ -17,24 +25,26 @@ interface Props {
  */
 export function LinkAnnotationDialog({ show, onConfirm, onCancel }: Props) {
   return (
-    <Modal show={show} onHide={onCancel} centered>
-      <Modal.Header closeButton>
-        <Modal.Title>Link these annotations?</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        This will mark the clicked annotation and the currently active one as
-        the same individual, sharing a single identity across both images. The
-        proposed shadow markers for this animal will disappear. This is saved
-        immediately.
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant='secondary' onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button variant='primary' onClick={onConfirm}>
-          Link
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent centered>
+        <DialogHeader closeButton>
+          <DialogTitle>Link these annotations?</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          This will mark the clicked annotation and the currently active one as
+          the same individual, sharing a single identity across both images. The
+          proposed shadow markers for this animal will disappear. This is saved
+          immediately.
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='secondary' onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant='primary' onClick={onConfirm}>
+            Link
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

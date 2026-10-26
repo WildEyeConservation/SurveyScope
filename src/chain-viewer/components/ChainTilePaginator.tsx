@@ -63,7 +63,7 @@ export function ChainTilePaginator({
 
   const annotation = chain.annotations[safeIndex];
   if (!annotation) {
-    return <div className='text-muted text-center p-4'>No tiles in chain.</div>;
+    return <div className='text-muted-foreground text-center p-6'>No tiles in chain.</div>;
   }
 
   const rotKey = rotationKeyFor(
@@ -72,9 +72,9 @@ export function ChainTilePaginator({
   );
 
   return (
-    <div className='d-flex flex-column align-items-center' style={{ gap: 12 }}>
+    <div className='flex flex-col items-center' style={{ gap: 12 }}>
       <div
-        className='d-flex align-items-center justify-content-center'
+        className='flex items-center justify-center'
         style={{ gap: 12, width: '100%' }}
       >
         <button
@@ -119,7 +119,7 @@ export function ChainTilePaginator({
           <ChevronRight size={28} strokeWidth={2.5} />
         </button>
       </div>
-      <div className='text-muted' style={{ fontSize: 13 }}>
+      <div className='text-muted-foreground' style={{ fontSize: 13 }}>
         {safeIndex + 1} of {total}
       </div>
     </div>

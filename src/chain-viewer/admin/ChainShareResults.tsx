@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Spinner, Table } from 'react-bootstrap';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Table } from '@/components/ui/table';
 import Select, { type MultiValue, type SingleValue } from 'react-select';
 import './admin.css';
 import { useUsers } from '../../apiInterface';
@@ -143,14 +146,14 @@ export default function ChainShareResults() {
 
   return (
     <div style={{ width: '100%' }}>
-      <Card className='mb-3'>
-        <Card.Header>
+      <Card className='mb-4'>
+        <CardHeader>
           <h4 className='mb-0'>Results</h4>
-        </Card.Header>
-        <Card.Body>
-          <div className='d-flex flex-row flex-wrap gap-3 align-items-end'>
-            <Form.Group style={{ minWidth: 320, flex: 1 }}>
-              <Form.Label>Share</Form.Label>
+        </CardHeader>
+        <CardContent>
+          <div className='flex flex-row flex-wrap gap-4 items-end'>
+            <div style={{ minWidth: 320, flex: 1 }}>
+              <Label>Share</Label>
               <Select
                 value={shareOptions.find((o) => o.value === shareId) ?? null}
                 onChange={(v: SingleValue<Option>) => setShareId(v?.value)}
@@ -160,9 +163,9 @@ export default function ChainShareResults() {
                 isLoading={sharesLoading}
                 isClearable
               />
-            </Form.Group>
-            <Form.Group style={{ minWidth: 320, flex: 2 }}>
-              <Form.Label>Reviewers</Form.Label>
+            </div>
+            <div style={{ minWidth: 320, flex: 2 }}>
+              <Label>Reviewers</Label>
               <Select
                 isMulti
                 value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
@@ -174,31 +177,31 @@ export default function ChainShareResults() {
                 placeholder='All reviewers'
                 isDisabled={!shareId || ownerOptions.length === 0}
               />
-            </Form.Group>
+            </div>
           </div>
           {shareId && !busy && (feedback?.owners.length ?? 0) === 0 && (
-            <p className='mt-3 mb-0 text-warning'>
+            <p className='mt-4 mb-0 text-warning'>
               No reviewer feedback recorded for this share yet — showing baseline only.
             </p>
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
 
       {!shareId ? (
-        <p className='text-muted'>Select a share to see results.</p>
+        <p className='text-muted-foreground'>Select a share to see results.</p>
       ) : busy ? (
         <Spinner animation='border' />
       ) : (
         <>
-          <Card className='mb-3'>
-            <Card.Header>
+          <Card className='mb-4'>
+            <CardHeader>
               <h5 className='mb-0'>Label distribution</h5>
-              <small className='text-muted'>
+              <small className='text-muted-foreground'>
                 Effective count per reviewer with delta vs baseline. Combined =
                 plurality consensus (ties fall back to baseline).
               </small>
-            </Card.Header>
-            <Card.Body className='p-0'>
+            </CardHeader>
+            <CardContent className='p-0'>
               <Table
                 responsive
                 hover
@@ -260,17 +263,17 @@ export default function ChainShareResults() {
                   </tr>
                 </tbody>
               </Table>
-            </Card.Body>
+            </CardContent>
           </Card>
 
           <Card>
-            <Card.Header>
+            <CardHeader>
               <h5 className='mb-0'>Obscured status</h5>
-              <small className='text-muted'>
+              <small className='text-muted-foreground'>
                 Out-of-view rows excluded (their obscured flag is not editable).
               </small>
-            </Card.Header>
-            <Card.Body className='p-0'>
+            </CardHeader>
+            <CardContent className='p-0'>
               <Table
                 responsive
                 hover
@@ -316,7 +319,7 @@ export default function ChainShareResults() {
                   </tr>
                 </tbody>
               </Table>
-            </Card.Body>
+            </CardContent>
           </Card>
         </>
       )}

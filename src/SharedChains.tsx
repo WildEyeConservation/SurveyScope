@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
-import { Card, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { GlobalContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
@@ -46,17 +47,17 @@ export default function SharedChains() {
       }}
     >
       <Card>
-        <Card.Header className='d-flex justify-content-between align-items-center gap-2'>
-          <Card.Title className='mb-0'>
+        <CardHeader className='flex justify-between items-center gap-2'>
+          <CardTitle className='mb-0'>
             <h4 className='mb-0'>Shared Chain Reviews</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body className='d-flex flex-column gap-2'>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className='flex flex-col gap-2'>
           {shares.length > 0 ? (
             shares.map((share) => (
               <div
                 key={share.shareId}
-                className='d-flex flex-row justify-content-between align-items-center gap-2 border border-dark p-3'
+                className='flex flex-row justify-between items-center gap-2 border border-dark p-4'
               >
                 <div>
                   <p className='mb-0'>Survey: {share.surveyName ?? '—'}</p>
@@ -75,7 +76,7 @@ export default function SharedChains() {
           ) : (
             <p>No chain reviews have been shared with you.</p>
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
     </div>
   );

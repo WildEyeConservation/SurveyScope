@@ -1,4 +1,4 @@
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext, UserContext } from '../../Context';
 import { fetchAllPaginatedResults } from '../../utils';

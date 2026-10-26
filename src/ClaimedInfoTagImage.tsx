@@ -5,7 +5,8 @@ import {
   useState,
   type ComponentProps,
 } from 'react';
-import { Alert, Button } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { GlobalContext } from './Context';
 import { useNavigate } from 'react-router-dom';
 import InfoTagAnnotation from './InfoTagAnnotation';
@@ -116,7 +117,7 @@ export default function ClaimedInfoTagImage(props: Props) {
   }, [advance, navigate, visible, next]);
 
   return (
-    <div className='d-flex flex-column w-100 h-100'>
+    <div className='flex flex-col w-full h-full'>
       {error && (
         <Alert variant='warning'>
           {error}
@@ -136,7 +137,7 @@ export default function ClaimedInfoTagImage(props: Props) {
         </Alert>
       )}
       {!ready && !error && props.visible && (
-        <div className='text-muted p-2'>
+        <div className='text-muted-foreground p-2'>
           {advance ? 'Fetching another image…' : 'Reserving image…'}
         </div>
       )}

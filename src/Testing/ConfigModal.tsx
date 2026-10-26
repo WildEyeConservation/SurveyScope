@@ -1,9 +1,15 @@
-import { Button, Form } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
 import { useState, useEffect, useContext } from 'react';
 import { GlobalContext } from '../Context';
-import Tooltip from 'react-bootstrap/Tooltip';
-import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 type TestType = 'random' | 'interval';
 
@@ -91,10 +97,10 @@ export default function ConfigModal({
         <Title>Configure {survey.name} Tests</Title>
       </Header>
       <Body>
-        <Form className='p-3'>
-          <Form.Group className='mb-2'>
-            <Form.Label>Test type</Form.Label>
-            <Form.Select
+        <form className='p-4'>
+          <div className='mb-2'>
+            <Label>Test type</Label>
+            <NativeSelect
               value={testType}
               onChange={(e) =>
                 setTestType(e.target.value as 'random' | 'interval')
@@ -102,24 +108,23 @@ export default function ConfigModal({
             >
               <option value='random'>Random</option>
               <option value='interval'>Interval</option>
-            </Form.Select>
-          </Form.Group>
+            </NativeSelect>
+          </div>
           {testType === 'interval' && (
-            <Form.Group className='mb-2'>
-              <OverlayTrigger
-                placement='right-end'
-                overlay={
-                  <Tooltip>
-                    User will be tested if they haven't consecutively annotated
-                    in the amount of jobs specified. <br /> Note: Navigating to
-                    and annotating a previous job will not reset the counter.
-                  </Tooltip>
-                }
-                trigger={['hover', 'focus']}
-              >
-                <Form.Label>Test after * unannotated jobs</Form.Label>
-              </OverlayTrigger>
-              <Form.Control
+            <div className='mb-2'>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label className='mb-2 inline-block'>
+                    Test after * unannotated jobs
+                  </label>
+                </TooltipTrigger>
+                <TooltipContent side='right' align='end'>
+                  User will be tested if they haven't consecutively annotated in
+                  the amount of jobs specified. <br /> Note: Navigating to and
+                  annotating a previous job will not reset the counter.
+                </TooltipContent>
+              </Tooltip>
+              <Input
                 type='number'
                 value={testInterval}
                 onChange={(e) =>
@@ -127,41 +132,38 @@ export default function ConfigModal({
                 }
                 min={10}
               />
-            </Form.Group>
+            </div>
           )}
           {testType === 'random' && (
-            <Form.Group className='mb-2'>
-              <OverlayTrigger
-                placement='right-end'
-                overlay={
-                  <Tooltip>
-                    After the amount of jobs specified in deadzone, each of the
-                    following jobs will have the specified probability of being
-                    a test.
-                  </Tooltip>
-                }
-                trigger={['hover', 'focus']}
-              >
-                <Form.Label>Deadzone</Form.Label>
-              </OverlayTrigger>
-              <Form.Control
+            <div className='mb-2'>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <label className='mb-2 inline-block'>Deadzone</label>
+                </TooltipTrigger>
+                <TooltipContent side='right' align='end'>
+                  After the amount of jobs specified in deadzone, each of the
+                  following jobs will have the specified probability of being a
+                  test.
+                </TooltipContent>
+              </Tooltip>
+              <Input
                 type='number'
                 value={deadzone}
                 onChange={(e) => setDeadzone(parseInt(e.target.value || '10'))}
                 min={10}
                 className='mb-2'
               />
-              <Form.Label>Test probability (%)</Form.Label>
-              <Form.Control
+              <Label>Test probability (%)</Label>
+              <Input
                 type='number'
                 value={testChance}
                 onChange={(e) => setTestChance(parseInt(e.target.value || '0'))}
                 min={0}
                 max={100}
               />
-            </Form.Group>
+            </div>
           )}
-        </Form>
+        </form>
       </Body>
       <Footer>
         <Button variant='primary' onClick={handleSave} disabled={saving}>

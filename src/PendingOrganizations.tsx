@@ -4,7 +4,7 @@ import { GlobalContext } from './Context';
 import { useOptimisticUpdates } from './useOptimisticUpdates';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import CreateOrganization from './organization/CreateOrganization';
 
 export default function PendingOrganizations() {
@@ -72,7 +72,7 @@ export default function PendingOrganizations() {
         itemsPerPage={10}
         emptyMessage='No pending organisations'
       />
-      <div className='d-flex justify-content-center align-items-center border-top pt-3 border-dark mt-3'>
+      <div className='flex justify-center items-center border-t pt-4 border-dark mt-4'>
         <Button
           variant='primary'
           onClick={() => showModal('createOrganization')}

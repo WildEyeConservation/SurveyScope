@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import {
   collectFilesFromHandle,
   pickDirectory,
@@ -75,7 +77,7 @@ export default function FileInput({
     };
     const reading = readCount !== null;
     return (
-      <div className='d-flex flex-row align-items-center gap-2'>
+      <div className='flex flex-row items-center gap-2'>
         <Button
           style={{ width: 'fit-content' }}
           onClick={handlePick}
@@ -84,7 +86,7 @@ export default function FileInput({
           {children}
         </Button>
         {reading ? (
-          <span className='d-flex align-items-center gap-2'>
+          <span className='flex items-center gap-2'>
             <Spinner animation='border' size='sm' />
             Reading folder... {readCount} files found
           </span>
@@ -96,25 +98,28 @@ export default function FileInput({
   }
 
   return (
-    <div className='d-flex flex-row align-items-center gap-2'>
+    <div className='flex flex-row items-center gap-2'>
       <Button
+        asChild
         style={{ width: 'fit-content' }}
-        as='label'
-        htmlFor={id}
-        disabled={disabled}
-        className={disabled ? 'disabled' : undefined}
+        className={cn(
+          'cursor-pointer',
+          disabled && 'pointer-events-none opacity-65'
+        )}
       >
-        {children}
-        <input
-          id={id}
-          type='file'
-          accept={fileType || '*'}
-          multiple={true}
-          onChange={handleChange}
-          disabled={disabled}
-          style={{ display: 'none', ...additionalStyle }}
-          {...otherProps}
-        />
+        <label htmlFor={id} className='mb-0' aria-disabled={disabled}>
+          {children}
+          <input
+            id={id}
+            type='file'
+            accept={fileType || '*'}
+            multiple={true}
+            onChange={handleChange}
+            disabled={disabled}
+            style={{ display: 'none', ...additionalStyle }}
+            {...otherProps}
+          />
+        </label>
       </Button>
       {fileNames.length > 0 && (
         <i className='mb-0'>

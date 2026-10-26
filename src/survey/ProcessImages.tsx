@@ -1,4 +1,6 @@
-import { Form, Spinner, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { Footer } from '../Modal';
 import { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { GlobalContext } from '../Context';
@@ -261,9 +263,9 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
 
   return (
     <>
-      <Form className='p-3'>
-        <Form.Group>
-          <Form.Label className='mb-0'>Model</Form.Label>
+      <form className='p-4'>
+        <div>
+          <Label className='mb-0'>Model</Label>
           <Select
             value={model}
             onChange={(m) => setModel(m)}
@@ -280,8 +282,8 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
             Scan
           </Button>
           {loading ? (
-            <div className='d-flex flex-column align-items-center'>
-              <Spinner animation='border' role='status' />
+            <div className='flex flex-col items-center'>
+              <Spinner animation='border' />
               <p className='mb-0'>Determining images to process...</p>
               <p className='mb-1'>Found {imagesLoaded ?? 0} images</p>
             </div>
@@ -294,8 +296,8 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
               <p className='mb-0 mt-2'>All images have been processed</p>
             )
           ) : null}
-        </Form.Group>
-      </Form>
+        </div>
+      </form>
       <Footer>
         <Button variant='primary' onClick={processImages} disabled={disabled}>
           Process Images

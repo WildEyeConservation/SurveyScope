@@ -1,15 +1,18 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  Alert,
-  Badge,
-  Button,
   Card,
-  Col,
-  Form,
-  Row,
-  Spinner,
-  Table,
-} from 'react-bootstrap';
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Table } from '@/components/ui/table';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { GlobalContext } from './Context';
@@ -344,35 +347,37 @@ export default function ImageNeighbourViewer() {
   };
 
   return (
-    <div className='w-100 p-3'>
-      <Card className='w-100'>
-        <Card.Header>
-          <Card.Title className='mb-0'>Image Neighbour Viewer</Card.Title>
-        </Card.Header>
-        <Card.Body>
-          <Form onSubmit={handleSubmit}>
-            <Row className='g-3 align-items-end'>
-              <Col md={5}>
-                <Form.Group controlId='imageA'>
-                  <Form.Label>Image ID A</Form.Label>
-                  <Form.Control
+    <div className='w-full p-4'>
+      <Card className='w-full'>
+        <CardHeader>
+          <CardTitle className='mb-0'>Image Neighbour Viewer</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit}>
+            <div className='flex flex-wrap -mx-2 gap-y-4 items-end'>
+              <div className='w-full md:w-5/12 px-2'>
+                <div>
+                  <Label htmlFor='imageA'>Image ID A</Label>
+                  <Input
+                    id='imageA'
                     value={imageIdA}
                     onChange={(e) => setImageIdA(e.target.value)}
                     placeholder='e.g. 123e4567-e89b-12d3-a456-426614174000'
                   />
-                </Form.Group>
-              </Col>
-              <Col md={5}>
-                <Form.Group controlId='imageB'>
-                  <Form.Label>Image ID B</Form.Label>
-                  <Form.Control
+                </div>
+              </div>
+              <div className='w-full md:w-5/12 px-2'>
+                <div>
+                  <Label htmlFor='imageB'>Image ID B</Label>
+                  <Input
+                    id='imageB'
                     value={imageIdB}
                     onChange={(e) => setImageIdB(e.target.value)}
                     placeholder='e.g. 123e4567-e89b-12d3-a456-426614174001'
                   />
-                </Form.Group>
-              </Col>
-              <Col md={2} className='d-grid'>
+                </div>
+              </div>
+              <div className='w-full md:w-2/12 px-2 grid'>
                 <Button
                   variant='primary'
                   type='submit'
@@ -380,26 +385,26 @@ export default function ImageNeighbourViewer() {
                 >
                   {loading ? (
                     <>
-                      <Spinner animation='border' size='sm' className='me-2' />
+                      <Spinner animation='border' size='sm' />
                       Loading
                     </>
                   ) : (
                     'Load pair'
                   )}
                 </Button>
-              </Col>
-            </Row>
-          </Form>
+              </div>
+            </div>
+          </form>
           {error && (
-            <Alert variant='danger' className='mt-3 mb-0'>
+            <Alert variant='danger' className='mt-4 mb-0'>
               {error}
             </Alert>
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
 
       {comparison && (
-        <div className='d-flex flex-column gap-3 mt-3'>
+        <div className='flex flex-col gap-4 mt-4'>
           {!comparison.neighbours.forward && !comparison.neighbours.reverse && (
             <Alert variant='warning'>
               No ImageNeighbour records were found for this pair. The images are
@@ -414,8 +419,8 @@ export default function ImageNeighbourViewer() {
                 stored for them.
               </Alert>
             )}
-          <Row className='g-3'>
-            <Col xs={12} xl={6}>
+          <div className='flex flex-wrap -mx-2 gap-y-4'>
+            <div className='w-full xl:w-1/2 px-2'>
               <ImagePanel
                 title='Image A'
                 data={comparison.imageA}
@@ -431,8 +436,8 @@ export default function ImageNeighbourViewer() {
                     : undefined
                 }
               />
-            </Col>
-            <Col xs={12} xl={6}>
+            </div>
+            <div className='w-full xl:w-1/2 px-2'>
               <ImagePanel
                 title='Image B'
                 data={comparison.imageB}
@@ -448,8 +453,8 @@ export default function ImageNeighbourViewer() {
                     : undefined
                 }
               />
-            </Col>
-          </Row>
+            </div>
+          </div>
           <NeighbourTable
             forward={comparison.neighbours.forward}
             reverse={comparison.neighbours.reverse}
@@ -588,20 +593,20 @@ function ImagePanel({
   const cameraName = data.cameraName;
 
   return (
-    <Card className='w-100 h-100'>
-      <Card.Header>
-        <Card.Title className='mb-0'>{title}</Card.Title>
-      </Card.Header>
-      <Card.Body
+    <Card className='w-full h-full'>
+      <CardHeader>
+        <CardTitle className='mb-0'>{title}</CardTitle>
+      </CardHeader>
+      <CardContent
         className='p-0'
         style={{ height: '520px', padding: '16px', overflow: 'hidden' }}
       >
         <div
-          className='w-100 h-100 position-relative rounded'
+          className='w-full h-full relative '
           style={{ overflow: 'hidden' }}
         >
           <div
-            className='w-100 h-100'
+            className='w-full h-full'
             style={{
               transform: `rotate(${rotation}deg)`,
               transformOrigin: 'center center',
@@ -619,8 +624,8 @@ function ImagePanel({
             />
           </div>
         </div>
-      </Card.Body>
-      <Card.Footer className='small text-muted d-flex flex-column gap-1'>
+      </CardContent>
+      <CardFooter className='text-sm text-muted-foreground flex flex-col gap-1'>
         <div>
           <strong>ID:</strong> {data.image.id}
         </div>
@@ -640,17 +645,17 @@ function ImagePanel({
         )}
         {!data.sourceKey && (
           <div>
-            <Badge bg='warning' text='dark'>
+            <Badge variant='warning' className='text-black'>
               No JPEG tiles found for this image – showing overlays only.
             </Badge>
           </div>
         )}
-        <div className='mt-2 d-flex flex-column gap-2'>
-          <div className='d-flex align-items-center justify-content-between'>
+        <div className='mt-2 flex flex-col gap-2'>
+          <div className='flex items-center justify-between'>
             <strong className='me-2 mb-0'>Rotation</strong>
             <span>{rotation}°</span>
           </div>
-          <div className='d-flex gap-2'>
+          <div className='flex gap-2'>
             <Button
               variant='outline-secondary'
               size='sm'
@@ -675,7 +680,7 @@ function ImagePanel({
             </Button>
           </div>
         </div>
-      </Card.Footer>
+      </CardFooter>
     </Card>
   );
 }
@@ -707,9 +712,9 @@ function NeighbourTable({
 
   return (
     <Card>
-      <Card.Header>
-        <Card.Title className='mb-0'>Neighbour records</Card.Title>
-      </Card.Header>
+      <CardHeader>
+        <CardTitle className='mb-0'>Neighbour records</CardTitle>
+      </CardHeader>
       <Table responsive className='mb-0'>
         <thead>
           <tr>
@@ -717,7 +722,7 @@ function NeighbourTable({
             <th scope='col'>Has homography</th>
             <th scope='col'>Updated</th>
             <th scope='col'>Created</th>
-            <th scope='col' className='text-end'>
+            <th scope='col' className='text-right'>
               Actions
             </th>
           </tr>
@@ -732,9 +737,9 @@ function NeighbourTable({
                 <td>{label}</td>
                 <td>
                   {hasHomography ? (
-                    <Badge bg='success'>Yes</Badge>
+                    <Badge variant='success'>Yes</Badge>
                   ) : (
-                    <Badge bg='secondary'>No</Badge>
+                    <Badge variant='secondary'>No</Badge>
                   )}
                 </td>
                 <td>
@@ -743,7 +748,7 @@ function NeighbourTable({
                 <td>
                   {formatDate(record.createdAt) ?? '—'}
                 </td>
-                <td className='text-end'>
+                <td className='text-right'>
                   <Button
                     size='sm'
                     variant='outline-secondary'
@@ -860,7 +865,7 @@ function NeighbourMap({
 
   if (!data.sourceKey) {
     return (
-      <div className='w-100 h-100 d-flex align-items-center justify-content-center text-muted'>
+      <div className='w-full h-full flex items-center justify-center text-muted-foreground'>
         No image file available
       </div>
     );

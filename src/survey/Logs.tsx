@@ -1,5 +1,10 @@
 import { useContext, useEffect, useState, useMemo, useRef } from 'react';
-import { Button, Form, Card, Spinner } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
 import { fetchAllPaginatedResults } from '../utils';
@@ -163,40 +168,40 @@ export default function Logs({ projectId }: { projectId: string }) {
   ];
 
   return (
-    <div className="d-flex flex-column gap-3">
+    <div className="flex flex-col gap-4">
       <Card>
-        <Card.Header>
+        <CardHeader>
           <h5 className="mb-0">Filter Logs</h5>
-        </Card.Header>
-        <Card.Body>
-          <div className="d-flex flex-column flex-md-row gap-3 align-items-md-end">
-            <div className="flex-grow-1">
-              <Form.Label>Start Date</Form.Label>
-              <Form.Control
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col md:flex-row gap-4 md:items-end">
+            <div className="grow">
+              <Label>Start Date</Label>
+              <Input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
-            <div className="flex-grow-1">
-              <Form.Label>Start Time</Form.Label>
-              <Form.Control
+            <div className="grow">
+              <Label>Start Time</Label>
+              <Input
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
               />
             </div>
-            <div className="flex-grow-1">
-              <Form.Label>End Date</Form.Label>
-              <Form.Control
+            <div className="grow">
+              <Label>End Date</Label>
+              <Input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
-            <div className="flex-grow-1">
-              <Form.Label>End Time</Form.Label>
-              <Form.Control
+            <div className="grow">
+              <Label>End Time</Label>
+              <Input
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
@@ -206,7 +211,7 @@ export default function Logs({ projectId }: { projectId: string }) {
               <Button onClick={fetchLogs} disabled={loading}>
                 {loading ? (
                   <>
-                    <Spinner size="sm" className="me-2" />
+                    <Spinner size="sm" />
                     Loading...
                   </>
                 ) : (
@@ -215,17 +220,17 @@ export default function Logs({ projectId }: { projectId: string }) {
               </Button>
             </div>
           </div>
-        </Card.Body>
+        </CardContent>
       </Card>
 
       {error && (
-        <div className="alert alert-danger" role="alert">
+        <Alert variant="danger">
           {error}
-        </div>
+        </Alert>
       )}
 
       <Card>
-        <Card.Header className="d-flex justify-content-between align-items-center">
+        <CardHeader className="flex justify-between items-center">
           <h5 className="mb-0">Admin Action Logs</h5>
           <Button
             variant="primary"
@@ -233,13 +238,13 @@ export default function Logs({ projectId }: { projectId: string }) {
             onClick={handleDownload}
             disabled={logs.length === 0}
           >
-            <Download size={16} className="me-1" />
+            <Download size={16} />
             Download CSV
           </Button>
-        </Card.Header>
-        <Card.Body>
+        </CardHeader>
+        <CardContent>
           {loading ? (
-            <div className="text-center py-4">
+            <div className="text-center py-6">
               <Spinner />
             </div>
           ) : (
@@ -251,7 +256,7 @@ export default function Logs({ projectId }: { projectId: string }) {
               emptyMessage="No logs found for the selected date range."
             />
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
       <Footer>
         <Button variant='dark' onClick={() => showModal(null)}>

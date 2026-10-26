@@ -2,8 +2,8 @@ import { useContext, useEffect, useState } from 'react';
 import { ProjectContext, UserContext, GlobalContext } from './Context';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
-import ProgressBar from 'react-bootstrap/ProgressBar';
-import { Badge } from 'react-bootstrap';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 import { useNavigate } from 'react-router-dom';
 
 export function JobsRemaining() {
@@ -93,23 +93,26 @@ export function JobsRemaining() {
   return jobsRemaining === '0' ||
     batchSize === 0 ||
     parseInt(jobsRemaining) < batchSize ? (
-    <Badge className='d-flex flex-row align-items-center justify-content-center gap-3 p-2 w-100 bg-secondary flex-wrap'>
+    <Badge
+      variant='secondary'
+      className='flex flex-row items-center justify-center gap-4 p-2 w-full flex-wrap'
+    >
       <p className='mb-0'>
         {jobsRemaining} jobs remaining
         {usingBackupQueue ? ' on backup queue ' : ' '}(globally)
       </p>
-      <span className='d-none d-sm-block'>|</span>
+      <span className='hidden sm:block'>|</span>
       <p className='mb-0'>
         {sessionJobsCompleted} jobs completed in this session
       </p>
     </Badge>
   ) : (
-    <div className='d-flex flex-column align-items-center gap-2 w-100'>
-      <ProgressBar
-        className='w-100'
+    <div className='flex flex-col items-center gap-2 w-full'>
+      <Progress
+        className='w-full'
         variant='primary'
         max={batchSize}
-        now={sessionJobsCompleted % batchSize}
+        value={sessionJobsCompleted % batchSize}
         label={`${
           sessionJobsCompleted % batchSize
         } of ${batchSize} jobs completed`}

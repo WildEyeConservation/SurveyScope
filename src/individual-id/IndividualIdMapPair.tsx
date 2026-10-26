@@ -18,7 +18,7 @@ import {
 } from './IndividualIdMap';
 import type { AnnotationType } from '../schemaTypes';
 import type { MatchCandidate, NeighbourPair, PixelTransform } from './types';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import { HelpCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { WaitingOverlay } from '../useAckOnTimeout';
@@ -949,9 +949,9 @@ export function IndividualIdMapPair(props: Props) {
   const activeAnchorB = activeCandidate?.posB ?? null;
 
   return (
-    <div className='w-100 h-100 d-flex flex-column gap-2'>
+    <div className='w-full h-full flex flex-col gap-2'>
       <div
-        className='d-flex flex-row gap-2 w-100'
+        className='flex flex-row gap-2 w-full'
         style={{ flex: 1, minHeight: 0, position: 'relative' }}
       >
         {!imagesReady && (
@@ -1095,7 +1095,7 @@ function PairToolbar({
 
   return (
     <div
-      className='d-flex flex-column gap-2 px-3 py-3'
+      className='flex flex-col gap-2 px-4 py-4'
       style={{
         background: '#4E5D6C',
         color: '#f8f9fa',
@@ -1103,8 +1103,8 @@ function PairToolbar({
         position: 'relative',
       }}
     >
-      <div className='d-flex flex-row align-items-center justify-content-between gap-2'>
-        <div className='d-flex flex-row gap-2 align-items-center'>
+      <div className='flex flex-row items-center justify-between gap-2'>
+        <div className='flex flex-row gap-2 items-center'>
           <span
             style={{
               borderRight: '1px solid rgba(255, 255, 255, 0.25)',
@@ -1150,7 +1150,7 @@ function PairToolbar({
             </span>
           )}
         </div>
-        <div className='d-flex flex-row gap-2 align-items-center'>
+        <div className='flex flex-row gap-2 items-center'>
           {editHomographyHref && (
             <Button
               size='sm'
@@ -1188,7 +1188,7 @@ function PairToolbar({
         </div>
       </div>
       <div
-        className='ii-toolbar-centre d-flex flex-row gap-2 align-items-center'
+        className='ii-toolbar-centre flex flex-row gap-2 items-center'
         title='Munkres only proposes a match if the projected distance to a partner is below this many image pixels. The active marker shows a ring at this radius.'
       >
         <label

@@ -1,4 +1,6 @@
-import { Alert, Button, Form } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import { useState, useContext } from 'react';
 import { Tabs, Tab } from '../Tabs';
@@ -134,7 +136,7 @@ export default function LaunchAnnotationSetModal({
         <Title>Launch for Manual Annotation</Title>
       </Header>
       <Body>
-        <Form>
+        <form>
           <Tabs
             onTabChange={(tab) => {
               if (launching) return;
@@ -200,16 +202,16 @@ export default function LaunchAnnotationSetModal({
               />
             </Tab>
           </Tabs>
-        </Form>
+        </form>
         {launchError && (
-          <Alert variant='danger' className='mt-3 mb-0'>
+          <Alert variant='danger' className='mt-4 mb-0'>
             {launchError}
           </Alert>
         )}
         {progressMessage && (
-          <div className='mt-3 text-center text-muted d-flex justify-content-center align-items-center gap-2'>
+          <div className='mt-4 text-center text-muted-foreground flex justify-center items-center gap-2'>
             <span role='status' aria-live='polite'>
-              <span className='spinner-border spinner-border-sm me-2' />
+              <Spinner size='sm' className='me-2' />
               {progressMessage}
             </span>
           </div>

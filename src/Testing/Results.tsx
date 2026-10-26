@@ -1,9 +1,18 @@
-import { Button, Form } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  type ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
 import { useContext, useState, useEffect } from 'react';
 import { GlobalContext, TestingContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
 import MyTable from '../Table';
-import { BarChart } from '@mui/x-charts/BarChart';
+import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from 'recharts';
 import { Tab, Tabs } from '../Tabs';
 import exportFromJSON from 'export-from-json';
 import { useUpdateProgress } from '../useUpdateProgress';
@@ -11,6 +20,10 @@ import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
 import Select from 'react-select';
 // removed modal; pass/fail rules are now inline
+
+const chartConfig = {
+  countPercentage: { label: 'Over/Under count' },
+} satisfies ChartConfig;
 
 export default function Results() {
   const { client } = useContext(GlobalContext)!;
@@ -314,7 +327,7 @@ export default function Results() {
   }
 
   return (
-    <div className='d-flex flex-column gap-2 mt-3 w-100'>
+    <div className='flex flex-col gap-2 mt-4 w-full'>
       <div>
         <label className='mb-2'>Select Survey</label>
         <Select
@@ -342,7 +355,7 @@ export default function Results() {
       <div>
         <label className='mb-2'>Select user</label>
         <Select
-          className='mb-3 text-black'
+          className='mb-4 text-black'
           value={selectedUser}
           options={organizationMembershipsHook.data?.map((m) => ({
             label: allUsers.find((user) => user.id === m.userId)?.name || '',
@@ -369,11 +382,11 @@ export default function Results() {
             ) : (
               <Tabs defaultTab={0}>
                 <Tab label='All Results'>
-                  <div className='d-flex flex-column mb-1'>
+                  <div className='flex flex-col mb-1'>
                     <p className='mt-2 mb-1'>Rules</p>
                     <div>
                       <label className='mb-1'>Pass rate (%)</label>
-                      <Form.Control
+                      <Input
                         type='number'
                         min={1}
                         max={100}
@@ -388,22 +401,24 @@ export default function Results() {
                         style={{ width: 160 }}
                       />
                     </div>
-                    <Form.Check
-                      type='checkbox'
-                      id='ignore-overcounts'
-                      label='Ignore overcounts'
-                      className='mt-2'
-                      checked={rules.ignoreOvercounts}
-                      onChange={(e) =>
-                        setRules({
-                          ...rules,
-                          ignoreOvercounts: e.target.checked,
-                        })
-                      }
-                    />
+                    <div className='mt-2 flex items-center gap-2'>
+                      <Checkbox
+                        id='ignore-overcounts'
+                        checked={rules.ignoreOvercounts}
+                        onCheckedChange={(c) =>
+                          setRules({
+                            ...rules,
+                            ignoreOvercounts: c === true,
+                          })
+                        }
+                      />
+                      <Label htmlFor='ignore-overcounts' className='mb-0'>
+                        Ignore overcounts
+                      </Label>
+                    </div>
                   </div>
                   <p className='my-2'>Summary</p>
-                  <div className='d-flex gap-3 mb-3'>
+                  <div className='flex gap-4 mb-4'>
                     {summaryCards.map((card, index) => (
                       <SummaryCard key={index} content={card.content} />
                     ))}
@@ -418,69 +433,49 @@ export default function Results() {
                 </Tab>
                 <Tab label='Label Accuracy'>
                   <p
-                    className='text-center mb-0 mt-3'
+                    className='text-center mb-0 mt-4'
                     style={{ fontSize: '1.5rem' }}
                   >
                     Over/Under Count Percentage By Label
                   </p>
-                  <BarChart
-                    dataset={accuracyByCategory}
-                    margin={{ bottom: 80 }}
-                    sx={{
-                      '& .MuiChartsAxis-bottom .MuiChartsAxis-line': {
-                        stroke: '#FFFFFF',
-                        strokeWidth: 1,
-                      },
-                      '& .MuiChartsAxis-left .MuiChartsAxis-line': {
-                        stroke: '#FFFFFF',
-                        strokeWidth: 1,
-                      },
-                      '& .MuiChartsAxis-tickContainer .MuiChartsAxis-tickLabel':
-                        {
-                          fill: '#FFFFFF',
-                          fontSize: 12,
-                        },
-                      '& .MuiChartsAxis-tick': {
-                        stroke: '#FFFFFF',
-                        strokeWidth: 1,
-                      },
-                    }}
-                    xAxis={[
-                      {
-                        scaleType: 'band',
-                        dataKey: 'name',
-                      },
-                    ]}
-                    yAxis={[
-                      {
-                        colorMap: {
-                          type: 'piecewise',
-                          thresholds: [0],
-                          colors: ['#DF691A', '#5bc0de'],
-                        },
-                      },
-                    ]}
-                    bottomAxis={{
-                      tickLabelStyle: {
-                        angle: 45,
-                        textAnchor: 'start',
-                        fontSize: 12,
-                      },
-                    }}
-                    series={[
-                      {
-                        dataKey: 'countPercentage',
-                      },
-                    ]}
-                    height={400}
-                    borderRadius={4}
-                  />
+                  <ChartContainer
+                    config={chartConfig}
+                    className='aspect-auto h-[400px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-white!'
+                  >
+                    <BarChart
+                      data={accuracyByCategory}
+                      margin={{ top: 20, right: 20, bottom: 20, left: 0 }}
+                    >
+                      <CartesianGrid vertical={false} />
+                      <XAxis
+                        dataKey='name'
+                        interval={0}
+                        angle={45}
+                        textAnchor='start'
+                        height={80}
+                        stroke='#FFFFFF'
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis stroke='#FFFFFF' tick={{ fontSize: 12 }} />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <Bar dataKey='countPercentage' radius={4}>
+                        {accuracyByCategory.map((entry) => (
+                          <Cell
+                            key={entry.categoryId}
+                            fill={
+                              entry.countPercentage < 0 ? '#DF691A' : '#5bc0de'
+                            }
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ChartContainer>
                 </Tab>
               </Tabs>
             )}
           </div>
           {results.length > 0 && (
-            <div className='d-flex gap-2 justify-content-end mt-2'>
+            <div className='flex gap-2 justify-end mt-2'>
               <Button
                 variant='danger'
                 onClick={purgeResults}
@@ -501,7 +496,7 @@ export default function Results() {
 
 function SummaryCard({ content }: { content: (string | JSX.Element)[] }) {
   return (
-    <div className='rounded-3 p-3 bg-dark text-white d-flex flex-column gap-1'>
+    <div className=' p-4 bg-dark text-white flex flex-col gap-1'>
       {content.map((item, index) => (
         <p key={index} className='mb-0'>
           {item}

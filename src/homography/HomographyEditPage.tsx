@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Button } from '@/components/ui/button';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Matrix } from 'mathjs';
@@ -235,29 +236,29 @@ export default function HomographyEditPage() {
 
   if (!image1Id || !image2Id) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing one of <code>image1Id</code> or <code>image2Id</code> in the
         URL.
       </div>
     );
   }
   if (imagesError) {
-    return <div className='p-4 text-light'>{imagesError}</div>;
+    return <div className='p-6 text-light'>{imagesError}</div>;
   }
   if (!images || !pointsLoaded) {
     return (
-      <div className='d-flex justify-content-center align-items-center h-100'>
-        <div className='text-muted'>Loading homography editor...</div>
+      <div className='flex justify-center items-center h-full'>
+        <div className='text-muted-foreground'>Loading homography editor...</div>
       </div>
     );
   }
 
   return (
     <div
-      className='d-flex flex-column align-items-center w-100 h-100'
+      className='flex flex-col items-center w-full h-full'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-100 h-100'>
+      <div className='w-full h-full'>
         <HomographyWorkbench
           images={images}
           onSave={handleSave}
@@ -268,13 +269,14 @@ export default function HomographyEditPage() {
           isSaved={isSaved}
           savedTransforms={savedTransforms}
           headerRight={
-            <button
-              className='btn btn-sm btn-outline-secondary'
+            <Button
+              variant='outline-secondary'
+              size='sm'
               onClick={goBack}
               disabled={isSaving}
             >
               Cancel
-            </button>
+            </Button>
           }
         />
       </div>

@@ -6,7 +6,7 @@ import {
   DeleteMessageCommand,
   GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs';
-import { Badge } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
 import { TaskBuffer } from './TaskBuffer';
 import QCAnnotationReview from './QCAnnotationReview';
 import { fetchAllPaginatedResults } from './utils';
@@ -180,10 +180,10 @@ export default function QCReviewTask() {
 
   return (
     <div
-      className='d-flex flex-column align-items-center gap-3 w-100 h-100'
+      className='flex flex-col items-center gap-4 w-full h-full'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-100 h-100'>
+      <div className='w-full h-full'>
         {queueUrl && categories.length > 0 ? (
           <TaskBuffer
             index={index}
@@ -218,16 +218,16 @@ export default function QCReviewTask() {
             )}
           />
         ) : (
-          <div className='d-flex justify-content-center align-items-center h-100'>
-            <div className='text-muted'>Loading QC review queue...</div>
+          <div className='flex justify-center items-center h-full'>
+            <div className='text-muted-foreground'>Loading QC review queue...</div>
           </div>
         )}
       </div>
-      <Badge className='d-flex flex-row align-items-center justify-content-center gap-3 p-2 w-100 bg-secondary flex-wrap'>
+      <Badge className='flex flex-row items-center justify-center gap-4 p-2 w-full bg-secondary flex-wrap'>
         <p className='mb-0'>
           {jobsRemaining} jobs remaining (globally)
         </p>
-        <span className='d-none d-sm-block'>|</span>
+        <span className='hidden sm:block'>|</span>
         <p className='mb-0'>
           {index} jobs completed in this session
         </p>

@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Modal } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import exportFromJSON from 'export-from-json';
 import MyTable from './Table';
 import {
@@ -114,35 +125,34 @@ export default function WorkflowSnapshotModal({
   }
 
   return (
-    <Modal show={show} onHide={onHide} size='xl' backdrop='static'>
-      <Modal.Header closeButton>
-        <Modal.Title>Snapshot for {projectLabel}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <p className='text-muted mb-3'>
+    <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
+      <DialogContent size='xl' static>
+      <DialogHeader closeButton>
+        <DialogTitle>Snapshot for {projectLabel}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <p className='text-muted-foreground mb-4'>
           Totals for a time-of-day window, in local time. Window: {windowLabel}
         </p>
-        <div className='d-flex align-items-end gap-3 flex-wrap'>
+        <div className='flex items-end gap-4 flex-wrap'>
           <div>
-            <label htmlFor='snapshot-start-time' className='form-label mb-1'>
+            <Label htmlFor='snapshot-start-time' className='mb-1'>
               Start time on {startString ?? '—'}
-            </label>
-            <input
+            </Label>
+            <Input
               id='snapshot-start-time'
               type='time'
-              className='form-control'
               value={startTime}
               onChange={(event) => setStartTime(event.target.value)}
             />
           </div>
           <div>
-            <label htmlFor='snapshot-end-time' className='form-label mb-1'>
+            <Label htmlFor='snapshot-end-time' className='mb-1'>
               End time on {endString ?? '—'}
-            </label>
-            <input
+            </Label>
+            <Input
               id='snapshot-end-time'
               type='time'
-              className='form-control'
               value={endTime}
               onChange={(event) => setEndTime(event.target.value)}
             />
@@ -157,19 +167,19 @@ export default function WorkflowSnapshotModal({
         </div>
 
         {error && (
-          <Alert variant='danger' className='mt-3'>
+          <Alert variant='danger' className='mt-4'>
             {error}
           </Alert>
         )}
 
         {sections?.length === 0 && (
-          <Alert variant='info' className='mt-3'>
+          <Alert variant='info' className='mt-4'>
             No completions in this window.
           </Alert>
         )}
 
         {sections?.map((section) => (
-          <div key={section.workflowType} className='mt-4'>
+          <div key={section.workflowType} className='mt-6'>
             <h5 className='mb-2'>{section.label}</h5>
             <div className='overflow-x-auto'>
               <MyTable
@@ -194,8 +204,8 @@ export default function WorkflowSnapshotModal({
             </div>
           </div>
         ))}
-      </Modal.Body>
-      <Modal.Footer>
+      </DialogBody>
+      <DialogFooter>
         <Button
           variant='success'
           onClick={exportSnapshot}
@@ -206,7 +216,8 @@ export default function WorkflowSnapshotModal({
         <Button variant='dark' onClick={onHide}>
           Close
         </Button>
-      </Modal.Footer>
-    </Modal>
+      </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

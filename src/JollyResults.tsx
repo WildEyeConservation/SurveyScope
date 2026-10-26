@@ -4,7 +4,20 @@ import { useParams } from 'react-router-dom';
 import { GlobalContext, UserContext } from './Context.tsx';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import MyTable from './Table.tsx';
-import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import DensityMap from './DensityMap.tsx';
 import exportFromJSON from 'export-from-json';
 import { useUsers } from './apiInterface';
@@ -451,30 +464,30 @@ export default function JollyResults() {
         marginBottom: '16px',
       }}
     >
-      <div className='d-flex flex-row gap-2 w-100 h-100'>
-        <div className='d-flex flex-column gap-2' style={{ width: '300px' }}>
+      <div className='flex flex-row gap-2 w-full h-full'>
+        <div className='flex flex-col gap-2' style={{ width: '300px' }}>
           <Card>
-            <Card.Header>
-              <Card.Title>
+            <CardHeader>
+              <CardTitle>
                 <h4 className='mb-0'>Information</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <p className='mb-0'>
                 <strong>Survey:</strong> {surveyName}
               </p>
               <p className='mb-0'>
                 <strong>Annotation Set:</strong> {annotationSetName}
               </p>
-            </Card.Body>
+            </CardContent>
           </Card>
           <Card>
-            <Card.Header>
-              <Card.Title>
+            <CardHeader>
+              <CardTitle>
                 <h4 className='mb-0'>Filter</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <Select
                 isMulti
                 placeholder='Select labels'
@@ -482,18 +495,18 @@ export default function JollyResults() {
                 onChange={(e) => setSelectedCategories([...e])}
                 className='text-black'
               />
-            </Card.Body>
+            </CardContent>
           </Card>
-          <Card className='flex-grow-1 overflow-auto'>
-            <Card.Header>
-              <Card.Title>
+          <Card className='grow overflow-auto'>
+            <CardHeader>
+              <CardTitle>
                 <h4 className='mb-0'>Sharing</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body className='d-flex flex-column justify-content-between'>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className='flex flex-col justify-between'>
               {isProjectAdmin && (
-                <div className='d-flex flex-column gap-3'>
-                  <Form.Group>
+                <div className='flex flex-col gap-4'>
+                  <div>
                     <Button
                       variant='link'
                       className='p-0 mb-1'
@@ -503,7 +516,7 @@ export default function JollyResults() {
                     </Button>
                     {moreInfo && (
                       <span
-                        className='text-muted d-block mb-2 mt-0'
+                        className='text-muted-foreground block mb-2 mt-0'
                         style={{ fontSize: '14px' }}
                       >
                         After copying the link, it will remain valid until the
@@ -515,19 +528,19 @@ export default function JollyResults() {
                         choose the shortest expiration date possible.
                       </span>
                     )}
-                    <Form.Label className='mb-0 d-block'>
+                    <Label className='mb-0 block'>
                       Expiration Date:
-                    </Form.Label>
+                    </Label>
                     {tokenExpiry && (
                       <span
-                        className='text-muted d-block mb-2 mt-0'
+                        className='text-muted-foreground block mb-2 mt-0'
                         style={{ fontSize: '14px' }}
                       >
                         Link still valid until{' '}
                         {new Date(tokenExpiry).toLocaleDateString()}
                       </span>
                     )}
-                    <Form.Control
+                    <Input
                       type='date'
                       disabled={true}
                       placeholder='Expiration'
@@ -544,29 +557,31 @@ export default function JollyResults() {
                       }
                       min={DateTime.now().toFormat('yyyy-MM-dd')}
                     />
-                    <OverlayTrigger
-                      placement='top'
-                      overlay={<Tooltip id='copy-link-tooltip'>Under maintenance</Tooltip>}
-                    >
-                      <div className='d-inline-block w-100'>
-                        <Button
-                          variant='outline-primary'
-                          className='mt-2 w-100'
-                          onClick={handleShare}
-                          disabled={true}
-                          style={{ pointerEvents: 'none' }}
-                        >
-                          {isCopying ? 'Copying...' : 'Copy Link'}
-                        </Button>
-                      </div>
-                    </OverlayTrigger>
-                  </Form.Group>
-                  <Form.Group>
-                    <Form.Label className='m-0'>Shared with:</Form.Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className='inline-block w-full'>
+                          <Button
+                            variant='outline-primary'
+                            className='mt-2 w-full'
+                            onClick={handleShare}
+                            disabled={true}
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            {isCopying ? 'Copying...' : 'Copy Link'}
+                          </Button>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent id='copy-link-tooltip' side='top'>
+                        Under maintenance
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <div>
+                    <Label className='m-0'>Shared with:</Label>
                     {resultsMemberships.length > 0 ? (
                       resultsMemberships.map((m) => (
                         <div
-                          className='mb-2 w-100 d-flex justify-content-between align-items-center'
+                          className='mb-2 w-full flex justify-between items-center'
                           style={{
                             border: '1px solid #ccc',
                             borderRadius: '4px',
@@ -591,13 +606,13 @@ export default function JollyResults() {
                       ))
                     ) : (
                       <p
-                        className='mb-0 text-muted'
+                        className='mb-0 text-muted-foreground'
                         style={{ fontSize: '14px' }}
                       >
                         No one has been shared with yet.
                       </p>
                     )}
-                  </Form.Group>
+                  </div>
                 </div>
               )}
               <Button onClick={exportResultsAsCSV} disabled={exporting}>
@@ -605,17 +620,17 @@ export default function JollyResults() {
                   ? 'Exporting, Please wait...'
                   : 'Export Results as CSV'}
               </Button>
-            </Card.Body>
+            </CardContent>
           </Card>
         </div>
-        <div className='d-flex flex-column gap-2 flex-grow-1'>
-          <Card className='flex-grow-1'>
-            <Card.Header>
-              <Card.Title>
+        <div className='flex flex-col gap-2 grow'>
+          <Card className='grow'>
+            <CardHeader>
+              <CardTitle>
                 <h4 className='mb-0'>Density Map</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body className='p-0 overflow-hidden'>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className='p-0 overflow-hidden'>
               <div style={{ height: 'clamp(400px, 55vh, 650px)' }}>
                 <DensityMap
                   surveyId={surveyId}
@@ -631,15 +646,15 @@ export default function JollyResults() {
                   onStratumHover={setMapHoveredStratumId}
                 />
               </div>
-            </Card.Body>
+            </CardContent>
           </Card>
           <Card>
-            <Card.Header className='d-flex justify-content-between align-items-center gap-2'>
-              <Card.Title className='mb-0 w-100' style={{ maxWidth: '300px' }}>
+            <CardHeader className='flex justify-between items-center gap-2'>
+              <CardTitle className='mb-0 w-full' style={{ maxWidth: '300px' }}>
                 <h4 className='mb-0'>Jolly Results</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <MyTable
                 tableHeadings={tableHeadings}
                 tableData={tableData}
@@ -652,9 +667,9 @@ export default function JollyResults() {
                 }
                 highlightedRowIds={highlightedRowIds}
               />
-              <div className='mt-3 p-2 border-top'>
+              <div className='mt-4 p-2 border-t'>
                 <h5>Totals</h5>
-                <div className='d-flex flex-wrap gap-4'>
+                <div className='flex flex-wrap gap-6'>
                   <div>
                     <strong>Estimate:</strong> {Math.round(totalEstimate)}
                   </div>
@@ -676,7 +691,7 @@ export default function JollyResults() {
                   </div>
                 </div>
               </div>
-            </Card.Body>
+            </CardContent>
           </Card>
         </div>
       </div>

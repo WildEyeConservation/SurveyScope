@@ -1,4 +1,3 @@
-// import {Form} from "react-bootstrap"
 // import { useContext } from "react"
 // import { UserContext } from "./UserContext"
 // import { useImageSets } from "./useGqlCached"
@@ -17,7 +16,6 @@
 //             </Form.Select>
 // }
 
-import { Form } from 'react-bootstrap';
 import { useContext } from 'react';
 import { ManagementContext } from './Context';
 import Select, { MultiValue, Options } from 'react-select';
@@ -57,7 +55,7 @@ export function ImageSetDropdown({
   console.log(options);
 
   return (
-    <Form.Group>
+    <div>
       <Select
         value={selectedOptions}
         onChange={handleChange}
@@ -68,7 +66,7 @@ export function ImageSetDropdown({
         classNamePrefix='select'
         closeMenuOnSelect={false}
       />
-    </Form.Group>
+    </div>
   );
   // <Form.Select value={selectedSet || "none"} onChange={onSelect}>
   //             {!selectedSet && <option value="none">Select an annotation set</option>}

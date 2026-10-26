@@ -15,7 +15,10 @@ import {
   adjectives,
   names,
 } from 'unique-names-generator';
-import { Spinner, Form } from 'react-bootstrap';
+import { buttonVariants } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { useInfoTagData } from './useInfoTags';
 import { formatInfoTagsForDisplay } from './infoTags';
 import { loadProjectImages } from './projectImages';
@@ -832,10 +835,17 @@ export default function DensityMap({
         node.innerHTML = `<div style="min-width:160px;color:#000">
             <div style="font-weight:600;margin-bottom:4px">${title}</div>
             ${rows}
-            <button class="btn btn-sm btn-primary mt-2" type="button">View Image</button>
+            <button type="button">View Image</button>
           </div>`;
         const btn = node.querySelector('button');
-        btn?.addEventListener('click', () => openViewerRef.current(imageId, setId));
+        if (btn) {
+          btn.className = buttonVariants({
+            variant: 'primary',
+            size: 'sm',
+            className: 'mt-2',
+          });
+          btn.addEventListener('click', () => openViewerRef.current(imageId, setId));
+        }
         new maplibregl.Popup({ closeButton: true })
           .setLngLat(coordinates)
           .setDOMContent(node)
@@ -1054,7 +1064,7 @@ export default function DensityMap({
   }, [mapLoaded, boundsKey]);
 
   return (
-    <div className='w-100 h-100' style={{ position: 'relative', minHeight: 0 }}>
+    <div className='w-full h-full' style={{ position: 'relative', minHeight: 0 }}>
       <div
         ref={mapContainerRef}
         style={{ height: '100%', width: '100%', position: 'absolute', inset: 0 }}
@@ -1062,34 +1072,32 @@ export default function DensityMap({
 
       {/* Layer toggles */}
       <div
-        className='position-absolute bg-white rounded shadow-sm p-2'
+        className='absolute bg-white shadow-sm p-2'
         style={{ top: 10, left: 10, zIndex: 1, minWidth: 140, color: '#000' }}
       >
-        <div className='fw-bold mb-1' style={{ fontSize: 12 }}>
+        <div className='font-bold mb-1' style={{ fontSize: 12 }}>
           Layers
         </div>
-        <Form.Check
-          type='checkbox'
+        <LayerCheck
           id='dm-clusters'
           label='Sightings'
           checked={showClusters}
-          onChange={(e) => setShowClusters(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowClusters}
         />
-        <Form.Check
-          type='checkbox'
+        <LayerCheck
           id='dm-heatmap'
           label='Heatmap'
           checked={showHeatmap}
-          onChange={(e) => setShowHeatmap(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowHeatmap}
         />
         {showHeatmap && (
-          <div className='ms-4 mb-1' style={{ fontSize: 12 }}>
-            <label htmlFor='dm-heat-radius' className='d-block'>
+          <div className='ms-6 mb-1' style={{ fontSize: 12 }}>
+            <label htmlFor='dm-heat-radius' className='block'>
               Radius: {heatRadiusKm} km
             </label>
-            <Form.Range
+            <input
+              type='range'
+              className='w-full accent-primary'
               id='dm-heat-radius'
               min={1}
               max={15}
@@ -1099,28 +1107,24 @@ export default function DensityMap({
             />
           </div>
         )}
-        <Form.Check
-          type='checkbox'
+        <LayerCheck
           id='dm-images'
           label='Images'
           checked={showImages}
-          onChange={(e) => setShowImages(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowImages}
         />
-        <Form.Check
-          type='checkbox'
+        <LayerCheck
           id='dm-strata'
           label='Strata'
           checked={showStrata}
-          onChange={(e) => setShowStrata(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowStrata}
         />
       </div>
 
       {/* Partial data would give a misleading map. */}
       {(loading || !mapLoaded) && (
         <div
-          className='position-absolute d-flex flex-column align-items-center justify-content-center'
+          className='absolute flex flex-col items-center justify-center'
           style={{ inset: 0, zIndex: 2, background: 'rgba(255,255,255,0.85)', color: '#000' }}
         >
           <Spinner />
@@ -1131,7 +1135,7 @@ export default function DensityMap({
       )}
       {!loading && mapLoaded && fetching && (
         <div
-          className='position-absolute bg-white rounded shadow-sm px-2 py-1 d-flex align-items-center'
+          className='absolute bg-white shadow-sm px-2 py-1 flex items-center'
           style={{ top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }}
         >
           <Spinner size='sm' />
@@ -1143,7 +1147,7 @@ export default function DensityMap({
 
       {!loading && effectiveSources.length === 0 && (
         <div
-          className='position-absolute bg-white rounded shadow-sm px-3 py-2'
+          className='absolute bg-white shadow-sm px-4 py-2'
           style={{ top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1, color: '#000' }}
         >
           Select an annotation set to begin.
@@ -1170,6 +1174,31 @@ export default function DensityMap({
           categoryIds={categoryIds}
         />
       )}
+    </div>
+  );
+}
+
+function LayerCheck({
+  id,
+  label,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className='mb-0.5 flex items-center gap-2' style={{ fontSize: 13 }}>
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(c) => onChange(c === true)}
+      />
+      <Label htmlFor={id} className='mb-0'>
+        {label}
+      </Label>
     </div>
   );
 }

@@ -1,5 +1,5 @@
-import { Nav } from 'react-bootstrap';
 import { NavLink, Outlet } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 
 const LINKS = [
   { to: 'shares', label: 'Manage Shares' },
@@ -25,21 +25,31 @@ export default function ChainShareAdminLayout() {
         alignItems: 'flex-start',
       }}
     >
-      <Nav
-        variant='pills'
-        className='flex-column'
+      <nav
+        className='flex flex-col'
         style={{ flex: '0 0 210px', position: 'sticky', top: 16 }}
       >
-        <div className='text-uppercase text-muted small fw-bold mb-2 px-2'>
+        <div className='uppercase text-muted-foreground text-sm font-bold mb-2 px-2'>
           Chain Shares
         </div>
         {LINKS.map((l) => (
-          <Nav.Link as={NavLink} to={l.to} key={l.to} className='mb-1'>
+          <NavLink
+            to={l.to}
+            key={l.to}
+            className={({ isActive }) =>
+              cn(
+                'mb-1 block px-4 py-2 no-underline',
+                isActive
+                  ? 'bg-primary text-white'
+                  : 'text-primary hover:text-primary-hover'
+              )
+            }
+          >
             {l.label}
-          </Nav.Link>
+          </NavLink>
         ))}
-      </Nav>
-      <div className='flex-grow-1' style={{ minWidth: 0 }}>
+      </nav>
+      <div className='grow' style={{ minWidth: 0 }}>
         <Outlet />
       </div>
     </div>

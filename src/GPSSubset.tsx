@@ -5,8 +5,9 @@ import React, {
   useEffect,
   useMemo,
 } from 'react';
-import Button from 'react-bootstrap/Button';
-import { Form } from 'react-bootstrap';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { FormText, Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
@@ -380,7 +381,11 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         if (props.state === 'included') {
           const viewBtn = document.createElement('button');
           viewBtn.type = 'button';
-          viewBtn.className = 'btn btn-primary btn-sm w-100 mt-2';
+          viewBtn.className = buttonVariants({
+            variant: 'primary',
+            size: 'sm',
+            className: 'w-full mt-2',
+          });
           viewBtn.textContent = 'View Image';
           viewBtn.onclick = () => actionsRef.current?.viewByKey(props.key);
           container.appendChild(viewBtn);
@@ -398,11 +403,19 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       const actionBtn = document.createElement('button');
       actionBtn.type = 'button';
       if (props.state === 'included') {
-        actionBtn.className = 'btn btn-danger btn-sm w-100 mt-2';
+        actionBtn.className = buttonVariants({
+          variant: 'danger',
+          size: 'sm',
+          className: 'w-full mt-2',
+        });
         actionBtn.textContent = 'Remove';
         actionBtn.onclick = () => actionsRef.current?.removeByKey(props.key);
       } else {
-        actionBtn.className = 'btn btn-success btn-sm w-100 mt-2';
+        actionBtn.className = buttonVariants({
+          variant: 'success',
+          size: 'sm',
+          className: 'w-full mt-2',
+        });
         actionBtn.textContent = 'Add Back';
         actionBtn.onclick = () => actionsRef.current?.restoreByKey(props.key);
       }
@@ -786,15 +799,15 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
 
   return (
     <>
-      <Form.Group className='mt-3 d-flex flex-column gap-2'>
+      <div className='mt-4 flex flex-col gap-2'>
         <div>
-          <Form.Label className='d-block mb-0'>
+          <Label className='block mb-0'>
             Filter Data by Polygon (Optional)
-          </Form.Label>
-          <Form.Text className='d-block' style={{ fontSize: '12px' }}>
+          </Label>
+          <FormText className='block' style={{ fontSize: '12px' }}>
             <b>These points represent your georeferenced images.</b>
-          </Form.Text>
-          <Form.Text style={{ fontSize: '12px' }}>
+          </FormText>
+          <FormText style={{ fontSize: '12px' }}>
             Use this tool to filter out images based on a polygon.
             <ul>
               <li>
@@ -824,23 +837,23 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
                 </li>
               )}
             </ul>
-          </Form.Text>
+          </FormText>
         </div>
         {validExistingImages.length > 0 && (
-          <Form.Check
-            type='switch'
-            id='toggle-existing-images'
-            label={
+          <div className='mb-1 flex items-center gap-2'>
+            <Switch
+              id='toggle-existing-images'
+              checked={showExistingImages}
+              onCheckedChange={setShowExistingImages}
+            />
+            <Label htmlFor='toggle-existing-images' className='mb-0'>
               <span>
                 Show existing survey images (
                 <span style={{ color: 'cyan' }}>cyan</span>):{' '}
                 {validExistingImages.length}
               </span>
-            }
-            checked={showExistingImages}
-            onChange={(e) => setShowExistingImages(e.target.checked)}
-            className='mb-1'
-          />
+            </Label>
+          </div>
         )}
         <div className='survey-map'>
           <div
@@ -848,7 +861,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
             style={{ position: 'absolute', inset: 0 }}
           />
           <div
-            className='d-flex flex-row gap-2 p-2'
+            className='flex flex-row gap-2 p-2'
             style={{
               position: 'absolute',
               bottom: '10px',
@@ -889,7 +902,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
             </Button>
           </div>
         </div>
-      </Form.Group>
+      </div>
 
       <GPSSubsetImageViewerModal
         showImageModal={showImageModal}

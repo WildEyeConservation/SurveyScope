@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   show: boolean;
@@ -14,19 +22,21 @@ interface Props {
  */
 export function TransectCompleteDialog({ show, onConfirm }: Props) {
   return (
-    <Modal show={show} centered backdrop='static' keyboard={false}>
-      <Modal.Header>
-        <Modal.Title>Transect complete</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        Every image pair is finished and no reunions need review. Closing
-        this dialog will finalise the transect and return you to Jobs.
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant='primary' onClick={onConfirm}>
-          Finish transect
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show}>
+      <DialogContent centered static>
+        <DialogHeader>
+          <DialogTitle>Transect complete</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          Every image pair is finished and no reunions need review. Closing
+          this dialog will finalise the transect and return you to Jobs.
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='primary' onClick={onConfirm}>
+            Finish transect
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -59,7 +59,7 @@ export function AnnotationLegendOverlay({
 
   return (
     <div
-      className={forceVisible ? 'd-block' : 'd-block d-md-none'}
+      className={forceVisible ? 'block' : 'block md:hidden'}
       style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 5 }}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}

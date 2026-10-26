@@ -6,7 +6,12 @@ import {
   useRef,
   useCallback,
 } from 'react';
-import { Button, Form, Spinner } from 'react-bootstrap';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
 import { GlobalContext, TestingContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
@@ -529,27 +534,27 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         </Header>
         <Body>
           <div
-            className='d-flex flex-column gap-3 px-3 pb-3 pt-0'
+            className='flex flex-col gap-4 px-4 pb-4 pt-0'
             style={{ height: '75vh' }}
           >
             {loading ? (
-              <p className='d-flex align-items-center gap-2 p-2'>
+              <p className='flex items-center gap-2 p-2'>
                 <Spinner animation='border' size='sm' /> {loadedCount}{' '}
                 observations loaded
               </p>
             ) : pool.length === 0 ? (
               <p>No available locations to add.</p>
             ) : (
-              <div className='d-flex flex-row gap-3 h-100'>
+              <div className='flex flex-row gap-4 h-full'>
                 {/* Left controls column */}
                 <div
-                  className='d-flex flex-column gap-3 border-end border-dark mt-3 pe-3'
+                  className='flex flex-col gap-4 border-r border-dark mt-4 pe-4'
                   style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
                 >
-                  <Form.Group className='d-flex flex-column gap-2'>
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Label filter</Form.Label>
-                      <Form.Select
+                  <div className='flex flex-col gap-2'>
+                    <div>
+                      <Label className='mb-0'>Label filter</Label>
+                      <NativeSelect
                         value={pendingLabel}
                         onChange={(e) => setPendingLabel(e.target.value)}
                       >
@@ -559,11 +564,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                             {label}
                           </option>
                         ))}
-                      </Form.Select>
-                    </Form.Group>
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Max annotations</Form.Label>
-                      <Form.Control
+                      </NativeSelect>
+                    </div>
+                    <div>
+                      <Label className='mb-0'>Max annotations</Label>
+                      <Input
                         type='number'
                         min={0}
                         placeholder='No limit'
@@ -576,7 +581,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                           )
                         }
                       />
-                    </Form.Group>
+                    </div>
                     <Button
                       variant='primary'
                       onClick={applyFilters}
@@ -584,27 +589,27 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                     >
                       Filter
                     </Button>
-                  </Form.Group>
-                  <Form.Group className='d-flex flex-column gap-2 pb-3'>
-                    <Form.Check
-                      type='checkbox'
-                      label='Advanced options'
-                      checked={advancedOpen}
-                      onChange={(e) => setAdvancedOpen(e.target.checked)}
-                    />
+                  </div>
+                  <div className='flex flex-col gap-2 pb-4'>
+                    <label className='mb-0 flex items-center gap-2'>
+                      <Checkbox
+                        checked={advancedOpen}
+                        onCheckedChange={(c) => setAdvancedOpen(c === true)}
+                      />
+                      Advanced options
+                    </label>
                     {advancedOpen && (
-                      <div className='d-flex flex-row align-items-end gap-2 flex-wrap'>
-                        <Form.Check
-                          type='checkbox'
-                          label='Change location size when adding'
-                          checked={changeSize}
-                          onChange={(e) => setChangeSize(e.target.checked)}
-                        />
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
-                            From tiled sizes
-                          </Form.Label>
-                          <Form.Select
+                      <div className='flex flex-row items-end gap-2 flex-wrap'>
+                        <label className='mb-0 flex items-center gap-2'>
+                          <Checkbox
+                            checked={changeSize}
+                            onCheckedChange={(c) => setChangeSize(c === true)}
+                          />
+                          Change location size when adding
+                        </label>
+                        <div>
+                          <Label className='mb-0'>From tiled sizes</Label>
+                          <NativeSelect
                             disabled={
                               loadingLocationSets ||
                               tiledSizeOptions.length === 0 ||
@@ -629,11 +634,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                                 {o.label}
                               </option>
                             ))}
-                          </Form.Select>
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>Width (px)</Form.Label>
-                          <Form.Control
+                          </NativeSelect>
+                        </div>
+                        <div>
+                          <Label className='mb-0'>Width (px)</Label>
+                          <Input
                             type='number'
                             min={1}
                             placeholder='e.g. 1024'
@@ -647,10 +652,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                               )
                             }
                           />
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>Height (px)</Form.Label>
-                          <Form.Control
+                        </div>
+                        <div>
+                          <Label className='mb-0'>Height (px)</Label>
+                          <Input
                             type='number'
                             min={1}
                             placeholder='e.g. 1024'
@@ -664,12 +669,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                               )
                             }
                           />
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
-                            Offset X (px)
-                          </Form.Label>
-                          <Form.Control
+                        </div>
+                        <div>
+                          <Label className='mb-0'>Offset X (px)</Label>
+                          <Input
                             type='number'
                             step={1}
                             value={offsetX}
@@ -677,12 +680,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                               setOffsetX(Number(e.target.value) || 0)
                             }
                           />
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
-                            Offset Y (px)
-                          </Form.Label>
-                          <Form.Control
+                        </div>
+                        <div>
+                          <Label className='mb-0'>Offset Y (px)</Label>
+                          <Input
                             type='number'
                             step={1}
                             value={offsetY}
@@ -690,15 +691,15 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                               setOffsetY(Number(e.target.value) || 0)
                             }
                           />
-                        </Form.Group>
+                        </div>
                       </div>
                     )}
-                  </Form.Group>
+                  </div>
                 </div>
 
                 {/* Right image column */}
                 {candidates.length === 0 ? (
-                  <p className='mt-3'>
+                  <p className='mt-4'>
                     {!selectedLabel && maxAnnotations === ''
                       ? 'No available locations to add.'
                       : matchingTotal > 0
@@ -706,8 +707,8 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                       : 'No locations match the filter.'}
                   </p>
                 ) : (
-                  <div className='d-flex flex-column flex-grow-1 h-100 w-100'>
-                    <Form.Group className='mt-3 h-100 w-100'>
+                  <div className='flex flex-col grow h-full w-full'>
+                    <div className='mt-4 h-full w-full'>
                       <TaskBuffer
                         key={bufferKey}
                         index={index}
@@ -733,11 +734,13 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                           />
                         )}
                       />
-                    </Form.Group>
-                    <div className='d-flex flex-column w-100 gap-2 pt-3'>
+                    </div>
+                    <div className='flex flex-col w-full gap-2 pt-4'>
                       {currentCandidate && (
                         <a
-                          className='btn btn-outline-info'
+                          className={buttonVariants({
+                            variant: 'outline-info',
+                          })}
                           target='_blank'
                           href={`/surveys/${surveyId}/location/${
                             currentCandidate!.locationId

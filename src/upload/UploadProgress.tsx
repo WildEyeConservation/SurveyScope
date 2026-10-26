@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { AlertTriangle, Pause, Play, WifiOff, X } from 'lucide-react';
 import BlockedUploadModal from './BlockedUploadModal';
 import { uploadOrchestrator } from './core/UploadOrchestrator';
@@ -41,7 +43,7 @@ export default function UploadProgress() {
 
   if (resumingProjectId) {
     return (
-      <div className='px-2 d-flex flex-row align-items-center gap-2'>
+      <div className='px-2 flex flex-row items-center gap-2'>
         <Spinner animation='border' size='sm' />
         <p className='m-0'>Finding files to resume upload...</p>
       </div>
@@ -56,7 +58,7 @@ export default function UploadProgress() {
 
   if (offline) {
     return (
-      <div className='px-2 d-flex flex-row align-items-center gap-2'>
+      <div className='px-2 flex flex-row items-center gap-2'>
         <WifiOff className='text-warning' />
         <p className='m-0 text-warning'>Waiting for connection...</p>
       </div>
@@ -123,7 +125,7 @@ export default function UploadProgress() {
       break;
     case 'uploading':
       statusContent = (
-        <div className='d-flex flex-column'>
+        <div className='flex flex-col'>
           <p className='m-0'>
             {snapshot.statusMessage ??
               (percent === 100 && remaining > 0
@@ -214,9 +216,9 @@ export default function UploadProgress() {
 
   return (
     <>
-      <div className='px-2 position-relative'>
+      <div className='px-2 relative'>
         <div
-          className='d-flex flex-row align-items-center gap-2'
+          className='flex flex-row items-center gap-2'
           style={{ cursor: onPillClick ? 'pointer' : undefined }}
           onClick={onPillClick}
         >
@@ -231,18 +233,19 @@ export default function UploadProgress() {
           />
           {statusContent}
           {!isBlocked && failures.length > 0 && (
-            <span
-              className='badge bg-warning text-dark'
+            <Badge
+              variant='warning'
+              className='text-dark'
               title={`${failures.length} file(s) failed in the last attempt`}
             >
               {failures.length}
-            </span>
+            </Badge>
           )}
           {controls}
         </div>
         {showDetails && hasDetails && (
           <div
-            className='position-absolute bg-dark text-light border border-secondary rounded p-2'
+            className='absolute bg-dark text-light border border-secondary p-2'
             style={{
               top: '100%',
               right: 0,
@@ -261,7 +264,7 @@ export default function UploadProgress() {
                   {failures.length} file{failures.length === 1 ? '' : 's'}{' '}
                   failed in the last attempt:
                 </p>
-                <ul className='mb-2 ps-3'>
+                <ul className='mb-2 ps-4'>
                   {failures.slice(0, 50).map((f) => (
                     <li key={f.originalPath}>
                       <code style={{ fontSize: 11 }}>{f.originalPath}</code>{' '}

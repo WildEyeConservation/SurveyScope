@@ -1,5 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Spinner } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Check, Copy, RefreshCw } from 'lucide-react';
 import {
   DeleteMessageBatchCommand,
@@ -608,7 +610,6 @@ export default function AwsServiceHealth() {
           <Alert
             variant={feedback.variant === 'success' ? 'success' : 'danger'}
             onClose={() => setFeedback(null)}
-            dismissible
           >
             {feedback.message}
           </Alert>
@@ -648,7 +649,7 @@ export default function AwsServiceHealth() {
           refreshing={ecsState.isLoading}
         />
         {ecsState.error && (
-          <Alert variant='danger' className='mb-3'>
+          <Alert variant='danger' className='mb-4'>
             {ecsState.error}
           </Alert>
         )}
@@ -753,6 +754,7 @@ function SectionHeader({
       <Button
         variant='link'
         size='sm'
+        className='[&_svg]:size-3.5!'
         style={{
           padding: 0,
           color: 'var(--ss-text-muted)',
@@ -792,6 +794,7 @@ function CopyButton({
     <Button
       variant='link'
       size='sm'
+      className='[&_svg]:size-3.5!'
       onClick={handleCopy}
       title={title}
       style={{

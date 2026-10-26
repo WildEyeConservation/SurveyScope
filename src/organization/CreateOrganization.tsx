@@ -1,5 +1,7 @@
-import Form from 'react-bootstrap/Form';
-import Button from 'react-bootstrap/Button';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useState, useContext, useEffect } from 'react';
 import { GlobalContext } from '../Context';
 import { Modal, Body, Header, Title } from '../Modal';
@@ -94,38 +96,37 @@ export default function CreateOrganization({
         <Title>{request ? 'Add' : 'Create'} Organisation</Title>
       </Header>
       <Body>
-        <Form onSubmit={handleSubmit} className='p-3'>
-          <Form.Group className='mb-3'>
-            <Form.Label>Name</Form.Label>
-            <Form.Control
+        <form onSubmit={handleSubmit} className='p-4'>
+          <div className='mb-4'>
+            <Label>Name</Label>
+            <Input
               type='text'
               placeholder='Enter organisation name'
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group className='mb-3'>
-            <Form.Label>Description</Form.Label>
-            <Form.Control
-              as='textarea'
+          </div>
+          <div className='mb-4'>
+            <Label>Description</Label>
+            <Textarea
               rows={3}
               placeholder='Enter organisation description'
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group className='mb-3'>
-            <Form.Label>Admin Email</Form.Label>
-            <Form.Control
+          </div>
+          <div className='mb-4'>
+            <Label>Admin Email</Label>
+            <Input
               type='email'
               placeholder='Enter admin email'
               value={adminEmail}
               onChange={(e) => setAdminEmail(e.target.value)}
             />
-          </Form.Group>
+          </div>
           <div
-            className={`d-flex gap-2 justify-content-${
-              request ? 'between' : 'end'
+            className={`flex gap-2 ${
+              request ? 'justify-between' : 'justify-end'
             }`}
           >
             {request && (
@@ -147,7 +148,7 @@ export default function CreateOrganization({
               </Button>
             </div>
           </div>
-        </Form>
+        </form>
       </Body>
     </Modal>
   );

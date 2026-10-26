@@ -1,4 +1,13 @@
-import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useContext, useState } from 'react';
 import { GlobalContext, UserContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
@@ -86,7 +95,7 @@ export default function RegisterOrganization() {
 
   return (
     <Card
-      className='w-100'
+      className='w-full'
       style={{
         marginTop: '12px',
         marginBottom: '12px',
@@ -94,54 +103,53 @@ export default function RegisterOrganization() {
         maxWidth: '960px',
       }}
     >
-      <Card.Header>
-        <Card.Title className='mb-0'>
+      <CardHeader>
+        <CardTitle className='mb-0'>
           <h4 className='mb-0'>Register Organisation</h4>
-        </Card.Title>
-      </Card.Header>
-      <Card.Body>
-        <Form className='d-flex flex-column gap-3' onSubmit={handleSubmit}>
-          <span className='text-muted'>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form className='flex flex-col gap-4' onSubmit={handleSubmit}>
+          <span className='text-muted-foreground'>
             Here you can register your organisation for SurveyScope - you will
             automatically be redirected after a successful manual review of your
             details.
           </span>
-          <Form.Group>
-            <Form.Label>Organisation Name</Form.Label>
-            <Form.Control
+          <div>
+            <Label>Organisation Name</Label>
+            <Input
               name='organizationName'
               type='text'
               placeholder='Enter organisation name'
               required
             />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label>Brief Description of Work</Form.Label>
-            <Form.Control
+          </div>
+          <div>
+            <Label>Brief Description of Work</Label>
+            <Textarea
               name='briefDescription'
-              as='textarea'
               rows={3}
               placeholder='Enter brief description of work'
               required
             />
-          </Form.Group>
-          <OverlayTrigger
-            placement='top'
-            overlay={<Tooltip id='register-org-tooltip'>Under maintenance</Tooltip>}
-          >
-            <div className='d-inline-block'>
-              <Button
-                type='submit'
-                variant='primary'
-                disabled={true}
-                style={{ pointerEvents: 'none' }}
-              >
-                {isLoading ? 'Submitting...' : 'Submit'}
-              </Button>
-            </div>
-          </OverlayTrigger>
-        </Form>
-      </Card.Body>
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className='inline-block self-start' tabIndex={0}>
+                <Button
+                  type='submit'
+                  variant='primary'
+                  disabled={true}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {isLoading ? 'Submitting...' : 'Submit'}
+                </Button>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side='top'>Under maintenance</TooltipContent>
+          </Tooltip>
+        </form>
+      </CardContent>
     </Card>
   );
 }

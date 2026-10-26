@@ -17,10 +17,10 @@ export default function AnnotationQueuePage() {
 
   return (
     <div
-      className='d-flex flex-column align-items-center gap-3 w-100 h-100'
+      className='flex flex-col items-center gap-4 w-full h-full'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-100 h-100'>
+      <div className='w-full h-full'>
         {fetcher && (
           <TaskBuffer
             index={index}

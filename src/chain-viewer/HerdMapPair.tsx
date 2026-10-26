@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import {
   ChevronLeft,
   ChevronRight,
@@ -317,9 +317,9 @@ export function HerdMapPair({
   }, []);
 
   return (
-    <div className='w-100 h-100 d-flex flex-column gap-2'>
+    <div className='w-full h-full flex flex-col gap-2'>
       <div
-        className='d-flex flex-row gap-2 w-100'
+        className='flex flex-row gap-2 w-full'
         style={{ flex: 1, minHeight: 0 }}
       >
         <div style={{ flex: 1, minHeight: 0 }}>
@@ -376,7 +376,7 @@ export function HerdMapPair({
         </div>
       </div>
       <div
-        className='d-flex flex-row align-items-center justify-content-center gap-2 px-3 py-2'
+        className='flex flex-row items-center justify-center gap-2 px-4 py-2'
         style={{ background: '#4E5D6C', color: '#f8f9fa', position: 'relative' }}
       >
         <Button
@@ -385,7 +385,7 @@ export function HerdMapPair({
           onClick={onRequestPrevHerd}
           disabled={!onRequestPrevHerd}
           title='Previous herd (Shift+←)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           <ChevronsLeft size={16} /> Prev herd
@@ -395,7 +395,7 @@ export function HerdMapPair({
           onClick={onRequestPrevPair}
           disabled={!onRequestPrevPair}
           title='Previous pair (←)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           <ChevronLeft size={16} /> Previous
@@ -405,7 +405,7 @@ export function HerdMapPair({
           onClick={onRequestNextPair}
           disabled={!onRequestNextPair}
           title='Next pair (→)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           Next <ChevronRight size={16} />
@@ -416,7 +416,7 @@ export function HerdMapPair({
           onClick={onRequestNextHerd}
           disabled={!onRequestNextHerd}
           title='Next herd (Shift+→)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           Next herd <ChevronsRight size={16} />

@@ -1,6 +1,13 @@
-import Button from 'react-bootstrap/Button';
-import Form from 'react-bootstrap/Form';
-import { Modal } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { FormText, Label } from '@/components/ui/label';
 import { useContext, useState } from 'react';
 import { GlobalContext } from '../Context';
 
@@ -49,32 +56,35 @@ export default function InviteUserModal({
   };
 
   return (
-    <Modal show={show} onHide={() => showModal(null)}>
-      <Modal.Header closeButton>
-        <Modal.Title>Invite a user to {organization.name}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <Form onSubmit={handleSubmit}>
-          <Form.Group className='mb-3' controlId='formBasicEmail'>
-            <Form.Label>Email</Form.Label>
-            <Form.Control
-              type='email'
-              placeholder='Enter email'
-              name='email'
-            />
-          </Form.Group>
-          <Button variant='primary' type='submit' disabled={isSubmitting}>
-            Send Invite
-          </Button>
-          <Form.Text className='d-block mt-3'>
-            This will send an invite to the user's SurveyScope inbox.
-          </Form.Text>
-          <Form.Text className='d-block'>
-            If the user doesn't have an account, please contact WildEye support
-            with the email of the user that requires an account.
-          </Form.Text>
-        </Form>
-      </Modal.Body>
-    </Modal>
+    <Dialog open={show} onOpenChange={(o) => !o && showModal(null)}>
+      <DialogContent>
+        <DialogHeader closeButton>
+          <DialogTitle>Invite a user to {organization.name}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <form onSubmit={handleSubmit}>
+            <div className='mb-4'>
+              <Label htmlFor='formBasicEmail'>Email</Label>
+              <Input
+                id='formBasicEmail'
+                type='email'
+                placeholder='Enter email'
+                name='email'
+              />
+            </div>
+            <Button variant='primary' type='submit' disabled={isSubmitting}>
+              Send Invite
+            </Button>
+            <FormText className='block mt-4'>
+              This will send an invite to the user's SurveyScope inbox.
+            </FormText>
+            <FormText className='block'>
+              If the user doesn't have an account, please contact WildEye support
+              with the email of the user that requires an account.
+            </FormText>
+          </form>
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
   );
 }

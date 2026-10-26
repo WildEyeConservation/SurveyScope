@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import LightImageView from './LightImageView';
 
@@ -36,53 +44,55 @@ export default function ImageViewerModal({
   };
 
   return (
-    <Modal show={show} onHide={onClose} size='xl'>
-      <Modal.Header closeButton>
-        <Modal.Title>
-          View Image{' '}
-          {imageId ? `(${currentIndex + 1} of ${imageIds.length})` : ''}
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body style={{ height: '75vh' }}>
-        {imageId ? (
-          <div className='w-100 h-100' style={{ position: 'relative' }}>
-            <LightImageView
-              imageId={imageId}
-              annotationSetId={annotationSetId}
-              categoryIds={categoryIds}
-            />
+    <Dialog open={show} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent size='xl'>
+        <DialogHeader closeButton>
+          <DialogTitle>
+            View Image{' '}
+            {imageId ? `(${currentIndex + 1} of ${imageIds.length})` : ''}
+          </DialogTitle>
+        </DialogHeader>
+        <DialogBody style={{ height: '75vh' }}>
+          {imageId ? (
+            <div className='w-full h-full' style={{ position: 'relative' }}>
+              <LightImageView
+                imageId={imageId}
+                annotationSetId={annotationSetId}
+                categoryIds={categoryIds}
+              />
+            </div>
+          ) : (
+            <div>No image selected.</div>
+          )}
+        </DialogBody>
+        <DialogFooter className='flex justify-between'>
+          <div className='flex flex-row gap-2'>
+            <Button
+              className='flex flex-row items-center justify-center h-full'
+              variant='primary'
+              onClick={handlePrevious}
+              disabled={!hasPrevious}
+              style={{ width: '110px' }}
+            >
+              <ChevronLeft className='size-6' />
+              <span className='hidden sm:block'>Previous</span>
+            </Button>
+            <Button
+              className='flex flex-row items-center justify-center h-full'
+              variant='primary'
+              onClick={handleNext}
+              disabled={!hasNext}
+              style={{ width: '110px' }}
+            >
+              <span className='hidden sm:block'>Next</span>
+              <ChevronRight className='size-6' />
+            </Button>
           </div>
-        ) : (
-          <div>No image selected.</div>
-        )}
-      </Modal.Body>
-      <Modal.Footer className='d-flex justify-content-between'>
-        <div className='d-flex flex-row gap-2'>
-          <Button
-            className='d-flex flex-row align-items-center justify-content-center h-100'
-            variant='primary'
-            onClick={handlePrevious}
-            disabled={!hasPrevious}
-            style={{ width: '110px' }}
-          >
-            <ChevronLeft />
-            <span className='d-none d-sm-block'>Previous</span>
+          <Button variant='dark' onClick={onClose}>
+            Close
           </Button>
-          <Button
-            className='d-flex flex-row align-items-center justify-content-center h-100'
-            variant='primary'
-            onClick={handleNext}
-            disabled={!hasNext}
-            style={{ width: '110px' }}
-          >
-            <span className='d-none d-sm-block'>Next</span>
-            <ChevronRight />
-          </Button>
-        </div>
-        <Button variant='dark' onClick={onClose}>
-          Close
-        </Button>
-      </Modal.Footer>
-    </Modal>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -35,7 +35,7 @@ export function ImageLoader() {
 
   return (
     <div
-      className='d-flex flex-column align-items-center w-100 h-100'
+      className='flex flex-col items-center w-full h-full'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
       {image && (

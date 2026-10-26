@@ -7,7 +7,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Button, Form, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { Alert } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label, FormText } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
@@ -1036,42 +1041,42 @@ export default function SurveyAreaEditor({
       : null;
 
   return (
-    <div className='d-flex flex-wrap gap-3'>
+    <div className='flex flex-wrap gap-4'>
       <div
-        className='d-flex flex-column gap-2'
+        className='flex flex-col gap-2'
         style={{ flex: '1 1 260px', maxWidth: 360, minWidth: 0 }}
       >
         {pendingImport ? (
           <>
-            <Form.Label className='mb-0'>
+            <Label className='mb-0'>
               {pendingImport.length} polygon
               {pendingImport.length === 1 ? '' : 's'} found
-            </Form.Label>
-            <Form.Text className='d-block mt-0' style={{ fontSize: 12 }}>
+            </Label>
+            <FormText className='mt-0' style={{ fontSize: 12 }}>
               Choose what each polygon is. A survey has one boundary, so picking
               a new one replaces the current choice.
-            </Form.Text>
+            </FormText>
             <div
-              className='d-flex flex-column gap-2'
+              className='flex flex-col gap-2'
               style={{ maxHeight: 380, overflowY: 'auto' }}
             >
               {pendingImport.map((polygon, index) => (
                 <div
                   key={polygon.id}
-                  className='d-flex align-items-center gap-2 border border-dark p-2'
+                  className='flex items-center gap-2 border border-dark p-2'
                 >
-                  <div className='flex-grow-1' style={{ minWidth: 0 }}>
-                    <div className='text-truncate'>
+                  <div className='grow' style={{ minWidth: 0 }}>
+                    <div className='truncate'>
                       {index + 1}. {polygon.name}
                     </div>
                     <div
-                      className='text-muted text-truncate'
+                      className='text-muted-foreground truncate'
                       style={{ fontSize: 12 }}
                     >
                       {polygon.source}, {formatArea(polygon.areaKm2)}
                     </div>
                   </div>
-                  <Form.Select
+                  <NativeSelect
                     size='sm'
                     aria-label={`Role of ${polygon.name}`}
                     style={{ width: 120, flex: '0 0 auto' }}
@@ -1089,11 +1094,11 @@ export default function SurveyAreaEditor({
                     <option value='boundary'>Boundary</option>
                     <option value='exclusion'>Exclusion</option>
                     <option value='ignore'>Ignore</option>
-                  </Form.Select>
+                  </NativeSelect>
                 </div>
               ))}
             </div>
-            <div className='d-flex gap-2'>
+            <div className='flex gap-2'>
               <Button
                 size='sm'
                 variant='primary'
@@ -1115,18 +1120,18 @@ export default function SurveyAreaEditor({
           </>
         ) : (
           <>
-            <Form.Label className='mb-0'>Survey area</Form.Label>
+            <Label className='mb-0'>Survey area</Label>
             {rings.length === 0 && (
-              <Form.Text className='d-block mt-0' style={{ fontSize: 12 }}>
+              <FormText className='mt-0' style={{ fontSize: 12 }}>
                 {locked
                   ? 'This survey has no boundary.'
                   : 'Upload one or more zipped shapefiles, GeoJSON or KML files, draw the boundary on the map, or trace it around your images.'}
-              </Form.Text>
+              </FormText>
             )}
             {rings.map(({ label, ring, color }, index) => (
               <div
                 key={label}
-                className='d-flex align-items-center gap-2 border border-dark p-2'
+                className='flex items-center gap-2 border border-dark p-2'
               >
                 <span
                   style={{
@@ -1136,9 +1141,9 @@ export default function SurveyAreaEditor({
                     border: `2px solid ${color}`,
                   }}
                 />
-                <div className='flex-grow-1' style={{ minWidth: 0 }}>
+                <div className='grow' style={{ minWidth: 0 }}>
                   <div>{label}</div>
-                  <div className='text-muted' style={{ fontSize: 12 }}>
+                  <div className='text-muted-foreground' style={{ fontSize: 12 }}>
                     {formatArea(ringAreaKm2(ring))}
                   </div>
                 </div>
@@ -1161,7 +1166,7 @@ export default function SurveyAreaEditor({
               </div>
             ))}
             {!locked && (
-              <div className='d-flex flex-wrap align-items-center gap-2'>
+              <div className='flex flex-wrap items-center gap-2'>
                 {fileInput}
                 {importing && <Spinner animation='border' size='sm' />}
                 {!value.boundary && (points?.length ?? 0) > 0 && (
@@ -1174,24 +1179,24 @@ export default function SurveyAreaEditor({
           </>
         )}
         {importErrors.map((error) => (
-          <div key={error} className='alert alert-warning mb-0 p-2'>
+          <Alert key={error} variant='warning' className='mb-0 p-2'>
             {error}
-          </div>
+          </Alert>
         ))}
         {children}
         {strata && !pendingImport && (
           <>
-            <Form.Label className='mb-0 mt-2'>Strata</Form.Label>
-            <Form.Text className='d-block mt-0' style={{ fontSize: 12 }}>
+            <Label className='mb-0 mt-2'>Strata</Label>
+            <FormText className='mt-0' style={{ fontSize: 12 }}>
               {value.boundary
                 ? 'Draw lines across the survey area to divide it into strata, then name each one. Without lines the whole area is one stratum.'
                 : 'Add a boundary to define strata.'}
-            </Form.Text>
+            </FormText>
             {strata.status}
             {strata.sections.map((ring, i) => (
               <div
                 key={i}
-                className='d-flex align-items-center gap-2 border border-dark p-2'
+                className='flex items-center gap-2 border border-dark p-2'
                 onMouseEnter={() => setHighlighted(i)}
                 onMouseLeave={() => setHighlighted(null)}
               >
@@ -1203,12 +1208,12 @@ export default function SurveyAreaEditor({
                     background: strataColors[i % strataColors.length],
                   }}
                 />
-                <Form.Control
+                <Input
                   size='sm'
                   aria-label={`Name of stratum ${i + 1}`}
                   value={strata.names[i] ?? ''}
                   disabled={locked}
-                  isInvalid={strata.invalid?.[i]}
+                  aria-invalid={strata.invalid?.[i] || undefined}
                   onChange={(e) => strata.onNameChange(i, e.target.value)}
                 />
                 <Button
@@ -1230,11 +1235,11 @@ export default function SurveyAreaEditor({
         )}
       </div>
       <div
-        className='d-flex flex-column gap-2'
+        className='flex flex-col gap-2'
         style={{ flex: '3 1 480px', minWidth: 0 }}
       >
         {!locked && !pendingImport && (
-          <div className='d-flex gap-2 flex-wrap align-items-center'>
+          <div className='flex gap-2 flex-wrap items-center'>
             <Button
               size='sm'
               variant={
@@ -1312,7 +1317,7 @@ export default function SurveyAreaEditor({
           </div>
         )}
         {toolHint && (
-          <span className='text-muted' style={{ fontSize: 12 }}>
+          <span className='text-muted-foreground' style={{ fontSize: 12 }}>
             {toolHint}
           </span>
         )}

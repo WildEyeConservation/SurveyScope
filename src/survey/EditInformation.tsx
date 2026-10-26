@@ -1,4 +1,5 @@
-import { Button, Form } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Footer } from '../Modal';
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
@@ -172,15 +173,15 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <Form className='d-flex flex-column gap-3 p-3'>
-        <div className='d-flex flex-column'>
+      <form className='flex flex-col gap-4 p-4'>
+        <div className='flex flex-col'>
           <label
-            className='text-uppercase fw-semibold text-muted mb-1'
+            className='uppercase font-semibold text-muted-foreground mb-1'
             style={{ letterSpacing: 0.5, fontSize: 12 }}
           >
             Survey Name
           </label>
-          <Form.Control
+          <Input
             type='text'
             value={newProjectName}
             disabled={fetching}
@@ -197,7 +198,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
           projectName={newProjectName}
           loading={structureFetching}
         />
-      </Form>
+      </form>
       <Footer>
         <Button variant='primary' onClick={handleSubmit} disabled={disabled}>
           Save

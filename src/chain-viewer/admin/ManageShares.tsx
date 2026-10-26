@@ -1,5 +1,10 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Form, Spinner, Table } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Table } from '@/components/ui/table';
 import { RotateCw } from 'lucide-react';
 import Select, { type SingleValue } from 'react-select';
 import './admin.css';
@@ -278,20 +283,20 @@ export default function ManageShares() {
 
   return (
     <div style={{ width: '100%' }}>
-      <Card className='mb-3'>
-        <Card.Header>
+      <Card className='mb-4'>
+        <CardHeader>
           <h4 className='mb-0'>Share a chain review</h4>
-        </Card.Header>
-        <Card.Body>
-          <Form
+        </CardHeader>
+        <CardContent>
+          <form
             onSubmit={(e) => {
               e.preventDefault();
               void onCreate();
             }}
           >
-            <div className='d-flex flex-row align-items-end gap-2 flex-wrap'>
-              <Form.Group style={{ minWidth: 260, flex: 1 }}>
-                <Form.Label>Survey</Form.Label>
+            <div className='flex flex-row items-end gap-2 flex-wrap'>
+              <div style={{ minWidth: 260, flex: 1 }}>
+                <Label>Survey</Label>
                 <Select
                   value={selectedSurvey}
                   onChange={(v: SingleValue<Option>) => setSelectedSurvey(v)}
@@ -300,9 +305,9 @@ export default function ManageShares() {
                   placeholder='Select survey…'
                   isClearable
                 />
-              </Form.Group>
-              <Form.Group style={{ minWidth: 260, flex: 1 }}>
-                <Form.Label>Annotation set</Form.Label>
+              </div>
+              <div style={{ minWidth: 260, flex: 1 }}>
+                <Label>Annotation set</Label>
                 <Select
                   value={selectedSet}
                   onChange={(v: SingleValue<Option>) => setSelectedSet(v)}
@@ -314,33 +319,33 @@ export default function ManageShares() {
                   isDisabled={!selectedSurvey}
                   isClearable
                 />
-              </Form.Group>
+              </div>
               <Button type='submit' disabled={creating || !selectedSet}>
                 {creating ? <Spinner animation='border' size='sm' /> : 'Create share'}
               </Button>
             </div>
-          </Form>
+          </form>
 
-          {message && <p className='mt-3 mb-0 text-info'>{message}</p>}
-        </Card.Body>
+          {message && <p className='mt-4 mb-0 text-info'>{message}</p>}
+        </CardContent>
       </Card>
 
       <Card>
-        <Card.Header className='d-flex justify-content-between align-items-center'>
+        <CardHeader className='flex justify-between items-center'>
           <h4 className='mb-0'>Shares and recovery</h4>
           <Button variant='outline-light' size='sm' onClick={() => { void loadShares(); refreshReviewers(); }}>
-            <RotateCw size={14} className='me-1' />
+            <RotateCw size={14} className='mr-1' />
             Refresh
           </Button>
-        </Card.Header>
-        <Card.Body className='p-0'>
-          {reviewersFailed && <p className='p-3 text-danger'>Could not load reviewer membership. Refresh before revoking a share.</p>}
+        </CardHeader>
+        <CardContent className='p-0'>
+          {reviewersFailed && <p className='p-4 text-danger'>Could not load reviewer membership. Refresh before revoking a share.</p>}
           {loading ? (
-            <div className='p-3'>
+            <div className='p-4'>
               <Spinner animation='border' size='sm' />
             </div>
           ) : shares.length === 0 ? (
-            <p className='mb-0 p-3'>No shares to manage.</p>
+            <p className='mb-0 p-4'>No shares to manage.</p>
           ) : (
             <Table
               responsive
@@ -365,27 +370,27 @@ export default function ManageShares() {
                   const recovering = share.status !== 'active';
                   return (
                     <tr key={share.shareId}>
-                      <td className='fw-semibold'>{share.surveyName ?? '—'}</td>
+                      <td className='font-semibold'>{share.surveyName ?? '—'}</td>
                       <td>{share.annotationSetName ?? share.annotationSetId}</td>
                       <td>
                         <Badge
-                          bg={share.status === 'active' ? 'success' : 'warning'}
-                          className='text-uppercase'
+                          variant={share.status === 'active' ? 'success' : 'warning'}
+                          className='uppercase'
                         >
                           {share.status ?? 'unknown'}
                         </Badge>
-                        {share.errorMessage && <div className='small text-danger'>{share.errorMessage}</div>}
+                        {share.errorMessage && <div className='text-sm text-danger'>{share.errorMessage}</div>}
                         {['creating', 'revoking'].includes(share.status ?? '') && !operationBusy && (
-                          <div className='small text-warning'>Operation timed out. Remove reviewers, then clean up.</div>
+                          <div className='text-sm text-warning'>Operation timed out. Remove reviewers, then clean up.</div>
                         )}
                       </td>
                       <td style={{ minWidth: 160 }}>
                         {assigned.length === 0 ? (
-                          <span className='text-muted fst-italic'>No reviewers</span>
+                          <span className='text-muted-foreground italic'>No reviewers</span>
                         ) : (
-                          <div className='d-flex flex-row flex-wrap gap-1'>
+                          <div className='flex flex-row flex-wrap gap-1'>
                             {assigned.map((u) => (
-                              <Badge bg='info' key={u.id} title={u.email ?? u.id}>
+                              <Badge variant='info' key={u.id} title={u.email ?? u.id}>
                                 {userNameById.get(u.id) ?? u.id}
                               </Badge>
                             ))}
@@ -393,7 +398,7 @@ export default function ManageShares() {
                         )}
                       </td>
                       <td style={{ minWidth: 340 }}>
-                        <div className='d-flex flex-row align-items-center gap-2'>
+                        <div className='flex flex-row items-center gap-2'>
                           <div style={{ flex: 1, minWidth: 160 }}>
                             <Select
                               value={selectedUser[share.shareId] ?? null}
@@ -460,7 +465,7 @@ export default function ManageShares() {
               </tbody>
             </Table>
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
     </div>
   );

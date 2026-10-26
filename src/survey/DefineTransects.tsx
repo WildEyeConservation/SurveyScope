@@ -8,7 +8,9 @@ import {
 } from 'react';
 import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
-import { Form, Spinner, Button } from 'react-bootstrap';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { Alert } from '@/components/ui/alert';
 import { Footer } from '../Modal';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -747,7 +749,7 @@ function DefineTransectsEditor({
     const map = mapRef.current;
     if (!map || !mapLoaded || !pendingPolygon) return;
     const node = document.createElement('div');
-    node.className = 'd-flex flex-column gap-2';
+    node.className = 'flex flex-col gap-2';
     node.style.color = '#000';
     const label = document.createElement('div');
     label.className = 'mb-1';
@@ -755,7 +757,7 @@ function DefineTransectsEditor({
     node.appendChild(label);
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'btn btn-primary btn-sm';
+    btn.className = buttonVariants({ variant: 'primary', size: 'sm' });
     btn.textContent = 'Merge points';
     btn.onclick = () => assignPendingToNewTransectRef.current();
     node.appendChild(btn);
@@ -799,9 +801,9 @@ function DefineTransectsEditor({
 
   return (
     <>
-      <Form className='d-flex flex-column gap-3 p-3'>
+      <form className='flex flex-col gap-4 p-4'>
         <div
-          className='text-uppercase fw-semibold text-muted'
+          className='uppercase font-semibold text-muted-foreground'
           style={{ letterSpacing: 0.5, fontSize: 12 }}
         >
           Define Transects
@@ -809,7 +811,7 @@ function DefineTransectsEditor({
         <div>
           <button
             type='button'
-            className='text-muted d-flex align-items-center gap-1'
+            className='text-muted-foreground flex items-center gap-1'
             onClick={() => setShowInstructions((v) => !v)}
             style={{
               background: 'none',
@@ -831,7 +833,7 @@ function DefineTransectsEditor({
             Instructions
           </button>
           {showInstructions && (
-            <ul className='mt-2 mb-0 text-muted' style={{ fontSize: '14px' }}>
+            <ul className='mt-2 mb-0 text-muted-foreground' style={{ fontSize: '14px' }}>
               <li>
                 Single-click a point to select its transect (Ctrl/⌘-click for
                 multi-select). Clicking a selected transect deselects it.
@@ -860,7 +862,7 @@ function DefineTransectsEditor({
           )}
         </div>
 
-        <div className='d-flex gap-2 flex-wrap'>
+        <div className='flex gap-2 flex-wrap'>
           <Button
             size='sm'
             variant={activeTool === 'enclose' ? 'primary' : 'outline-primary'}
@@ -884,7 +886,7 @@ function DefineTransectsEditor({
 
           {selectedTransectIds.size >= 2 && (
             <div
-              className='d-flex flex-row gap-2 p-2'
+              className='flex flex-row gap-2 p-2'
               style={{
                 position: 'absolute',
                 bottom: '10px',
@@ -929,18 +931,18 @@ function DefineTransectsEditor({
           )}
         </div>
         {loadError && (
-          <div className='alert alert-danger mb-0'>{loadError}</div>
+          <Alert variant='danger' className='mb-0'>{loadError}</Alert>
         )}
         {!loading && !loadError && !boundary && strata.length === 0 && (
-          <div className='alert alert-warning mb-0'>
+          <Alert variant='warning' className='mb-0'>
             Add a survey boundary in Define Strata before saving transects.
-          </div>
+          </Alert>
         )}
         {saveError && (
-          <div className='alert alert-danger mb-0'>{saveError}</div>
+          <Alert variant='danger' className='mb-0'>{saveError}</Alert>
         )}
         {saving && (
-          <div className='d-flex justify-content-center align-items-center mt-3'>
+          <div className='flex justify-center items-center mt-4'>
             <Spinner animation='border' size='sm' />
             <span className='ms-2'>
               Saving images to transects:{' '}
@@ -951,7 +953,7 @@ function DefineTransectsEditor({
             </span>
           </div>
         )}
-      </Form>
+      </form>
       <Footer>
         <Button
           variant='primary'

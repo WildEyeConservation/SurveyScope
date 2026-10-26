@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Form } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { FormText, Label } from '@/components/ui/label';
 import {
   orientationCorrectionFor,
   type CameraOrientationRotations,
@@ -70,7 +71,7 @@ function ExpandedSample({
 
   return createPortal(
     <div
-      className='d-flex flex-column'
+      className='flex flex-col'
       style={{
         position: 'fixed',
         inset: 0,
@@ -78,12 +79,12 @@ function ExpandedSample({
         backgroundColor: 'rgba(0,0,0,0.95)',
       }}
     >
-      <div className='d-flex align-items-center gap-2 p-2 text-white'>
-        <strong className='text-truncate' style={{ flex: 1, minWidth: 0 }}>
+      <div className='flex items-center gap-2 p-2 text-white'>
+        <strong className='truncate' style={{ flex: 1, minWidth: 0 }}>
           {title}
         </strong>
         <span
-          className='text-muted d-none d-md-inline'
+          className='text-muted-foreground hidden md:inline'
           style={{ fontSize: 12 }}
         >
           Scroll to zoom, drag to pan
@@ -188,9 +189,9 @@ function CameraOrientationCard({
       className='border border-dark p-2'
       style={{ width: 360, backgroundColor: 'rgba(0,0,0,0.15)' }}
     >
-      <div className='d-flex justify-content-between align-items-center mb-1'>
+      <div className='flex justify-between items-center mb-1'>
         <strong>{groupLabel(group.orientationGroup)}</strong>
-        <span className='text-muted' style={{ fontSize: 12 }}>
+        <span className='text-muted-foreground' style={{ fontSize: 12 }}>
           {group.files.length} image{group.files.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -221,17 +222,17 @@ function CameraOrientationCard({
             }}
           />
         ) : (
-          <span className='text-muted'>Loading…</span>
+          <span className='text-muted-foreground'>Loading…</span>
         )}
       </div>
       <div
-        className='text-truncate text-muted mt-1'
+        className='truncate text-muted-foreground mt-1'
         style={{ fontSize: 11 }}
         title={file?.webkitRelativePath}
       >
         {file?.webkitRelativePath}
       </div>
-      <div className='d-flex gap-2 mt-2'>
+      <div className='flex gap-2 mt-2'>
         <Button
           size='sm'
           variant='secondary'
@@ -322,32 +323,32 @@ export default function OrientationReview({
     });
 
   return (
-    <Form.Group className='mt-3'>
-      <Form.Label className='mb-0'>Camera Orientation Check</Form.Label>
-      <Form.Text className='d-block mb-2 mt-0' style={{ fontSize: '12px' }}>
+    <div className='mt-4'>
+      <Label className='mb-0'>Camera Orientation Check</Label>
+      <FormText className='block mb-2 mt-0' style={{ fontSize: '12px' }}>
         Each camera is split into landscape and portrait source images. Review
         every group shown and rotate its sample until it looks upright; click a
         sample to expand it and zoom in. The selected correction applies to all
         images in that camera and shape group. Uploaded copies are physically
         normalized before processing; files on your computer are not modified.
-      </Form.Text>
+      </FormText>
 
-      <div className='d-flex flex-column gap-3'>
+      <div className='flex flex-col gap-4'>
         {cameraNames.map((cameraName) => (
           <div
             key={cameraName}
-            className='border-start border-3 border-secondary ps-3'
+            className='border-l-[3px] border-secondary ps-4'
           >
             <div className='mb-2'>
               <span
-                className='d-block text-uppercase text-muted'
+                className='block uppercase text-muted-foreground'
                 style={{ fontSize: 10, letterSpacing: '0.08em' }}
               >
                 Camera
               </span>
               <strong>{cameraName}</strong>
             </div>
-            <div className='d-flex flex-wrap gap-3'>
+            <div className='flex flex-wrap gap-4'>
               {cameraGroups
                 .filter((group) => group.cameraName === cameraName)
                 .map((group) => {
@@ -382,6 +383,6 @@ export default function OrientationReview({
           </div>
         ))}
       </div>
-    </Form.Group>
+    </div>
   );
 }

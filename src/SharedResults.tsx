@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext, UserContext } from './Context.tsx';
-import { Card, Button } from 'react-bootstrap';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { fetchAllPaginatedResults } from './utils.tsx';
 
@@ -56,17 +57,17 @@ export default function SharedResults() {
       }}
     >
       <Card>
-        <Card.Header className='d-flex justify-content-between align-items-center gap-2'>
-          <Card.Title className='mb-0 w-100' style={{ maxWidth: '300px' }}>
+        <CardHeader className='flex justify-between items-center gap-2'>
+          <CardTitle className='mb-0 w-full' style={{ maxWidth: '300px' }}>
             <h4 className='mb-0'>Shared Results</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body className='d-flex flex-column gap-2'>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className='flex flex-col gap-2'>
           {annotationSets.length > 0 ? (
             annotationSets.map((annotationSet) => (
               <div
                 key={annotationSet.id}
-                className='d-flex flex-row justify-content-between align-items-center gap-2 border border-dark p-3'
+                className='flex flex-row justify-between items-center gap-2 border border-dark p-4'
               >
                 <div>
                   <p className='mb-0'>Survey: {annotationSet.projectName}</p>
@@ -87,7 +88,7 @@ export default function SharedResults() {
           ) : (
             <p>No results have been shared with you.</p>
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
     </div>
   );

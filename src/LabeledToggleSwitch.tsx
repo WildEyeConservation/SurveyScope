@@ -1,5 +1,6 @@
 import React from 'react';
-import { Form, Row, Col } from 'react-bootstrap';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 
 interface LabeledToggleSwitchProps {
   leftLabel: string;
@@ -19,26 +20,24 @@ const LabeledToggleSwitch: React.FC<LabeledToggleSwitchProps> = ({
   disabled,
 }) => {
   return (
-    <Form.Group
-      as={Row}
-      className={`${className || 'mb-3 align-items-center'}`}
+    <div
+      className={`flex flex-wrap -mx-3 ${className || 'mb-4 items-center'}`}
     >
-      <Col xs={4} className='text-end'>
-        <Form.Label className='mb-0'>{leftLabel}</Form.Label>
-      </Col>
-      <Col xs={4} className='d-flex justify-content-center'>
-        <Form.Check
-          type='switch'
+      <div className='w-1/3 px-3 text-right'>
+        <Label className='mb-0'>{leftLabel}</Label>
+      </div>
+      <div className='w-1/3 px-3 flex justify-center'>
+        <Switch
           id='custom-switch'
           checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
+          onCheckedChange={onChange}
           disabled={disabled}
         />
-      </Col>
-      <Col xs={4}>
-        <Form.Label className='mb-0'>{rightLabel}</Form.Label>
-      </Col>
-    </Form.Group>
+      </div>
+      <div className='w-1/3 px-3'>
+        <Label className='mb-0'>{rightLabel}</Label>
+      </div>
+    </div>
   );
 };
 

@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState, type ReactNode } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { GlobalContext } from '../Context';
 import { boundaryRecomputePending } from '../utils/shapefileUtils';
 
@@ -53,12 +54,12 @@ export default function BoundaryRecomputeGate({
 
   if (ready) return <>{children}</>;
   return (
-    <div className='d-flex flex-column align-items-center gap-3 p-4'>
-      <div className='d-flex align-items-center gap-2'>
+    <div className='flex flex-col items-center gap-4 p-6'>
+      <div className='flex items-center gap-2'>
         <Spinner animation='border' />
         <span>Applying the survey area and strata to the images</span>
       </div>
-      <span className='text-muted' style={{ fontSize: 14 }}>
+      <span className='text-muted-foreground' style={{ fontSize: 14 }}>
         {what} open once every image and transect has been checked against the
         survey area and strata.
       </span>

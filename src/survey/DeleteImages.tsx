@@ -13,14 +13,13 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { booleanPointInPolygon } from '@turf/turf';
-import {
-  Button,
-  Spinner,
-  Alert,
-  ProgressBar,
-  Badge,
-  Form,
-} from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { Alert } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { fetchAllPaginatedResults } from '../utils';
 import {
   BASE_STYLE,
@@ -1292,26 +1291,26 @@ This action cannot be undone.`;
 
   return (
     <>
-      <div className='p-3 d-flex flex-column gap-3'>
+      <div className='p-4 flex flex-col gap-4'>
         {/* Selection header + toolbar */}
-        <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
-          <div className='d-flex align-items-baseline gap-2'>
+        <div className='flex justify-between items-center flex-wrap gap-2'>
+          <div className='flex items-baseline gap-2'>
             <div
-              className='text-uppercase fw-semibold text-muted'
+              className='uppercase font-semibold text-muted-foreground'
               style={{ letterSpacing: 0.5, fontSize: 12 }}
             >
               Selection
             </div>
-            <span className='text-muted' style={{ fontSize: 13 }}>
+            <span className='text-muted-foreground' style={{ fontSize: 13 }}>
               {images.length} loaded {' · '}
               <span
-                className={selectedCount > 0 ? 'text-danger fw-semibold' : ''}
+                className={selectedCount > 0 ? 'text-danger font-semibold' : ''}
               >
                 {selectedCount} selected
               </span>
             </span>
           </div>
-          <div className='d-flex gap-2 flex-wrap'>
+          <div className='flex gap-2 flex-wrap'>
             <Button
               size='sm'
               variant='outline-secondary'
@@ -1320,7 +1319,7 @@ This action cannot be undone.`;
             >
               {loading ? (
                 <>
-                  <Spinner animation='border' size='sm' className='me-1' />
+                  <Spinner animation='border' size='sm' />
                   Loading...
                 </>
               ) : (
@@ -1350,7 +1349,7 @@ This action cannot be undone.`;
         <div>
           <button
             type='button'
-            className='text-muted d-flex align-items-center gap-1'
+            className='text-muted-foreground flex items-center gap-1'
             onClick={() => setShowInstructions((v) => !v)}
             style={{
               background: 'none',
@@ -1372,7 +1371,7 @@ This action cannot be undone.`;
             Instructions
           </button>
           {showInstructions && (
-            <ul className='mt-2 mb-0 text-muted' style={{ fontSize: 13 }}>
+            <ul className='mt-2 mb-0 text-muted-foreground' style={{ fontSize: 13 }}>
               <li>Click on an image marker to select it</li>
               <li>
                 Hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + click to select multiple
@@ -1390,25 +1389,28 @@ This action cannot be undone.`;
 
         {/* Shapefile controls */}
         {(loadingShapefile || shapefileCoords) && (
-          <div className='d-flex align-items-center gap-2 flex-wrap'>
+          <div className='flex items-center gap-2 flex-wrap'>
             {loadingShapefile && (
-              <span className='text-muted small d-flex align-items-center gap-1'>
+              <span className='text-muted-foreground text-sm flex items-center gap-1'>
                 <Spinner animation='border' size='sm' />
                 Loading shapefile...
               </span>
             )}
             {shapefileCoords && (
               <>
-                <Badge bg='warning' text='dark'>
+                <Badge variant='warning' className='text-black'>
                   Shapefile loaded ({shapefileCoords.length} pts)
                 </Badge>
-                <Form.Check
-                  type='switch'
-                  id='toggle-shapefile-overlay'
-                  label='Show on map'
-                  checked={showShapefile}
-                  onChange={(e) => setShowShapefile(e.target.checked)}
-                />
+                <div className='flex items-center gap-2'>
+                  <Switch
+                    id='toggle-shapefile-overlay'
+                    checked={showShapefile}
+                    onCheckedChange={(c) => setShowShapefile(c)}
+                  />
+                  <Label htmlFor='toggle-shapefile-overlay' className='mb-0'>
+                    Show on map
+                  </Label>
+                </div>
                 <Button
                   size='sm'
                   variant='outline-warning'
@@ -1424,12 +1426,12 @@ This action cannot be undone.`;
 
         {/* Loading status */}
         {loadingStatus && !error && (
-          <div className='text-muted small'>{loadingStatus}</div>
+          <div className='text-muted-foreground text-sm'>{loadingStatus}</div>
         )}
 
         {/* Error display */}
         {error && (
-          <Alert variant='danger' dismissible onClose={() => setError(null)}>
+          <Alert variant='danger' onClose={() => setError(null)}>
             {error}
           </Alert>
         )}
@@ -1437,9 +1439,9 @@ This action cannot be undone.`;
         {/* Delete progress */}
         {deleteProgress && (
           <div>
-            <div className='text-muted small mb-1'>{deleteProgress.phase}</div>
-            <ProgressBar
-              now={
+            <div className='text-muted-foreground text-sm mb-1'>{deleteProgress.phase}</div>
+            <Progress
+              value={
                 deleteProgress.total > 0
                   ? (deleteProgress.current / deleteProgress.total) * 100
                   : 100
@@ -1463,7 +1465,6 @@ This action cannot be undone.`;
                 ? 'warning'
                 : 'success'
             }
-            dismissible
             onClose={() => setDeleteResult(null)}
           >
             <strong>
@@ -1509,7 +1510,7 @@ This action cannot be undone.`;
           {/* Draw selection control */}
           {mapLoaded && hasImages && (
             <div
-              className='position-absolute'
+              className='absolute'
               style={{ top: 10, left: 10, zIndex: 1, maxWidth: 220 }}
             >
               <Button
@@ -1523,7 +1524,7 @@ This action cannot be undone.`;
               </Button>
               {drawing && (
                 <div
-                  className='mt-1 small bg-white rounded px-2 py-1 shadow-sm'
+                  className='mt-1 text-sm bg-white px-2 py-1 shadow-sm'
                   style={{ color: '#000' }}
                 >
                   Click to add boundary points; click the first point to finish.
@@ -1535,7 +1536,7 @@ This action cannot be undone.`;
           {/* No-images overlay */}
           {!hasImages && !loading && (
             <div
-              className='d-flex justify-content-center align-items-center text-muted'
+              className='flex justify-center items-center text-muted-foreground'
               style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
             >
               No images with GPS coordinates found
@@ -1579,7 +1580,7 @@ This action cannot be undone.`;
         >
           {deleting ? (
             <>
-              <Spinner animation='border' size='sm' className='me-1' />
+              <Spinner animation='border' size='sm' />
               Deleting...
             </>
           ) : (

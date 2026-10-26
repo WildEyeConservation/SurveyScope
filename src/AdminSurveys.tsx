@@ -1,5 +1,8 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Form, Spinner } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { GlobalContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
@@ -204,7 +207,7 @@ export default function AdminSurveys() {
           flexWrap: 'wrap',
         }}
       >
-        <Form.Control
+        <Input
           type='text'
           placeholder='Search by organisation or survey…'
           value={search}
@@ -235,6 +238,7 @@ export default function AdminSurveys() {
         <Button
           variant='link'
           size='sm'
+          className='[&_svg]:size-3.5!'
           style={{
             padding: 0,
             color: 'var(--ss-text-muted)',
@@ -250,7 +254,7 @@ export default function AdminSurveys() {
       </div>
 
       {error && (
-        <Alert variant='danger' className='mb-3'>
+        <Alert variant='danger' className='mb-4'>
           {error}
         </Alert>
       )}
@@ -258,8 +262,7 @@ export default function AdminSurveys() {
         <Alert
           variant={banner.variant === 'success' ? 'success' : 'danger'}
           onClose={() => setBanner(null)}
-          dismissible
-          className='mb-3'
+          className='mb-4'
         >
           {banner.text}
         </Alert>

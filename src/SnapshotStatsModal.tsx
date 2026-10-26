@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import MyTable from './Table';
 import exportFromJSON from 'export-from-json';
 
@@ -165,38 +174,37 @@ export default function SnapshotStatsModal({
   };
 
   return (
-    <Modal show={show} onHide={onHide} size='xl' backdrop='static'>
-      <Modal.Header>
-        <Modal.Title>Snapshot Stats for {projectLabel}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <div className='d-flex flex-column gap-2'>
-          <div className='d-flex justify-content-between align-items-center gap-2'>
+    <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
+      <DialogContent size='xl' static>
+      <DialogHeader>
+        <DialogTitle>Snapshot Stats for {projectLabel}</DialogTitle>
+      </DialogHeader>
+      <DialogBody>
+        <div className='flex flex-col gap-2'>
+          <div className='flex justify-between items-center gap-2'>
             <div style={{ width: '150px' }}>
               <label>Date: {startDate?.toLocaleDateString()}</label>
               <label>Start Time:</label>
             </div>
-            <input
+            <Input
               type='time'
-              className='form-control'
               value={snapshotStartTime}
               onChange={(e) => setSnapshotStartTime(e.target.value)}
             />
           </div>
-          <div className='d-flex justify-content-between align-items-center gap-2'>
+          <div className='flex justify-between items-center gap-2'>
             <div style={{ width: '150px' }}>
               <label>Date: {endDate?.toLocaleDateString()}</label>
               <label>End Time:</label>
             </div>
-            <input
+            <Input
               type='time'
-              className='form-control'
               value={snapshotEndTime}
               onChange={(e) => setSnapshotEndTime(e.target.value)}
             />
           </div>
         </div>
-        <div className='mt-3 overflow-x-auto'>
+        <div className='mt-4 overflow-x-auto'>
           <MyTable
             tableHeadings={tableHeadings}
             tableData={Object.keys(snapshotStats).map((userId) => ({
@@ -226,8 +234,8 @@ export default function SnapshotStatsModal({
             emptyMessage="No snapshot stats. Please select time range and click 'Run Snapshot'."
           />
         </div>
-      </Modal.Body>
-      <Modal.Footer>
+      </DialogBody>
+      <DialogFooter>
         <Button
           variant='success'
           onClick={handleExportSnapshot}
@@ -245,7 +253,8 @@ export default function SnapshotStatsModal({
         <Button variant='dark' onClick={onHide}>
           Close
         </Button>
-      </Modal.Footer>
-    </Modal>
+      </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

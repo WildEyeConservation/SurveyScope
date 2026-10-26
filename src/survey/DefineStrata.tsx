@@ -1,5 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import {
@@ -216,7 +218,7 @@ export default function DefineStrata({
     <>
       {pending && (
         <span
-          className='text-muted d-flex align-items-center gap-2'
+          className='text-muted-foreground flex items-center gap-2'
           style={{ fontSize: 12 }}
         >
           <Spinner animation='border' size='sm' />
@@ -224,25 +226,25 @@ export default function DefineStrata({
         </span>
       )}
       {legacyReset && (
-        <div className='alert alert-warning mb-0 p-2' style={{ fontSize: 12 }}>
+        <Alert variant='warning' className='mb-0 p-2' style={{ fontSize: 12 }}>
           These strata were saved before strata lines were kept, so they cannot
           follow the new boundary. The area is one stratum again; redraw the
           lines to divide it.
-        </div>
+        </Alert>
       )}
     </>
   );
 
   return (
     <>
-      <div className='d-flex flex-column gap-3 p-3'>
-        <span className='text-muted' style={{ fontSize: '14px' }}>
+      <div className='flex flex-col gap-4 p-4'>
+        <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
           Upload or draw the survey boundary and any exclusion zones, then
           divide the area into strata. Exclusion zones are deducted from the
           stratum areas when computing results.
         </span>
         {loading ? (
-          <div className='d-flex justify-content-center align-items-center'>
+          <div className='flex justify-center items-center'>
             <Spinner animation='border' />
             <span className='ms-2'>
               {surveySaving
@@ -251,10 +253,10 @@ export default function DefineStrata({
             </span>
           </div>
         ) : loadError ? (
-          <div className='alert alert-danger mb-0'>
+          <Alert variant='danger' className='mb-0'>
             The survey area could not be loaded. Close and reopen this window to
             try again.
-          </div>
+          </Alert>
         ) : (
           <SurveyAreaEditor
             value={area}
@@ -274,10 +276,10 @@ export default function DefineStrata({
           />
         )}
         {saveError && (
-          <div className='alert alert-danger mb-0 p-2'>{saveError}</div>
+          <Alert variant='danger' className='mb-0 p-2'>{saveError}</Alert>
         )}
         {saving && (
-          <div className='d-flex justify-content-center align-items-center'>
+          <div className='flex justify-center items-center'>
             <Spinner animation='border' size='sm' />
             <span className='ms-2'>
               Saving, please do not close this window

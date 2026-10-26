@@ -6,7 +6,8 @@ import {
   DeleteMessageCommand,
   GetQueueAttributesCommand,
 } from '@aws-sdk/client-sqs';
-import { Badge } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   HomographyWorkbenchWorker,
   type HomographyMessage,
@@ -216,10 +217,10 @@ export default function HomographyTask() {
 
   return (
     <div
-      className='d-flex flex-column align-items-center gap-3 w-100 h-100'
+      className='flex flex-col items-center gap-4 w-full h-full'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-100 h-100'>
+      <div className='w-full h-full'>
         {currentPair ? (
           <HomographyWorkbenchWorker
             key={currentPair.pairKey}
@@ -234,29 +235,29 @@ export default function HomographyTask() {
             isSaved={savedPairs.has(currentPair.pairKey)}
           />
         ) : queueEmpty || countdown !== null ? (
-          <div className='d-flex flex-column justify-content-center align-items-center h-100 gap-3'>
+          <div className='flex flex-col justify-center items-center h-full gap-4'>
             <h5>No more pairs to process</h5>
-            <p className='text-muted'>
+            <p className='text-muted-foreground'>
               {countdown !== null
                 ? `Returning to jobs in ${countdown} seconds...`
                 : 'All pairs have been completed or are being processed by other workers.'}
             </p>
-            <button
-              className='btn btn-primary'
-              onClick={() => navigate('/jobs')}
-            >
+            <Button variant='primary' onClick={() => navigate('/jobs')}>
               Return to Jobs
-            </button>
+            </Button>
           </div>
         ) : (
-          <div className='d-flex justify-content-center align-items-center h-100'>
-            <div className='text-muted'>Loading homography task...</div>
+          <div className='flex justify-center items-center h-full'>
+            <div className='text-muted-foreground'>Loading homography task...</div>
           </div>
         )}
       </div>
-      <Badge className='d-flex flex-row align-items-center justify-content-center gap-3 p-2 w-100 bg-secondary flex-wrap'>
+      <Badge
+        variant='secondary'
+        className='flex flex-row items-center justify-center gap-4 p-2 w-full flex-wrap'
+      >
         <p className='mb-0'>{jobsRemaining} pairs remaining (globally)</p>
-        <span className='d-none d-sm-block'>|</span>
+        <span className='hidden sm:block'>|</span>
         <p className='mb-0'>{sessionCompleted} pairs completed in this session</p>
       </Badge>
     </div>

@@ -2,12 +2,17 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { Alert, Form } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import Select from 'react-select';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
@@ -42,6 +47,7 @@ export default function SpeciesLabelling({
 }) {
   const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
+  const switchId = useId();
 
   const [batchSize, setBatchSize] = useState<number>(200);
   const [showAdvancedOptions, setShowAdvancedOptions] =
@@ -409,22 +415,22 @@ export default function SpeciesLabelling({
   }, [setSpeciesLaunchHandler, client, user.userId, annotationSet.name, project.name, project.id, modelOptions, savedZoom]);
 
   return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
-        <Form.Group>
-          <Form.Label className='mb-0'>Batch Size</Form.Label>
+    <div className='px-4 pb-4 pt-1'>
+      <div className='flex flex-col gap-4 mt-2'>
+        <div>
+          <Label className='mb-0'>Batch Size</Label>
           <span
-            className='text-muted d-block mb-1'
+            className='text-muted-foreground block mb-1'
             style={{ fontSize: '12px' }}
           >
             The number of annotation jobs a user can pick up at a time.
           </span>
-          <Form.Control
+          <Input
             type='number'
             value={batchSize}
             onChange={(e) => setBatchSize(Number(e.target.value))}
           />
-        </Form.Group>
+        </div>
         <ZoomSetting
           mode='level'
           zoom={zoom}
@@ -440,49 +446,54 @@ export default function SpeciesLabelling({
         />
       </div>
 
-      <div className='d-flex flex-column mt-2'>
-        <Form.Group>
-          <Form.Switch
-            label='Show Advanced Options'
-            checked={showAdvancedOptions}
-            onChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
-          />
-        </Form.Group>
+      <div className='flex flex-col mt-2'>
+        <div>
+          <div className='mb-0.5 flex items-center gap-2'>
+            <Switch
+              id={`${switchId}-advanced`}
+              checked={showAdvancedOptions}
+              onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+            />
+            <Label htmlFor={`${switchId}-advanced`} className='mb-0'>
+              Show Advanced Options
+            </Label>
+          </div>
+        </div>
       </div>
 
       {showAdvancedOptions && (
         <div
-          className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
+          className='flex flex-col gap-4 border border-dark shadow-sm p-2'
           style={{ backgroundColor: '#697582' }}
         >
-          <Form.Group>
-            <Form.Label className='mb-0'>Job Name</Form.Label>
+          <div>
+            <Label className='mb-0'>Job Name</Label>
             <span
-              className='text-muted d-block mb-1'
+              className='text-muted-foreground block mb-1'
               style={{ fontSize: '12px' }}
             >
               Modify this to display a different name for the job in the jobs
               page.
             </span>
-            <Form.Control
+            <Input
               type='text'
               value={taskTag}
               onChange={(e) => setTaskTag(e.target.value)}
             />
-          </Form.Group>
+          </div>
           {modelGuided &&
-            <Form.Group>
-              <Form.Label className='mb-0'>
+            <div>
+              <Label className='mb-0'>
                 Filter by confidence value:
-              </Form.Label>
+              </Label>
               <span
-                className='text-muted d-block mb-1'
+                className='text-muted-foreground block mb-1'
                 style={{ fontSize: '12px' }}
               >
                 Filter images by confidence value.
               </span>
-              <div className='d-flex align-items-center gap-2'>
-                <Form.Control
+              <div className='flex items-center gap-2'>
+                <Input
                   type='number'
                   min={0}
                   max={1}
@@ -492,7 +503,7 @@ export default function SpeciesLabelling({
                   style={{ width: '80px' }}
                 />
                 <span>to</span>
-                <Form.Control
+                <Input
                   type='number'
                   min={0}
                   max={1}
@@ -502,49 +513,61 @@ export default function SpeciesLabelling({
                   style={{ width: '80px' }}
                 />
               </div>
-            </Form.Group>
+            </div>
           }
-          <Form.Group>
-            <Form.Switch
-              label='Skip Locations With Annotations'
-              checked={skipLocationsWithAnnotations}
-              onChange={() =>
-                setSkipLocationsWithAnnotations(!skipLocationsWithAnnotations)
-              }
-            />
-          </Form.Group>
-          <Form.Group>
-            <Form.Switch
-              label='Allow Annotations Outside Location Boundaries'
-              checked={allowAnnotationsOutsideLocationBoundaries}
-              onChange={() =>
-                setAllowAnnotationsOutsideLocationBoundaries(
-                  !allowAnnotationsOutsideLocationBoundaries
-                )
-              }
-            />
-          </Form.Group>
-          <Form.Group>
-            <Form.Switch
-              label='View Unobserved Locations Only'
-              checked={viewUnobservedLocationsOnly}
-              onChange={() =>
-                setViewUnobservedLocationsOnly(!viewUnobservedLocationsOnly)
-              }
-            />
-          </Form.Group>
-          <Form.Group>
-            <Form.Switch
-              label='Hide Job From Non-Admin Workers'
-              checked={hidden}
-              onChange={() => setHidden(!hidden)}
-            />
-          </Form.Group>
+          <div>
+            <div className='mb-0.5 flex items-center gap-2'>
+              <Switch
+                id={`${switchId}-skip`}
+                checked={skipLocationsWithAnnotations}
+                onCheckedChange={() => setSkipLocationsWithAnnotations(!skipLocationsWithAnnotations)}
+              />
+              <Label htmlFor={`${switchId}-skip`} className='mb-0'>
+                Skip Locations With Annotations
+              </Label>
+            </div>
+          </div>
+          <div>
+            <div className='mb-0.5 flex items-center gap-2'>
+              <Switch
+                id={`${switchId}-outside`}
+                checked={allowAnnotationsOutsideLocationBoundaries}
+                onCheckedChange={() => setAllowAnnotationsOutsideLocationBoundaries(!allowAnnotationsOutsideLocationBoundaries)}
+              />
+              <Label htmlFor={`${switchId}-outside`} className='mb-0'>
+                Allow Annotations Outside Location Boundaries
+              </Label>
+            </div>
+          </div>
+          <div>
+            <div className='mb-0.5 flex items-center gap-2'>
+              <Switch
+                id={`${switchId}-unobserved`}
+                checked={viewUnobservedLocationsOnly}
+                onCheckedChange={() => setViewUnobservedLocationsOnly(!viewUnobservedLocationsOnly)}
+              />
+              <Label htmlFor={`${switchId}-unobserved`} className='mb-0'>
+                View Unobserved Locations Only
+              </Label>
+            </div>
+          </div>
+          <div>
+            <div className='mb-0.5 flex items-center gap-2'>
+              <Switch
+                id={`${switchId}-hidden`}
+                checked={hidden}
+                onCheckedChange={() => setHidden(!hidden)}
+              />
+              <Label htmlFor={`${switchId}-hidden`} className='mb-0'>
+                Hide Job From Non-Admin Workers
+              </Label>
+            </div>
+          </div>
         </div>
       )}
 
       <LabeledToggleSwitch
-        className='m-0 border-top pt-2 mt-2 border-dark'
+        className='m-0 border-t pt-2 mt-2 border-dark'
         leftLabel='Model Guided'
         rightLabel='Tiled Annotation'
         checked={!modelGuided}
@@ -556,14 +579,14 @@ export default function SpeciesLabelling({
       {modelGuided ? (
         loadingLocationSets ? (
           <p
-            className='text-muted mb-0 mt-2 text-center'
+            className='text-muted-foreground mb-0 mt-2 text-center'
             style={{ fontSize: '12px' }}
           >
             Loading models...
           </p>
         ) : modelOptions.length > 1 ? (
-          <Form.Group>
-            <Form.Label className='mb-0'>Model</Form.Label>
+          <div>
+            <Label className='mb-0'>Model</Label>
             <Select
               value={model as any}
               onChange={(m) => {
@@ -576,11 +599,11 @@ export default function SpeciesLabelling({
               className='text-black'
               isDisabled={launching}
             />
-          </Form.Group>
+          </div>
         ) : (
           modelOptions.length === 0 && (
             <p
-              className='text-muted mb-0 mt-2 text-center'
+              className='text-muted-foreground mb-0 mt-2 text-center'
               style={{ fontSize: '12px' }}
             >
               You must first process your images before launching a model guided
@@ -592,7 +615,7 @@ export default function SpeciesLabelling({
         <div className='mt-2'>
           {loadingTileCount ? (
             <p
-              className='text-muted mb-0 text-center'
+              className='text-muted-foreground mb-0 text-center'
               style={{ fontSize: '12px' }}
             >
               Loading tile information...
@@ -615,23 +638,23 @@ export default function SpeciesLabelling({
                 <strong>{globalTileCount}</strong> tiles available for
                 annotation.
               </p>
-              <p className='mb-0 mt-1 text-muted' style={{ fontSize: '12px' }}>
+              <p className='mb-0 mt-1 text-muted-foreground' style={{ fontSize: '12px' }}>
                 To modify tiles, go to Edit Survey &gt; Manage Tiles.
               </p>
               {process.env.NODE_ENV === 'development' && (
-                <Form.Group className='mt-2'>
-                  <Form.Label className='mb-0 text-white' style={{ fontSize: '13px' }}>
+                <div className='mt-2'>
+                  <Label className='mb-0 text-white' style={{ fontSize: '13px' }}>
                     Filter by Image IDs (optional)
-                  </Form.Label>
+                  </Label>
                   <span
-                    className='text-muted d-block mb-1'
+                    className='text-muted-foreground block mb-1'
                     style={{ fontSize: '12px' }}
                   >
                     Upload a JSON file containing an array of image IDs to only
                     launch tiles from those images.
                   </span>
-                  <div className='d-flex align-items-center gap-2'>
-                    <Form.Control
+                  <div className='flex items-center gap-2'>
+                    <Input
                       type='file'
                       accept='.json'
                       size='sm'
@@ -663,13 +686,13 @@ export default function SpeciesLabelling({
                       }}
                     />
                     {launchImageIds && (
-                      <button
-                        type='button'
-                        className='btn btn-sm btn-outline-light'
+                      <Button
+                        variant='outline-light'
+                        size='sm'
                         onClick={() => setLaunchImageIds(null)}
                       >
                         Clear
-                      </button>
+                      </Button>
                     )}
                   </div>
                   {launchImageIds && (
@@ -681,7 +704,7 @@ export default function SpeciesLabelling({
                       — only tiles from these images will be launched.
                     </p>
                   )}
-                </Form.Group>
+                </div>
               )}
             </div>
           )}

@@ -4,8 +4,8 @@ import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
 import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
-import Alert from 'react-bootstrap/Alert';
-import Button from 'react-bootstrap/Button';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
 
 type Permission = {
@@ -228,8 +228,8 @@ export default function ExceptionsModal({
         </Title>
       </Header>
       <Body>
-        <div className='p-3'>
-          <div className='text-muted mb-3' style={{ lineHeight: 1.2 }}>
+        <div className='p-4'>
+          <div className='text-muted-foreground mb-4' style={{ lineHeight: 1.2 }}>
             <span style={{ fontSize: 16 }}>Instructions</span>
             <br />
             <span style={{ fontSize: 12 }}>
@@ -251,7 +251,7 @@ export default function ExceptionsModal({
             emptyMessage={isLoading ? 'Loading...' : 'No surveys found'}
           />
           {saveResult && (
-            <Alert variant={saveResult.variant} className='mt-3 mb-0'>
+            <Alert variant={saveResult.variant} className='mt-4 mb-0'>
               {saveResult.message}
             </Alert>
           )}

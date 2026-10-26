@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { generateClient } from 'aws-amplify/api';
-import Button from 'react-bootstrap/Button';
-import Modal from 'react-bootstrap/Modal';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import MyTable from './Table';
 import { useUsers } from './apiInterface';
 import { graphqlErrorMessage } from './reportClientErrorCore';
@@ -170,7 +177,7 @@ export default function ErrorReports() {
 
   return (
     <div className='mt-2'>
-      <div className='d-flex justify-content-between align-items-center mb-3'>
+      <div className='flex justify-between items-center mb-4'>
         <h5 className='mb-0'>Error Reports</h5>
         <Button
           variant='outline-primary'
@@ -191,23 +198,23 @@ export default function ErrorReports() {
         itemsPerPage={10}
         emptyMessage={loading ? 'Loading...' : 'No error reports'}
       />
-      <Modal
-        show={selected !== null}
-        onHide={() => setSelected(null)}
-        size='xl'
+      <Dialog
+        open={selected !== null}
+        onOpenChange={(o) => !o && setSelected(null)}
       >
-        <Modal.Header closeButton>
-          <Modal.Title>Error Report</Modal.Title>
-        </Modal.Header>
+        <DialogContent size='xl'>
+        <DialogHeader closeButton>
+          <DialogTitle>Error Report</DialogTitle>
+        </DialogHeader>
         {selected && (
-          <Modal.Body>
-            <dl className='mb-3'>
+          <DialogBody>
+            <dl className='mb-4'>
               <dt>Timestamp</dt>
               <dd>{new Date(selected.createdAt).toLocaleString()}</dd>
               <dt>User</dt>
               <dd>
                 {userLabel(selected)}
-                <div className='small text-muted'>{selected.userId}</div>
+                <div className='text-sm text-muted-foreground'>{selected.userId}</div>
               </dd>
               <dt>URL</dt>
               <dd style={{ wordBreak: 'break-all' }}>
@@ -224,7 +231,7 @@ export default function ErrorReports() {
             </dl>
             <h6>Stack Trace</h6>
             <pre
-              className='border rounded p-2 small'
+              className='mb-4 border p-2 text-sm'
               style={{
                 maxHeight: '40vh',
                 overflow: 'auto',
@@ -234,9 +241,9 @@ export default function ErrorReports() {
             >
               {selected.stack || 'No stack trace available'}
             </pre>
-          </Modal.Body>
+          </DialogBody>
         )}
-        <Modal.Footer>
+        <DialogFooter>
           <Button
             variant='danger'
             disabled={deleting}
@@ -247,8 +254,9 @@ export default function ErrorReports() {
           <Button variant='dark' onClick={() => setSelected(null)}>
             Close
           </Button>
-        </Modal.Footer>
-      </Modal>
+        </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

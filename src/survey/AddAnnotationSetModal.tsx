@@ -1,4 +1,8 @@
-import { Form, Button, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import { Schema } from '../amplify/client-schema';
 import { useState, useContext } from 'react';
@@ -99,32 +103,32 @@ export default function AddAnnotationSetModal({
         <Title>Add Annotation Set</Title>
       </Header>
       <Body>
-        <Form className='d-flex flex-column gap-2 p-3'>
-          <Form.Group>
-            <Form.Label className='mb-0'>Name</Form.Label>
+        <form className='flex flex-col gap-2 p-4'>
+          <div>
+            <Label className='mb-0'>Name</Label>
             <span
-              className='text-muted d-block mb-1'
+              className='text-muted-foreground block mb-1'
               style={{ fontSize: '12px' }}
             >
               A descriptive name for your annotation set to help you identify
               it.
             </span>
-            <Form.Control
+            <Input
               type='text'
               value={name}
               placeholder='Enter a name'
               onChange={(e) => setName(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='mb-0'>Load Labels</Form.Label>
+          </div>
+          <div>
+            <Label className='mb-0'>Load Labels</Label>
             <span
-              className='text-muted d-block mb-1'
+              className='text-muted-foreground block mb-1'
               style={{ fontSize: '12px' }}
             >
               Load labels from a previous annotation set.
             </span>
-            <Form.Select
+            <NativeSelect
               value={selectedProject}
               disabled={loadingLabels}
               onChange={(e) => setSelectedProject(e.target.value)}
@@ -135,8 +139,8 @@ export default function AddAnnotationSetModal({
                   {p.name}
                 </option>
               ))}
-            </Form.Select>
-            <Form.Select
+            </NativeSelect>
+            <NativeSelect
               className='mt-1'
               disabled={!selectedProject || loadingLabels}
               value={selectedAnnotationSet}
@@ -150,8 +154,8 @@ export default function AddAnnotationSetModal({
                     {s.name}
                   </option>
                 ))}
-            </Form.Select>
-          </Form.Group>
+            </NativeSelect>
+          </div>
           <LabelEditor
             defaultLabels={[
               {
@@ -165,10 +169,10 @@ export default function AddAnnotationSetModal({
             setHandleSave={setSaveLabels}
             onStatusChange={setStatusMessage}
           />
-        </Form>
+        </form>
         <Footer>
           {statusMessage && (
-            <span className='text-muted me-auto d-flex align-items-center gap-2' style={{ fontSize: 12 }}>
+            <span className='text-muted-foreground me-auto flex items-center gap-2' style={{ fontSize: 12 }}>
               <Spinner size='sm' />
               {statusMessage}
             </span>

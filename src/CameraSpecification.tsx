@@ -1,4 +1,5 @@
-import { Form } from 'react-bootstrap';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useMemo } from 'react';
 import { CameraSpec } from './FilesUploadComponent';
 
@@ -38,29 +39,29 @@ export default function CameraSpecification({
 
   return (
     <div>
-      <Form.Group className='mt-3'>
-        <Form.Label className='mb-0'>
+      <div className='mt-4'>
+        <Label className='mb-0'>
           Camera Specifications (Optional)
-        </Form.Label>
-        <span className='text-muted d-block mb-2' style={{ fontSize: '12px' }}>
+        </Label>
+        <span className='text-muted-foreground block mb-2' style={{ fontSize: '12px' }}>
           Define camera specifications for each camera. If you have only one
           camera, you can define this later.
           {Object.keys(lockedSpecs).length > 0 &&
             ' Cameras saved on this survey cannot be changed here.'}
         </span>
-        <div className='d-flex flex-column gap-3'>
+        <div className='flex flex-col gap-4'>
           {cameraList.map((camera) => (
-            <Form.Group
+            <div
               key={camera}
-              className='d-flex flex-column gap-1 border border-dark p-2 shadow-sm'
+              className='flex flex-col gap-1 border border-dark p-2 shadow-sm'
               style={{ backgroundColor: '#697582' }}
             >
-              <Form.Label className='mb-0'>
+              <Label className='mb-0'>
                 <b>{camera}</b>
-              </Form.Label>
-              <Form.Group>
-                <Form.Label className='mb-0'>Focal Length (mm)</Form.Label>
-                <Form.Control
+              </Label>
+              <div>
+                <Label className='mb-0'>Focal Length (mm)</Label>
+                <Input
                   type='number'
                   placeholder='Focal Length (mm)'
                   value={
@@ -77,10 +78,10 @@ export default function CameraSpecification({
                   }
                   step='0.01'
                 />
-              </Form.Group>
-              <Form.Group>
-                <Form.Label className='mb-0'>Sensor Width (mm)</Form.Label>
-                <Form.Control
+              </div>
+              <div>
+                <Label className='mb-0'>Sensor Width (mm)</Label>
+                <Input
                   type='number'
                   placeholder='Sensor Width (mm)'
                   value={
@@ -97,10 +98,10 @@ export default function CameraSpecification({
                   }
                   step='0.01'
                 />
-              </Form.Group>
-              <Form.Group>
-                <Form.Label className='mb-0'>Tilt (degrees)</Form.Label>
-                <Form.Control
+              </div>
+              <div>
+                <Label className='mb-0'>Tilt (degrees)</Label>
+                <Input
                   type='number'
                   placeholder='Tilt (degrees)'
                   value={
@@ -117,11 +118,11 @@ export default function CameraSpecification({
                   }
                   step='0.01'
                 />
-              </Form.Group>
-            </Form.Group>
+              </div>
+            </div>
           ))}
         </div>
-      </Form.Group>
+      </div>
     </div>
   );
 }

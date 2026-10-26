@@ -1,4 +1,6 @@
-import { Form, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useMemo, useEffect, Dispatch, SetStateAction } from 'react';
 
 export default function CameraOverlap({
@@ -22,33 +24,33 @@ export default function CameraOverlap({
 
   return (
     <div>
-      <Form.Group className='mt-3'>
-        <Form.Label className='mb-0'>Define Overlap Between Cameras</Form.Label>
-        <span className='text-muted d-block mb-2' style={{ fontSize: '12px' }}>
+      <div className='mt-4'>
+        <Label className='mb-0'>Define Overlap Between Cameras</Label>
+        <span className='text-muted-foreground block mb-2' style={{ fontSize: '12px' }}>
           Leave blank if cameras are not overlapping.
           {lockedOverlaps.length > 0 &&
             ' Overlaps saved on this survey cannot be changed here.'}
         </span>
         {lockedOverlaps.map(({ cameraA, cameraB }) => (
           <div
-            className='d-flex align-items-center mb-2'
+            className='flex items-center mb-2'
             key={`saved-${cameraA}-${cameraB}`}
           >
-            <Form.Select
+            <NativeSelect
               aria-label={`Saved overlap camera ${cameraA}`}
               value={cameraA}
               disabled
               className='me-2'
             >
               <option value={cameraA}>{cameraA}</option>
-            </Form.Select>
-            <Form.Select
+            </NativeSelect>
+            <NativeSelect
               aria-label={`Saved overlap camera ${cameraB}`}
               value={cameraB}
               disabled
             >
               <option value={cameraB}>{cameraB}</option>
-            </Form.Select>
+            </NativeSelect>
           </div>
         ))}
         {overlaps.map((pair, idx) => {
@@ -64,8 +66,8 @@ export default function CameraOverlap({
               !usedPairs.includes([pair.cameraA, cam].sort().join('-'))
           );
           return (
-            <div className='d-flex align-items-center mb-2' key={idx}>
-              <Form.Select
+            <div className='flex items-center mb-2' key={idx}>
+              <NativeSelect
                 aria-label={`Camera A for overlap ${idx + 1}`}
                 value={pair.cameraA}
                 onChange={(e) => {
@@ -84,8 +86,8 @@ export default function CameraOverlap({
                     {cam}
                   </option>
                 ))}
-              </Form.Select>
-              <Form.Select
+              </NativeSelect>
+              <NativeSelect
                 aria-label={`Camera B for overlap ${idx + 1}`}
                 value={pair.cameraB}
                 onChange={(e) => {
@@ -103,7 +105,7 @@ export default function CameraOverlap({
                     {cam}
                   </option>
                 ))}
-              </Form.Select>
+              </NativeSelect>
               <Button
                 variant='danger'
                 onClick={() =>
@@ -130,7 +132,7 @@ export default function CameraOverlap({
         >
           Add Overlap
         </Button>
-      </Form.Group>
+      </div>
     </div>
   );
 }

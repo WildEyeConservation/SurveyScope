@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
-import { Spinner, ProgressBar } from 'react-bootstrap';
+import { Spinner } from '@/components/ui/spinner';
+import { Progress } from '@/components/ui/progress';
 import { GlobalContext } from '../Context';
 
 /**
@@ -76,15 +77,15 @@ export default function IndividualIdProgress({
 
   const completed = Math.max(0, stats.total - stats.remaining);
   return (
-    <div className='d-flex flex-column w-100'>
+    <div className='flex flex-col w-full'>
       <p className='mb-0'>
         {completed} / {stats.total} transects completed
       </p>
-      <ProgressBar
-        now={completed}
+      <Progress
+        value={completed}
         max={stats.total}
         animated
-        className='w-100'
+        className='w-full'
       />
     </div>
   );

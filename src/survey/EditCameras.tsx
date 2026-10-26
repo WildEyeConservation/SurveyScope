@@ -1,4 +1,7 @@
-import { Form, Alert, Button } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useState, useEffect, useContext } from 'react';
 import { Footer } from '../Modal';
 import { GlobalContext } from '../Context';
@@ -155,14 +158,14 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
   };
 
   if (isLoading) {
-    return <div className='p-3'>Loading...</div>;
+    return <div className='p-4'>Loading...</div>;
   }
 
   const hasCameras = cameras.length > 0;
 
   return (
     <>
-      <Form className='d-flex flex-column gap-3 p-3'>
+      <form className='flex flex-col gap-4 p-4'>
         {hasCameras ? (
           <>
             <Alert variant='warning' className='mb-0'>
@@ -175,20 +178,20 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
               return (
                 <div
                   key={camera.id}
-                  className='border rounded p-3 shadow-sm'
+                  className='border p-4 shadow-sm'
                   style={{ backgroundColor: '#697582' }}
                 >
-                  <h5 className='mb-3'>
+                  <h5 className='mb-4'>
                     Camera {index + 1}: {camera.name}
                   </h5>
 
-                  <div className='row g-3'>
-                    <div className='col-md-4'>
-                      <Form.Group>
-                        <Form.Label className='mb-0'>
+                  <div className='flex flex-wrap -mx-2 gap-y-4'>
+                    <div className='w-full md:w-1/3 px-2'>
+                      <div>
+                        <Label className='mb-0'>
                           Focal Length (mm)
-                        </Form.Label>
-                        <Form.Control
+                        </Label>
+                        <Input
                           type='number'
                           step='0.01'
                           value={
@@ -205,15 +208,15 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                           }
                           placeholder='Enter focal length'
                         />
-                      </Form.Group>
+                      </div>
                     </div>
 
-                    <div className='col-md-4'>
-                      <Form.Group>
-                        <Form.Label className='mb-0'>
+                    <div className='w-full md:w-1/3 px-2'>
+                      <div>
+                        <Label className='mb-0'>
                           Sensor Width (mm)
-                        </Form.Label>
-                        <Form.Control
+                        </Label>
+                        <Input
                           type='number'
                           step='0.01'
                           value={
@@ -230,13 +233,13 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                           }
                           placeholder='Enter sensor width'
                         />
-                      </Form.Group>
+                      </div>
                     </div>
 
-                    <div className='col-md-4'>
-                      <Form.Group>
-                        <Form.Label className='mb-0'>Tilt (degrees)</Form.Label>
-                        <Form.Control
+                    <div className='w-full md:w-1/3 px-2'>
+                      <div>
+                        <Label className='mb-0'>Tilt (degrees)</Label>
+                        <Input
                           type='number'
                           step='0.01'
                           value={
@@ -253,7 +256,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                           }
                           placeholder='Enter tilt'
                         />
-                      </Form.Group>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -266,14 +269,14 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
               No cameras found. Adding a new camera named "Survey Camera".
             </Alert>
 
-            <div className='border rounded p-3'>
-              <h5 className='mb-3'>New Camera: Survey Camera</h5>
+            <div className='border p-4'>
+              <h5 className='mb-4'>New Camera: Survey Camera</h5>
 
-              <div className='row g-3'>
-                <div className='col-md-4'>
-                  <Form.Group>
-                    <Form.Label className='mb-0'>Focal Length (mm)</Form.Label>
-                    <Form.Control
+              <div className='flex flex-wrap -mx-2 gap-y-4'>
+                <div className='w-full md:w-1/3 px-2'>
+                  <div>
+                    <Label className='mb-0'>Focal Length (mm)</Label>
+                    <Input
                       type='number'
                       step='0.01'
                       value={
@@ -292,13 +295,13 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                       }
                       placeholder='Enter focal length'
                     />
-                  </Form.Group>
+                  </div>
                 </div>
 
-                <div className='col-md-4'>
-                  <Form.Group>
-                    <Form.Label className='mb-0'>Sensor Width (mm)</Form.Label>
-                    <Form.Control
+                <div className='w-full md:w-1/3 px-2'>
+                  <div>
+                    <Label className='mb-0'>Sensor Width (mm)</Label>
+                    <Input
                       type='number'
                       step='0.01'
                       value={
@@ -317,13 +320,13 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                       }
                       placeholder='Enter sensor width'
                     />
-                  </Form.Group>
+                  </div>
                 </div>
 
-                <div className='col-md-4'>
-                  <Form.Group>
-                    <Form.Label className='mb-0'>Tilt (degrees)</Form.Label>
-                    <Form.Control
+                <div className='w-full md:w-1/3 px-2'>
+                  <div>
+                    <Label className='mb-0'>Tilt (degrees)</Label>
+                    <Input
                       type='number'
                       step='0.01'
                       value={
@@ -342,13 +345,13 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                       }
                       placeholder='Enter tilt'
                     />
-                  </Form.Group>
+                  </div>
                 </div>
               </div>
             </div>
           </>
         )}
-      </Form>
+      </form>
       <Footer>
         <Button variant='primary' onClick={handleSubmit} disabled={disabled}>
           Save Cameras

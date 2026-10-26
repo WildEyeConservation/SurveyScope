@@ -1,7 +1,7 @@
 import { useContext } from 'react';
 import { UserContext } from './Context';
 import { Tabs, Tab } from './Tabs';
-import { Card } from 'react-bootstrap';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import PendingOrganizations from './PendingOrganizations';
 import ClientLogs from './ClientLogs';
 import ErrorReports from './ErrorReports';
@@ -26,12 +26,12 @@ export default function Admin() {
       }}
     >
       <Card>
-        <Card.Header>
-          <Card.Title className='mb-0'>
+        <CardHeader>
+          <CardTitle className='mb-0'>
             <h4 className='mb-0'>Admin</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
           <Tabs>
             <Tab label='Pending Organisations'>
               <PendingOrganizations />
@@ -67,7 +67,7 @@ export default function Admin() {
               </div>
             </Tab>
           </Tabs>
-        </Card.Body>
+        </CardContent>
       </Card>
     </div>
   );

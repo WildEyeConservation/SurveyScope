@@ -1,13 +1,25 @@
 import MyTable from './Table';
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext, UserContext } from './Context';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 import type { UserStatsType } from './schemaTypes';
 import exportFromJSON from 'export-from-json';
 import { useUsers } from './apiInterface';
 import Select from 'react-select';
-import { Card, Button, Spinner } from 'react-bootstrap';
+import { XIcon } from 'lucide-react';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { fieldBase, fieldSizes } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Spinner } from '@/components/ui/spinner';
 import SnapshotStatsModal from './SnapshotStatsModal';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -449,50 +461,44 @@ export default function UserStats() {
       }}
     >
       <Card>
-        <Card.Header>
-          <Card.Title className='mb-0'>
+        <CardHeader>
+          <CardTitle className='mb-0'>
             <h4 className='mb-0'>Annotation Statistics</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body>
-          <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
-            <div className='d-flex align-items-center gap-2'>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className='flex justify-between items-center flex-wrap gap-2'>
+            <div className='flex items-center gap-2'>
               <label htmlFor='start-date' className='mb-0'>
                 From:
               </label>
-              <DatePicker
+              <DateField
                 id='start-date'
-                selected={startDate ?? undefined}
+                value={startDate}
                 onChange={(date) => setStartDate(date)}
-                selectsStart
-                startDate={startDate ?? undefined}
-                endDate={endDate ?? undefined}
-                className='form-control'
-                isClearable
-                dateFormat='yyyy/MM/dd'
-                placeholderText='No start date'
+                rangeStart={startDate}
+                rangeEnd={endDate}
+                placeholder='No start date'
+                className='w-48'
               />
             </div>
-            <div className='d-flex align-items-center gap-2'>
+            <div className='flex items-center gap-2'>
               <label htmlFor='end-date' className='mb-0'>
                 To:
               </label>
-              <DatePicker
+              <DateField
                 id='end-date'
-                selected={endDate ?? undefined}
+                value={endDate}
                 onChange={(date) => setEndDate(date)}
-                selectsEnd
-                startDate={startDate ?? undefined}
-                endDate={endDate ?? undefined}
-                className='form-control'
-                isClearable
-                dateFormat='yyyy/MM/dd'
-                placeholderText='No end date'
+                rangeStart={startDate}
+                rangeEnd={endDate}
+                placeholder='No end date'
+                className='w-48'
               />
             </div>
           </div>
 
-          <div className='mt-3'>
+          <div className='mt-4'>
             <label className='mb-2'>Select Survey</label>
             <Select
               className='text-black'
@@ -517,7 +523,7 @@ export default function UserStats() {
             />
           </div>
 
-          <div className='mt-3'>
+          <div className='mt-4'>
             <label className=''>Select Annotation Sets</label>
             <Select
               className='text-black basic-multi-select'
@@ -544,13 +550,11 @@ export default function UserStats() {
             />
           </div>
 
-          <div className='mt-3 overflow-x-auto'>
+          <div className='mt-4 overflow-x-auto'>
             {loadingStats ? (
-              <div className='d-flex justify-content-center align-items-center py-5'>
-                <Spinner animation='border' role='status'>
-                  <span className='visually-hidden'>Loading stats...</span>
-                </Spinner>
-                <span className='ms-3'>Loading stats...</span>
+              <div className='flex justify-center items-center py-12'>
+                <Spinner animation='border' />
+                <span className='ms-4'>Loading stats...</span>
               </div>
             ) : (
               <MyTable
@@ -564,9 +568,9 @@ export default function UserStats() {
               />
             )}
           </div>
-        </Card.Body>
+        </CardContent>
         {isProjectAdmin && selectedSets && selectedSets.length > 0 && !loadingStats && (
-          <Card.Footer className='d-flex justify-content-center gap-2'>
+          <CardFooter className='flex justify-center gap-2'>
             <Button
               variant='primary'
               style={{ flex: 1 }}
@@ -591,7 +595,7 @@ export default function UserStats() {
             >
               {exporting ? 'Loading...' : 'Export Raw Observation Data'}
             </Button>
-          </Card.Footer>
+          </CardFooter>
         )}
       </Card>
       <SnapshotStatsModal
@@ -606,6 +610,85 @@ export default function UserStats() {
         allUsers={allUsers.map((u) => ({ id: u.id, name: u.name || u.id }))}
         queryObservations={queryObservations}
       />
+    </div>
+  );
+}
+
+function DateField({
+  id,
+  value,
+  onChange,
+  placeholder,
+  rangeStart,
+  rangeEnd,
+  minDate,
+  className,
+}: {
+  id?: string;
+  value: Date | null;
+  onChange: (date: Date | null) => void;
+  placeholder: string;
+  rangeStart: Date | null;
+  rangeEnd: Date | null;
+  minDate?: Date | null;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn('relative', className)}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            id={id}
+            type='button'
+            className={cn(
+              fieldBase,
+              fieldSizes.default,
+              'text-left',
+              value ? 'pr-8' : 'text-[#6c757d]'
+            )}
+          >
+            {value ? format(value, 'yyyy/MM/dd') : placeholder}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className='w-auto p-0' align='start'>
+          <Calendar
+            mode='single'
+            selected={value ?? undefined}
+            defaultMonth={value ?? undefined}
+            disabled={minDate ? { before: minDate } : undefined}
+            modifiers={
+              rangeStart && rangeEnd
+                ? { inRange: { from: rangeStart, to: rangeEnd } }
+                : undefined
+            }
+            modifiersClassNames={{ inRange: 'bg-accent' }}
+            onSelect={(date) => {
+              if (date) {
+                // keep the previous time of day when changing the date
+                if (value)
+                  date.setHours(
+                    value.getHours(),
+                    value.getMinutes(),
+                    value.getSeconds()
+                  );
+                onChange(date);
+              }
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+      {value && (
+        <button
+          type='button'
+          aria-label='Clear'
+          className='absolute right-2 top-1/2 -translate-y-1/2 text-[#6c757d] opacity-75 hover:opacity-100'
+          onClick={() => onChange(null)}
+        >
+          <XIcon className='size-4' />
+        </button>
+      )}
     </div>
   );
 }

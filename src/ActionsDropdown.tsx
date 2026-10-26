@@ -1,6 +1,11 @@
-import ButtonGroup from 'react-bootstrap/ButtonGroup';
-import Dropdown from 'react-bootstrap/Dropdown';
-import DropdownButton from 'react-bootstrap/DropdownButton';
+import { ChevronDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function ActionsDropdown({
   actions,
@@ -8,21 +13,19 @@ export default function ActionsDropdown({
   actions: { label: string; onClick: () => void }[];
 }) {
   return (
-    <DropdownButton
-      as={ButtonGroup}
-      variant='info'
-      title={'Open'}
-      className='me-2 fixed-width-button'
-    >
-      {actions.map((action, index) => (
-        <Dropdown.Item
-          key={index}
-          eventKey={index.toString()}
-          onClick={action.onClick}
-        >
-          {action.label}
-        </Dropdown.Item>
-      ))}
-    </DropdownButton>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant='info' className='me-2 w-[200px]'>
+          {'Open'} <ChevronDown className='size-3' />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start'>
+        {actions.map((action, index) => (
+          <DropdownMenuItem key={index} onSelect={action.onClick}>
+            {action.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

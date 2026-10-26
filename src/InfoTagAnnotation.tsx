@@ -9,7 +9,10 @@ import {
 import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Alert, Badge, Button, Card } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ChevronLeft,
   ChevronRight,
@@ -1045,14 +1048,14 @@ export default function InfoTagAnnotation({
 
   if (loading || !image || !sourceKey) {
     return (
-      <div className='d-flex justify-content-center align-items-center w-100 h-100'>
+      <div className='flex justify-center items-center w-full h-full'>
         {loadError ? (
           <Alert variant='danger' className='mb-0'>
             {loadError}. This image has not been taken off the queue - reload to
             try again.
           </Alert>
         ) : (
-          <div className='text-muted'>Loading image annotations...</div>
+          <div className='text-muted-foreground'>Loading image annotations...</div>
         )}
       </div>
     );
@@ -1060,34 +1063,34 @@ export default function InfoTagAnnotation({
 
   return (
     <div
-      className='d-flex flex-column w-100 h-100'
+      className='flex flex-col w-full h-full'
       style={{
         pointerEvents: disabled || saving ? 'none' : undefined,
         opacity: disabled ? 0.65 : 1,
       }}
     >
       <div
-        className='d-flex align-items-center justify-content-between py-2'
+        className='flex items-center justify-between py-2'
         style={{ backgroundColor: '#2b3e50', flexShrink: 0 }}
       >
-        <div className='d-flex align-items-center gap-3'>
-          <Badge bg='info'>{currentCategory?.name ?? 'Info Tags'}</Badge>
+        <div className='flex items-center gap-4'>
+          <Badge variant='info'>{currentCategory?.name ?? 'Info Tags'}</Badge>
           {currentTarget && (
-            <Badge bg='secondary'>
+            <Badge variant='secondary'>
               Annotation {currentIndex + 1} of {targets.length} on this image
             </Badge>
           )}
-          <span className='text-muted' style={{ fontSize: 12 }}>
+          <span className='text-muted-foreground' style={{ fontSize: 12 }}>
             Press shortcut keys to toggle tags · Space to continue · Tip: Hold
             Tab to hide the marker
           </span>
         </div>
         <button
-          className='p-0 m-0 border-0 bg-transparent d-flex align-items-center text-white'
+          className='p-0 m-0 border-0 bg-transparent flex items-center text-white'
           onClick={saveDefaultZoom}
         >
           {hasLocalZoom ? <RotateCcw size={20} /> : <SearchCheck size={20} />}
-          <span className='ms-2 d-none d-md-block' style={{ fontSize: 13 }}>
+          <span className='ms-2 hidden md:block' style={{ fontSize: 13 }}>
             {hasLocalZoom ? 'Reset zoom' : 'Set as default zoom'}
           </span>
         </button>
@@ -1096,7 +1099,7 @@ export default function InfoTagAnnotation({
       {saveError && (
         <Alert
           variant='danger'
-          className='mb-0 d-flex align-items-center justify-content-between gap-3'
+          className='mb-0 flex items-center justify-between gap-4'
           style={{ flexShrink: 0 }}
         >
           <span>
@@ -1114,7 +1117,7 @@ export default function InfoTagAnnotation({
         </Alert>
       )}
 
-      <div className='d-flex' style={{ flex: 1, overflow: 'hidden' }}>
+      <div className='flex' style={{ flex: 1, overflow: 'hidden' }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <div
             ref={containerRef}
@@ -1165,7 +1168,7 @@ export default function InfoTagAnnotation({
 
         {legendCollapsed ? (
           <div
-            className='d-flex align-items-center'
+            className='flex items-center'
             style={{ padding: '0 4px', flexShrink: 0, marginLeft: 12 }}
           >
             <Button
@@ -1180,7 +1183,7 @@ export default function InfoTagAnnotation({
           </div>
         ) : (
           <div
-            className='d-flex flex-column'
+            className='flex flex-col'
             style={{
               position: 'relative',
               height: '100%',
@@ -1208,17 +1211,17 @@ export default function InfoTagAnnotation({
               <ChevronRight size={18} />
             </Button>
             <Card
-              className='d-flex flex-column h-100 overflow-hidden'
+              className='flex flex-col h-full overflow-hidden'
               style={{ width: 280 }}
             >
-              <Card.Header>
-                <Card.Title className='mb-1'>Info Tags</Card.Title>
-                <span className='text-muted' style={{ fontSize: 13 }}>
+              <CardHeader>
+                <CardTitle className='mb-1'>Info Tags</CardTitle>
+                <span className='text-muted-foreground' style={{ fontSize: 13 }}>
                   Toggle up to {MAX_INFO_TAGS_PER_ANNOTATION} tags, then press
                   Space
                 </span>
-              </Card.Header>
-              <Card.Body className='d-flex flex-column gap-2 overflow-auto'>
+              </CardHeader>
+              <CardContent className='flex flex-col gap-2 overflow-auto'>
                 {infoTags
                   .slice()
                   .sort((a, b) => a.name.localeCompare(b.name))
@@ -1226,7 +1229,7 @@ export default function InfoTagAnnotation({
                     <Button
                       key={tag.id}
                       variant={selectedTagIds.has(tag.id) ? 'info' : 'primary'}
-                      className='d-flex align-items-center justify-content-between gap-2'
+                      className='flex items-center justify-between gap-2'
                       disabled={saving || disabled || Boolean(saveError)}
                       onClick={() => toggleTag(tag.id)}
                     >
@@ -1236,18 +1239,18 @@ export default function InfoTagAnnotation({
                       )}
                     </Button>
                   ))}
-              </Card.Body>
+              </CardContent>
             </Card>
           </div>
         )}
       </div>
 
       <div
-        className='d-flex align-items-center justify-content-between py-2 mt-2'
+        className='flex items-center justify-between py-2 mt-2'
         style={{ backgroundColor: '#2b3e50', flexShrink: 0 }}
       >
         <Button
-          className='d-flex align-items-center justify-content-center gap-1'
+          className='flex items-center justify-center gap-1'
           variant='primary'
           style={{ width: 160 }}
           onClick={undo}

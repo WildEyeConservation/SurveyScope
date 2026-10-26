@@ -9,7 +9,9 @@ import {
 import { useNavigate } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Badge, Button, Card } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight, Undo2, SearchCheck, RotateCcw } from 'lucide-react';
 import { GlobalContext, UserContext } from './Context';
 import { applyActiveMarkerStyle } from './activeMarkerStyle';
@@ -1018,48 +1020,48 @@ export default function QCAnnotationReview({
 
   if (!image || !sourceKey) {
     return (
-      <div className='d-flex justify-content-center align-items-center w-100 h-100'>
-        <div className='text-muted'>Loading image...</div>
+      <div className='flex justify-center items-center w-full h-full'>
+        <div className='text-muted-foreground'>Loading image...</div>
       </div>
     );
   }
 
   return (
-    <div className='d-flex flex-column w-100 h-100'>
+    <div className='flex flex-col w-full h-full'>
       {/* Header bar */}
       <div
-        className='d-flex align-items-center justify-content-between py-2'
+        className='flex items-center justify-between py-2'
         style={{
           backgroundColor: '#2b3e50',
           flexShrink: 0,
         }}
       >
-        <div className='d-flex align-items-center gap-3'>
-          <Badge bg='info'>
+        <div className='flex items-center gap-4'>
+          <Badge variant='info'>
             {displayCategory?.name ?? 'Unknown'}
           </Badge>
           {reviewedCatId && (
-            <Badge bg='success' style={{ fontSize: '11px' }}>
+            <Badge variant='success' style={{ fontSize: '11px' }}>
               Reviewed
             </Badge>
           )}
-          <span className='text-muted' style={{ fontSize: '12px' }}>
+          <span className='text-muted-foreground' style={{ fontSize: '12px' }}>
             Tip: Hold Tab to hide the marker
           </span>
         </div>
         <button
-          className='p-0 m-0 border-0 bg-transparent d-flex align-items-center text-white'
+          className='p-0 m-0 border-0 bg-transparent flex items-center text-white'
           onClick={saveDefaultZoom}
         >
           {hasLocalZoom ? <RotateCcw size={20} /> : <SearchCheck size={20} />}
-          <span className='ms-2 mb-0 d-none d-md-block' style={{ fontSize: '13px' }}>
+          <span className='ms-2 mb-0 hidden md:block' style={{ fontSize: '13px' }}>
             {hasLocalZoom ? 'Reset zoom' : 'Set as default zoom'}
           </span>
         </button>
       </div>
 
       {/* Map + side legend */}
-      <div className='d-flex' style={{ flex: 1, overflow: 'hidden' }}>
+      <div className='flex' style={{ flex: 1, overflow: 'hidden' }}>
         {/* Map container */}
         <div style={{ flex: 1, position: 'relative' }}>
           <div
@@ -1111,12 +1113,12 @@ export default function QCAnnotationReview({
 
         {/* Collapsible side legend */}
         {legendCollapsed ? (
-          <div className='d-flex align-items-center' style={{ padding: '0 4px', flexShrink: 0, height: '100%', marginLeft: '12px' }}>
+          <div className='flex items-center' style={{ padding: '0 4px', flexShrink: 0, height: '100%', marginLeft: '12px' }}>
             <Button
               variant='secondary'
               size='sm'
               onClick={() => setLegendCollapsed(false)}
-              className='d-flex align-items-center justify-content-center'
+              className='flex items-center justify-center'
               style={{
                 width: '28px',
                 height: '100%',
@@ -1129,12 +1131,12 @@ export default function QCAnnotationReview({
             </Button>
           </div>
         ) : (
-          <div className='d-flex flex-column' style={{ position: 'relative', height: '100%', flexShrink: 0, marginLeft: '24px' }}>
+          <div className='flex flex-col' style={{ position: 'relative', height: '100%', flexShrink: 0, marginLeft: '24px' }}>
             <Button
               variant='secondary'
               size='sm'
               onClick={() => setLegendCollapsed(true)}
-              className='d-flex align-items-center justify-content-center'
+              className='flex items-center justify-center'
               style={{
                 position: 'absolute',
                 left: '-16px',
@@ -1151,16 +1153,16 @@ export default function QCAnnotationReview({
               <ChevronRight size={18} />
             </Button>
 
-            <Card className='d-flex flex-column h-100 overflow-hidden' style={{ width: '280px' }}>
-              <Card.Header>
-                <Card.Title className='d-flex flex-row align-items-center gap-2 mb-2'>
+            <Card className='flex flex-col h-full overflow-hidden' style={{ width: '280px' }}>
+              <CardHeader>
+                <CardTitle className='flex flex-row items-center gap-2 mb-2'>
                   <span>Legend</span>
-                </Card.Title>
-                <span className='text-muted' style={{ fontSize: '14px' }}>
+                </CardTitle>
+                <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
                   Press a shortcut key to approve or fix
                 </span>
-              </Card.Header>
-              <Card.Body className='d-flex flex-column gap-2 overflow-auto'>
+              </CardHeader>
+              <CardContent className='flex flex-col gap-2 overflow-auto'>
                 {legendCategories
                   .slice()
                   .sort((a, b) => a.name.localeCompare(b.name))
@@ -1168,7 +1170,7 @@ export default function QCAnnotationReview({
                     <Button
                       variant={cat.id === displayCategoryId ? 'info' : 'primary'}
                       key={cat.id}
-                      className='d-flex flex-row align-items-center justify-content-between gap-2'
+                      className='flex flex-row items-center justify-between gap-2'
                       onClick={() => {
                         if (cat.id === annotation.categoryId) {
                           handleApprove();
@@ -1184,7 +1186,7 @@ export default function QCAnnotationReview({
                       )}
                     </Button>
                   ))}
-              </Card.Body>
+              </CardContent>
             </Card>
           </div>
         )}
@@ -1192,15 +1194,15 @@ export default function QCAnnotationReview({
 
       {/* Bottom action bar */}
       <div
-        className='d-flex align-items-center justify-content-between py-2 mt-2'
+        className='flex items-center justify-between py-2 mt-2'
         style={{
           backgroundColor: '#2b3e50',
           flexShrink: 0,
         }}
       >
-        <div className='d-flex align-items-center gap-2'>
+        <div className='flex items-center gap-2'>
           <Button
-            className='d-flex align-items-center justify-content-center gap-1'
+            className='flex items-center justify-center gap-1'
             variant='primary'
             style={{ width: 160 }}
             onClick={prev}
@@ -1210,7 +1212,7 @@ export default function QCAnnotationReview({
             <span>Undo</span>
           </Button>
         </div>
-        <div className='d-flex align-items-center gap-2'>
+        <div className='flex items-center gap-2'>
           <Button
             variant='success'
             style={{ width: 160 }}
@@ -1226,7 +1228,7 @@ export default function QCAnnotationReview({
             {fpLabel}
           </Button>
         </div>
-        <div className='d-flex align-items-center gap-2'>
+        <div className='flex items-center gap-2'>
           <Button
             variant='primary'
             style={{ width: 160 }}

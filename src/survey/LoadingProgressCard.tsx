@@ -1,4 +1,4 @@
-import { Spinner } from 'react-bootstrap';
+import { Spinner } from '@/components/ui/spinner';
 
 // Shared loading panel for launch modals: a header spinner plus one row per
 // parallel/sequential fetch, each showing its live count and a per-row
@@ -18,15 +18,15 @@ export function LoadingProgressCard({
 }) {
   return (
     <div
-      className='border border-dark shadow-sm p-3'
+      className='border border-dark shadow-sm p-4'
       style={{ backgroundColor: '#697582' }}
     >
-      <div className='d-flex align-items-center gap-2 text-white mb-2'>
+      <div className='flex items-center gap-2 text-white mb-2'>
         <Spinner animation='border' size='sm' />
         <span style={{ fontSize: '13px', fontWeight: 600 }}>{title}</span>
       </div>
       <div
-        className='d-flex flex-column gap-1 text-white'
+        className='flex flex-col gap-1 text-white'
         style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}
       >
         {rows.map((row) => (
@@ -39,14 +39,13 @@ export function LoadingProgressCard({
 
 function LoadRow({ label, count, done }: LoadProgressRow) {
   return (
-    <div className='d-flex flex-row align-items-center justify-content-between gap-4'>
-      <span className='d-flex align-items-center gap-2'>
+    <div className='flex flex-row items-center justify-between gap-6'>
+      <span className='flex items-center gap-2'>
         {done ? (
           <span aria-hidden='true'>✓</span>
         ) : (
           <Spinner
             animation='border'
-            role='status'
             style={{ width: 12, height: 12, borderWidth: 2 }}
           />
         )}

@@ -1,5 +1,10 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Form } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Switch } from '@/components/ui/switch';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
@@ -319,8 +324,8 @@ export default function QCReview({
   const selectedCategory = availableCategories.find((c) => c.id === selectedCategoryId);
 
   return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
+    <div className='px-4 pb-4 pt-1'>
+      <div className='flex flex-col gap-4 mt-2'>
         {loading ? (
           <LoadingProgressCard
             title='Loading QC Review data…'
@@ -344,15 +349,15 @@ export default function QCReview({
         ) : (
           <>
             {/* Category selector */}
-            <Form.Group>
-              <Form.Label className='mb-0'>Label to review</Form.Label>
+            <div>
+              <Label className='mb-0'>Label to review</Label>
               <span
-                className='text-muted d-block mb-1'
+                className='text-muted-foreground block mb-1'
                 style={{ fontSize: '12px' }}
               >
                 Select the label whose annotations should be reviewed.
               </span>
-              <Form.Select
+              <NativeSelect
                 value={selectedCategoryId}
                 onChange={(e) => setSelectedCategoryId(e.target.value)}
                 disabled={launching}
@@ -363,8 +368,8 @@ export default function QCReview({
                     {cat.name}{cat.complete ? ' (complete)' : ''}
                   </option>
                 ))}
-              </Form.Select>
-            </Form.Group>
+              </NativeSelect>
+            </div>
 
             {/* Annotation count stats */}
             {selectedCategoryId && (
@@ -411,15 +416,15 @@ export default function QCReview({
               filteredUnreviewedCount !== null &&
               filteredUnreviewedCount > 0 && (
                 <>
-                  <Form.Group>
-                    <Form.Label className='mb-0'>Sample size (%)</Form.Label>
+                  <div>
+                    <Label className='mb-0'>Sample size (%)</Label>
                     <span
-                      className='text-muted d-block mb-1'
+                      className='text-muted-foreground block mb-1'
                       style={{ fontSize: '12px' }}
                     >
                       Percentage of unreviewed annotations to sample for review.
                     </span>
-                    <Form.Control
+                    <Input
                       type='number'
                       min={1}
                       max={100}
@@ -432,7 +437,7 @@ export default function QCReview({
                       }
                       disabled={launching}
                     />
-                  </Form.Group>
+                  </div>
 
                   <ZoomSetting
                     mode='offset'
@@ -445,31 +450,33 @@ export default function QCReview({
                   />
 
                   {/* Advanced options toggle */}
-                  <Form.Group>
-                    <Form.Switch
-                      label='Show Advanced Options'
-                      checked={showAdvancedOptions}
-                      onChange={() =>
-                        setShowAdvancedOptions(!showAdvancedOptions)
-                      }
-                      disabled={launching}
-                    />
-                  </Form.Group>
+                  <div>
+                    <label className='mb-0 flex items-center gap-2'>
+                      <Switch
+                        checked={showAdvancedOptions}
+                        onCheckedChange={() =>
+                          setShowAdvancedOptions(!showAdvancedOptions)
+                        }
+                        disabled={launching}
+                      />
+                      Show Advanced Options
+                    </label>
+                  </div>
 
                   {showAdvancedOptions && (
                     <div
-                      className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
+                      className='flex flex-col gap-4 border border-dark shadow-sm p-2'
                       style={{ backgroundColor: '#697582' }}
                     >
-                      <Form.Group>
-                        <Form.Label className='mb-0'>Batch Size</Form.Label>
+                      <div>
+                        <Label className='mb-0'>Batch Size</Label>
                         <span
-                          className='text-muted d-block mb-1'
+                          className='text-muted-foreground block mb-1'
                           style={{ fontSize: '12px' }}
                         >
                           The number of reviews a user can pick up at a time.
                         </span>
-                        <Form.Control
+                        <Input
                           type='number'
                           value={batchSize}
                           onChange={(e) =>
@@ -479,31 +486,33 @@ export default function QCReview({
                           }
                           disabled={launching}
                         />
-                      </Form.Group>
+                      </div>
 
-                      <Form.Group>
-                        <Form.Switch
-                          label='Hide Job From Non-Admin Workers'
-                          checked={hidden}
-                          onChange={() => setHidden(!hidden)}
-                          disabled={launching}
-                        />
+                      <div>
+                        <label className='mb-0 flex items-center gap-2'>
+                          <Switch
+                            checked={hidden}
+                            onCheckedChange={() => setHidden(!hidden)}
+                            disabled={launching}
+                          />
+                          Hide Job From Non-Admin Workers
+                        </label>
                         <span
-                          className='text-muted d-block'
+                          className='text-muted-foreground block'
                           style={{ fontSize: '12px' }}
                         >
                           When enabled, only organisation admins and admins of
                           this survey will see this job on the Jobs page.
                         </span>
-                      </Form.Group>
+                      </div>
 
                       {annotatorOptions.length > 1 && (
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
+                        <div>
+                          <Label className='mb-0'>
                             Filter by Annotator
-                          </Form.Label>
+                          </Label>
                           <span
-                            className='text-muted d-block mb-1'
+                            className='text-muted-foreground block mb-1'
                             style={{ fontSize: '12px' }}
                           >
                             Only review annotations made by the selected
@@ -519,29 +528,32 @@ export default function QCReview({
                             }}
                           >
                             {annotatorOptions.map((ownerId) => (
-                              <Form.Check
+                              <label
                                 key={ownerId}
-                                type='checkbox'
-                                label={userMap[ownerId] ?? ownerId}
-                                checked={selectedAnnotatorIds.includes(ownerId)}
-                                disabled={launching}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedAnnotatorIds((prev) => [
-                                      ...prev,
-                                      ownerId,
-                                    ]);
-                                  } else {
-                                    setSelectedAnnotatorIds((prev) =>
-                                      prev.filter((id) => id !== ownerId)
-                                    );
-                                  }
-                                }}
+                                className='mb-0.5 flex items-center gap-2'
                                 style={{ fontSize: '13px' }}
-                              />
+                              >
+                                <Checkbox
+                                  checked={selectedAnnotatorIds.includes(ownerId)}
+                                  disabled={launching}
+                                  onCheckedChange={(c) => {
+                                    if (c === true) {
+                                      setSelectedAnnotatorIds((prev) => [
+                                        ...prev,
+                                        ownerId,
+                                      ]);
+                                    } else {
+                                      setSelectedAnnotatorIds((prev) =>
+                                        prev.filter((id) => id !== ownerId)
+                                      );
+                                    }
+                                  }}
+                                />
+                                {userMap[ownerId] ?? ownerId}
+                              </label>
                             ))}
                           </div>
-                        </Form.Group>
+                        </div>
                       )}
                     </div>
                   )}

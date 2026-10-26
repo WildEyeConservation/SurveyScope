@@ -1,11 +1,18 @@
 import { useMemo, useState } from 'react';
-import Card from 'react-bootstrap/Card';
-import Spinner from 'react-bootstrap/Spinner';
-import Alert from 'react-bootstrap/Alert';
-import Form from 'react-bootstrap/Form';
-import Row from 'react-bootstrap/Row';
-import Col from 'react-bootstrap/Col';
-import { LineChart } from '@mui/x-charts/LineChart';
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
+import { Table } from '@/components/ui/table';
 import { useAdminStatsData } from './useAdminStatsData';
 
 function SummaryTile(props: {
@@ -14,18 +21,18 @@ function SummaryTile(props: {
   thisMonth: number;
 }) {
   return (
-    <Card className='mb-3 h-100'>
-      <Card.Body>
-        <div className='d-flex justify-content-between align-items-baseline'>
+    <Card className='mb-4 h-full'>
+      <CardContent>
+        <div className='flex justify-between items-baseline'>
           <div>
-            <div className='text-muted small'>{props.title}</div>
-            <div className='h4 mb-0'>{props.total.toLocaleString()}</div>
+            <div className='text-muted-foreground text-sm'>{props.title}</div>
+            <div className='text-2xl font-medium leading-tight mb-0'>{props.total.toLocaleString()}</div>
           </div>
           <div className='text-success'>
             +{props.thisMonth.toLocaleString()} this month
           </div>
         </div>
-      </Card.Body>
+      </CardContent>
     </Card>
   );
 }
@@ -35,20 +42,41 @@ function MetricChart(props: {
   months: string[];
   values: number[];
 }) {
+  const chartData = props.months.map((month, i) => ({
+    month,
+    value: props.values[i],
+  }));
+  const chartConfig = {
+    value: { label: props.title, color: 'var(--chart-2)' },
+  } satisfies ChartConfig;
   return (
-    <Card className='mb-3'>
-      <Card.Header className='py-2'>
-        <div className='fw-semibold'>{props.title}</div>
-      </Card.Header>
-      <Card.Body>
-        <div style={{ height: 260 }}>
+    <Card className='mb-4'>
+      <CardHeader className='py-2'>
+        <div className='font-semibold'>{props.title}</div>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer
+          config={chartConfig}
+          className='aspect-auto h-[260px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-foreground'
+        >
           <LineChart
-            xAxis={[{ scaleType: 'band', data: props.months }]}
-            series={[{ data: props.values, label: props.title }]}
-            slotProps={{ legend: { hidden: true } }}
-          />
-        </div>
-      </Card.Body>
+            data={chartData}
+            margin={{ top: 10, right: 10, bottom: 0, left: 0 }}
+          >
+            <CartesianGrid vertical={false} />
+            <XAxis dataKey='month' tickLine={false} />
+            <YAxis tickLine={false} allowDecimals={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Line
+              dataKey='value'
+              type='linear'
+              stroke='var(--color-value)'
+              strokeWidth={2}
+              dot={{ r: 3, fill: 'var(--color-value)' }}
+            />
+          </LineChart>
+        </ChartContainer>
+      </CardContent>
     </Card>
   );
 }
@@ -58,21 +86,20 @@ function OrgBreakdownTable(props: {
 }) {
   const rows = props.breakdown;
   return (
-    <Card className='mb-3'>
-      <Card.Header className='py-2'>
-        <div className='fw-semibold'>Organizations and Surveys</div>
-      </Card.Header>
-      <Card.Body className='p-0'>
-        <div className='table-responsive'>
-          <table className='table table-sm mb-0'>
+    <Card className='mb-4'>
+      <CardHeader className='py-2'>
+        <div className='font-semibold'>Organizations and Surveys</div>
+      </CardHeader>
+      <CardContent className='p-0'>
+        <Table size='sm' responsive className='mb-0'>
             <thead>
               <tr>
                 <th style={{ width: 28 }}></th>
                 <th>Organization</th>
-                <th className='text-end'>Surveys</th>
-                <th className='text-end'>Images</th>
-                <th className='text-end'>Annotations</th>
-                <th className='text-end'>This month</th>
+                <th className='text-right'>Surveys</th>
+                <th className='text-right'>Images</th>
+                <th className='text-right'>Annotations</th>
+                <th className='text-right'>This month</th>
               </tr>
             </thead>
             <tbody>
@@ -80,9 +107,8 @@ function OrgBreakdownTable(props: {
                 <OrgRow key={org.organizationId} org={org} />
               ))}
             </tbody>
-          </table>
-        </div>
-      </Card.Body>
+        </Table>
+      </CardContent>
     </Card>
   );
 }
@@ -97,19 +123,20 @@ function OrgRow(props: {
       <tr>
         <td>
           {org.projects.length > 0 ? (
-            <button
-              className='btn btn-sm btn-outline-secondary'
+            <Button
+              variant='outline-secondary'
+              size='sm'
               onClick={() => setOpen((o) => !o)}
             >
               {open ? '−' : '+'}
-            </button>
+            </Button>
           ) : null}
         </td>
         <td>{org.organizationName}</td>
-        <td className='text-end'>{org.totals.surveys.toLocaleString()}</td>
-        <td className='text-end'>{org.totals.images.toLocaleString()}</td>
-        <td className='text-end'>{org.totals.annotations.toLocaleString()}</td>
-        <td className='text-end'>
+        <td className='text-right'>{org.totals.surveys.toLocaleString()}</td>
+        <td className='text-right'>{org.totals.images.toLocaleString()}</td>
+        <td className='text-right'>{org.totals.annotations.toLocaleString()}</td>
+        <td className='text-right'>
           {org.thisMonth.surveys.toLocaleString()} /{' '}
           {org.thisMonth.images.toLocaleString()} /{' '}
           {org.thisMonth.annotations.toLocaleString()}
@@ -117,15 +144,15 @@ function OrgRow(props: {
       </tr>
       {open &&
         org.projects.map((p) => (
-          <tr key={p.projectId} className='table-light'>
+          <tr key={p.projectId} className='bg-light text-black'>
             <td></td>
-            <td className='ps-4'>{p.projectName}</td>
-            <td className='text-end'>{p.totals.surveys}</td>
-            <td className='text-end'>{p.totals.images.toLocaleString()}</td>
-            <td className='text-end'>
+            <td className='ps-6'>{p.projectName}</td>
+            <td className='text-right'>{p.totals.surveys}</td>
+            <td className='text-right'>{p.totals.images.toLocaleString()}</td>
+            <td className='text-right'>
               {p.totals.annotations.toLocaleString()}
             </td>
-            <td className='text-end'>
+            <td className='text-right'>
               {p.thisMonth.surveys} / {p.thisMonth.images.toLocaleString()} /{' '}
               {p.thisMonth.annotations.toLocaleString()}
             </td>
@@ -177,101 +204,101 @@ export default function AdminStats() {
 
   return (
     <div>
-      <div className='d-flex align-items-end gap-3 mb-3'>
+      <div className='flex items-end gap-4 mb-4'>
         <div>
-          <Form.Label className='mb-1'>Timeframe</Form.Label>
-          <Form.Select
+          <Label className='mb-1'>Timeframe</Label>
+          <NativeSelect
             value={timeframe}
             onChange={(e) => setTimeframe(parseInt(e.target.value, 10))}
           >
             <option value={6}>Last 6 months</option>
             <option value={12}>Last 12 months</option>
             <option value={24}>Last 24 months</option>
-          </Form.Select>
+          </NativeSelect>
         </div>
         <div>
-          <Form.Label className='mb-1'>Actions</Form.Label>
+          <Label className='mb-1'>Actions</Label>
           <div>
-            <button
-              className='btn btn-outline-primary'
+            <Button
+              variant='outline-primary'
               onClick={data.refresh}
               disabled={data.loading}
             >
               {data.loading ? 'Refreshing…' : 'Refresh'}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
 
       {data.error && (
-        <Alert variant='danger' className='mb-3'>
+        <Alert variant='danger' className='mb-4'>
           {data.error}
         </Alert>
       )}
 
       {data.loading ? (
-        <div className='d-flex align-items-center gap-2 mb-3'>
+        <div className='flex items-center gap-2 mb-4'>
           <Spinner animation='border' size='sm' />
           <span>Loading statistics…</span>
         </div>
       ) : null}
 
-      <Row xs={1} md={3} lg={6} className='g-3'>
+      <div className='grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-6'>
         {summary.map((m) => (
-          <Col key={m.title}>
+          <div key={m.title}>
             <SummaryTile
               title={m.title}
               total={m.total}
               thisMonth={m.thisMonth}
             />
-          </Col>
+          </div>
         ))}
-      </Row>
+      </div>
 
-      <Row className='g-3 mt-1'>
-        <Col md={6}>
+      <div className='mt-5 grid grid-cols-1 gap-4 md:grid-cols-2'>
+        <div>
           <MetricChart
             title='New users'
             months={data.months}
             values={data.users.series.values}
           />
-        </Col>
-        <Col md={6}>
+        </div>
+        <div>
           <MetricChart
             title='Unique monthly logins'
             months={data.months}
             values={data.users.uniqueLoginSeries.values}
           />
-        </Col>
-        <Col md={6}>
+        </div>
+        <div>
           <MetricChart
             title='New organizations'
             months={data.months}
             values={data.organizations.series.values}
           />
-        </Col>
-        <Col md={6}>
+        </div>
+        <div>
           <MetricChart
             title='New surveys'
             months={data.months}
             values={data.surveys.series.values}
           />
-        </Col>
-        <Col md={6}>
+        </div>
+        <div>
           <MetricChart
             title='New images'
             months={data.months}
             values={data.images.series.values}
           />
-        </Col>
-        <Col md={6}>
+        </div>
+        <div>
           <MetricChart
             title='New annotations'
             months={data.months}
             values={data.annotations.series.values}
           />
-        </Col>
-      </Row>
+        </div>
+      </div>
 
       <OrgBreakdownTable breakdown={data.breakdown} />
     </div>

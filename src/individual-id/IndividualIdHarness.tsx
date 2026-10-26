@@ -1997,7 +1997,7 @@ export function IndividualIdHarness({
   // ---- Render states ----
   if ((!transectId && !chainObjectId) || !categoryId) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing <code>transectId</code> or <code>categoryId</code> in the URL.
       </div>
     );
@@ -2007,14 +2007,14 @@ export function IndividualIdHarness({
   }
   if (transect.error) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Failed to load transect data: {String(transect.error)}
       </div>
     );
   }
   if (!pairs.length) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         No registerable pairs in this transect for the selected label.
       </div>
     );
@@ -2069,7 +2069,7 @@ export function IndividualIdHarness({
 
   return (
     <div
-      className='w-100 h-100 d-flex flex-column py-3'
+      className='w-full h-full flex flex-col py-4'
       style={{ minHeight: 0 }}
     >
       {reunionMode && (

@@ -1,4 +1,11 @@
-import { Card, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { GPSData } from './GPSSubset';
 
 interface ImageData {
@@ -71,18 +78,18 @@ export default function GPSSubsetImageViewerModal({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <Card.Header className='d-flex justify-content-between align-items-center p-3'>
-            <Card.Title className='mb-0'>
+          <CardHeader className='flex justify-between items-center p-4'>
+            <CardTitle className='mb-0'>
               {currentFilteredPoints[currentImageIndex]?.filepath ||
                 'Image Viewer'}
               {imageRotation > 0 && (
-                <small className='text-muted ms-2'>({imageRotation}°)</small>
+                <small className='text-muted-foreground ms-2'>({imageRotation}°)</small>
               )}
-            </Card.Title>
-          </Card.Header>
+            </CardTitle>
+          </CardHeader>
 
           {/* Body */}
-          <Card.Body
+          <CardContent
             style={{
               textAlign: 'center',
               padding: '20px',
@@ -110,7 +117,7 @@ export default function GPSSubsetImageViewerModal({
                     >
                       <div style={{ textAlign: 'center' }}>
                         <div>Loading image...</div>
-                        <small className='text-muted'>
+                        <small className='text-muted-foreground'>
                           {currentPoint.filepath}
                         </small>
                       </div>
@@ -146,11 +153,11 @@ export default function GPSSubsetImageViewerModal({
                   </div>
                 );
               })()}
-          </Card.Body>
+          </CardContent>
 
           {/* Footer */}
-          <Card.Footer>
-            <div className='d-flex justify-content-between w-100'>
+          <CardFooter>
+            <div className='flex justify-between w-full'>
               <div>
                 <Button
                   variant='primary'
@@ -175,7 +182,7 @@ export default function GPSSubsetImageViewerModal({
                 >
                   ↻ Rotate
                 </Button>
-                <span className='ms-3'>
+                <span className='ms-4'>
                   {currentFilteredPoints.length > 0
                     ? `${currentImageIndex + 1} of ${
                         currentFilteredPoints.length
@@ -196,7 +203,7 @@ export default function GPSSubsetImageViewerModal({
                 </Button>
               </div>
             </div>
-          </Card.Footer>
+          </CardFooter>
         </Card>
       </div>
     </>

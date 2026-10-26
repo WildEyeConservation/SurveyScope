@@ -8,7 +8,12 @@ import {
   useUploadUi,
 } from '../upload/uploadUi.ts';
 import { Schema } from '../amplify/client-schema.ts';
-import { Card, Button, Form, Spinner } from 'react-bootstrap';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
+import { Badge } from '@/components/ui/badge';
 import MyTable from '../Table.tsx';
 import NewSurveyModal from './NewSurveyModal.tsx';
 import { useNavigate } from 'react-router-dom';
@@ -21,7 +26,6 @@ import AddAnnotationSetModal from './AddAnnotationSetModal.tsx';
 import LaunchAnnotationSetModal from './LaunchAnnotationSetModal.tsx';
 import EditSurveyModal from './editSurveyModal.tsx';
 import { SquareArrowOutUpRight, X, Play, Trash, Minimize2, Maximize2 } from 'lucide-react';
-import { Badge } from 'react-bootstrap';
 import localforage from 'localforage';
 import ProjectProgress from '../user/ProjectProgress.tsx';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress.tsx';
@@ -504,7 +508,7 @@ export default function Surveys() {
     const gapClass = effectiveCompactMode ? 'gap-1' : 'gap-2';
 
     return (
-      <div className={`d-flex ${wrap ? 'flex-wrap w-100' : 'flex-wrap'} ${gapClass}`}>
+      <div className={`flex ${wrap ? 'flex-wrap w-full' : 'flex-wrap'} ${gapClass}`}>
         <Button
           size={size}
           variant='primary'
@@ -584,10 +588,10 @@ export default function Surveys() {
     const borderClass = effectiveCompactMode ? 'pt-1' : 'pt-2';
 
     return (
-      <div className={`d-flex flex-column ${gapClass} flex-grow-1`}>
+      <div className={`flex flex-col ${gapClass} grow`}>
         {isMobile && sortedAnnotationSets.length === 0 && (
           <Badge
-            bg='secondary'
+            variant='secondary'
             style={{ width: 'fit-content', fontSize: '12px' }}
           >
             None
@@ -595,11 +599,11 @@ export default function Surveys() {
         )}
         {sortedAnnotationSets.map((annotationSet, i) => (
           <div
-            className={`d-flex flex-column ${gapClass} ${i === 0 ? '' : `border-top border-light ${borderClass}`
+            className={`flex flex-col ${gapClass} ${i === 0 ? '' : `border-t border-light ${borderClass}`
               }`}
             key={annotationSet.id}
           >
-            <div className={`d-flex justify-content-between align-items-center ${gapClass} flex-wrap`}>
+            <div className={`flex justify-between items-center ${gapClass} flex-wrap`}>
               <div style={{ fontSize: '16px' }}>{annotationSet.name}</div>
               {!hasJobs &&
                 renderAnnotationSetActions(
@@ -630,8 +634,8 @@ export default function Surveys() {
     const { wrap = false, size = effectiveCompactMode ? 'sm' : undefined } = options;
     const gapClass = effectiveCompactMode ? 'gap-1' : 'gap-2';
     const containerClass = wrap
-      ? `d-flex flex-wrap ${gapClass} w-100`
-      : `d-flex ${gapClass} flex-wrap`;
+      ? `flex flex-wrap ${gapClass} w-full`
+      : `flex ${gapClass} flex-wrap`;
 
     return (
       <div className={containerClass}>
@@ -766,19 +770,19 @@ export default function Surveys() {
     return {
       id: project.id,
       rowData: [
-        <div className={`d-flex justify-content-between align-items-start align-items-lg-center ${gapClass} flex-wrap`}>
-          <div className={`d-flex flex-column ${compactMode ? 'gap-0' : 'gap-1'}`}>
+        <div className={`flex justify-between items-start lg:items-center ${gapClass} flex-wrap`}>
+          <div className={`flex flex-col ${compactMode ? 'gap-0' : 'gap-1'}`}>
             {compactMode ? (
-              <h6 className={`mb-0 ${isMobile ? 'fw-semibold' : ''}`}>
+              <h6 className={`mb-0 ${isMobile ? 'font-semibold' : ''}`}>
                 {project.name}
               </h6>
             ) : (
-              <h5 className={`mb-0 ${isMobile ? 'fw-semibold' : ''}`}>
+              <h5 className={`mb-0 ${isMobile ? 'font-semibold' : ''}`}>
                 {project.name}
               </h5>
             )}
             {!compactMode && (
-              <div className='d-flex flex-column'>
+              <div className='flex flex-col'>
                 <i style={{ fontSize: '14px' }}>{project.organization.name}</i>
                 {project.status !== 'uploading' && (
                   <i style={{ fontSize: '14px' }}>
@@ -790,7 +794,7 @@ export default function Surveys() {
             {project.status !== 'active' && (
               <Badge
                 style={{ fontSize: badgeFontSize, width: 'fit-content' }}
-                bg={'info'}
+                variant='info'
               >
                 {project.status === 'launching'
                   ? 'Launching - please wait'
@@ -811,14 +815,14 @@ export default function Surveys() {
             isStale
           )}
         </div>,
-        <div className={`d-flex flex-column flex-md-row ${columnGapClass}`}>
+        <div className={`flex flex-col md:flex-row ${columnGapClass}`}>
           {renderAnnotationSets(project, disabled, hasJobs)}
           {hasQueueOrRegisterJob && (
             <div
-              className={`d-flex flex-row align-items-center ${gapClass} w-100`}
+              className={`flex flex-row items-center ${gapClass} w-full`}
               style={{ maxWidth: '500px' }}
             >
-              <div className='flex-grow-1'>
+              <div className='grow'>
                 <ProjectProgress
                   projectId={project.id}
                   onScanningChange={(isScanning) => {
@@ -830,10 +834,10 @@ export default function Surveys() {
                   }}
                 />
               </div>
-              <div className={`d-flex ${gapClass} flex-wrap justify-content-end`}>
+              <div className={`flex ${gapClass} flex-wrap justify-end`}>
                 <Button
                   size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
+                  className='flex items-center justify-center'
                   disabled={disabled || scanningProjects.has(project.id)}
                   variant='primary'
                   onClick={() => navigate(`/jobs`)}
@@ -842,7 +846,7 @@ export default function Surveys() {
                 </Button>
                 <Button
                   size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
+                  className='flex items-center justify-center'
                   disabled={disabled || scanningProjects.has(project.id)}
                   variant='danger'
                   onClick={() => {
@@ -857,16 +861,16 @@ export default function Surveys() {
           )}
           {project.status === 'active' && hasIndividualIdJob && (
             <div
-              className={`d-flex flex-row align-items-center ${gapClass} w-100`}
+              className={`flex flex-row items-center ${gapClass} w-full`}
               style={{ maxWidth: '500px' }}
             >
-              <div className='flex-grow-1'>
+              <div className='grow'>
                 <IndividualIdProgress projectId={project.id} />
               </div>
-              <div className={`d-flex ${gapClass} flex-wrap justify-content-end`}>
+              <div className={`flex ${gapClass} flex-wrap justify-end`}>
                 <Button
                   size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
+                  className='flex items-center justify-center'
                   variant='primary'
                   onClick={() => navigate(`/jobs`)}
                 >
@@ -874,7 +878,7 @@ export default function Surveys() {
                 </Button>
                 <Button
                   size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
+                  className='flex items-center justify-center'
                   variant='danger'
                   onClick={() => {
                     setSelectedProject(project);
@@ -924,25 +928,25 @@ export default function Surveys() {
         className='shadow-sm'
         style={{ backgroundColor: '#6F7B89', color: '#fff', border: 'none' }}
       >
-        <Card.Body className='d-flex flex-column gap-3'>
-          <div className='d-flex flex-column gap-2'>
-            <div className='d-flex justify-content-between align-items-start align-items-lg-center gap-2 flex-wrap'>
-              <div className='d-flex flex-column gap-1'>
-                <h5 className={`mb-0 ${isMobile ? 'fw-semibold' : ''}`}>
+        <CardContent className='flex flex-col gap-4'>
+          <div className='flex flex-col gap-2'>
+            <div className='flex justify-between items-start lg:items-center gap-2 flex-wrap'>
+              <div className='flex flex-col gap-1'>
+                <h5 className={`mb-0 ${isMobile ? 'font-semibold' : ''}`}>
                   {project.name}
                 </h5>
-                <div className='text-muted' style={{ fontSize: '14px' }}>
+                <div className='text-muted-foreground' style={{ fontSize: '14px' }}>
                   {project.organization.name}
                 </div>
                 {project.status !== 'uploading' && (
-                  <div className='text-muted' style={{ fontSize: '14px' }}>
+                  <div className='text-muted-foreground' style={{ fontSize: '14px' }}>
                     Images: {project.imageSets?.[0]?.imageCount || 0}
                   </div>
                 )}
                 {project.status !== 'active' && (
                   <Badge
                     style={{ fontSize: '14px', width: 'fit-content' }}
-                    bg={'info'}
+                    variant='info'
                   >
                     {project.status === 'launching'
                       ? 'Launching - please wait'
@@ -966,10 +970,10 @@ export default function Surveys() {
             </div>
             {hasQueueOrRegisterJob && (
               <div
-                className={`d-flex flex-row align-items-center gap-2 ${isMobile ? 'pt-3 border-top border-light' : ''
+                className={`flex flex-row items-center gap-2 ${isMobile ? 'pt-4 border-t border-light' : ''
                   }`}
               >
-                <div className='flex-grow-1'>
+                <div className='grow'>
                   <ProjectProgress
                     projectId={project.id}
                     onScanningChange={(isScanning) => {
@@ -981,10 +985,10 @@ export default function Surveys() {
                     }}
                   />
                 </div>
-                <div className='d-flex gap-2 flex-wrap justify-content-end'>
+                <div className='flex gap-2 flex-wrap justify-end'>
                   <Button
                     size='sm'
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     disabled={disabled || scanningProjects.has(project.id)}
                     variant='primary'
                     onClick={() => navigate(`/jobs`)}
@@ -993,7 +997,7 @@ export default function Surveys() {
                   </Button>
                   <Button
                     size='sm'
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     disabled={disabled || scanningProjects.has(project.id)}
                     variant='danger'
                     onClick={() => {
@@ -1008,16 +1012,16 @@ export default function Surveys() {
             )}
             {project.status === 'active' && hasIndividualIdJob && (
               <div
-                className={`d-flex flex-row align-items-center gap-2 ${isMobile ? 'pt-3 border-top border-light' : ''
+                className={`flex flex-row items-center gap-2 ${isMobile ? 'pt-4 border-t border-light' : ''
                   }`}
               >
-                <div className='flex-grow-1'>
+                <div className='grow'>
                   <IndividualIdProgress projectId={project.id} />
                 </div>
-                <div className='d-flex gap-2 flex-wrap justify-content-end'>
+                <div className='flex gap-2 flex-wrap justify-end'>
                   <Button
                     size='sm'
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     variant='primary'
                     onClick={() => navigate(`/jobs`)}
                   >
@@ -1025,7 +1029,7 @@ export default function Surveys() {
                   </Button>
                   <Button
                     size='sm'
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     variant='danger'
                     onClick={() => {
                       setSelectedProject(project);
@@ -1039,16 +1043,16 @@ export default function Surveys() {
             )}
           </div>
           <div
-            className={`d-flex flex-column gap-2 ${isMobile ? 'pt-3 border-top border-light' : ''
+            className={`flex flex-col gap-2 ${isMobile ? 'pt-4 border-t border-light' : ''
               }`}
           >
-            <div className='fw-semibold'>Annotation Sets</div>
+            <div className='font-semibold'>Annotation Sets</div>
             {renderAnnotationSets(project, disabled, hasJobs, {
               wrap: true,
               size: 'sm',
             })}
           </div>
-        </Card.Body>
+        </CardContent>
       </Card>
     );
   };
@@ -1070,16 +1074,16 @@ export default function Surveys() {
         }}
       >
         <Card>
-          <Card.Header className='d-flex flex-column flex-lg-row align-items-lg-center gap-3'>
-            <Card.Title
-              className='mb-0 flex-shrink-0'
+          <CardHeader className='flex flex-col lg:flex-row lg:items-center gap-4'>
+            <CardTitle
+              className='mb-0 shrink-0'
               style={{ whiteSpace: 'nowrap' }}
             >
               <h4 className='mb-0'>Your Surveys</h4>
-            </Card.Title>
-            <div className='d-flex flex-column flex-lg-row gap-2 w-100 w-lg-auto ms-lg-auto justify-content-lg-end align-items-lg-center'>
-              <Form.Control
-                className='w-100'
+            </CardTitle>
+            <div className='flex flex-col lg:flex-row gap-2 w-full lg:w-auto lg:ms-auto lg:justify-end lg:items-center'>
+              <Input
+                className='w-full'
                 type='text'
                 style={{
                   minWidth: 0,
@@ -1090,8 +1094,8 @@ export default function Surveys() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <Form.Select
-                className='w-100 w-lg-auto'
+              <NativeSelect
+                className='w-full lg:w-auto'
                 value={organizationFilter}
                 onChange={(e) => setOrganizationFilter(e.target.value)}
                 style={{
@@ -1106,9 +1110,9 @@ export default function Surveys() {
                     {org.name}
                   </option>
                 ))}
-              </Form.Select>
-              <Form.Select
-                className='w-100 w-lg-auto'
+              </NativeSelect>
+              <NativeSelect
+                className='w-full lg:w-auto'
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 style={{
@@ -1124,7 +1128,7 @@ export default function Surveys() {
                 <option value='name'>Name (A-Z)</option>
                 <option value='name-reverse'>Name (Z-A)</option>
                 <option value='activeJobs'>Active jobs first</option>
-              </Form.Select>
+              </NativeSelect>
               {!isMobile && (
                 <Button
                   variant='info'
@@ -1140,21 +1144,21 @@ export default function Surveys() {
                 </Button>
               )}
             </div>
-          </Card.Header>
-          <Card.Body
+          </CardHeader>
+          <CardContent
             className={
               isMobile
-                ? 'd-flex flex-column gap-3 p-3'
+                ? 'flex flex-col gap-4 p-4'
                 : 'overflow-x-auto overflow-y-visible'
             }
           >
             {isMobile ? (
               sortedProjects.length > 0 ? (
-                <div className='d-flex flex-column gap-3'>
+                <div className='flex flex-col gap-4'>
                   {sortedProjects.map((project) => renderProjectCard(project))}
                 </div>
               ) : (
-                <div className='text-center py-3'>
+                <div className='text-center py-4'>
                   <h5 className='mb-0'>{emptyMessage}</h5>
                 </div>
               )
@@ -1170,16 +1174,16 @@ export default function Surveys() {
                 emptyMessage={emptyMessage}
               />
             )}
-          </Card.Body>
+          </CardContent>
           {isOrganizationAdmin && (
-            <Card.Footer className='d-flex justify-content-center'>
-              <div className='d-inline-block'>
+            <CardFooter className='flex justify-center'>
+              <div className='inline-block'>
                 <Button variant='primary' onClick={() => showModal('newSurvey')}
                 >
                   New Survey
                 </Button>
               </div>
-            </Card.Footer>
+            </CardFooter>
           )}
         </Card>
         {/* {process.env.NODE_ENV === 'development' && <UploadIntegrityChecker />} */}

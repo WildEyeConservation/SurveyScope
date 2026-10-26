@@ -1,5 +1,7 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Form } from 'react-bootstrap';
+import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import Select from 'react-select';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { uploadWorkflowFile } from '../storage/workflowFiles';
@@ -125,6 +127,7 @@ export default function HomographyLaunch({
 }) {
   const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
+  const switchId = useId();
 
   // ── Up-front data loading state ──
   const [loading, setLoading] = useState(true);
@@ -418,15 +421,15 @@ export default function HomographyLaunch({
 
   if (loadError) {
     return (
-      <div className='px-3 pb-3 pt-1'>
+      <div className='px-4 pb-4 pt-1'>
         <span className='text-danger'>Failed to load: {loadError}</span>
       </div>
     );
   }
 
   return (
-    <div className='px-3 pb-3'>
-      <div className='d-flex flex-column gap-3 pt-2'>
+    <div className='px-4 pb-4'>
+      <div className='flex flex-col gap-4 pt-2'>
         {/* Progress / pair count */}
         {loading ? (
           <LoadingProgressCard
@@ -450,7 +453,7 @@ export default function HomographyLaunch({
             ]}
           />
         ) : pairCount !== null ? (
-          <div className='d-flex align-items-center gap-2'>
+          <div className='flex items-center gap-2'>
             <span style={{ fontSize: '14px' }}>
               {pairCount === 0 ? (
                 <span className='text-warning'>No pairs requiring homography found.</span>
@@ -459,7 +462,7 @@ export default function HomographyLaunch({
                   <strong>{pairCount.toLocaleString()}</strong>{' '}
                   pair{pairCount !== 1 ? 's' : ''} to launch
                   {selectedCategories.length > 0 && (
-                    <span className='text-muted'>
+                    <span className='text-muted-foreground'>
                       {' '}(filtered to {selectedCategories.length} label{selectedCategories.length !== 1 ? 's' : ''})
                     </span>
                   )}
@@ -472,10 +475,10 @@ export default function HomographyLaunch({
         {/* Label filter (only after loading) */}
         {!loading && (
           <>
-            <Form.Group>
-              <Form.Label className='mb-0'>Filter by Labels</Form.Label>
+            <div>
+              <Label className='mb-0'>Filter by Labels</Label>
               <span
-                className='text-muted d-block mb-1'
+                className='text-muted-foreground block mb-1'
                 style={{ fontSize: '12px' }}
               >
                 By default all labels are included. Select specific labels to
@@ -487,61 +490,66 @@ export default function HomographyLaunch({
                 isMulti
                 name='Labels for homography'
                 options={enrichedCategoryOptions}
-                className='text-black w-100'
+                className='text-black w-full'
                 closeMenuOnSelect={false}
                 isDisabled={launching}
                 placeholder='All labels (default)'
               />
               {selectedCategories.length > 0 && (
                 <span
-                  className='text-warning d-block mt-1'
+                  className='text-warning block mt-1'
                   style={{ fontSize: '12px' }}
                 >
                   Note: After homographies are created, all labels affected by the
                   new homographies will be updated, not just the ones in this filter.
                 </span>
               )}
-            </Form.Group>
+            </div>
 
-            <Form.Group>
-              <Form.Switch
-                label='Show Advanced Options'
-                checked={showAdvancedOptions}
-                onChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                disabled={launching}
-              />
-            </Form.Group>
+            <div>
+              <div className='mb-0.5 flex items-center gap-2'>
+                <Switch
+                  id={`${switchId}-advanced`}
+                  checked={showAdvancedOptions}
+                  onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  disabled={launching}
+                />
+                <Label htmlFor={`${switchId}-advanced`} className='mb-0'>
+                  Show Advanced Options
+                </Label>
+              </div>
+            </div>
 
             {showAdvancedOptions && (
               <div
-                className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
+                className='flex flex-col gap-4 border border-dark shadow-sm p-2'
                 style={{ backgroundColor: '#697582' }}
               >
-                <Form.Group>
-                  <Form.Label className='mb-0'>Job Name</Form.Label>
+                <div>
+                  <Label className='mb-0'>Job Name</Label>
                   <span
-                    className='text-muted d-block mb-1'
+                    className='text-muted-foreground block mb-1'
                     style={{ fontSize: '12px' }}
                   >
                     The name shown on the Jobs page.
                   </span>
-                  <Form.Control
+                  <Input
                     type='text'
                     value={queueName}
                     onChange={(e) => setQueueName(e.target.value)}
                     disabled={launching}
                   />
-                </Form.Group>
+                </div>
 
-                <Form.Group>
-                  <Form.Label className='mb-0'>Batch Size</Form.Label>
+                <div>
+                  <Label className='mb-0'>Batch Size</Label>
                   <span
-                    className='text-muted d-block mb-1'
+                    className='text-muted-foreground block mb-1'
                     style={{ fontSize: '12px' }}
                   >
                     The number of pairs a user can pick up at a time.
                   </span>
-                  <Form.Control
+                  <Input
                     type='number'
                     value={batchSize}
                     onChange={(e) =>
@@ -551,39 +559,49 @@ export default function HomographyLaunch({
                     }
                     disabled={launching}
                   />
-                </Form.Group>
+                </div>
 
-                <Form.Group>
-                  <Form.Switch
-                    label='Hide Job From Non-Admin Workers'
-                    checked={hidden}
-                    onChange={() => setHidden(!hidden)}
-                    disabled={launching}
-                  />
+                <div>
+                  <div className='mb-0.5 flex items-center gap-2'>
+                    <Switch
+                      id={`${switchId}-hidden`}
+                      checked={hidden}
+                      onCheckedChange={() => setHidden(!hidden)}
+                      disabled={launching}
+                    />
+                    <Label htmlFor={`${switchId}-hidden`} className='mb-0'>
+                      Hide Job From Non-Admin Workers
+                    </Label>
+                  </div>
                   <span
-                    className='text-muted d-block'
+                    className='text-muted-foreground block'
                     style={{ fontSize: '12px' }}
                   >
                     When enabled, only organisation admins and admins of this
                     survey will see this job on the Jobs page.
                   </span>
-                </Form.Group>
+                </div>
 
-                <Form.Group>
-                  <Form.Switch
-                    label='Include Previously Skipped Pairs'
-                    checked={includeSkipped}
-                    onChange={() => setIncludeSkipped(!includeSkipped)}
-                    disabled={launching}
-                  />
+                <div>
+                  <div className='mb-0.5 flex items-center gap-2'>
+                    <Switch
+                      id={`${switchId}-skipped`}
+                      checked={includeSkipped}
+                      onCheckedChange={() => setIncludeSkipped(!includeSkipped)}
+                      disabled={launching}
+                    />
+                    <Label htmlFor={`${switchId}-skipped`} className='mb-0'>
+                      Include Previously Skipped Pairs
+                    </Label>
+                  </div>
                   <span
-                    className='text-muted d-block'
+                    className='text-muted-foreground block'
                     style={{ fontSize: '12px' }}
                   >
                     When enabled, pairs that were previously skipped will be
                     included for review.
                   </span>
-                </Form.Group>
+                </div>
               </div>
             )}
           </>

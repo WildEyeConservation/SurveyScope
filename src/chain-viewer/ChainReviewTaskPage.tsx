@@ -77,23 +77,23 @@ export function ChainReviewTaskPage() {
 
   if (!annotationSetId || !primaryId) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing <code>annotationSetId</code> or <code>primaryId</code> in the URL.
       </div>
     );
   }
   if (!isSysadmin) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Chain review is restricted to sysadmins.
       </div>
     );
   }
   if (error) {
-    return <div className='p-4 text-light'>{error}</div>;
+    return <div className='p-6 text-light'>{error}</div>;
   }
   if (!categoryId) {
-    return <div className='p-4 text-light'>Resolving chain…</div>;
+    return <div className='p-6 text-light'>Resolving chain…</div>;
   }
 
   return (

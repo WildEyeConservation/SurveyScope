@@ -8,11 +8,12 @@ import { configure } from 'react-hotkeys';
 // import { withAuthenticator } from "@aws-amplify/ui-react";
 import '@aws-amplify/ui-react/styles.css';
 import { User } from './UserContext.js';
-import 'bootswatch/dist/superhero/bootstrap.min.css';
 import { fetchAuthSession, AuthUser } from 'aws-amplify/auth';
 import { BrowserView, MobileView } from 'react-device-detect';
 import MainNavigation from './MainNavigation.tsx';
-import { Button as PrimaryButton } from 'react-bootstrap';
+import { Button as PrimaryButton } from '@/components/ui/button';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
 import {
   Authenticator,
   useAuthenticator,
@@ -130,7 +131,7 @@ function App({ signOut = () => { }, user }: AppProps) {
         <MobileView>
           <Logo />
           <div
-            className='d-flex flex-column justify-content-center align-items-center text-center p-3'
+            className='flex flex-col justify-center items-center text-center p-4'
             style={{
               height: 'calc(100vh - 64px)',
             }}
@@ -201,16 +202,19 @@ export default function AppWithAuthenticator() {
   }, []);
 
   return (
-    <Authenticator components={components} variation='modal' hideSignUp>
-      {({ signOut, user }) => <App signOut={signOut} user={user} />}
-    </Authenticator>
+    <TooltipProvider>
+      <Authenticator components={components} variation='modal' hideSignUp>
+        {({ signOut, user }) => <App signOut={signOut} user={user} />}
+      </Authenticator>
+      <Toaster />
+    </TooltipProvider>
   );
 }
 
 function Logo() {
   return (
-    <div className='p-3 w-100 d-flex flex-column justify-content-center align-items-center bg-secondary'>
-      <div className='d-flex flex-row align-items-center flex-nowrap'>
+    <div className='p-4 w-full flex flex-col justify-center items-center bg-secondary'>
+      <div className='flex flex-row items-center flex-nowrap'>
         <img
           src='/Logo.png'
           alt='Logo'

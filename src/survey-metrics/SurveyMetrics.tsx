@@ -6,7 +6,15 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Alert, Button, Form, ProgressBar, Spinner } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { badgeVariants } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import Select from 'react-select';
 import { GlobalContext } from '../Context';
 import { useUsers } from '../apiInterface';
@@ -31,9 +39,9 @@ import './SurveyMetrics.css';
 type SurveyOption = { value: string; label: string; imageCount: number };
 
 const COST_CLASS: Record<StatCost, string> = {
-  light: 'bg-secondary',
-  heavy: 'bg-warning text-dark',
-  'very heavy': 'bg-danger',
+  light: badgeVariants({ variant: 'secondary' }),
+  heavy: cn(badgeVariants({ variant: 'warning' }), 'text-dark'),
+  'very heavy': badgeVariants({ variant: 'danger' }),
 };
 
 // Survives switching admin tabs, which unmounts this component.
@@ -247,26 +255,22 @@ export default function SurveyMetrics() {
 
   const renderStats = (needsSet: boolean) =>
     STATS.filter((stat) => stat.needsSet === needsSet).map((stat) => (
-      <Form.Check
-        key={stat.id}
-        id={`survey-metric-${stat.id}`}
-        type='checkbox'
-        className='survey-metrics-stat'
-        checked={selected.has(stat.id)}
-        disabled={running || (needsSet && !setId)}
-        onChange={() => toggle(stat.id)}
-        label={
-          <>
-            <span className='survey-metrics-stat-label'>{stat.label}</span>
-            <span className={`badge ms-2 ${COST_CLASS[stat.cost]}`}>
-              {stat.cost}
-            </span>
-            <div className='survey-metrics-stat-description'>
-              {stat.description}
-            </div>
-          </>
-        }
-      />
+      <div key={stat.id} className='survey-metrics-stat flex items-start gap-2'>
+        <Checkbox
+          id={`survey-metric-${stat.id}`}
+          className='mt-1'
+          checked={selected.has(stat.id)}
+          disabled={running || (needsSet && !setId)}
+          onCheckedChange={() => toggle(stat.id)}
+        />
+        <Label htmlFor={`survey-metric-${stat.id}`} className='mb-0'>
+          <span className='survey-metrics-stat-label'>{stat.label}</span>
+          <span className={`ms-2 ${COST_CLASS[stat.cost]}`}>{stat.cost}</span>
+          <div className='survey-metrics-stat-description'>
+            {stat.description}
+          </div>
+        </Label>
+      </div>
     ));
 
   const plannedEntities = entitiesFor(activeStats.map((stat) => stat.id));
@@ -275,7 +279,7 @@ export default function SurveyMetrics() {
     <div className='admin-surveys survey-metrics'>
       <div className='survey-metrics-pickers'>
         <div>
-          <Form.Label className='mb-1'>Survey</Form.Label>
+          <Label className='mb-1'>Survey</Label>
           <Select
             className='text-black'
             options={surveys}
@@ -288,8 +292,8 @@ export default function SurveyMetrics() {
           />
         </div>
         <div>
-          <Form.Label className='mb-1'>Annotation set</Form.Label>
-          <Form.Select
+          <Label className='mb-1'>Annotation set</Label>
+          <NativeSelect
             value={setId}
             onChange={(event) => setSetId(event.target.value)}
             disabled={!survey || running || loadingSets}
@@ -302,7 +306,7 @@ export default function SurveyMetrics() {
                 {set.name}
               </option>
             ))}
-          </Form.Select>
+          </NativeSelect>
         </div>
       </div>
 
@@ -322,7 +326,7 @@ export default function SurveyMetrics() {
         </div>
       </div>
 
-      <div className='d-flex align-items-center gap-3 flex-wrap mb-3'>
+      <div className='flex items-center gap-4 flex-wrap mb-4'>
         {running ? (
           <Button variant='outline-danger' onClick={cancel}>
             Cancel
@@ -336,14 +340,17 @@ export default function SurveyMetrics() {
             Fetch
           </Button>
         )}
-        <Form.Check
-          id='survey-metrics-reuse'
-          type='checkbox'
-          label='Reuse data already fetched for this survey'
-          checked={reuseCache}
-          disabled={running}
-          onChange={(event) => setReuseCache(event.target.checked)}
-        />
+        <div className='flex items-center gap-2'>
+          <Checkbox
+            id='survey-metrics-reuse'
+            checked={reuseCache}
+            disabled={running}
+            onCheckedChange={(checked) => setReuseCache(checked === true)}
+          />
+          <Label htmlFor='survey-metrics-reuse' className='mb-0'>
+            Reuse data already fetched for this survey
+          </Label>
+        </div>
         {report && !running && (
           <Button variant='outline-light' size='sm' onClick={download}>
             Download JSON
@@ -360,14 +367,14 @@ export default function SurveyMetrics() {
       </div>
 
       {error && (
-        <Alert variant='danger' className='mb-3'>
+        <Alert variant='danger' className='mb-4'>
           {error}
         </Alert>
       )}
 
       {progress &&
         (running || progress.tasks.some((task) => task.state === 'error')) && (
-          <div className='ss-card mb-3'>
+          <div className='ss-card mb-4'>
             <div className='survey-metrics-card-header'>
               <strong>
                 {progress.phase === 'fetching' && 'Fetching data'}
@@ -378,7 +385,7 @@ export default function SurveyMetrics() {
                 {progress.phase === 'done' && 'Finished'}
               </strong>
               {running && startedAt !== null && (
-                <span className='d-flex align-items-center gap-2'>
+                <span className='flex items-center gap-2'>
                   <Spinner animation='border' size='sm' />
                   {elapsed(now - startedAt)}
                 </span>
@@ -389,8 +396,8 @@ export default function SurveyMetrics() {
                 <div key={task.entity} className='survey-metrics-task'>
                   <div className='survey-metrics-task-label'>{task.label}</div>
                   <div className='survey-metrics-task-bar'>
-                    <ProgressBar
-                      now={
+                    <Progress
+                      value={
                         task.state === 'done' || task.state === 'cached'
                           ? 100
                           : task.total

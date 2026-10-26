@@ -6,8 +6,11 @@ import {
   useMemo,
   ChangeEvent,
 } from 'react';
-import Form from 'react-bootstrap/Form';
-import Spinner from 'react-bootstrap/Spinner';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { GlobalContext } from './Context';
 import LabeledToggleSwitch from './LabeledToggleSwitch';
 import type { TiledLaunchRequest } from './types/LaunchTask';
@@ -748,29 +751,31 @@ export default function TileConfiguration({
 
   return (
     <>
-      <Form.Group className='d-flex flex-column gap-3 mt-2'>
+      <div className='flex flex-col gap-4 mt-2'>
         {process.env.NODE_ENV === 'development' && (
-          <Form.Group
+          <div
             className='p-2 border border-dark mb-2 shadow-sm'
             style={{ backgroundColor: '#697582' }}
           >
             {hasDevGeoTransect ? (
               <>
-                <div className='d-flex align-items-center justify-content-between mb-2'>
-                  <Form.Label className='mb-0'>
+                <div className='flex items-center justify-between mb-2'>
+                  <Label className='mb-0'>
                     Per-transect subset steps
-                  </Form.Label>
-                  <Form.Check
-                    type='checkbox'
-                    label='Show Transect ID'
-                    checked={showTransectId}
-                    onChange={(e) => setShowTransectId(e.target.checked)}
-                    className='text-white'
+                  </Label>
+                  <label
+                    className='mb-0 flex items-center gap-2 text-white'
                     style={{ fontSize: '12px' }}
-                  />
+                  >
+                    <Checkbox
+                      checked={showTransectId}
+                      onCheckedChange={(c) => setShowTransectId(c === true)}
+                    />
+                    Show Transect ID
+                  </label>
                 </div>
                 <span
-                  className='d-block text-muted mb-2'
+                  className='block text-muted-foreground mb-2'
                   style={{ fontSize: '12px' }}
                 >
                   Computed distance (vincenty) and speed are based on the first
@@ -779,25 +784,25 @@ export default function TileConfiguration({
                 {transectGroupStats.map((g: any) => (
                   <div
                     key={g.transectId}
-                    className='d-flex align-items-center justify-content-between mb-2'
+                    className='flex items-center justify-between mb-2'
                   >
                     <div
-                      className='me-3 text-white'
+                      className='me-4 text-white'
                       style={{ fontSize: '14px' }}
                     >
                       Transect{showTransectId ? ` ${g.transectId}` : ''}:{' '}
                       {g.imageCount} images - {g.distanceKm.toFixed(2)} km -{' '}
                       {g.speedKmh.toFixed(2)} km/h
                     </div>
-                    <div className='d-flex align-items-center gap-2'>
-                      <div className='d-flex align-items-center'>
+                    <div className='flex items-center gap-2'>
+                      <div className='flex items-center'>
                         <span
                           className='me-2 text-white'
                           style={{ fontSize: '12px' }}
                         >
                           Step
                         </span>
-                        <Form.Control
+                        <Input
                           type='number'
                           style={{ maxWidth: 100 }}
                           value={transectSubsetSteps[g.transectId] ?? 1}
@@ -811,14 +816,14 @@ export default function TileConfiguration({
                           }
                         />
                       </div>
-                      <div className='d-flex align-items-center'>
+                      <div className='flex items-center'>
                         <span
                           className='me-2 text-white'
                           style={{ fontSize: '12px' }}
                         >
                           Offset
                         </span>
-                        <Form.Control
+                        <Input
                           type='number'
                           style={{ maxWidth: 100 }}
                           value={transectSubsetOffsets[g.transectId] ?? 0}
@@ -836,7 +841,7 @@ export default function TileConfiguration({
                   </div>
                 ))}
                 <div
-                  className='mt-2 text-white border-top border-dark pt-2'
+                  className='mt-2 text-white border-t border-dark pt-2'
                   style={{ fontSize: '12px' }}
                 >
                   {transectGroupStats.map((g: any) => (
@@ -845,21 +850,21 @@ export default function TileConfiguration({
                       expected images: {expectedCounts.per[g.transectId] ?? 0}
                     </div>
                   ))}
-                  <div className='fw-bold'>
+                  <div className='font-bold'>
                     Total expected images: {expectedCounts.total}
                   </div>
                 </div>
               </>
             ) : (
               <>
-                <Form.Label className='mb-0'>Image Subset Step (n)</Form.Label>
+                <Label className='mb-0'>Image Subset Step (n)</Label>
                 <span
-                  className='d-block text-muted mb-2'
+                  className='block text-muted-foreground mb-2'
                   style={{ fontSize: '12px' }}
                 >
                   1-based indexing
                 </span>
-                <Form.Control
+                <Input
                   type='number'
                   value={subsetN}
                   disabled={loadingImages}
@@ -869,19 +874,19 @@ export default function TileConfiguration({
                 />
               </>
             )}
-            <div className='mt-3 p-2 border-top border-dark text-white'>
-              <Form.Label className='mb-1 text-white'>
+            <div className='mt-4 p-2 border-t border-dark text-white'>
+              <Label className='mb-1 text-white'>
                 Limit tiling to CSV image IDs (dev only)
-              </Form.Label>
+              </Label>
               <span
-                className='d-block text-muted mb-2'
+                className='block text-muted-foreground mb-2'
                 style={{ fontSize: '12px' }}
               >
                 Upload a CSV with image IDs in any column. Parsed IDs:{' '}
                 {csvFilterIds.length} | matched: {csvMatchStats.matched} |
                 missing: {csvMatchStats.missing}
               </span>
-              <Form.Control
+              <Input
                 type='file'
                 accept='.csv,text/csv'
                 size='sm'
@@ -897,31 +902,32 @@ export default function TileConfiguration({
                 </div>
               )}
               {csvFilterIds.length > 0 && (
-                <button
-                  type='button'
-                  className='btn btn-sm btn-light mt-2'
+                <Button
+                  variant='light'
+                  size='sm'
+                  className='mt-2'
                   onClick={handleClearCsv}
                 >
                   Clear CSV filter
-                </button>
+                </Button>
               )}
             </div>
-          </Form.Group>
+          </div>
         )}
-      </Form.Group>
-      <Form.Group
+      </div>
+      <div
         className='border border-dark shadow-sm p-2'
         style={{ backgroundColor: '#697582' }}
       >
         {loadingImages ? (
-          <div className='d-flex justify-content-center align-items-center text-white'>
+          <div className='flex justify-center items-center text-white'>
             <Spinner animation='border' size='sm' className='me-2' /> Scanning
             images... ({imagesLoaded} images scanned)
           </div>
         ) : (
-          <Form.Label className='text-center' style={{ fontSize: 'smaller' }}>
+          <Label className='text-center' style={{ fontSize: 'smaller' }}>
             Detected image dimensions : {imageWidth}x{imageHeight}
-          </Form.Label>
+          </Label>
         )}
         {!loadingImages && (
           <div
@@ -931,7 +937,7 @@ export default function TileConfiguration({
             Expected tiles: {expectedTiles}
           </div>
         )}
-        <Form.Group className='mb-3 mt-3'>
+        <div className='mb-4 mt-4'>
           <LabeledToggleSwitch
             leftLabel='Specify number of tiles'
             rightLabel='Specify tile dimensions'
@@ -942,7 +948,7 @@ export default function TileConfiguration({
             disabled={loadingImages || disabled}
           />
 
-          <div className='row'>
+          <div className='flex flex-wrap -mx-3'>
             <InputBox
               label='Horizontal Tiles'
               enabled={!specifyTileDimensions && !loadingImages && !disabled}
@@ -968,8 +974,8 @@ export default function TileConfiguration({
               setter={(x) => setHeight(x)}
             />
           </div>
-        </Form.Group>
-        <Form.Group className='mb-3 mt-3'>
+        </div>
+        <div className='mb-4 mt-4'>
           <LabeledToggleSwitch
             leftLabel='Specify overlap (px)'
             rightLabel='Specify overlap (%)'
@@ -979,7 +985,7 @@ export default function TileConfiguration({
             }}
             disabled={loadingImages || disabled}
           />
-          <div className='row'>
+          <div className='flex flex-wrap -mx-3'>
             <InputBox
               label='Minimum sidelap (px)'
               enabled={
@@ -1013,7 +1019,7 @@ export default function TileConfiguration({
               setter={(x) => setMinOverlapPercentage(x)}
             />
           </div>
-          <div className='row'>
+          <div className='flex flex-wrap -mx-3'>
             <InputBox
               label='Actual sidelap (px)'
               enabled={false}
@@ -1035,8 +1041,8 @@ export default function TileConfiguration({
               getter={() => getOverlapPercent().toFixed(2)}
             />
           </div>
-        </Form.Group>
-        <Form.Group className='mb-3 mt-3'>
+        </div>
+        <div className='mb-4 mt-4'>
           <LabeledToggleSwitch
             leftLabel='Process Entire Image'
             rightLabel='Specify Processing Borders'
@@ -1061,7 +1067,7 @@ export default function TileConfiguration({
                 }}
                 disabled={loadingImages || disabled}
               />
-              <div className='row'>
+              <div className='flex flex-wrap -mx-3'>
                 <InputBox
                   label='Minimum X (px)'
                   enabled={
@@ -1103,7 +1109,7 @@ export default function TileConfiguration({
                   }
                 />
               </div>
-              <div className='row'>
+              <div className='flex flex-wrap -mx-3'>
                 <InputBox
                   label='Maximum X (px)'
                   enabled={
@@ -1147,8 +1153,8 @@ export default function TileConfiguration({
               </div>
             </>
           )}
-        </Form.Group>
-      </Form.Group>
+        </div>
+      </div>
     </>
   );
 }
@@ -1170,10 +1176,10 @@ function InputBox({
   const current = getter();
 
   return (
-    <div className='col-md-3'>
-      <Form.Group>
-        <Form.Label>{label}</Form.Label>
-        <Form.Control
+    <div className='w-full md:w-1/4 px-3'>
+      <div>
+        <Label>{label}</Label>
+        <Input
           type='number'
           value={isFocused ? tempValue : (current as any) ?? ''}
           onFocus={() => {
@@ -1196,7 +1202,7 @@ function InputBox({
           }}
           disabled={!enabled}
         />
-      </Form.Group>
+      </div>
     </div>
   );
 }

@@ -688,9 +688,9 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   );
 
   return (
-    <div className='d-flex flex-column align-items-stretch w-100 h-100 gap-3'>
+    <div className='flex flex-col items-stretch w-full h-full gap-4'>
       <div
-        className='d-flex flex-column align-items-stretch w-100 h-100'
+        className='flex flex-col items-stretch w-full h-full'
         style={{
           visibility: visible && fullyLoaded ? 'visible' : 'hidden',
           position: 'relative',

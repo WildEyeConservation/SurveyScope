@@ -1,5 +1,14 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
-import { Alert, Button, Modal } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { GlobalContext } from '../Context';
 import { useUsers } from '../apiInterface';
 import { fetchAllPaginatedResults } from '../utils';
@@ -244,8 +253,8 @@ export default function ManageUsers({
 
   return (
     <>
-      <div className='p-3'>
-        <div className='text-muted mb-3' style={{ lineHeight: 1.2 }}>
+      <div className='p-4'>
+        <div className='text-muted-foreground mb-4' style={{ lineHeight: 1.2 }}>
           <span style={{ fontSize: 16 }}>Manage User Access</span>
           <br />
           <span style={{ fontSize: 12 }}>
@@ -270,7 +279,7 @@ export default function ManageUsers({
           emptyMessage={isLoading ? 'Loading...' : 'No users found'}
         />
         {saveResult && (
-          <Alert variant={saveResult.variant} className='mt-3 mb-0'>
+          <Alert variant={saveResult.variant} className='mt-4 mb-0'>
             {saveResult.message}
           </Alert>
         )}
@@ -291,35 +300,30 @@ export default function ManageUsers({
           Close
         </Button>
       </Footer>
-      {showUnsavedPrompt && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            zIndex: 1055,
-          }}
-        />
-      )}
-      <Modal show={showUnsavedPrompt} onHide={() => setShowUnsavedPrompt(false)} style={{ zIndex: 1056 }}>
-        <Modal.Header>
-          <Modal.Title>Unsaved Changes</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          You have unsaved changes. Would you like to save before closing?
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant='primary' onClick={handleSaveAndClose}>
-            Save & Close
-          </Button>
-          <Button variant='danger' onClick={handleDiscardAndClose}>
-            Discard
-          </Button>
-          <Button variant='dark' onClick={() => setShowUnsavedPrompt(false)}>
-            Cancel
-          </Button>
-        </Modal.Footer>
-      </Modal>
+      <Dialog
+        open={showUnsavedPrompt}
+        onOpenChange={(o) => !o && setShowUnsavedPrompt(false)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved Changes</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            You have unsaved changes. Would you like to save before closing?
+          </DialogBody>
+          <DialogFooter>
+            <Button variant='primary' onClick={handleSaveAndClose}>
+              Save & Close
+            </Button>
+            <Button variant='danger' onClick={handleDiscardAndClose}>
+              Discard
+            </Button>
+            <Button variant='dark' onClick={() => setShowUnsavedPrompt(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

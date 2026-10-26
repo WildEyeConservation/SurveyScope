@@ -1,5 +1,9 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Form } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import type { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
@@ -254,8 +258,8 @@ export default function InfoTagsLaunch({
   ]);
 
   return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
+    <div className='px-4 pb-4 pt-1'>
+      <div className='flex flex-col gap-4 mt-2'>
         {loading ? (
           <LoadingProgressCard
             title='Loading Info Tags data...'
@@ -287,33 +291,33 @@ export default function InfoTagsLaunch({
           </Alert>
         ) : (
           <>
-            <Form.Group>
-              <Form.Label className='mb-0'>Labels to tag</Form.Label>
-              <span className='text-muted d-block mb-1' style={{ fontSize: 12 }}>
+            <div>
+              <Label className='mb-0'>Labels to tag</Label>
+              <span className='text-muted-foreground block mb-1' style={{ fontSize: 12 }}>
                 Select one or more species whose annotations should be tagged.
               </span>
               <div
-                className='border border-dark rounded p-2'
+                className='border border-dark p-2'
                 style={{ maxHeight: 220, overflowY: 'auto' }}
               >
                 {availableCategories.map((category) => (
-                  <Form.Check
-                    key={category.id}
-                    type='checkbox'
-                    label={`${category.name} (${category.count})`}
-                    checked={selectedCategoryIds.includes(category.id)}
-                    disabled={launching}
-                    onChange={(event) =>
-                      setSelectedCategoryIds((current) =>
-                        event.target.checked
-                          ? [...current, category.id]
-                          : current.filter((id) => id !== category.id)
-                      )
-                    }
-                  />
+                  <label key={category.id} className='mb-0.5 flex items-center gap-2'>
+                    <Checkbox
+                      checked={selectedCategoryIds.includes(category.id)}
+                      disabled={launching}
+                      onCheckedChange={(checked) =>
+                        setSelectedCategoryIds((current) =>
+                          checked === true
+                            ? [...current, category.id]
+                            : current.filter((id) => id !== category.id)
+                        )
+                      }
+                    />
+                    {`${category.name} (${category.count})`}
+                  </label>
                 ))}
               </div>
-            </Form.Group>
+            </div>
 
             {selected.length > 0 && (
               <div
@@ -339,36 +343,40 @@ export default function InfoTagsLaunch({
               disabled={launching || selected.length === 0}
             />
 
-            <Form.Switch
-              label='Show Advanced Options'
-              checked={showAdvancedOptions}
-              onChange={() => setShowAdvancedOptions((value) => !value)}
-              disabled={launching}
-            />
+            <label className='mb-0 flex items-center gap-2'>
+              <Switch
+                checked={showAdvancedOptions}
+                onCheckedChange={() => setShowAdvancedOptions((value) => !value)}
+                disabled={launching}
+              />
+              Show Advanced Options
+            </label>
             {showAdvancedOptions && (
               <div
-                className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
+                className='flex flex-col gap-4 border border-dark shadow-sm p-2'
                 style={{ backgroundColor: '#697582' }}
               >
-                <Form.Group>
-                  <Form.Label className='mb-0'>Batch Size</Form.Label>
-                  <span className='text-muted d-block mb-1' style={{ fontSize: 12 }}>
+                <div>
+                  <Label className='mb-0'>Batch Size</Label>
+                  <span className='text-muted-foreground block mb-1' style={{ fontSize: 12 }}>
                     The number of images a user can pick up at a time.
                   </span>
-                  <Form.Control
+                  <Input
                     type='number'
                     min={1}
                     value={batchSize}
                     onChange={(event) => setBatchSize(Number(event.target.value))}
                     disabled={launching}
                   />
-                </Form.Group>
-                <Form.Switch
-                  label='Hide Job From Non-Admin Workers'
-                  checked={hidden}
-                  onChange={() => setHidden((value) => !value)}
-                  disabled={launching}
-                />
+                </div>
+                <label className='mb-0 flex items-center gap-2'>
+                  <Switch
+                    checked={hidden}
+                    onCheckedChange={() => setHidden((value) => !value)}
+                    disabled={launching}
+                  />
+                  Hide Job From Non-Admin Workers
+                </label>
               </div>
             )}
           </>

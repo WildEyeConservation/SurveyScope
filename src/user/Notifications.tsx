@@ -1,9 +1,9 @@
 import { useContext, useState } from 'react';
 import { GlobalContext, UserContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
-import Button from 'react-bootstrap/Button';
+import { Button } from '@/components/ui/button';
 import { Bell, Check, X, RefreshCw } from 'lucide-react';
-import { Card } from 'react-bootstrap';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export default function Notifications() {
@@ -27,9 +27,9 @@ export default function Notifications() {
   const totalNotifications = pendingInvites.length;
 
   return (
-    <div className='position-relative'>
+    <div className='relative'>
       <button
-        className='text-muted px-2 d-flex align-items-center justify-content-center'
+        className='text-muted-foreground px-2 flex items-center justify-center'
         style={{
           position: 'relative',
           backgroundColor: 'transparent',
@@ -39,7 +39,7 @@ export default function Notifications() {
         onClick={() => setShow(!show)}
       >
         <div
-          className='d-none d-lg-block'
+          className='hidden lg:block'
           style={{ position: 'relative', height: '100%' }}
         >
           <div
@@ -59,9 +59,9 @@ export default function Notifications() {
           >
             {totalNotifications}
           </div>
-          <Bell className='d-none d-lg-block' />
+          <Bell className='hidden lg:block' />
         </div>
-        <span className='d-block d-lg-none'>Notifications</span>
+        <span className='block lg:hidden'>Notifications</span>
       </button>
       {show && (
         <div
@@ -78,7 +78,7 @@ export default function Notifications() {
       )}
       {username && (
         <Card
-          className='position-fixed w-100 mt-lg-3'
+          className='fixed w-full lg:mt-4'
           style={{
             maxWidth: '400px',
             right: 0,
@@ -89,13 +89,13 @@ export default function Notifications() {
             zIndex: 2,
           }}
         >
-          <Card.Header className='d-flex justify-content-between align-items-center'>
-            <div className='d-flex align-items-center gap-2'>
-              <Card.Title className='mb-0'>Notifications</Card.Title>
+          <CardHeader className='flex justify-between items-center'>
+            <div className='flex items-center gap-2'>
+              <CardTitle className='mb-0'>Notifications</CardTitle>
               <Button
                 variant='link'
                 size='sm'
-                className='p-0 text-muted'
+                className='p-0 text-muted-foreground'
                 onClick={() => refetch()}
                 disabled={isFetching}
                 title='Refresh'
@@ -104,10 +104,10 @@ export default function Notifications() {
               </Button>
             </div>
             <X onClick={() => setShow(false)} style={{ cursor: 'pointer' }} />
-          </Card.Header>
-          <Card.Body>
+          </CardHeader>
+          <CardContent>
             <Inbox invites={pendingInvites} queryKey={['OrganizationInvite', username]} />
-          </Card.Body>
+          </CardContent>
         </Card>
       )}
     </div>
@@ -212,7 +212,7 @@ function Invite({
 
   return (
     <div
-      className={`d-flex flex-row gap-2 text-primary-subtle text-start p-2 ${index % 2 !== 0 ? 'bg-secondary text-dark' : ''
+      className={`flex flex-row gap-2 text-left p-2 ${index % 2 !== 0 ? 'bg-secondary text-dark' : ''
         }`}
     >
       <div>
@@ -226,7 +226,7 @@ function Invite({
           invited you to their organisation.
         </p>
       </div>
-      <div className='d-flex gap-1'>
+      <div className='flex gap-1'>
         <Button variant='success' onClick={acceptInvite} disabled={responding}>
           <Check />
         </Button>

@@ -160,10 +160,10 @@ export default function LightLocationView({
   }, [loaded, overlay]);
 
   return (
-    <div className='d-flex flex-md-row flex-column justify-content-center w-100 h-100 gap-3 overflow-auto'>
+    <div className='flex md:flex-row flex-col justify-center w-full h-full gap-4 overflow-auto'>
       {/* Center image */}
       <div
-        className='d-flex flex-column align-items-center w-100 h-100 gap-3'
+        className='flex flex-col items-center w-full h-full gap-4'
         style={{ maxWidth: '1024px' }}
       >
         {loaded && sourceKey && (

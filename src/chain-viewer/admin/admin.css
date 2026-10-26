@@ -1,18 +1,18 @@
 /*
- * Make the shares table read as one surface with its Card: the Card.Body drops
- * its padding (use `p-0`) and the table paints a transparent background so it
- * inherits the card colour instead of Bootstrap's darker `--bs-table-bg`. Cells
- * carry their own padding so content isn't flush against the card edge.
+ * Make the shares table read as one surface with its Card: the CardContent
+ * drops its padding (use `p-0`) and the table stays transparent so it inherits
+ * the card colour. Cells carry their own padding so content isn't flush
+ * against the card edge.
  */
 .chain-share-table {
-  --bs-table-bg: transparent;
+  background-color: transparent;
   margin-bottom: 0;
 }
 
 .chain-share-table > thead > tr > th,
 .chain-share-table > tbody > tr > td {
   padding: 0.6rem 1.25rem;
-  border-color: var(--bs-border-color);
+  border-color: var(--border);
 }
 
 .chain-share-table > thead > tr > th {

@@ -1,4 +1,6 @@
-import { Form, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label as FormLabel } from '@/components/ui/label';
 import { useRecordHotkeys } from 'react-hotkeys-hook';
 import MyTable from '../Table';
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -189,10 +191,10 @@ export default function LabelEditor({
   }, [importLabels]);
 
   return (
-    <Form.Group>
-      <Form.Label className='mb-0'>{title}</Form.Label>
+    <div>
+      <FormLabel className='mb-0'>{title}</FormLabel>
       <span
-        className='text-muted d-block mb-1'
+        className='text-muted-foreground block mb-1'
         style={{ fontSize: 12, lineHeight: 1.2 }}
       >
         {description}
@@ -210,7 +212,7 @@ export default function LabelEditor({
         tableData={labels.map((label) => ({
           id: label.id,
           rowData: [
-            <Form.Control
+            <Input
               type='text'
               placeholder='Enter label name'
               value={label.name}
@@ -222,7 +224,7 @@ export default function LabelEditor({
                 )
               }
             />,
-            <Form.Control
+            <Input
               type='text'
               placeholder='Record shortcut key'
               value={
@@ -275,7 +277,7 @@ export default function LabelEditor({
               }}
               onChange={() => { }}
             />,
-            <Form.Control
+            <Input
               type='color'
               id='exampleColorInput'
               size='sm'
@@ -324,6 +326,6 @@ export default function LabelEditor({
       >
         +
       </Button>
-    </Form.Group>
+    </div>
   );
 }

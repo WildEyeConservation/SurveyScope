@@ -1,4 +1,4 @@
-import { Card } from 'react-bootstrap';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import OrganizationSelector from '../OrganizationSelector';
 import { useState, useContext } from 'react';
 import { Tab, Tabs } from '../Tabs';
@@ -83,16 +83,16 @@ export default function Testing() {
         }}
       >
         <Card>
-          <Card.Header className='d-flex justify-content-between mb-0'>
-            <Card.Title className='mb-0'>
+          <CardHeader className='flex justify-between mb-0'>
+            <CardTitle className='mb-0'>
               <h4 className='mb-0'>User Testing</h4>
-            </Card.Title>
+            </CardTitle>
             <OrganizationSelector
               organization={organization}
               setOrganization={setOrganization}
             />
-          </Card.Header>
-          <Card.Body>
+          </CardHeader>
+          <CardContent>
             {organization.id && (
               <Tabs defaultTab={0}>
                 <Tab label='Surveys'>
@@ -106,7 +106,7 @@ export default function Testing() {
                 </Tab>
               </Tabs>
             )}
-          </Card.Body>
+          </CardContent>
         </Card>
       </div>
     </TestingContext.Provider>

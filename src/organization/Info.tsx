@@ -2,7 +2,7 @@ import { useEffect, useState, useContext } from 'react';
 import { GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
 import { Info as InfoIcon } from 'lucide-react';
-import Spinner from 'react-bootstrap/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 
 export default function Info({ organizationId }: { organizationId: string }) {
   const { client } = useContext(GlobalContext);
@@ -27,29 +27,29 @@ export default function Info({ organizationId }: { organizationId: string }) {
 
   if (loading) {
     return (
-      <div className='d-flex justify-content-center p-5'>
+      <div className='flex justify-center p-12'>
         <Spinner animation='border' variant='primary' />
       </div>
     );
   }
 
   return (
-    <div className='mt-4 w-100' style={{ maxWidth: '800px' }}>
-      <div className='mb-5'>
+    <div className='mt-6 w-full' style={{ maxWidth: '800px' }}>
+      <div className='mb-12'>
         <h6
-          className='text-uppercase fw-bold mb-2'
+          className='uppercase font-bold mb-2'
           style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: '#adb5bd' }}
         >
           Organisation Name
         </h6>
-        <h2 className='fw-bold mb-0' style={{ color: '#ffffff' }}>
+        <h2 className='font-bold mb-0' style={{ color: '#ffffff' }}>
           {organization?.name || '---'}
         </h2>
       </div>
 
-      <div className='mb-5'>
+      <div className='mb-12'>
         <h6
-          className='text-uppercase fw-bold mb-2'
+          className='uppercase font-bold mb-2'
           style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: '#adb5bd' }}
         >
           Description
@@ -67,14 +67,14 @@ export default function Info({ organizationId }: { organizationId: string }) {
         </p>
       </div>
 
-      <div className='mt-5 pt-4 border-top' style={{ borderColor: 'rgba(255,255,255,0.1) !important' }}>
+      <div className='mt-12 pt-6 border-t' style={{ borderColor: 'rgba(255,255,255,0.1) !important' }}>
         <div
-          className='d-flex align-items-start gap-3 p-3 rounded-3'
+          className='flex items-start gap-4 p-4 '
           style={{ backgroundColor: '#ffffff', border: '1px solid #dee2e6' }}
         >
           <InfoIcon size={20} className='text-primary mt-1' />
           <div>
-            <p className='mb-1 text-dark fw-bold' style={{ fontSize: '1rem' }}>
+            <p className='mb-1 text-dark font-bold' style={{ fontSize: '1rem' }}>
               Want to update your organisation details?
             </p>
             <p className='mb-0 text-dark' style={{ fontSize: '0.95rem', opacity: 0.85 }}>

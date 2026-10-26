@@ -1,4 +1,5 @@
-import { Alert, Button } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { Footer } from '../Modal';
 import { GlobalContext } from '../Context';
@@ -157,12 +158,12 @@ export default function EditMasks({ projectId }: { projectId: string }) {
   };
 
   if (isLoading) {
-    return <div className='p-3'>Loading...</div>;
+    return <div className='p-4'>Loading...</div>;
   }
 
   if (loadFailed) {
     return (
-      <Alert variant='danger' className='m-3'>
+      <Alert variant='danger' className='m-4'>
         Could not load this survey&apos;s cameras. Close and reopen the survey
         to try again.
       </Alert>
@@ -171,7 +172,7 @@ export default function EditMasks({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <div className='d-flex flex-column gap-3 p-3'>
+      <div className='flex flex-col gap-4 p-4'>
         <p className='mb-0' style={{ fontSize: 14 }}>
           {MASK_HELP}
         </p>

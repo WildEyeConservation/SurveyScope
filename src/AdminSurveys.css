@@ -1,15 +1,15 @@
 ﻿.admin-surveys {
   padding-top: 12px;
-  color: var(--bs-body-color);
+  color: var(--foreground);
 }
 
 .admin-surveys .ss-card {
   overflow: hidden;
   padding: 0;
-  color: var(--bs-body-color);
+  color: var(--foreground);
   background: #20374c;
   border: 1px solid rgba(0, 0, 0, 0.25);
-  border-radius: var(--bs-border-radius);
+  border-radius: 0;
 }
 
 .admin-surveys .ss-card > div:first-child {
@@ -23,13 +23,13 @@
 .admin-surveys .ss-data-table {
   width: 100%;
   border-collapse: collapse;
-  color: var(--bs-body-color);
+  color: var(--foreground);
   font-size: 0.875rem;
 }
 
 .admin-surveys .ss-data-table thead th {
   padding: 0.75rem 1rem;
-  color: var(--bs-body-color);
+  color: var(--foreground);
   background: rgba(255, 255, 255, 0.075);
   border-bottom: 1px solid rgba(0, 0, 0, 0.25);
   font-size: 0.75rem;
@@ -59,23 +59,23 @@
   min-width: 28px;
   padding: 0.2rem 0.55rem;
   color: #fff;
-  background: var(--bs-secondary);
-  border-radius: var(--bs-border-radius-pill);
+  background: var(--secondary);
+  border-radius: 50rem;
   font-size: 0.75rem;
   font-weight: 600;
   text-align: center;
 }
 
-.admin-surveys .btn-link {
-  color: var(--bs-body-color);
+.admin-surveys [data-slot='button'][data-variant='link'] {
+  color: var(--foreground);
 }
 
-.admin-surveys .btn-link:hover {
+.admin-surveys [data-slot='button'][data-variant='link']:hover {
   color: #fff;
 }
 
 @media (max-width: 576px) {
-  .admin-surveys .form-control {
+  .admin-surveys [data-slot='input'] {
     flex-basis: 100% !important;
     max-width: none !important;
   }

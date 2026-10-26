@@ -1,10 +1,13 @@
-import Table from 'react-bootstrap/Table';
 import type { CSSProperties } from 'react';
 import { useState, useEffect, useRef, useMemo } from 'react';
-import Button from 'react-bootstrap/esm/Button';
-import Form from 'react-bootstrap/Form';
-import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
-import Tooltip from 'react-bootstrap/Tooltip';
+import { Table } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { NativeSelect } from '@/components/ui/native-select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { MoveUp, MoveDown } from 'lucide-react';
 
 interface TableObject {
@@ -170,7 +173,7 @@ export default function MyTable(input: TableObject) {
                         ...style,
                       }}
                     >
-                      <div className='d-flex align-items-center justify-content-between'>
+                      <div className='flex items-center justify-between'>
                         {content}
                         {sort && renderSortIndicator(index)}
                       </div>
@@ -178,17 +181,10 @@ export default function MyTable(input: TableObject) {
                   );
                   if (!description) return heading;
                   return (
-                    <OverlayTrigger
-                      key={`heading${index}`}
-                      placement='top'
-                      overlay={
-                        <Tooltip id={`heading-tooltip-${index}`}>
-                          {description}
-                        </Tooltip>
-                      }
-                    >
-                      {heading}
-                    </OverlayTrigger>
+                    <Tooltip key={`heading${index}`}>
+                      <TooltipTrigger asChild>{heading}</TooltipTrigger>
+                      <TooltipContent side='top'>{description}</TooltipContent>
+                    </Tooltip>
                   );
                 }
               )}
@@ -220,12 +216,12 @@ export default function MyTable(input: TableObject) {
         </tbody>
       </Table>
       {pagination && (
-        <div className='text-end d-flex justify-content-between align-items-center'>
-          <div className='d-flex align-items-center gap-2'>
+        <div className='text-right flex justify-between items-center'>
+          <div className='flex items-center gap-2'>
             <label htmlFor='rowsPerPage' className='mb-0'>
               Rows per page:
             </label>
-            <Form.Select
+            <NativeSelect
               id='rowsPerPage'
               value={itemsPerPage}
               onChange={(e) => {
@@ -239,13 +235,13 @@ export default function MyTable(input: TableObject) {
               <option value={25}>25</option>
               <option value={50}>50</option>
               <option value={100}>100</option>
-            </Form.Select>
+            </NativeSelect>
           </div>
-          <div className='d-flex align-items-center gap-2'>
-            <p className='d-inline mb-0'>
+          <div className='flex items-center gap-2'>
+            <p className='inline mb-0'>
               Page {currentPage + 1} of {totalPages}
             </p>
-            <div className='d-flex gap-1'>
+            <div className='flex gap-1'>
               <Button
                 variant='info'
                 onClick={() => {

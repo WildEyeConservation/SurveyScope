@@ -2,7 +2,7 @@ import MyTable from '../Table';
 import { useState, useContext, useEffect, useRef } from 'react';
 import Select from 'react-select';
 import { TestingContext, GlobalContext } from '../Context';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import { Plus, Settings2, Eye } from 'lucide-react';
 import ConfigModal from './ConfigModal';
 import EditLocationsModal from './EditLocationsModal';
@@ -118,7 +118,7 @@ export default function Surveys() {
           />,
           <Button
             variant='success'
-            className='w-100'
+            className='w-full'
             onClick={() => {
               setSelectedSurvey({
                 label: survey.name,
@@ -132,7 +132,7 @@ export default function Surveys() {
           </Button>,
           <Button
             variant='info'
-            className='w-100'
+            className='w-full'
             onClick={() => {
               setSelectedSurvey({
                 label: survey.name,
@@ -146,7 +146,7 @@ export default function Surveys() {
           </Button>,
           <Button
             variant='primary'
-            className='w-100'
+            className='w-full'
             onClick={() => {
               setSelectedSurvey({
                 label: survey.name,
@@ -169,7 +169,7 @@ export default function Surveys() {
   }, [modalToShow]);
 
   return (
-    <div className='d-flex flex-column gap-2 mt-3 w-100'>
+    <div className='flex flex-col gap-2 mt-4 w-full'>
       <h5 className='mb-0'>Surveys</h5>
       <MyTable
         tableHeadings={[

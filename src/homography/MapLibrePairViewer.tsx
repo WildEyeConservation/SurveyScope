@@ -100,7 +100,7 @@ function PointContextMenu({
         Point {pointIndex + 1}
       </div>
       <button
-        className='btn btn-sm w-100 text-start'
+        className='block w-full text-left text-sm leading-normal'
         style={{ padding: '8px 12px', textDecoration: 'none', color: '#d9534f', background: 'transparent', border: 'none' }}
         onClick={() => {
           onRemove(imageIndex, pointIndex);
@@ -128,7 +128,7 @@ function PointContextMenu({
           {swapTargets.map((targetIdx) => (
             <button
               key={targetIdx}
-              className='btn btn-sm w-100 text-start'
+              className='block w-full text-left text-sm leading-normal'
               style={{ padding: '8px 12px', textDecoration: 'none', color: '#333', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center' }}
               onClick={() => {
                 onSwap(imageIndex, pointIndex, targetIdx);
@@ -420,13 +420,13 @@ export function MapLibrePairViewer({
   );
 
   return (
-    <div className='w-100 h-100 d-flex flex-row gap-3' style={{
+    <div className='w-full h-full flex flex-row gap-4' style={{
       position: 'relative',
       flexDirection: (images[0].timestamp ?? 0) > (images[1].timestamp ?? 0) ? 'row-reverse' : undefined,
     }}>
       {images.map((image, i) => (
         <div
-          className='w-50'
+          className='w-1/2'
           key={image.id}
           ref={containerRefs[i]}
           style={{ position: 'relative', height: '100%', minHeight: 400 }}

@@ -7,8 +7,14 @@ import React, {
   useMemo,
   ReactElement,
 } from 'react';
-import Dropdown from 'react-bootstrap/Dropdown';
 import { ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import './Tabs.css';
 
 interface TabProps {
@@ -28,25 +34,9 @@ interface TabsProps {
   disableSwitching?: boolean;
 }
 
-const MoreToggle = React.forwardRef<
-  HTMLDivElement,
-  { onClick: (e: React.MouseEvent) => void; className?: string; children: React.ReactNode }
->(({ onClick, className, children }, ref) => (
-  <div
-    ref={ref}
-    className={className}
-    onClick={(e) => {
-      e.preventDefault();
-      onClick(e);
-    }}
-  >
-    {children}
-  </div>
-));
-
 export const Tab: React.FC<TabProps> = ({ children, className }) => {
   return (
-    <div className={`d-flex flex-column w-100 h-100 ${className ?? ''}`}>
+    <div className={`flex flex-col w-full h-full ${className ?? ''}`}>
       {children}
     </div>
   );
@@ -150,10 +140,10 @@ export const Tabs: React.FC<TabsProps> = ({
   };
 
   return (
-    <div className={`w-100 h-100 d-flex flex-column ${className ?? ''}`}>
+    <div className={`w-full h-full flex flex-col ${className ?? ''}`}>
       <div
         ref={headerRef}
-        className='tabs-header border-bottom border-dark'
+        className='tabs-header border-b border-dark'
       >
         {/* Hidden measurement row */}
         {tabWidths.length === 0 && (
@@ -164,14 +154,14 @@ export const Tabs: React.FC<TabsProps> = ({
                 ref={(el) => {
                   tabRefs.current[i] = el;
                 }}
-                className='tab-label py-2 px-3'
+                className='tab-label py-2 px-4'
               >
                 {child.props.label}
               </div>
             ))}
             <div
               ref={moreRef}
-              className='tab-label py-2 px-3'
+              className='tab-label py-2 px-4'
             >
               More <ChevronDown size={14} />
             </div>
@@ -182,7 +172,7 @@ export const Tabs: React.FC<TabsProps> = ({
         {visibleIndices.map((index) => (
           <div
             key={index}
-            className={`tab-label py-2 px-3 ${
+            className={`tab-label py-2 px-4 ${
               activeTab === index ? 'bg-primary' : ''
             }`}
             onClick={() => handleTabClick(index)}
@@ -193,30 +183,32 @@ export const Tabs: React.FC<TabsProps> = ({
 
         {/* More dropdown */}
         {overflowIndices.length > 0 && (
-          <Dropdown>
-            <Dropdown.Toggle
-              as={MoreToggle}
-              className={`tab-label tab-more-toggle py-2 px-3 ${
-                overflowIndices.includes(activeTab) ? 'bg-primary' : ''
-              }`}
-            >
-              More <ChevronDown size={14} style={{ verticalAlign: 'middle' }} />
-            </Dropdown.Toggle>
-            <Dropdown.Menu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div
+                className={cn(
+                  'tab-label tab-more-toggle py-2 px-4',
+                  overflowIndices.includes(activeTab) && 'bg-primary'
+                )}
+              >
+                More <ChevronDown size={14} style={{ verticalAlign: 'middle' }} />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='start'>
               {overflowIndices.map((index) => (
-                <Dropdown.Item
+                <DropdownMenuItem
                   key={index}
-                  active={activeTab === index}
-                  onClick={() => handleTabClick(index)}
+                  className={cn(activeTab === index && 'bg-primary text-white')}
+                  onSelect={() => handleTabClick(index)}
                 >
                   {childrenArray[index].props.label}
-                </Dropdown.Item>
+                </DropdownMenuItem>
               ))}
-            </Dropdown.Menu>
-          </Dropdown>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
-      <div className='flex-grow-1 d-flex flex-column w-100 h-100'>
+      <div className='grow flex flex-col w-full h-full'>
         {sharedChild}
         {childrenArray[activeTab]}
       </div>

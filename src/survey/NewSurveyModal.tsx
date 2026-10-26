@@ -1,4 +1,7 @@
-import { Button, Form } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { useRef, useState } from 'react';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import { GlobalContext, UserContext } from '../Context';
@@ -355,30 +358,29 @@ export default function NewSurveyModal({
         <Title>New Survey</Title>
       </Header>
       <Body>
-        <Form className='d-flex flex-column gap-2 p-3'>
+        <form className='flex flex-col gap-2 p-4'>
           <StepIndicator
             steps={WIZARD_STEPS}
             currentIndex={stepIndex}
             furthestIndex={furthestIndex}
             onSelect={setStepIndex}
           />
-          {/* d-none (not inline display) because d-flex is !important */}
           <div
             className={
-              stepIndex === 0 ? 'd-flex flex-column gap-2' : 'd-none'
+              stepIndex === 0 ? 'flex flex-col gap-2' : 'hidden'
             }
           >
-          <Form.Group>
-            <Form.Label>Name</Form.Label>
-            <Form.Control
+          <div>
+            <Label>Name</Label>
+            <Input
               type='text'
               placeholder='Enter a unique identifying name for the survey.'
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label>Organisation</Form.Label>
+          </div>
+          <div>
+            <Label>Organisation</Label>
             <Select
               className='text-black'
               value={organization}
@@ -391,20 +393,20 @@ export default function NewSurveyModal({
                 }),
               }}
             />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='mb-0'>Permissions</Form.Label>
+          </div>
+          <div>
+            <Label className='mb-0'>Permissions</Label>
             <span
-              className='text-muted d-block mb-1'
+              className='text-muted-foreground block mb-1'
               style={{ fontSize: 12, lineHeight: 1.2 }}
             >
               Select the user permissions for all organisation members excluding
               yourself and admins.
             </span>
             <div className='mb-2'>
-              <Form.Label style={{ fontSize: 14 }}>
+              <Label style={{ fontSize: 14 }}>
                 Annotation Access:
-              </Form.Label>
+              </Label>
               <Select
                 className='text-black'
                 value={globalAnnotationAccess}
@@ -422,22 +424,28 @@ export default function NewSurveyModal({
                 }}
               />
             </div>
-            <Form.Switch
+            <div
+              className='mb-0.5 flex items-center gap-2'
               style={{ fontSize: 14 }}
-              id='addPermissionExceptions'
-              label='Add Permission Exceptions'
-              checked={addPermissionExceptions}
-              onChange={(e) => {
-                if (!organization) {
-                  alert('Please select an organisation first');
-                  return;
-                }
-                setAddPermissionExceptions(e.target.checked);
-                if (!e.target.checked) {
-                  setPermissionExceptions([]);
-                }
-              }}
-            />
+            >
+              <Switch
+                id='addPermissionExceptions'
+                checked={addPermissionExceptions}
+                onCheckedChange={(checked) => {
+                  if (!organization) {
+                    alert('Please select an organisation first');
+                    return;
+                  }
+                  setAddPermissionExceptions(checked);
+                  if (!checked) {
+                    setPermissionExceptions([]);
+                  }
+                }}
+              />
+              <Label htmlFor='addPermissionExceptions' className='mb-0'>
+                Add Permission Exceptions
+              </Label>
+            </div>
             {addPermissionExceptions && (
               <>
                 <MyTable
@@ -542,7 +550,7 @@ export default function NewSurveyModal({
                 </Button>
               </>
             )}
-          </Form.Group>
+          </div>
           </div>
           <FilesUploadForm
             setOnSubmit={setUploadSubmitFn}
@@ -571,7 +579,7 @@ export default function NewSurveyModal({
               },
             ]}
           />
-        </Form>
+        </form>
       </Body>
 
       <Footer>

@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Button, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import Select, { type SingleValue } from 'react-select';
 import { GlobalContext, ProjectContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
@@ -457,11 +458,11 @@ export function HerdViewHarness({ annotationSetId }: Props) {
 
   return (
     <div
-      className='w-100 h-100 d-flex flex-column'
+      className='w-full h-full flex flex-col'
       style={{ minHeight: 0, paddingTop: 12, paddingBottom: 12 }}
     >
       <div
-        className='d-flex flex-row align-items-center gap-3 px-3 py-2'
+        className='flex flex-row items-center gap-4 px-4 py-2'
         style={{ flexShrink: 0, background: '#4E5D6C', color: '#f8f9fa' }}
       >
         <div style={{ fontWeight: 600 }}>{project.name}</div>
@@ -495,7 +496,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
 
       {loading ? (
         <div
-          className='d-flex align-items-center justify-content-center text-muted'
+          className='flex items-center justify-center text-muted-foreground'
           style={{ flex: 1 }}
         >
           {fetchStatus === 'error' ? (
@@ -514,7 +515,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         </div>
       ) : pairs.length === 0 ? (
         <div
-          className='d-flex align-items-center justify-content-center text-muted'
+          className='flex items-center justify-center text-muted-foreground'
           style={{ flex: 1 }}
         >
           <span>No image pairs with animals to review.</span>

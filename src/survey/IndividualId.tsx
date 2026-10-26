@@ -1,5 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Form } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { uploadWorkflowFile } from '../storage/workflowFiles';
 import { Schema } from '../amplify/client-schema';
@@ -432,8 +434,8 @@ export default function IndividualId({
   );
 
   return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
+    <div className='px-4 pb-4 pt-1'>
+      <div className='flex flex-col gap-4 mt-2'>
         {loading ? (
           <LoadingProgressCard
             title='Loading ChainLinker data…'
@@ -461,16 +463,19 @@ export default function IndividualId({
           </Alert>
         ) : (
           <>
-            <Form.Group>
-              <Form.Label className='mb-0'>Label to identify</Form.Label>
+            <div>
+              <Label htmlFor='ii-category' className='mb-0'>
+                Label to identify
+              </Label>
               <span
-                className='text-muted d-block mb-1'
+                className='text-muted-foreground block mb-1'
                 style={{ fontSize: '12px' }}
               >
                 Select the label whose individuals should be identified across
                 images.
               </span>
-              <Form.Select
+              <NativeSelect
+                id='ii-category'
                 value={selectedCategoryId}
                 onChange={(e) => setSelectedCategoryId(e.target.value)}
                 disabled={launching}
@@ -481,8 +486,8 @@ export default function IndividualId({
                     {cat.name}
                   </option>
                 ))}
-              </Form.Select>
-            </Form.Group>
+              </NativeSelect>
+            </div>
 
             {selectedCategoryId && selectedCategory && (
               <div
@@ -495,16 +500,16 @@ export default function IndividualId({
                     annotations: <strong>{selectedCategory.imageCount}</strong>
                   </div>
                   {analyzing ? (
-                    <div className='text-muted mt-1'>
+                    <div className='text-muted-foreground mt-1'>
                       Checking which transects still need identification…
                     </div>
                   ) : transectsExist && incompleteTransectIds !== null ? (
-                    <div className='text-muted mt-1'>
+                    <div className='text-muted-foreground mt-1'>
                       Transects with outstanding work:{' '}
                       <strong>{incompleteTransectIds.length}</strong>
                     </div>
                   ) : (
-                    <div className='text-muted mt-1'>
+                    <div className='text-muted-foreground mt-1'>
                       Transects containing these images will be made available
                       as ChainLinker jobs once tiling completes.
                     </div>

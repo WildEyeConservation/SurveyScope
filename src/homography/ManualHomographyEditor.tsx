@@ -1,6 +1,14 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Matrix, matrix, multiply, transpose, inv } from 'mathjs';
-import { Card, Button, Badge } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   Trash2,
   Info,
@@ -194,16 +202,16 @@ export function ManualHomographyEditor({
   }, [points1, points2, reprojErrors]);
 
   return (
-    <Card className='w-100 h-100 border-0 shadow-sm'>
-      <Card.Header className='border-bottom border-secondary py-3'>
-        <div className='d-flex align-items-center justify-content-between'>
-          <Card.Title className='mb-0 d-flex align-items-center gap-2'>
+    <Card className='w-full h-full border-0 shadow-sm'>
+      <CardHeader className='border-b border-secondary py-4'>
+        <div className='flex items-center justify-between'>
+          <CardTitle className='mb-0 flex items-center gap-2'>
             <SquareDashed size={20} className='text-info' />
             Homography Creation
-          </Card.Title>
+          </CardTitle>
           <Button
             variant='link'
-            className='p-0 text-info text-decoration-none d-flex align-items-center gap-1 small'
+            className='p-0 text-info no-underline flex items-center gap-1 text-sm'
             onClick={() => setMoreInformation(!moreInformation)}
           >
             {moreInformation ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -211,33 +219,33 @@ export function ManualHomographyEditor({
           </Button>
         </div>
         {moreInformation && (
-          <div className='mt-3 pt-3 border-top border-secondary'>
-            <div className='d-flex align-items-center gap-2 mb-2 text-info'>
+          <div className='mt-4 pt-4 border-t border-secondary'>
+            <div className='flex items-center gap-2 mb-2 text-info'>
               <Info size={16} />
-              <span className='fw-bold small'>Instructions</span>
+              <span className='font-bold text-sm'>Instructions</span>
             </div>
-            <ul className='small ps-3' style={{ opacity: 0.9, lineHeight: '1.6' }}>
+            <ul className='text-sm ps-6' style={{ opacity: 0.9, lineHeight: '1.6' }}>
               <li>Select at least {MIN_HOMOGRAPHY_POINTS} corresponding points on both images. More points typically yield a better fit.</li>
               <li>Aim to cover as much area as possible.</li>
               <li>Avoid placing points in straight lines.</li>
               <li>Right-click a marker to remove/swap it or press <b>Esc</b> to close the popup.</li>
               <li>Preview will be available after 4 pairs have been created.</li>
             </ul>
-            <div className='d-flex align-items-center gap-2 mb-2 mt-3 text-info'>
+            <div className='flex items-center gap-2 mb-2 mt-4 text-info'>
               <Target size={14} />
-              <span className='fw-bold small'>Shortcuts</span>
+              <span className='font-bold text-sm'>Shortcuts</span>
             </div>
-            <ul className='small mb-0 ps-3 list-unstyled' style={{ lineHeight: '1.6' }}>
+            <ul className='text-sm mb-0 list-none ps-6' style={{ lineHeight: '1.6' }}>
               <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl + Z</kbd> Undo</li>
               <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl + Y</kbd> / <kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl+Shift+Z</kbd> Redo</li>
               <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Esc</kbd> Close context menu</li>
             </ul>
           </div>
         )}
-      </Card.Header>
-      <Card.Body className='p-0 d-flex flex-column overflow-hidden'>
-        <div className='flex-grow-1 overflow-auto p-3'>
-          <div className='d-flex flex-column gap-2'>
+      </CardHeader>
+      <CardContent className='p-0 flex flex-col overflow-hidden'>
+        <div className='grow overflow-auto p-4'>
+          <div className='flex flex-col gap-2'>
             {tableRows.map(({ i, p1, p2 }) => {
               const color = POINT_COLORS[i % POINT_COLORS.length];
               return (
@@ -267,46 +275,46 @@ export function ManualHomographyEditor({
                   >
                     {i + 1}
                   </div>
-                  <div className='d-flex align-items-center gap-2 flex-grow-1' style={{ padding: '8px' }}>
+                  <div className='flex items-center gap-2 grow' style={{ padding: '8px' }}>
                     {/* Image 1 Point */}
-                    <div className='flex-grow-1 p-2' style={{ background: '#4E5D6C', borderRadius: '4px' }}>
+                    <div className='grow p-2' style={{ background: '#4E5D6C', borderRadius: '4px' }}>
                       {p1 ? (
-                        <div className='d-flex align-items-center justify-content-between'>
-                          <span className='small mono'>
+                        <div className='flex items-center justify-between'>
+                          <span className='text-sm mono'>
                             {Math.round(p1.x)}, {Math.round(p1.y)}
                           </span>
                           <Button
                             size='sm'
                             variant='link'
-                            className='p-0 text-muted'
+                            className='p-0 text-muted-foreground'
                             onClick={() => handleRemovePoint1(i)}
                           >
                             <Trash2 size={12} />
                           </Button>
                         </div>
                       ) : (
-                        <span className='opacity-50 small fst-italic'>Pending...</span>
+                        <span className='opacity-50 text-sm italic'>Pending...</span>
                       )}
                     </div>
 
                     {/* Image 2 Point */}
-                    <div className='flex-grow-1 p-2' style={{ background: '#4E5D6C', borderRadius: '4px' }}>
+                    <div className='grow p-2' style={{ background: '#4E5D6C', borderRadius: '4px' }}>
                       {p2 ? (
-                        <div className='d-flex align-items-center justify-content-between'>
-                          <span className='small mono'>
+                        <div className='flex items-center justify-between'>
+                          <span className='text-sm mono'>
                             {Math.round(p2.x)}, {Math.round(p2.y)}
                           </span>
                           <Button
                             size='sm'
                             variant='link'
-                            className='p-0 text-muted'
+                            className='p-0 text-muted-foreground'
                             onClick={() => handleRemovePoint2(i)}
                           >
                             <Trash2 size={12} />
                           </Button>
                         </div>
                       ) : (
-                        <span className='opacity-50 small fst-italic'>Pending...</span>
+                        <span className='opacity-50 text-sm italic'>Pending...</span>
                       )}
                     </div>
 
@@ -327,19 +335,19 @@ export function ManualHomographyEditor({
             })}
 
             {tableRows.length === 0 && (
-              <div className='text-center py-4 opacity-50 small'>
+              <div className='text-center py-6 opacity-50 text-sm'>
                 <Circle size={24} className='mb-2 opacity-25' />
                 <p className='mb-0'>No points yet. Click on both<br />images to begin matching.</p>
               </div>
             )}
           </div>
         </div>
-      </Card.Body>
-      <Card.Footer>
-        <div className='d-flex flex-column gap-3'>
+      </CardContent>
+      <CardFooter>
+        <div className='flex flex-col gap-4'>
           {/* TODO: requires testing – Total RMS display
           {reprojErrors && reprojErrors.length > 0 && (
-            <div className='text-center small mb-1' style={{ opacity: 0.8 }}>
+            <div className='text-center text-sm mb-1' style={{ opacity: 0.8 }}>
               Total RMS:{' '}
               <span
                 style={{
@@ -365,7 +373,7 @@ export function ManualHomographyEditor({
           )}
           */}
           {isSaved && (
-            <Badge bg='success' className='align-self-center'>
+            <Badge variant='success' className='self-center'>
               Saved
             </Badge>
           )}
@@ -373,7 +381,7 @@ export function ManualHomographyEditor({
             size='sm'
             onClick={handleSave}
             disabled={!canCompute || isSaving}
-            className='w-100 d-flex align-items-center justify-content-center gap-2 py-2 mt-2'
+            className='w-full flex items-center justify-center gap-2 py-2 mt-2'
             variant={canCompute ? (isSaved ? 'warning' : 'primary') : 'secondary'}
           >
             <Save size={16} />
@@ -385,11 +393,11 @@ export function ManualHomographyEditor({
           </Button>
 
           {!isSaved && (
-            <div className='pt-3 border-top border-secondary'>
-              <p className='small opacity-50 mb-2'>No overlap? Skip this pair.</p>
+            <div className='pt-4 border-t border-secondary'>
+              <p className='text-sm opacity-50 mb-2'>No overlap? Skip this pair.</p>
               <Button
                 size='sm'
-                className='w-100 d-flex align-items-center justify-content-center gap-2 mb-2'
+                className='w-full flex items-center justify-center gap-2 mb-2'
                 variant='outline-warning'
                 onClick={() => handleSkip()}
                 disabled={isSkipping}
@@ -400,7 +408,7 @@ export function ManualHomographyEditor({
             </div>
           )}
         </div>
-      </Card.Footer>
+      </CardFooter>
     </Card>
   );
 }

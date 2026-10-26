@@ -1,7 +1,16 @@
-import { Button, Modal } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useContext, useState, useEffect, useRef } from 'react';
 import { GlobalContext } from './Context';
-import { Form } from 'react-bootstrap';
 import Select from 'react-select';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -193,64 +202,66 @@ export default function TestPresetsModal({
   }, [show]);
 
   return (
-    <Modal show={show} onHide={onClose}>
-      <Modal.Header closeButton>
-        <Modal.Title>
-          {isNewPreset ? 'Create Location Pool' : 'Edit Location Pool'}
-        </Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <Form.Group>
-          <Form.Label>Pool name</Form.Label>
-          <Form.Control
-            type='text'
-            placeholder='Enter pool name'
-            value={presetName ?? ''}
-            onChange={(e) => setPresetName(e.target.value)}
-          />
-        </Form.Group>
-        <Form.Group className='mt-2'>
-          <Form.Label>Labels</Form.Label>
-          <Select
-            className='text-black'
-            value={selectedCategories}
-            options={categories?.map((q) => ({ label: q.name, value: q.id }))}
-            isMulti
-            onChange={(val) => setSelectedCategories(val as { label: string; value: string }[])}
-            styles={{
-              valueContainer: (base) => ({
-                ...base,
-                overflowY: 'auto',
-              }),
-            }}
-          />
-        </Form.Group>
-        <Form.Group className='mt-2'>
-          <Form.Label>Annotation Accuracy (%)</Form.Label>
-          <Form.Control
-            type='number'
-            value={annotationAccuracy}
-            onChange={(e) => setAnnotationAccuracy(Number(e.target.value))}
-            min={0}
-            max={100}
-          />
-        </Form.Group>
-      </Modal.Body>
-      <Modal.Footer className='d-flex justify-content-end'>
-        <span className='d-flex gap-2'>
-          <Button
-            variant='primary'
-            onClick={() => {
-              handleSubmit();
-            }}
-          >
-            {isNewPreset ? 'Create' : 'Save'}
-          </Button>
-          <Button variant='dark' onClick={onClose}>
-            Cancel
-          </Button>
-        </span>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader closeButton>
+          <DialogTitle>
+            {isNewPreset ? 'Create Location Pool' : 'Edit Location Pool'}
+          </DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div>
+            <Label>Pool name</Label>
+            <Input
+              type='text'
+              placeholder='Enter pool name'
+              value={presetName ?? ''}
+              onChange={(e) => setPresetName(e.target.value)}
+            />
+          </div>
+          <div className='mt-2'>
+            <Label>Labels</Label>
+            <Select
+              className='text-black'
+              value={selectedCategories}
+              options={categories?.map((q) => ({ label: q.name, value: q.id }))}
+              isMulti
+              onChange={(val) => setSelectedCategories(val as { label: string; value: string }[])}
+              styles={{
+                valueContainer: (base) => ({
+                  ...base,
+                  overflowY: 'auto',
+                }),
+              }}
+            />
+          </div>
+          <div className='mt-2'>
+            <Label>Annotation Accuracy (%)</Label>
+            <Input
+              type='number'
+              value={annotationAccuracy}
+              onChange={(e) => setAnnotationAccuracy(Number(e.target.value))}
+              min={0}
+              max={100}
+            />
+          </div>
+        </DialogBody>
+        <DialogFooter className='flex justify-end'>
+          <span className='flex gap-2'>
+            <Button
+              variant='primary'
+              onClick={() => {
+                handleSubmit();
+              }}
+            >
+              {isNewPreset ? 'Create' : 'Save'}
+            </Button>
+            <Button variant='dark' onClick={onClose}>
+              Cancel
+            </Button>
+          </span>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

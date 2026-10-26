@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
-import { Spinner } from 'react-bootstrap';
+import { Spinner } from '@/components/ui/spinner';
 import MapLibreLightViewer, {
   LightAnnotation,
 } from './annotator/MapLibreLightViewer';
@@ -168,7 +168,7 @@ export default function LightImageView({
 
   if (!imageMeta || !sourceKey || !annotationsLoaded)
     return (
-      <div className='w-100 h-100 d-flex align-items-center justify-content-center'>
+      <div className='w-full h-full flex items-center justify-center'>
         <Spinner size='sm' />
         <span className='ms-2'>Loading...</span>
       </div>

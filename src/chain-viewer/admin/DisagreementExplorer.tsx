@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Form, Spinner } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { ExternalLink } from 'lucide-react';
 import Select, { type MultiValue, type SingleValue } from 'react-select';
 import { useUsers } from '../../apiInterface';
@@ -170,14 +175,14 @@ export default function DisagreementExplorer() {
 
   return (
     <div style={{ width: '100%' }}>
-      <Card className='mb-3'>
-        <Card.Header>
+      <Card className='mb-4'>
+        <CardHeader>
           <h4 className='mb-0'>Disagreement Explorer</h4>
-        </Card.Header>
-        <Card.Body>
-          <div className='d-flex flex-row flex-wrap gap-3 align-items-end'>
-            <Form.Group style={{ minWidth: 280, flex: 1 }}>
-              <Form.Label>Share</Form.Label>
+        </CardHeader>
+        <CardContent>
+          <div className='flex flex-row flex-wrap gap-4 items-end'>
+            <div style={{ minWidth: 280, flex: 1 }}>
+              <Label>Share</Label>
               <Select
                 value={shareOptions.find((o) => o.value === shareId) ?? null}
                 onChange={(v: SingleValue<Option>) => setShareId(v?.value)}
@@ -187,9 +192,9 @@ export default function DisagreementExplorer() {
                 isLoading={sharesLoading}
                 isClearable
               />
-            </Form.Group>
-            <Form.Group style={{ minWidth: 280, flex: 1 }}>
-              <Form.Label>Reviewers</Form.Label>
+            </div>
+            <div style={{ minWidth: 280, flex: 1 }}>
+              <Label>Reviewers</Label>
               <Select
                 isMulti
                 value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
@@ -201,9 +206,9 @@ export default function DisagreementExplorer() {
                 placeholder='All reviewers'
                 isDisabled={!shareId || ownerOptions.length === 0}
               />
-            </Form.Group>
-            <Form.Group style={{ minWidth: 180 }}>
-              <Form.Label>Label</Form.Label>
+            </div>
+            <div style={{ minWidth: 180 }}>
+              <Label>Label</Label>
               <Select
                 value={categoryOptions.find((o) => o.value === categoryFilter) ?? null}
                 onChange={(v: SingleValue<Option>) =>
@@ -213,43 +218,45 @@ export default function DisagreementExplorer() {
                 className='text-black'
                 isDisabled={!shareId}
               />
-            </Form.Group>
+            </div>
           </div>
-          <div className='d-flex flex-row gap-3 mt-2'>
+          <div className='flex flex-row gap-4 mt-2'>
             {(['relabel', 'obscured', 'comment'] as const).map((k) => (
-              <Form.Check
-                key={k}
-                type='checkbox'
-                id={`kind-${k}`}
-                label={k}
-                checked={kinds[k]}
-                onChange={(e) =>
-                  setKinds((prev) => ({ ...prev, [k]: e.target.checked }))
-                }
-              />
+              <div key={k} className='flex items-center gap-2'>
+                <Checkbox
+                  id={`kind-${k}`}
+                  checked={kinds[k]}
+                  onCheckedChange={(c) =>
+                    setKinds((prev) => ({ ...prev, [k]: c === true }))
+                  }
+                />
+                <Label htmlFor={`kind-${k}`} className='mb-0'>
+                  {k}
+                </Label>
+              </div>
             ))}
           </div>
-        </Card.Body>
+        </CardContent>
       </Card>
 
       {!shareId ? (
-        <p className='text-muted'>Select a share to explore disagreements.</p>
+        <p className='text-muted-foreground'>Select a share to explore disagreements.</p>
       ) : busy ? (
         <Spinner animation='border' />
       ) : rows.length === 0 ? (
-        <p className='text-muted'>
+        <p className='text-muted-foreground'>
           No disagreements match the current filters.
         </p>
       ) : (
         <>
-          <p className='text-muted'>
+          <p className='text-muted-foreground'>
             {rows.length} annotation{rows.length === 1 ? '' : 's'} with divergences
             {rows.length > MAX_ROWS && ` (showing first ${MAX_ROWS})`}.
           </p>
-          <div className='d-flex flex-column gap-2'>
+          <div className='flex flex-col gap-2'>
             {shown.map((row) => (
               <Card key={row.annId}>
-                <Card.Body className='d-flex flex-row gap-3'>
+                <CardContent className='flex flex-row gap-4'>
                   <AnnotationCrop
                     meta={chainData?.metaByAnnotationId[row.annId]}
                     x={row.x}
@@ -257,8 +264,8 @@ export default function DisagreementExplorer() {
                     oov={row.oov}
                     markerColor={catColorById.get(row.baselineCategoryId) ?? '#facc15'}
                   />
-                  <div className='flex-grow-1'>
-                    <div className='d-flex flex-row align-items-center gap-2 mb-2'>
+                  <div className='grow'>
+                    <div className='flex flex-row items-center gap-2 mb-2'>
                       <span>
                         Baseline:{' '}
                         <Badge
@@ -272,38 +279,42 @@ export default function DisagreementExplorer() {
                         </Badge>
                       </span>
                       {row.oov ? (
-                        <Badge bg='secondary'>OOV</Badge>
+                        <Badge variant='secondary'>OOV</Badge>
                       ) : row.baselineObscured ? (
-                        <Badge bg='dark'>Obscured</Badge>
+                        <Badge variant='dark'>Obscured</Badge>
                       ) : (
-                        <Badge bg='light' text='dark'>
+                        <Badge variant='light' className='text-dark'>
                           Visible
                         </Badge>
                       )}
-                      <a
-                        href={`/shared-chains/${shareId}?chain=${row.chainId}`}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='ms-auto'
+                      <Button
+                        asChild
+                        size='sm'
+                        variant='outline-light'
+                        className='ml-auto'
                       >
-                        <Button size='sm' variant='outline-light'>
-                          <ExternalLink size={14} className='me-1' />
+                        <a
+                          href={`/shared-chains/${shareId}?chain=${row.chainId}`}
+                          target='_blank'
+                          rel='noopener noreferrer'
+                        >
+                          <ExternalLink size={14} className='mr-1' />
                           Open in viewer
-                        </Button>
-                      </a>
+                        </a>
+                      </Button>
                     </div>
-                    <div className='d-flex flex-column gap-1'>
+                    <div className='flex flex-col gap-1'>
                       {row.divergences.map((d) => (
-                        <div key={d.owner} className='small'>
+                        <div key={d.owner} className='text-sm'>
                           <strong>{d.ownerLabel}</strong>
                           {d.relabel && (
-                            <span className='ms-2'>
+                            <span className='ml-2'>
                               relabel: {d.relabel.from} →{' '}
                               <span className='text-warning'>{d.relabel.to}</span>
                             </span>
                           )}
                           {d.obscured && (
-                            <span className='ms-2'>
+                            <span className='ml-2'>
                               obscured: {d.obscured.from ? 'yes' : 'no'} →{' '}
                               <span className='text-warning'>
                                 {d.obscured.to ? 'yes' : 'no'}
@@ -311,13 +322,13 @@ export default function DisagreementExplorer() {
                             </span>
                           )}
                           {d.comment && (
-                            <span className='ms-2 fst-italic'>“{d.comment}”</span>
+                            <span className='ml-2 italic'>“{d.comment}”</span>
                           )}
                         </div>
                       ))}
                     </div>
                   </div>
-                </Card.Body>
+                </CardContent>
               </Card>
             ))}
           </div>

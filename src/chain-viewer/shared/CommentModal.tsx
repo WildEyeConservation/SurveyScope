@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Button, Form, Modal } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { FormText, Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Props {
   show: boolean;
@@ -27,38 +37,40 @@ export function CommentModal({ show, initial, onClose, onSave }: Props) {
   const unchanged = trimmed === initial.trim();
 
   return (
-    <Modal show={show} onHide={onClose} centered>
-      <Modal.Header closeButton>
-        <Modal.Title>Comment</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <Form.Group>
-          <Form.Label>Your note on this annotation</Form.Label>
-          <Form.Control
-            as='textarea'
-            rows={4}
-            value={text}
-            autoFocus
-            onChange={(e) => setText(e.target.value)}
-            placeholder='Add a comment for this annotation…'
-          />
-          <Form.Text className='text-muted'>
-            Recorded as your review feedback; it never changes the original data.
-          </Form.Text>
-        </Form.Group>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant='secondary' onClick={onClose}>
-          Cancel
-        </Button>
-        <Button
-          variant='primary'
-          disabled={unchanged}
-          onClick={() => onSave(trimmed)}
-        >
-          Save comment
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent centered>
+        <DialogHeader closeButton>
+          <DialogTitle>Comment</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div>
+            <Label htmlFor='comment-modal-text'>Your note on this annotation</Label>
+            <Textarea
+              id='comment-modal-text'
+              rows={4}
+              value={text}
+              autoFocus
+              onChange={(e) => setText(e.target.value)}
+              placeholder='Add a comment for this annotation…'
+            />
+            <FormText className='text-muted-foreground'>
+              Recorded as your review feedback; it never changes the original data.
+            </FormText>
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='secondary' onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant='primary'
+            disabled={unchanged}
+            onClick={() => onSave(trimmed)}
+          >
+            Save comment
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

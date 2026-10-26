@@ -154,7 +154,7 @@ export function TaskBuffer<T extends TaskPayload>({
   }
 
   return (
-    <div className='w-100 h-100' style={{ position: 'relative' }}>
+    <div className='w-full h-full' style={{ position: 'relative' }}>
       {renderedEntries.map(({ entry, subsetIndex, isStandby }) => {
         const isCurrent =
           !isStandby && subsetIndex === index - subsetStart;
@@ -177,7 +177,7 @@ export function TaskBuffer<T extends TaskPayload>({
         return (
           <div
             key={entry.id}
-            className='d-flex justify-content-center w-100 h-100'
+            className='flex justify-center w-full h-full'
             {...inertProps}
             style={{
               visibility: isCurrent ? 'visible' : 'hidden',

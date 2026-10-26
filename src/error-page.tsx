@@ -1,5 +1,5 @@
 import { useRouteError, useNavigate } from 'react-router-dom';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
 import { reportClientError } from './reportClientError';
 
@@ -73,11 +73,11 @@ ${errorDetails.stack}
   return (
     <div
       id='error-page'
-      className='d-flex flex-column align-items-center justify-content-center min-vh-100 text-center'
+      className='flex flex-col items-center justify-center min-h-screen text-center'
     >
       <h1>Oops!</h1>
       <p>Sorry, an unexpected error has occurred.</p>
-      <div className='d-flex gap-2'>
+      <div className='flex gap-2'>
         <Button variant='primary' onClick={handleGoHome}>
           Back to Surveys
         </Button>
@@ -86,7 +86,7 @@ ${errorDetails.stack}
         </Button>
       </div>
       {copySuccess && (
-        <p className='text-success mt-2 small'>
+        <p className='text-success mt-2 text-sm'>
           Error details copied to clipboard! Please send this information to our
           support team.
         </p>

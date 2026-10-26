@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { Modal, Body, Header, Footer, Title } from './Modal';
 
 import { GlobalContext } from './Context';
@@ -98,7 +99,7 @@ const AnnotationCountModal: React.FC<Props> = ({
         <Title>Annotation Set Details</Title>
       </Header>
       <Body>
-        <div className='p-3'>
+        <div className='p-4'>
           {loading ? (
             <div
               style={{
@@ -117,7 +118,7 @@ const AnnotationCountModal: React.FC<Props> = ({
               Fetching annotations...
             </div>
           ) : (
-            <div className='d-flex flex-column gap-2 w-100'>
+            <div className='flex flex-col gap-2 w-full'>
               <LabeledToggleSwitch
                 className='mb-2'
                 leftLabel='All annotations'

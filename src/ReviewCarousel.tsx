@@ -3,7 +3,7 @@ import { GlobalContext, ProjectContext } from './Context';
 import AnnotationWorkspace from './AnnotationWorkspace';
 import { TaskBuffer } from './TaskBuffer';
 import BufferSource from './BufferSource';
-import { Spinner } from 'react-bootstrap';
+import { Spinner } from '@/components/ui/spinner';
 import { useInfoTagData } from './useInfoTags';
 
 type LabeledValue = { label: string; value: string };
@@ -303,7 +303,7 @@ export default function ReviewCarousel({
 
   if (!selectedAnnotationSet) {
     return (
-      <div className='d-flex flex-column align-items-center justify-content-center h-100 w-100'>
+      <div className='flex flex-col items-center justify-center h-full w-full'>
         Select an annotation set to begin.
       </div>
     );
@@ -312,9 +312,9 @@ export default function ReviewCarousel({
   return (
     <>
       {!annotations.length && isLoading ? (
-        <div className='d-flex flex-column align-items-center justify-content-center h-100 w-100 p-4'>
+        <div className='flex flex-col items-center justify-center h-full w-full p-6'>
           <div className='text-center'>
-            <div className='d-flex flex-row align-items-center justify-content-center h-100 w-100'>
+            <div className='flex flex-row items-center justify-center h-full w-full'>
               <Spinner size='sm' />
               <span className='ms-2'>
                 {locationsLoaded > 0
@@ -327,7 +327,7 @@ export default function ReviewCarousel({
       ) : (
         bufferSource &&
         (filteredAnnotations.length ? (
-          <div className='d-flex flex-column align-items-center h-100 w-100 mt-3'>
+          <div className='flex flex-col items-center h-full w-full mt-4'>
             <TaskBuffer
               key={
                 selectedAnnotationSet +
@@ -352,14 +352,14 @@ export default function ReviewCarousel({
                 />
               )}
             />
-            <div className='mt-2 w-100'>
+            <div className='mt-2 w-full'>
               <input
                 type='range'
                 value={index}
                 onChange={(e) => setIndex(parseInt(e.target.value))}
                 min={0}
                 max={Math.max(filteredAnnotations.length - 1, 0)}
-                className='form-range'
+                className='w-full accent-primary'
               />
               <div style={{ textAlign: 'center' }}>
                 Done with {index} out of {filteredAnnotations.length} locations
@@ -367,7 +367,7 @@ export default function ReviewCarousel({
             </div>
           </div>
         ) : (
-          <div className='d-flex flex-column align-items-center justify-content-center h-100 w-100'>
+          <div className='flex flex-col items-center justify-center h-full w-full'>
             No images match the selected info tags.
           </div>
         ))

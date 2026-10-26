@@ -3,7 +3,11 @@ import { useContext, useState, useEffect, useCallback } from 'react';
 import { fetchUserAttributes } from 'aws-amplify/auth';
 import { UserContext, GlobalContext } from '../Context';
 import { useUsers } from '../apiInterface';
-import { Button, Form, Badge, Spinner, Alert } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
 import { Tabs, Tab } from '../Tabs';
 
@@ -172,7 +176,7 @@ export default function Settings({ signOut }: { signOut: () => void }) {
   return (
     <>
       <button
-        className='text-muted px-2 d-flex align-items-center justify-content-center'
+        className='text-muted-foreground px-2 flex items-center justify-center'
         style={{
           backgroundColor: 'transparent',
           border: 'none',
@@ -180,8 +184,8 @@ export default function Settings({ signOut }: { signOut: () => void }) {
         }}
         onClick={() => setShow(true)}
       >
-        <UserIcon className='d-none d-lg-block' />
-        <span className='d-block d-lg-none'>User</span>
+        <UserIcon className='hidden lg:block' />
+        <span className='block lg:hidden'>User</span>
       </button>
 
       <Modal
@@ -196,20 +200,20 @@ export default function Settings({ signOut }: { signOut: () => void }) {
         <Body className='p-0'>
           <Tabs>
             <Tab label='Account'>
-              <div className='p-3'>
-                <div className='d-flex flex-column gap-2'>
+              <div className='p-4'>
+                <div className='flex flex-col gap-2'>
                   <p className='mb-0'>Username: {username}</p>
                   <p className='mb-0'>Email: {email}</p>
                 </div>
                 <Button
-                  className='w-100 mt-3'
+                  className='w-full mt-4'
                   variant='outline-danger'
                   onClick={signOut}
                 >
                   Sign Out
                 </Button>
                 <Button
-                  className='w-100 mt-2'
+                  className='w-full mt-2'
                   variant='outline-warning'
                   onClick={clearSiteData}
                 >
@@ -218,38 +222,37 @@ export default function Settings({ signOut }: { signOut: () => void }) {
               </div>
             </Tab>
             <Tab label='Active Organisations'>
-              <div className='p-3'>
+              <div className='p-4'>
                 {loading ? (
-                  <div className='d-flex justify-content-center py-4'>
+                  <div className='flex justify-center py-6'>
                     <Spinner animation='border' />
                   </div>
                 ) : error ? (
                   <Alert variant='danger'>{error}</Alert>
                 ) : (
                   <>
-                    <div className='d-flex justify-content-between align-items-center mb-3'>
-                      <span className='text-muted'>
+                    <div className='flex justify-between items-center mb-4'>
+                      <span className='text-muted-foreground'>
                         {selectedOrgIds.size} / {maxActive} active
                       </span>
                       {allAutoActivated && (
-                        <Badge bg='info'>
+                        <Badge variant='info'>
                           All organisations active ({memberships.length} or fewer)
                         </Badge>
                       )}
                     </div>
                     {memberships.length === 0 ? (
-                      <p className='text-muted'>No organisation memberships found.</p>
+                      <p className='text-muted-foreground'>No organisation memberships found.</p>
                     ) : (
-                      <div className='d-flex flex-column gap-2'>
+                      <div className='flex flex-col gap-2'>
                         {memberships.map((m) => (
                           <div
                             key={m.organizationId}
-                            className='d-flex align-items-center justify-content-between p-2 rounded'
+                            className='flex items-center justify-between p-2 '
                             style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
                           >
-                            <div className='d-flex align-items-center gap-2'>
-                              <Form.Check
-                                type='switch'
+                            <div className='flex items-center gap-2'>
+                              <Switch
                                 checked={
                                   allAutoActivated || selectedOrgIds.has(m.organizationId)
                                 }
@@ -259,11 +262,11 @@ export default function Settings({ signOut }: { signOut: () => void }) {
                                   (!selectedOrgIds.has(m.organizationId) &&
                                     selectedOrgIds.size >= maxActive)
                                 }
-                                onChange={() => handleToggle(m.organizationId)}
+                                onCheckedChange={() => handleToggle(m.organizationId)}
                               />
                               <span>{m.organizationName}</span>
                               {m.isAdmin && (
-                                <Badge bg='warning' text='dark'>
+                                <Badge variant='warning' className='text-black'>
                                   Admin
                                 </Badge>
                               )}

@@ -922,7 +922,7 @@ export function IndividualIdPairHarness({
   // ---- Render states ----
   if (!image1Id || !image2Id || !categoryId || !annotationSetId) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing one of <code>image1Id</code>, <code>image2Id</code>,{' '}
         <code>categoryId</code>, or <code>annotationSetId</code> in the URL.
       </div>
@@ -946,14 +946,14 @@ export function IndividualIdPairHarness({
   }
   if (pairData.error) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Failed to load pair data: {String(pairData.error)}
       </div>
     );
   }
   if (!pairData.data?.neighbour) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         These two images aren't registered as neighbours (no homography
         between them).
       </div>
@@ -961,7 +961,7 @@ export function IndividualIdPairHarness({
   }
   if (!pair) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         The image pair exists but has no homography — nothing to register.
       </div>
     );
@@ -969,7 +969,7 @@ export function IndividualIdPairHarness({
 
   return (
     <div
-      className='w-100 h-100 d-flex flex-column py-3'
+      className='w-full h-full flex flex-col py-4'
       style={{ minHeight: 0 }}
     >
       <div style={{ flex: 1, minHeight: 0 }}>

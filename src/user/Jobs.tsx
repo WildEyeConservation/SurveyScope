@@ -1,8 +1,12 @@
-import { Card } from 'react-bootstrap';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useContext, useEffect, useState } from 'react';
 import { UserContext, GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
-import { Spinner, Button, Form } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
 import MyTable from '../Table';
 import { useNavigate } from 'react-router-dom';
 import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
@@ -470,7 +474,7 @@ export default function Jobs() {
 
           const paddingClass = compactMode ? 'p-1' : 'p-2';
           const gapClass = compactMode ? 'gap-1' : 'gap-2';
-          const rowGapClass = compactMode ? 'gap-1' : 'gap-3';
+          const rowGapClass = compactMode ? 'gap-1' : 'gap-4';
           const badgeFontSize = compactMode ? '11px' : '14px';
           const typeFontSize = compactMode ? '12px' : '14px';
 
@@ -478,10 +482,10 @@ export default function Jobs() {
             id: queue.id,
             rowData: [
               <div
-                className={`d-flex justify-content-between align-items-center ${paddingClass}`}
+                className={`flex justify-between items-center ${paddingClass}`}
                 key={queue.id}
               >
-                <div className={`d-flex flex-row ${rowGapClass} align-items-center`}>
+                <div className={`flex flex-row ${rowGapClass} items-center`}>
                   <div>
                     {compactMode ? (
                       <h6 className='mb-0'>
@@ -509,16 +513,16 @@ export default function Jobs() {
                   </div>
                   {/* Only admins receive hidden queues, so this is admin-only. */}
                   {queue.hidden && (
-                    <span
-                      className='badge bg-secondary'
+                    <Badge
+                      variant='secondary'
                       style={{ fontSize: badgeFontSize }}
                     >
                       Hidden
-                    </span>
+                    </Badge>
                   )}
                 </div>
                 <div
-                  className={`d-flex flex-row ${gapClass} align-items-center`}
+                  className={`flex flex-row ${gapClass} items-center`}
                   style={{ maxWidth: '600px', width: '100%' }}
                 >
                   <ProjectProgress
@@ -572,17 +576,17 @@ export default function Jobs() {
       .map((job) => {
         const paddingClass = compactMode ? 'p-1' : 'p-2';
         const gapClass = compactMode ? 'gap-1' : 'gap-2';
-        const rowGapClass = compactMode ? 'gap-1' : 'gap-3';
+        const rowGapClass = compactMode ? 'gap-1' : 'gap-4';
         const typeFontSize = compactMode ? '12px' : '14px';
 
         return {
           id: job.jobId,
           rowData: [
             <div
-              className={`d-flex justify-content-between align-items-center ${paddingClass}`}
+              className={`flex justify-between items-center ${paddingClass}`}
               key={job.jobId}
             >
-              <div className={`d-flex flex-row ${rowGapClass} align-items-center`}>
+              <div className={`flex flex-row ${rowGapClass} items-center`}>
                 <div>
                   {compactMode ? (
                     <h6 className='mb-0'>{job.name}</h6>
@@ -606,10 +610,10 @@ export default function Jobs() {
                 </div>
               </div>
               <div
-                className={`d-flex flex-row ${gapClass} align-items-center`}
+                className={`flex flex-row ${gapClass} items-center`}
                 style={{ maxWidth: '600px', width: '100%' }}
               >
-                <div className='flex-grow-1'>
+                <div className='grow'>
                   <IndividualIdProgress projectId={job.projectId} />
                 </div>
                 <Button
@@ -644,13 +648,13 @@ export default function Jobs() {
       }}
     >
       <Card>
-        <Card.Header className='d-flex flex-column flex-lg-row align-items-lg-center gap-3'>
-          <Card.Title className='mb-0 flex-shrink-0' style={{ whiteSpace: 'nowrap' }}>
+        <CardHeader className='flex flex-col lg:flex-row lg:items-center gap-4'>
+          <CardTitle className='mb-0 shrink-0' style={{ whiteSpace: 'nowrap' }}>
             <h4 className='mb-0'>Jobs Available</h4>
-          </Card.Title>
-          <div className='d-flex flex-column flex-lg-row gap-2 w-100 w-lg-auto ms-lg-auto justify-content-lg-end align-items-lg-center'>
-            <Form.Control
-              className='w-100'
+          </CardTitle>
+          <div className='flex flex-col lg:flex-row gap-2 w-full lg:ms-auto lg:justify-end lg:items-center'>
+            <Input
+              className='w-full'
               type='text'
               style={{
                 minWidth: 0,
@@ -661,8 +665,8 @@ export default function Jobs() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <Form.Select
-              className='w-100 w-lg-auto'
+            <NativeSelect
+              className='w-full'
               value={organizationFilter}
               onChange={(e) => setOrganizationFilter(e.target.value)}
               style={{
@@ -677,9 +681,9 @@ export default function Jobs() {
                   {org.name}
                 </option>
               ))}
-            </Form.Select>
-            <Form.Select
-              className='w-100 w-lg-auto'
+            </NativeSelect>
+            <NativeSelect
+              className='w-full'
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               style={{
@@ -692,7 +696,7 @@ export default function Jobs() {
               <option value='createdAt-reverse'>Created (oldest first)</option>
               <option value='name'>Name (A-Z)</option>
               <option value='name-reverse'>Name (Z-A)</option>
-            </Form.Select>
+            </NativeSelect>
             {!isMobile && (
               <Button
                 variant='info'
@@ -707,8 +711,8 @@ export default function Jobs() {
               </Button>
             )}
           </div>
-        </Card.Header>
-        <Card.Body className='overflow-x-auto'>
+        </CardHeader>
+        <CardContent className='overflow-x-auto'>
           {isLoading ? (
             <Spinner />
           ) : (
@@ -719,7 +723,7 @@ export default function Jobs() {
               emptyMessage='No jobs available'
             />
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
     </div>
   );

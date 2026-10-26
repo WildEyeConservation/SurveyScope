@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
@@ -411,8 +411,8 @@ export default function MaskCanvas({
       : 'Choose Draw mask to outline areas to ignore. Scroll to zoom and drag to pan.';
 
   return (
-    <div className='d-flex flex-column gap-2'>
-      <div className='d-flex gap-2 flex-wrap align-items-center'>
+    <div className='flex flex-col gap-2'>
+      <div className='flex gap-2 flex-wrap items-center'>
         <Button
           size='sm'
           variant={activeTool === 'draw' ? 'primary' : 'outline-primary'}
@@ -454,7 +454,7 @@ export default function MaskCanvas({
           Fit
         </Button>
       </div>
-      <span className='text-muted' style={{ fontSize: 12 }}>
+      <span className='text-muted-foreground' style={{ fontSize: 12 }}>
         {toolHint}
       </span>
       <div className='survey-map' style={{ background: '#ffffff' }}>

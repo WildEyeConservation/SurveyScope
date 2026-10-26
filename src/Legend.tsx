@@ -1,6 +1,7 @@
 import { useContext } from 'react';
 import { ProjectContext } from './Context';
-import { Card, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { formatShortcutKey } from './utils/hotkeys';
 
@@ -35,13 +36,13 @@ export function SideLegend({
   const cats = categoriesOverride ?? categories;
 
   return (
-    <div className='d-none d-md-flex flex-column ms-2' style={{ position: 'relative', height: `calc(100% - 56px)` }}>
+    <div className='hidden md:flex flex-col ms-2' style={{ position: 'relative', height: `calc(100% - 56px)` }}>
       {/* Toggle button */}
       <Button
         variant='secondary'
         size='sm'
         onClick={onToggleCollapse}
-        className='d-flex align-items-center justify-content-center'
+        className='flex items-center justify-center'
         style={{
           position: 'absolute',
           left: '-16px',
@@ -59,16 +60,16 @@ export function SideLegend({
       </Button>
 
       {!collapsed && (
-        <Card className='d-flex flex-column h-100 overflow-hidden'>
-          <Card.Header>
-            <Card.Title className='d-flex flex-row align-items-center gap-2 mb-2'>
+        <Card className='flex flex-col h-full overflow-hidden'>
+          <CardHeader>
+            <CardTitle className='flex flex-row items-center gap-2 mb-2'>
               <span>Legend</span>
-            </Card.Title>
-            <span className='text-muted' style={{ fontSize: '14px' }}>
+            </CardTitle>
+            <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
               Click on a label to annotate with or use the shortcut key
             </span>
-          </Card.Header>
-          <Card.Body className='d-flex flex-column gap-2 overflow-auto'>
+          </CardHeader>
+          <CardContent className='flex flex-col gap-2 overflow-auto'>
             {cats
               ?.filter((c) => c.annotationSetId === annotationSetId)
               .sort((a, b) => a.name.localeCompare(b.name))
@@ -76,20 +77,20 @@ export function SideLegend({
                 <Button
                   variant={'primary'}
                   key={category.id}
-                  className='d-flex flex-row align-items-center justify-content-between gap-2'
+                  className='flex flex-row items-center justify-between gap-2'
                   onClick={() => setCurrentCategory(category)}
                 >
-                  <div className='d-flex flex-row align-items-center gap-2'>
+                  <div className='flex flex-row items-center gap-2'>
                     <div
                       style={{ backgroundColor: category.color || '#000' }}
-                      className='rounded-circle p-2'
+                      className='rounded-full p-2'
                     ></div>
                     <div>{category.name}</div>
                   </div>
                   <div>({formatShortcutKey(category.shortcutKey)})</div>
                 </Button>
               ))}
-          </Card.Body>
+          </CardContent>
         </Card>
       )}
     </div>

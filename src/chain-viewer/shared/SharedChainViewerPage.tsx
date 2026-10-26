@@ -15,7 +15,7 @@ export function SharedChainViewerPage() {
 
   if (!shareId) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing <code>shareId</code> in the URL.
       </div>
     );
@@ -27,7 +27,7 @@ export function SharedChainViewerPage() {
 
   if (!entitled) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         This shared chain review is not available to your account.
       </div>
     );

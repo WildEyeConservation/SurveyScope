@@ -243,7 +243,7 @@ export default function MapLibreLightViewer({
   }, [visible]);
 
   return (
-    <div className='d-flex flex-column align-items-stretch w-100 h-100 gap-3'>
+    <div className='flex flex-col items-stretch w-full h-full gap-4'>
       <div
         ref={containerRef}
         style={{ width: '100%', height: '100%', borderRadius: 10 }}

@@ -3,7 +3,8 @@ import { GlobalContext } from '../Context';
 import { HomographyWorkbench } from './HomographyWorkbench';
 import type { Matrix } from 'mathjs';
 import { inv } from 'mathjs';
-import { Alert } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { recordWorkflowTask } from '../recordWorkflowTask';
 import { useActiveTimeTracker } from '../useActiveTimeTracker';
 import { SUGGESTED_POINT_ID_PREFIX, countSuggestedPointsKept, homographyWorkflowTask, finalizeHomographyTask } from './homographyWorkflowStats';
@@ -320,8 +321,8 @@ export function HomographyWorkbenchWorker({
 
   if (!suggestionsLoaded) {
     return (
-      <div className='d-flex justify-content-center align-items-center h-100'>
-        <div className='text-muted'>Loading suggested points...</div>
+      <div className='flex justify-center items-center h-full'>
+        <div className='text-muted-foreground'>Loading suggested points...</div>
       </div>
     );
   }
@@ -341,37 +342,40 @@ export function HomographyWorkbenchWorker({
       onPointsChange={handlePointsChange}
       isSaved={isSaved}
       headerLeft={
-        <div className='d-flex align-items-center gap-2'>
+        <div className='flex items-center gap-2'>
           {header}
           {onBack && (
-            <button
-              className='btn btn-sm btn-outline-primary'
+            <Button
+              size='sm'
+              variant='outline-primary'
               onClick={handleBack}
               disabled={isSaving || isSkipping}
             >
               Previous Pair
-            </button>
+            </Button>
           )}
           {onForward && (
-            <button
-              className='btn btn-sm btn-outline-primary'
+            <Button
+              size='sm'
+              variant='outline-primary'
               onClick={handleForward}
               disabled={isSaving || isSkipping}
             >
               Next Pair
-            </button>
+            </Button>
           )}
         </div>
       }
       headerRight={
         onExit ? (
-          <button
-            className='btn btn-sm btn-outline-success'
+          <Button
+            size='sm'
+            variant='outline-success'
             onClick={handleSaveAndExit}
             disabled={isSaving || isSkipping}
           >
             Save &amp; Exit
-          </button>
+          </Button>
         ) : undefined
       }
     />

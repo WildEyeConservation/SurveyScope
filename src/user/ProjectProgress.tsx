@@ -1,7 +1,8 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { UserContext, GlobalContext } from '../Context';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
-import { Spinner, ProgressBar } from 'react-bootstrap';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
 
 type ProjectProgressProps = {
   projectId: string;
@@ -116,49 +117,49 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
     const batchesRemaining = Math.ceil(jobsRemaining / batchSize);
     if (isScanning) {
       return (
-        <div className='d-flex flex-column w-100'>
-          <div className='d-flex align-items-center gap-2 mb-0'>
+        <div className='flex flex-col w-full'>
+          <div className='flex items-center gap-2 mb-0'>
             <Spinner animation='border' size='sm' />
             <span>Scanning for missed locations...</span>
           </div>
-          <ProgressBar
-            now={totalBatches - batchesRemaining}
+          <Progress
+            value={totalBatches - batchesRemaining}
             max={totalBatches}
-            className='w-100'
+            className='w-full'
           />
         </div>
       );
     }
     if (isPolling) {
       return (
-        <div className='d-flex flex-column w-100'>
-          <div className='d-flex align-items-center gap-2 mb-0'>
+        <div className='flex flex-col w-full'>
+          <div className='flex items-center gap-2 mb-0'>
             <Spinner animation='border' size='sm' />
             <span>Polling for work...</span>
           </div>
-          <ProgressBar
-            now={totalBatches}
+          <Progress
+            value={totalBatches}
             max={totalBatches}
-            className='w-100'
+            className='w-full'
           />
         </div>
       );
     }
     return (
-      <div className='d-flex flex-column w-100'>
+      <div className='flex flex-col w-full'>
         <p className='mb-0'>{batchesRemaining} batches remaining</p>
-        <ProgressBar
-          now={totalBatches - batchesRemaining}
+        <Progress
+          value={totalBatches - batchesRemaining}
           max={totalBatches}
           animated
-          className='w-100'
+          className='w-full'
         />
       </div>
     );
   } else {
     if (isScanning) {
       return (
-        <div className='d-flex align-items-center gap-2 mb-0'>
+        <div className='flex items-center gap-2 mb-0'>
           <Spinner animation='border' size='sm' />
           <span>Scanning for missed locations...</span>
         </div>
@@ -166,7 +167,7 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
     }
     if (isPolling) {
       return (
-        <div className='d-flex align-items-center gap-2 mb-0'>
+        <div className='flex items-center gap-2 mb-0'>
           <Spinner animation='border' size='sm' />
           <span>Polling for work...</span>
         </div>

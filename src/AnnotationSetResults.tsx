@@ -1,4 +1,4 @@
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import { Modal, Body, Header, Footer, Title } from './Modal';
 import { useNavigate } from 'react-router-dom';
 import { fetchAllPaginatedResults } from './utils.tsx';
@@ -7,7 +7,7 @@ import { GlobalContext } from './Context.tsx';
 import { useContext, useState, useEffect, useMemo } from 'react';
 import { useUsers } from './apiInterface';
 import GenerateJollyResults from './GenerateJollyResults.tsx';
-import { Spinner } from 'react-bootstrap';
+import { Spinner } from '@/components/ui/spinner';
 import {
   fetchAllInfoTagsForSet,
   formatInfoTagsForCsv,
@@ -289,16 +289,16 @@ export default function AnnotationSetResults({
           <Title>{annotationSet.name} Results</Title>
         </Header>
         <Body>
-          <div className='d-flex flex-column gap-4 p-3'>
+          <div className='flex flex-col gap-6 p-4'>
             <div>
               <h5 className='mb-0'>Explore</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
+              <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
                 Explore your annotation set by searching for all sightings of a
                 specific species. Can be used to find and correct
                 errors, and reannotate unknown sightings.
               </span>
               <Button
-                className='d-block mt-1'
+                className='block mt-1'
                 variant='primary'
                 onClick={() =>
                   navigate(
@@ -311,12 +311,12 @@ export default function AnnotationSetResults({
             </div>
             <div>
               <h5 className='mb-0'>CSV File</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
+              <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
                 Download a CSV file of your annotation set.
               </span>
-              {exportStatus && <p className='text-muted' style={{ fontSize: '14px' }}><Spinner animation='border' size='sm' /> {exportStatus}</p>}
+              {exportStatus && <p className='text-muted-foreground' style={{ fontSize: '14px' }}><Spinner animation='border' size='sm' /> {exportStatus}</p>}
               <Button
-                className='d-block mt-1'
+                className='block mt-1'
                 variant='primary'
                 disabled={users.length === 0}
                 onClick={() => {
@@ -328,12 +328,12 @@ export default function AnnotationSetResults({
             </div>
             <div>
               <h5 className='mb-0'>Chain Viewer</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
+              <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
                 Inspect linked-individual chains: every primary annotation
                 and all its linked sightings across neighbour images.
               </span>
               <Button
-                className='d-block mt-1'
+                className='block mt-1'
                 variant='primary'
                 onClick={() =>
                   navigate(
@@ -346,12 +346,12 @@ export default function AnnotationSetResults({
             </div>
             <div>
               <h5 className='mb-0'>Jolly II</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
+              <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
                 Generate and view the Jolly results for this annotation set.
               </span>
-              <div className='d-flex flex-row gap-2'>
+              <div className='flex flex-row gap-2'>
                 <Button
-                  className='d-block mt-1'
+                  className='block mt-1'
                   variant='primary'
                   disabled={loading}
                   onClick={() => {
@@ -369,7 +369,7 @@ export default function AnnotationSetResults({
                   Generate Results
                 </Button>
                 <Button
-                  className='d-block mt-1'
+                  className='block mt-1'
                   variant='primary'
                   disabled={loading || !jollyResultsExists}
                   onClick={() => {

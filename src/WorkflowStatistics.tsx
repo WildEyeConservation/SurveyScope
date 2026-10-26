@@ -6,11 +6,23 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Alert, Button, Card, Col, Row, Spinner } from 'react-bootstrap';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { fieldBase, fieldSizes } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Spinner } from '@/components/ui/spinner';
 import Select from 'react-select';
-import { RefreshCw } from 'lucide-react';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
+import { RefreshCw, XIcon } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
 import exportFromJSON from 'export-from-json';
 import MyTable from './Table';
 import { GlobalContext } from './Context';
@@ -582,15 +594,15 @@ export default function WorkflowStatistics() {
       }}
     >
       <Card>
-        <Card.Header>
-          <Card.Title className='mb-0'>
+        <CardHeader>
+          <CardTitle className='mb-0'>
             <h4 className='mb-0'>Workflow Statistics</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body>
-          <Row className='g-3 align-items-end'>
-            <Col md={4}>
-              <label htmlFor='workflow-survey' className='form-label mb-1'>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className='flex flex-wrap -mx-2 gap-y-4 items-end'>
+            <div className='w-full md:w-1/3 px-2'>
+              <label htmlFor='workflow-survey' className='mb-1 inline-block'>
                 Survey
               </label>
               <Select
@@ -601,9 +613,9 @@ export default function WorkflowStatistics() {
                 onChange={selectProject}
                 placeholder='Select a survey'
               />
-            </Col>
-            <Col md={4}>
-              <label htmlFor='workflow-sets' className='form-label mb-1'>
+            </div>
+            <div className='w-full md:w-1/3 px-2'>
+              <label htmlFor='workflow-sets' className='mb-1 inline-block'>
                 Annotation sets
               </label>
               <Select
@@ -622,77 +634,69 @@ export default function WorkflowStatistics() {
                     : 'Select a survey first'
                 }
               />
-            </Col>
-            <Col md={4}>
-              <label className='form-label mb-1'>Date range</label>
-              <div className='d-flex align-items-center gap-2'>
-                <DatePicker
-                  selected={startDate ?? undefined}
+            </div>
+            <div className='w-full md:w-1/3 px-2'>
+              <label className='mb-1 inline-block'>Date range</label>
+              <div className='flex items-center gap-2'>
+                <DateField
+                  value={startDate}
                   onChange={(date) => {
                     setDateRangeIsAuto(false);
                     setStartDate(date);
                   }}
-                  selectsStart
-                  startDate={startDate ?? undefined}
-                  endDate={endDate ?? undefined}
-                  className='form-control'
-                  isClearable
-                  dateFormat='yyyy/MM/dd'
-                  placeholderText='From'
+                  rangeStart={startDate}
+                  rangeEnd={endDate}
+                  placeholder='From'
+                  className='min-w-0 flex-1'
                 />
                 <span>–</span>
-                <DatePicker
-                  selected={endDate ?? undefined}
+                <DateField
+                  value={endDate}
                   onChange={(date) => {
                     setDateRangeIsAuto(false);
                     setEndDate(date);
                   }}
-                  selectsEnd
-                  startDate={startDate ?? undefined}
-                  endDate={endDate ?? undefined}
-                  minDate={startDate ?? undefined}
-                  className='form-control'
-                  isClearable
-                  dateFormat='yyyy/MM/dd'
-                  placeholderText='To'
+                  rangeStart={startDate}
+                  rangeEnd={endDate}
+                  minDate={startDate}
+                  placeholder='To'
+                  className='min-w-0 flex-1'
                 />
               </div>
-            </Col>
-          </Row>
+            </div>
+          </div>
 
           {error && (
-            <Alert variant='danger' className='mt-3 mb-0'>
+            <Alert variant='danger' className='mt-4 mb-0'>
               {error}
             </Alert>
           )}
           {truncated && (
-            <Alert variant='warning' className='mt-3 mb-0'>
+            <Alert variant='warning' className='mt-4 mb-0'>
               This survey returned more rows than the query limit, so the
               figures below are incomplete.
             </Alert>
           )}
 
-          <hr className='my-4' />
+          <hr className='my-6' />
 
           {loading ? (
-            <div className='d-flex justify-content-center align-items-center py-5'>
-              <Spinner animation='border' role='status'>
-                <span className='visually-hidden'>Loading statistics…</span>
-              </Spinner>
-              <span className='ms-3'>Loading statistics…</span>
+            <div className='flex justify-center items-center py-12'>
+              <Spinner animation='border' />
+              <span className='ms-4'>Loading statistics…</span>
             </div>
           ) : !project ? (
-            <p className='text-muted mb-0'>Select a survey to see its statistics.</p>
+            <p className='text-muted-foreground mb-0'>Select a survey to see its statistics.</p>
           ) : needsSetChoice ? (
-            <p className='text-muted mb-0'>
+            <p className='text-muted-foreground mb-0'>
               This survey has several annotation sets. Choose the ones to report on.
             </p>
           ) : (
             <>
-              <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
-                <div className='d-flex align-items-center gap-2'>
+              <div className='flex justify-between items-center flex-wrap gap-2'>
+                <div className='flex items-center gap-2'>
                   <h5 className='mb-0'>Results</h5>
-                  <small className='text-muted ms-2'>
+                  <small className='text-muted-foreground ms-2'>
                     Syncs in {secondsUntilSync} s
                   </small>
                   <Button
@@ -713,7 +717,7 @@ export default function WorkflowStatistics() {
                   </Button>
                 </div>
                 {workflowOptions.length > 0 && (
-                  <div className='d-flex align-items-center gap-2'>
+                  <div className='flex items-center gap-2'>
                     <label htmlFor='workflow-type' className='mb-0'>
                       Workflow:
                     </label>
@@ -733,7 +737,7 @@ export default function WorkflowStatistics() {
               </div>
 
               {workflowSections.map((section) => (
-                <div key={section.workflowType} className='mt-3'>
+                <div key={section.workflowType} className='mt-4'>
                   <h6 className='mb-2'>{section.label}</h6>
                   <div className='overflow-x-auto'>
                     <MyTable
@@ -760,7 +764,7 @@ export default function WorkflowStatistics() {
               ))}
 
               {hasLoaded && !hasResults && (
-                <Alert variant='info' className='mt-3'>
+                <Alert variant='info' className='mt-4'>
                   No workflow completions recorded for this survey and period.
                   Work done on runs launched before the pipeline was deployed is
                   only visible on the Annotation Statistics screen.
@@ -768,7 +772,7 @@ export default function WorkflowStatistics() {
               )}
 
               {runRows.length > 0 && (
-                <div className='mt-4'>
+                <div className='mt-6'>
                   <h6 className='mb-2'>Runs</h6>
                   <div className='overflow-x-auto'>
                     <MyTable
@@ -809,9 +813,9 @@ export default function WorkflowStatistics() {
               )}
             </>
           )}
-        </Card.Body>
+        </CardContent>
         {hasLoaded && !loading && (
-          <Card.Footer className='d-flex justify-content-center gap-2'>
+          <CardFooter className='flex justify-center gap-2'>
             <Button
               variant='primary'
               style={{ flex: 1 }}
@@ -838,7 +842,7 @@ export default function WorkflowStatistics() {
                 ? `Exporting… ${exportProgress}`
                 : 'Export task events'}
             </Button>
-          </Card.Footer>
+          </CardFooter>
         )}
       </Card>
       {project && (
@@ -856,6 +860,85 @@ export default function WorkflowStatistics() {
           endDate={endDate}
           userName={userName}
         />
+      )}
+    </div>
+  );
+}
+
+function DateField({
+  id,
+  value,
+  onChange,
+  placeholder,
+  rangeStart,
+  rangeEnd,
+  minDate,
+  className,
+}: {
+  id?: string;
+  value: Date | null;
+  onChange: (date: Date | null) => void;
+  placeholder: string;
+  rangeStart: Date | null;
+  rangeEnd: Date | null;
+  minDate?: Date | null;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn('relative', className)}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            id={id}
+            type='button'
+            className={cn(
+              fieldBase,
+              fieldSizes.default,
+              'text-left',
+              value ? 'pr-8' : 'text-[#6c757d]'
+            )}
+          >
+            {value ? format(value, 'yyyy/MM/dd') : placeholder}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className='w-auto p-0' align='start'>
+          <Calendar
+            mode='single'
+            selected={value ?? undefined}
+            defaultMonth={value ?? undefined}
+            disabled={minDate ? { before: minDate } : undefined}
+            modifiers={
+              rangeStart && rangeEnd
+                ? { inRange: { from: rangeStart, to: rangeEnd } }
+                : undefined
+            }
+            modifiersClassNames={{ inRange: 'bg-accent' }}
+            onSelect={(date) => {
+              if (date) {
+                // keep the previous time of day when changing the date
+                if (value)
+                  date.setHours(
+                    value.getHours(),
+                    value.getMinutes(),
+                    value.getSeconds()
+                  );
+                onChange(date);
+              }
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+      {value && (
+        <button
+          type='button'
+          aria-label='Clear'
+          className='absolute right-2 top-1/2 -translate-y-1/2 text-[#6c757d] opacity-75 hover:opacity-100'
+          onClick={() => onChange(null)}
+        >
+          <XIcon className='size-4' />
+        </button>
       )}
     </div>
   );

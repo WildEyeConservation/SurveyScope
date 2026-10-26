@@ -1,4 +1,7 @@
-import { Form, Button, Spinner, Alert, ProgressBar } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
 import { Footer } from '../Modal';
 import { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { GlobalContext } from '../Context';
@@ -464,12 +467,12 @@ export default function ManageTiles({
 
   return (
     <>
-      <div className='p-3'>
+      <div className='p-4'>
         {/* Current status */}
-        <div className='mb-3'>
+        <div className='mb-4'>
           <h6>Current Tile Status</h6>
           {loadingTileCount ? (
-            <div className='d-flex align-items-center gap-2'>
+            <div className='flex items-center gap-2'>
               <Spinner animation='border' size='sm' />
               <span>Loading...</span>
             </div>
@@ -497,23 +500,23 @@ export default function ManageTiles({
 
         {/* Error display */}
         {error && (
-          <Alert variant='danger' dismissible onClose={() => setError(null)}>
+          <Alert variant='danger' onClose={() => setError(null)}>
             {error}
           </Alert>
         )}
 
         {/* Progress display */}
         {processing && tilingStatus === 'processing' && (
-          <div className='mb-3'>
+          <div className='mb-4'>
             <Alert variant='info'>
-              <div className='d-flex align-items-center gap-2 mb-2'>
+              <div className='flex items-center gap-2 mb-2'>
                 <Spinner animation='border' size='sm' />
                 <span>{statusMessage || 'Processing...'}</span>
               </div>
               {tilingProgress && tilingProgress.totalBatches > 0 && (
                 <>
-                  <ProgressBar
-                    now={progressPercent}
+                  <Progress
+                    value={progressPercent}
                     label={`${progressPercent}%`}
                     className='mb-2'
                   />
@@ -530,13 +533,13 @@ export default function ManageTiles({
 
         {/* Success message */}
         {tilingStatus === 'completed' && !processing && (
-          <Alert variant='success' dismissible onClose={() => setTilingStatus('idle')}>
+          <Alert variant='success' onClose={() => setTilingStatus('idle')}>
             {statusMessage || 'Tiles created successfully!'}
           </Alert>
         )}
 
         {/* Tile configuration */}
-        <Form.Group className='mb-3'>
+        <div className='mb-4'>
           <h6>Tile Configuration</h6>
           <TileConfiguration
             name={`${project.name} - Tiles`}
@@ -546,7 +549,7 @@ export default function ManageTiles({
             setLaunchDisabled={setLaunchDisabled}
             disabled={processing}
           />
-        </Form.Group>
+        </div>
       </div>
 
       <Footer>
@@ -557,7 +560,7 @@ export default function ManageTiles({
         >
           {processing ? (
             <>
-              <Spinner animation='border' size='sm' className='me-2' />
+              <Spinner animation='border' size='sm' />
               Creating Tiles...
             </>
           ) : currentTileCount && currentTileCount > 0 ? (

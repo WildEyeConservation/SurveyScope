@@ -33,7 +33,7 @@ export default function Users() {
   });
 
   return (
-    <div className='d-flex flex-column gap-2 mt-3 w-100'>
+    <div className='flex flex-col gap-2 mt-4 w-full'>
       <h5 className='mb-0'>Organisation Users</h5>
       <MyTable
         tableHeadings={[

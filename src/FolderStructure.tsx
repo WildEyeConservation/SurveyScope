@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Button, Form } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 
 interface FolderStructureProps {
   files: File[];
@@ -63,9 +64,9 @@ export default function FolderStructure({
   if (segments.length === 0) return null;
 
   return (
-    <Form.Group className='mt-2'>
-      <Form.Label className='mb-0'>Folder Structure</Form.Label>
-      <span className='text-muted d-block mb-2' style={{ fontSize: '12px' }}>
+    <div className='mt-2'>
+      <Label className='mb-0'>Folder Structure</Label>
+      <span className='text-muted-foreground block mb-2' style={{ fontSize: '12px' }}>
         Select the camera folder level.
       </span>
       <div>
@@ -80,7 +81,7 @@ export default function FolderStructure({
                 borderRadius: '5px',
                 color: idx === selectedLevel ? '#fff' : '',
                 backgroundColor:
-                  idx === selectedLevel ? 'var(--bs-primary)' : '',
+                  idx === selectedLevel ? 'var(--primary)' : '',
                 padding: '2px 8px',
               }}
             >
@@ -90,6 +91,6 @@ export default function FolderStructure({
           </React.Fragment>
         ))}
       </div>
-    </Form.Group>
+    </div>
   );
 }

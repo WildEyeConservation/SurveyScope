@@ -1,4 +1,4 @@
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import MyTable from '../Table';
 import { Schema } from '../amplify/client-schema';
 import { useContext, useState, useEffect } from 'react';
@@ -114,10 +114,10 @@ export default function Users({
               updateUser(membership.userId, checked);
             }}
           />,
-          <div className='d-flex justify-content-center'>
+          <div className='flex justify-center'>
             <Button
               size={compactMode ? 'sm' : undefined}
-              className='fixed-width-button'
+              className='w-[200px]'
               disabled={
                 process.env.NODE_ENV === 'development'
                   ? false
@@ -138,10 +138,10 @@ export default function Users({
               Edit
             </Button>
           </div>,
-          <div className='d-flex justify-content-center'>
+          <div className='flex justify-center'>
             <Button
               size={compactMode ? 'sm' : undefined}
-              className='fixed-width-button'
+              className='w-[200px]'
               variant='danger'
               disabled={isMutating || membership.userId === authUser.userId}
               onClick={() => {
@@ -211,9 +211,9 @@ export default function Users({
 
   return (
     <>
-      <div className={`d-flex flex-column ${compactMode ? 'gap-1' : 'gap-2'} mt-3 w-100 overflow-x-auto overflow-y-visible`}>
-        <div className='d-flex justify-content-between align-items-center'>
-          <div className='d-flex align-items-center gap-2'>
+      <div className={`flex flex-col ${compactMode ? 'gap-1' : 'gap-2'} mt-4 w-full overflow-x-auto overflow-y-visible`}>
+        <div className='flex justify-between items-center'>
+          <div className='flex items-center gap-2'>
             {compactMode ? (
               <h6 className='mb-0'>Organisation Users</h6>
             ) : (
@@ -222,7 +222,7 @@ export default function Users({
             <Button
               variant='link'
               size='sm'
-              className='p-0 text-muted'
+              className='p-0 text-muted-foreground'
               onClick={() => refetch()}
               disabled={isFetching}
               title='Refresh'

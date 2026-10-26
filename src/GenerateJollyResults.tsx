@@ -1,11 +1,16 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
-  Alert,
-  Button,
-  Form,
-  Modal,
-  ProgressBar,
-  Spinner,
-} from 'react-bootstrap';
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
 import { GlobalContext } from './Context.tsx';
 import { useContext, useEffect, useMemo, useState } from 'react';
 import Select from 'react-select';
@@ -227,83 +232,88 @@ export default function GenerateJollyResults({
   const running = launching || activeJob !== null;
 
   return (
-    <Modal
-      show={modalToShow === 'generateJollyResults'}
-      onHide={() => showModal(null)}
-      size='lg'
-      backdrop='static'
+    <Dialog
+      open={modalToShow === 'generateJollyResults'}
+      onOpenChange={(o) => !o && showModal(null)}
     >
-      <Modal.Header>
-        <Modal.Title>Generate Jolly Results</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <Form>
-          <Form.Group controlId='categories'>
-            <Form.Label className='mb-1'>Labels</Form.Label>
-            <span
-              className='text-muted d-block mb-2'
-              style={{ fontSize: '14px' }}
-            >
-              Select the labels to include in the Jolly results.
-            </span>
-            <Select
-              isMulti
-              isDisabled={running}
-              options={categoryOptions}
-              value={selectedCategories}
-              onChange={(value) =>
-                setSelectedCategories([...value])
-              }
-              className='text-black'
-            />
-          </Form.Group>
-        </Form>
-
-        {running && (
-          <div className='mt-4'>
-            <div className='d-flex align-items-center gap-2 mb-2'>
-              <Spinner animation='border' size='sm' />
-              <span>{progressText}</span>
+      <DialogContent
+        size='lg'
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle>Generate Jolly Results</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <form>
+            <div>
+              <Label htmlFor='categories' className='mb-1'>
+                Labels
+              </Label>
+              <span
+                className='text-muted-foreground block mb-2'
+                style={{ fontSize: '14px' }}
+              >
+                Select the labels to include in the Jolly results.
+              </span>
+              <Select
+                isMulti
+                isDisabled={running}
+                options={categoryOptions}
+                value={selectedCategories}
+                onChange={(value) =>
+                  setSelectedCategories([...value])
+                }
+                className='text-black'
+              />
             </div>
-            <ProgressBar animated now={100} />
-          </div>
-        )}
+          </form>
 
-        {pollWarning && (
-          <Alert variant='warning' className='mt-3 mb-0'>
-            {pollWarning}
-          </Alert>
-        )}
+          {running && (
+            <div className='mt-6'>
+              <div className='flex items-center gap-2 mb-2'>
+                <Spinner animation='border' size='sm' />
+                <span>{progressText}</span>
+              </div>
+              <Progress animated value={100} />
+            </div>
+          )}
 
-        {jobStatus?.warnings?.length ? (
-          <Alert variant='warning' className='mt-3 mb-0'>
-            {jobStatus.warnings.map((warning) => (
-              <div key={warning}>{warning}</div>
-            ))}
-          </Alert>
-        ) : null}
+          {pollWarning && (
+            <Alert variant='warning' className='mt-4 mb-0'>
+              {pollWarning}
+            </Alert>
+          )}
 
-        {errorMessage && (
-          <Alert variant='danger' className='mt-3 mb-0'>
-            {errorMessage}
-          </Alert>
-        )}
-      </Modal.Body>
-      <Modal.Footer>
-        <Button
-          variant='primary'
-          disabled={running}
-          onClick={() => void generateJollyResults()}
-        >
-          {launching ? 'Starting...' : 'Generate'}
-        </Button>
-        <Button
-          variant='dark'
-          onClick={() => showModal(null)}
-        >
-          Close
-        </Button>
-      </Modal.Footer>
-    </Modal>
+          {jobStatus?.warnings?.length ? (
+            <Alert variant='warning' className='mt-4 mb-0'>
+              {jobStatus.warnings.map((warning) => (
+                <div key={warning}>{warning}</div>
+              ))}
+            </Alert>
+          ) : null}
+
+          {errorMessage && (
+            <Alert variant='danger' className='mt-4 mb-0'>
+              {errorMessage}
+            </Alert>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button
+            variant='primary'
+            disabled={running}
+            onClick={() => void generateJollyResults()}
+          >
+            {launching ? 'Starting...' : 'Generate'}
+          </Button>
+          <Button
+            variant='dark'
+            onClick={() => showModal(null)}
+          >
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,5 +1,8 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { Button, Form, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import { Modal, Body, Header, Footer, Title } from './Modal';
 import { GlobalContext } from './Context';
 import { Tab, Tabs } from './Tabs';
@@ -122,18 +125,19 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
       <Body>
         <Tabs>
           <Tab label='Labels'>
-            <Form className='d-flex flex-column gap-2 p-3'>
-              <Form.Group controlId='annotationSetName'>
-                <Form.Label>Name</Form.Label>
-                <Form.Control
+            <form className='flex flex-col gap-2 p-4'>
+              <div>
+                <Label htmlFor='annotationSetName'>Name</Label>
+                <Input
+                  id='annotationSetName'
                   type='text'
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder='Enter new name'
                 />
-              </Form.Group>
+              </div>
               {categoriesLoading || !fetchedCategories ? (
-                <div className='d-flex align-items-center gap-2 py-3'>
+                <div className='flex items-center gap-2 py-4'>
                   <Spinner size='sm' />
                   <span>Loading labels...</span>
                 </div>
@@ -151,12 +155,12 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
                   onStatusChange={setStatusMessage}
                 />
               )}
-            </Form>
+            </form>
           </Tab>
           <Tab label='Info Tags'>
-            <Form className='d-flex flex-column gap-2 p-3'>
+            <form className='flex flex-col gap-2 p-4'>
               {infoTagsLoading || !fetchedInfoTags ? (
-                <div className='d-flex align-items-center gap-2 py-3'>
+                <div className='flex items-center gap-2 py-4'>
                   <Spinner size='sm' />
                   <span>Loading info tags...</span>
                 </div>
@@ -177,7 +181,7 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
                   onStatusChange={setStatusMessage}
                 />
               )}
-            </Form>
+            </form>
           </Tab>
         </Tabs>
         <Footer>
@@ -186,7 +190,7 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
               {errorMessage}
             </span>
           ) : statusMessage ? (
-            <span className='text-muted me-auto d-flex align-items-center gap-2' style={{ fontSize: 12 }}>
+            <span className='text-muted-foreground me-auto flex items-center gap-2' style={{ fontSize: 12 }}>
               <Spinner size='sm' />
               {statusMessage}
             </span>
@@ -197,7 +201,7 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
             onClick={handleSave}
           >
             {isSaving ? (
-              <span className='d-flex align-items-center gap-2'>
+              <span className='flex items-center gap-2'>
                 <Spinner size='sm' />
                 Saving...
               </span>

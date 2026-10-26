@@ -1,5 +1,10 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Alert, Form, Spinner } from 'react-bootstrap';
+import { useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import {
   deleteFalseNegativeFiles,
   readFalseNegativeFile,
@@ -66,6 +71,7 @@ export default function FalseNegatives({
 }) {
   const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
+  const advancedSwitchId = useId();
 
   // Global tiled location set from project
   const tiledLocationSetId = (project as any).tiledLocationSetId as
@@ -721,11 +727,11 @@ export default function FalseNegatives({
   );
 
   return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
+    <div className='px-4 pb-4 pt-1'>
+      <div className='flex flex-col gap-4 mt-2'>
         {mode === 'loading' ? (
           <p
-            className='text-muted mb-0 text-center'
+            className='text-muted-foreground mb-0 text-center'
             style={{ fontSize: '12px' }}
           >
             Loading...
@@ -756,7 +762,7 @@ export default function FalseNegatives({
               {(fnHistory?.launches.length ?? 0) !== 1 ? 's' : ''})
             </p>
             {loadingRemaining ? (
-              <div className='mt-2 d-flex align-items-center gap-2 text-white'>
+              <div className='mt-2 flex items-center gap-2 text-white'>
                 <Spinner animation='border' size='sm' />
                 <span style={{ fontSize: '12px' }}>
                   Calculating remaining tiles...
@@ -770,22 +776,22 @@ export default function FalseNegatives({
                 </p>
               </div>
             ) : null}
-            <div className='mt-3'>
-              <button
-                type='button'
-                className='btn btn-outline-light btn-sm'
+            <div className='mt-4'>
+              <Button
+                variant='outline-light'
+                size='sm'
                 onClick={handleReset}
                 disabled={launching || resetting}
               >
                 {resetting ? (
-                  <span className='d-inline-flex align-items-center'>
+                  <span className='inline-flex items-center'>
                     <Spinner animation='border' size='sm' className='me-2' />
                     {resetProgress || 'Resetting...'}
                   </span>
                 ) : (
                   'Reset FN Data'
                 )}
-              </button>
+              </Button>
             </div>
           </div>
           {zoomSetting}
@@ -830,18 +836,18 @@ export default function FalseNegatives({
               </Alert>
             ) : (
               <>
-                <Form.Group>
-                  <Form.Label className='mb-0'>
+                <div>
+                  <Label className='mb-0'>
                     Additional sample size (%)
-                  </Form.Label>
+                  </Label>
                   <span
-                    className='text-muted d-block mb-1'
+                    className='text-muted-foreground block mb-1'
                     style={{ fontSize: '12px' }}
                   >
                     Percentage of the candidate pool ({poolSize}{' '}
                     tiles). Up to {remainingInPool} tiles can still be launched.
                   </span>
-                  <Form.Control
+                  <Input
                     type='number'
                     min={0}
                     max={100}
@@ -854,34 +860,39 @@ export default function FalseNegatives({
                     }
                     disabled={launching}
                   />
-                </Form.Group>
+                </div>
 
                 {zoomSetting}
 
-                <Form.Group>
-                  <Form.Switch
-                    label='Show Advanced Options'
-                    checked={showAdvancedOptions}
-                    onChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                    disabled={launching}
-                  />
-                </Form.Group>
+                <div>
+                  <div className='mb-0.5 flex items-center gap-2'>
+                    <Switch
+                      id={advancedSwitchId}
+                      checked={showAdvancedOptions}
+                      onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                      disabled={launching}
+                    />
+                    <Label htmlFor={advancedSwitchId} className='mb-0'>
+                      Show Advanced Options
+                    </Label>
+                  </div>
+                </div>
 
                 {showAdvancedOptions && (
                   <div
-                    className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
+                    className='flex flex-col gap-4 border border-dark shadow-sm p-2'
                     style={{ backgroundColor: '#697582' }}
                   >
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Batch Size</Form.Label>
+                    <div>
+                      <Label className='mb-0'>Batch Size</Label>
                       <span
-                        className='text-muted d-block mb-1'
+                        className='text-muted-foreground block mb-1'
                         style={{ fontSize: '12px' }}
                       >
                         The number of annotation jobs a user can pick up at a
                         time.
                       </span>
-                      <Form.Control
+                      <Input
                         type='number'
                         value={batchSize}
                         onChange={(e) =>
@@ -891,17 +902,17 @@ export default function FalseNegatives({
                         }
                         disabled={launching}
                       />
-                    </Form.Group>
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Job Name</Form.Label>
+                    </div>
+                    <div>
+                      <Label className='mb-0'>Job Name</Label>
                       <span
-                        className='text-muted d-block mb-1'
+                        className='text-muted-foreground block mb-1'
                         style={{ fontSize: '12px' }}
                       >
                         Modify this to display a different name for the job in
                         the jobs page.
                       </span>
-                      <Form.Control
+                      <Input
                         type='text'
                         value={queueTag}
                         onChange={(e) =>
@@ -909,7 +920,7 @@ export default function FalseNegatives({
                         }
                         disabled={launching}
                       />
-                    </Form.Group>
+                    </div>
                   </div>
                 )}
 
@@ -940,21 +951,21 @@ export default function FalseNegatives({
             )}
 
             <div>
-              <button
-                type='button'
-                className='btn btn-outline-danger btn-sm'
+              <Button
+                variant='outline-danger'
+                size='sm'
                 onClick={handleReset}
                 disabled={launching || resetting}
               >
                 {resetting ? (
-                  <span className='d-inline-flex align-items-center'>
+                  <span className='inline-flex items-center'>
                     <Spinner animation='border' size='sm' className='me-2' />
                     {resetProgress || 'Resetting...'}
                   </span>
                 ) : (
                   'Reset FN Data'
                 )}
-              </button>
+              </Button>
             </div>
           </>
         ) : (
@@ -968,14 +979,14 @@ export default function FalseNegatives({
                 <strong>{globalTileCount}</strong> tiles available for false
                 negative sampling.
               </p>
-              <p className='mb-0 mt-1 text-muted' style={{ fontSize: '12px' }}>
+              <p className='mb-0 mt-1 text-muted-foreground' style={{ fontSize: '12px' }}>
                 To modify tiles, go to Edit Survey &gt; Manage Tiles.
               </p>
             </div>
 
-            <Form.Group>
-              <Form.Label className='mb-0'>Sample size (%)</Form.Label>
-              <Form.Control
+            <div>
+              <Label className='mb-0'>Sample size (%)</Label>
+              <Input
                 type='number'
                 min={0}
                 max={100}
@@ -986,33 +997,38 @@ export default function FalseNegatives({
                 }
                 disabled={launching}
               />
-            </Form.Group>
+            </div>
 
             {zoomSetting}
 
-            <Form.Group>
-              <Form.Switch
-                label='Show Advanced Options'
-                checked={showAdvancedOptions}
-                onChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                disabled={launching}
-              />
-            </Form.Group>
+            <div>
+              <div className='mb-0.5 flex items-center gap-2'>
+                <Switch
+                  id={advancedSwitchId}
+                  checked={showAdvancedOptions}
+                  onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  disabled={launching}
+                />
+                <Label htmlFor={advancedSwitchId} className='mb-0'>
+                  Show Advanced Options
+                </Label>
+              </div>
+            </div>
 
             {showAdvancedOptions && (
               <div
-                className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
+                className='flex flex-col gap-4 border border-dark shadow-sm p-2'
                 style={{ backgroundColor: '#697582' }}
               >
-                <Form.Group>
-                  <Form.Label className='mb-0'>Batch Size</Form.Label>
+                <div>
+                  <Label className='mb-0'>Batch Size</Label>
                   <span
-                    className='text-muted d-block mb-1'
+                    className='text-muted-foreground block mb-1'
                     style={{ fontSize: '12px' }}
                   >
                     The number of annotation jobs a user can pick up at a time.
                   </span>
-                  <Form.Control
+                  <Input
                     type='number'
                     value={batchSize}
                     onChange={(e) =>
@@ -1022,17 +1038,17 @@ export default function FalseNegatives({
                     }
                     disabled={launching}
                   />
-                </Form.Group>
-                <Form.Group>
-                  <Form.Label className='mb-0'>Job Name</Form.Label>
+                </div>
+                <div>
+                  <Label className='mb-0'>Job Name</Label>
                   <span
-                    className='text-muted d-block mb-1'
+                    className='text-muted-foreground block mb-1'
                     style={{ fontSize: '12px' }}
                   >
                     Modify this to display a different name for the job in the
                     jobs page.
                   </span>
-                  <Form.Control
+                  <Input
                     type='text'
                     value={queueTag}
                     onChange={(e) =>
@@ -1040,7 +1056,7 @@ export default function FalseNegatives({
                     }
                     disabled={launching}
                   />
-                </Form.Group>
+                </div>
               </div>
             )}
 
@@ -1048,7 +1064,7 @@ export default function FalseNegatives({
               className='border border-dark shadow-sm p-2'
               style={{ backgroundColor: '#697582' }}
             >
-              <div className='d-flex align-items-center justify-content-between'>
+              <div className='flex items-center justify-between'>
                 <div className='text-white' style={{ fontSize: '12px' }}>
                   <div>Expected tiles: {expectedTiles ?? '—'}</div>
                   <div>Estimated candidate tiles: {candidateTiles ?? '—'}</div>
@@ -1057,24 +1073,23 @@ export default function FalseNegatives({
                     {estimatedSampleTiles ?? '—'}
                   </div>
                 </div>
-                <button
-                  type='button'
-                  className='btn btn-primary'
+                <Button
+                  variant='primary'
                   disabled={launching || summaryLoading}
                   onClick={computeSummary}
                 >
                   {summaryLoading ? (
-                    <span className='d-inline-flex align-items-center'>
+                    <span className='inline-flex items-center'>
                       <Spinner animation='border' size='sm' className='me-2' />{' '}
                       Computing summary...
                     </span>
                   ) : (
                     'Compute Summary'
                   )}
-                </button>
+                </Button>
               </div>
               {summaryMessage && (
-                <div className='mt-2 text-muted' style={{ fontSize: '12px' }}>
+                <div className='mt-2 text-muted-foreground' style={{ fontSize: '12px' }}>
                   {summaryMessage}
                 </div>
               )}

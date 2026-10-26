@@ -12,7 +12,8 @@ import { useOptimisticUpdates } from './useOptimisticUpdates';
 import { ImageContextFromHook } from './ImageContext';
 import { Schema } from './amplify/client-schema';
 import useImageStats from './useImageStats';
-import { Badge, Button } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Share2, SearchCheck, RotateCcw, LogOut } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MapLibreAnnotator from './annotator/MapLibreAnnotator';
@@ -388,25 +389,25 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       }}
     >
       <div
-        className={`d-flex flex-md-row flex-column w-100 h-100 gap-3 overflow-auto ${
-          legendCollapsed ? 'legend-collapsed' : 'justify-content-center'
+        className={`flex md:flex-row flex-col w-full h-full gap-4 overflow-auto ${
+          legendCollapsed ? 'legend-collapsed' : 'justify-center'
         }`}
       >
         <div
-          className={`d-flex flex-column ${
-            legendCollapsed ? 'align-items-stretch' : 'align-items-center'
-          } w-100 h-100 gap-3`}
+          className={`flex flex-col ${
+            legendCollapsed ? 'items-stretch' : 'items-center'
+          } w-full h-full gap-4`}
           style={{
             maxWidth: legendCollapsed ? 'none' : '1024px',
             flex: legendCollapsed ? 1 : undefined,
           }}
         >
           <div
-            className='d-flex flex-row justify-content-center align-items-center w-100 gap-3 overflow-hidden'
+            className='flex flex-row justify-center items-center w-full gap-4 overflow-hidden'
             style={{ position: 'relative', height: '26px' }}
           >
             <div
-              className='d-flex flex-row gap-2'
+              className='flex flex-row gap-2'
               style={{
                 position: 'absolute',
                 top: 0,
@@ -421,7 +422,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
             </div>
             {visible && (
               <>
-                <Badge bg='secondary'>
+                <Badge variant='secondary'>
                   Working on:{' '}
                   {taskTag || currentTaskTag
                     ? `${taskTag || currentTaskTag}`
@@ -465,7 +466,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
             infoTags={infoTagsByAnnotation}
           />
         </div>
-        <div className='d-flex flex-column align-items-center gap-3'>
+        <div className='flex flex-col items-center gap-4'>
           <SideLegend
             annotationSetId={annotationSetId}
             categoriesOverride={legendCategories ?? undefined}
@@ -477,18 +478,18 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
               <Button
                 variant='success'
                 onClick={() => navigate('/jobs')}
-                className='d-none d-md-flex align-items-center justify-content-center'
+                className='hidden md:flex items-center justify-center'
                 style={{ width: '40px', height: '40px', padding: 0 }}
                 title='Save & Exit'
               >
                 <LogOut size={20} />
               </Button>
             ) : (
-              <div className='d-none d-md-block w-100 ps-2'>
+              <div className='hidden md:block w-full ps-2'>
                 <Button
                   variant='success'
                   onClick={() => navigate('/jobs')}
-                  className='d-none d-md-block w-100'
+                  className='hidden md:block w-full'
                 >
                   Save & Exit
                 </Button>
@@ -499,7 +500,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
             <Button
               variant='success'
               onClick={() => navigate('/jobs')}
-              className='w-100 d-md-none'
+              className='w-full md:hidden'
             >
               Save & Exit
             </Button>
@@ -591,7 +592,7 @@ function SetDefaultZoom({
 
   return (
     <button
-      className='p-0 m-0 border-0 bg-transparent d-flex align-items-center text-white'
+      className='p-0 m-0 border-0 bg-transparent flex items-center text-white'
       style={{
         position: 'absolute',
         top: 0,
@@ -600,7 +601,7 @@ function SetDefaultZoom({
       onClick={saveDefaultZoom}
     >
       {storedZoom ? <RotateCcw size={24} /> : <SearchCheck size={24} />}
-      <span className='ms-2 mb-0 d-none d-md-block'>
+      <span className='ms-2 mb-0 hidden md:block'>
         {storedZoom ? 'Reset zoom' : 'Set as default zoom'}
       </span>
     </button>

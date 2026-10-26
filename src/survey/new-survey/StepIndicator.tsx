@@ -16,7 +16,7 @@ export default function StepIndicator({
   onSelect,
 }: StepIndicatorProps) {
   return (
-    <div className='d-flex align-items-center mb-3' style={{ gap: 4 }}>
+    <div className='flex items-center mb-4' style={{ gap: 4 }}>
       {steps.map((title, index) => {
         const reachable = index <= furthestIndex;
         const isCurrent = index === currentIndex;
@@ -24,14 +24,14 @@ export default function StepIndicator({
         return (
           <div
             key={title}
-            className='d-flex align-items-center'
+            className='flex items-center'
             style={{ flex: index === steps.length - 1 ? '0 0 auto' : 1 }}
           >
             <button
               type='button'
               onClick={() => reachable && onSelect(index)}
               disabled={!reachable}
-              className='d-flex align-items-center border-0 bg-transparent p-0'
+              className='flex items-center border-0 bg-transparent p-0'
               style={{
                 cursor: reachable && !isCurrent ? 'pointer' : 'default',
                 opacity: reachable ? 1 : 0.45,
@@ -39,7 +39,7 @@ export default function StepIndicator({
               title={title}
             >
               <span
-                className='d-inline-flex align-items-center justify-content-center rounded-circle'
+                className='inline-flex items-center justify-center rounded-full'
                 style={{
                   width: 26,
                   height: 26,
@@ -69,7 +69,7 @@ export default function StepIndicator({
             </button>
             {index < steps.length - 1 && (
               <div
-                className='flex-grow-1 mx-2'
+                className='grow mx-2'
                 style={{
                   height: 2,
                   backgroundColor:

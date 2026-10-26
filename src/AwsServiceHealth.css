@@ -1,31 +1,31 @@
 .aws-service-health {
-  --ss-accent: var(--bs-primary);
-  --ss-text: var(--bs-body-color);
+  --ss-accent: var(--primary);
+  --ss-text: var(--foreground);
   --ss-text-muted: rgba(235, 235, 235, 0.75);
   --ss-text-dim: rgba(235, 235, 235, 0.58);
-  --ss-danger: var(--bs-danger);
-  color: var(--bs-body-color);
+  --ss-danger: var(--danger);
+  color: var(--foreground);
 }
 
 .aws-service-health .ss-card {
   overflow: hidden;
   padding: 0;
-  color: var(--bs-body-color);
+  color: var(--foreground);
   background: #20374c;
   border: 1px solid rgba(0, 0, 0, 0.25);
-  border-radius: var(--bs-border-radius);
+  border-radius: 0;
 }
 
 .aws-service-health .ss-data-table {
   width: 100%;
   border-collapse: collapse;
-  color: var(--bs-body-color);
+  color: var(--foreground);
   font-size: 0.875rem;
 }
 
 .aws-service-health .ss-data-table thead th {
   padding: 0.75rem 1rem;
-  color: var(--bs-body-color);
+  color: var(--foreground);
   background: rgba(255, 255, 255, 0.075);
   border-bottom: 1px solid rgba(0, 0, 0, 0.25);
   font-size: 0.75rem;
@@ -50,10 +50,10 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-.aws-service-health .btn-link {
+.aws-service-health [data-slot='button'][data-variant='link'] {
   color: var(--ss-text-muted);
 }
 
-.aws-service-health .btn-link:hover {
+.aws-service-health [data-slot='button'][data-variant='link']:hover {
   color: #fff;
 }

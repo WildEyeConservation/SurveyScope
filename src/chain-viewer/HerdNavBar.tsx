@@ -181,7 +181,7 @@ function LaneBar({
   };
 
   return (
-    <div ref={wrapperRef} className='w-100'>
+    <div ref={wrapperRef} className='w-full'>
       <canvas
         ref={canvasRef}
         onMouseMove={(e) => onHover(xToIndex(e.clientX))}
@@ -245,10 +245,10 @@ export function HerdNavBar({
         color: '#f8f9fa',
         userSelect: 'none',
       }}
-      className='w-100 d-flex flex-column pt-2 pb-3'
+      className='w-full flex flex-col pt-2 pb-4'
     >
       <div
-        className='d-flex flex-row align-items-center px-3 pb-1'
+        className='flex flex-row items-center px-4 pb-1'
         style={{ fontSize: 11 }}
       >
         <span style={{ flex: 1, opacity: 0.85 }}>{headerLeft}</span>
@@ -257,7 +257,7 @@ export function HerdNavBar({
         </span>
       </div>
 
-      <div className='d-flex flex-column' style={{ gap: multi ? 6 : 0 }}>
+      <div className='flex flex-col' style={{ gap: multi ? 6 : 0 }}>
         {lanes.map((lane, laneIdx) => {
           const colors = colorsByLane[laneIdx];
           if (colors.length === 0) return null;
@@ -274,7 +274,7 @@ export function HerdNavBar({
             >
               {multi && (
                 <div
-                  className='d-flex flex-row align-items-center px-3'
+                  className='flex flex-row items-center px-4'
                   style={{ fontSize: 11, opacity: 0.85, gap: 6 }}
                 >
                   <span

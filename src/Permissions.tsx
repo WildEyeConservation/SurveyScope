@@ -1,4 +1,11 @@
-import { Card, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Tabs, Tab } from './Tabs';
 import Users from './organization/Users';
 import OrganizationSelector from './OrganizationSelector';
@@ -31,16 +38,16 @@ export default function Permissions() {
       }}
     >
       <Card>
-        <Card.Header className='d-flex justify-content-between mb-0'>
-          <Card.Title className='mb-0'>
+        <CardHeader className='flex justify-between mb-0'>
+          <CardTitle className='mb-0'>
             <h4 className='mb-0'>Permissions</h4>
-          </Card.Title>
+          </CardTitle>
           <OrganizationSelector
             organization={organization}
             setOrganization={setOrganization}
           />
-        </Card.Header>
-        <Card.Body>
+        </CardHeader>
+        <CardContent>
           {organization.id && (
             <PermissionsBody
               key={organization.id}
@@ -48,16 +55,16 @@ export default function Permissions() {
               setOnClick={setOnClick}
             />
           )}
-        </Card.Body>
+        </CardContent>
         {onClick && (
-          <Card.Footer className='d-flex justify-content-center'>
+          <CardFooter className='flex justify-center'>
             <Button
               variant='primary'
               onClick={onClick.function}
             >
               {onClick.name}
             </Button>
-          </Card.Footer>
+          </CardFooter>
         )}
       </Card>
     </div>
