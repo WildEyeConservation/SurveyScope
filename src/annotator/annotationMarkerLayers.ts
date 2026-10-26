@@ -1,5 +1,5 @@
 import * as jdenticon from 'jdenticon';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 
 export const ANNOTATION_MARKER_LAYERS = {
   active: 'annotation-active-ring',
@@ -15,8 +15,7 @@ export const ANNOTATION_MARKER_LAYERS = {
  * language without taking on editing or task-lifecycle behaviour.
  */
 export function registerAnnotationMarkerImages(map: maplibregl.Map) {
-  const handleMissingImage = (e: maplibregl.MapStyleImageMissingEvent) => {
-    const id = e.id;
+  const handleMissingImage = (id: string) => {
     if (id === 'fn-marker') {
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 20;
@@ -78,8 +77,8 @@ export function registerAnnotationMarkerImages(map: maplibregl.Map) {
     }
   };
 
-  map.on('styleimagemissing', handleMissingImage);
-  return () => map.off('styleimagemissing', handleMissingImage);
+  map.setMissingStyleImageResolver(handleMissingImage);
+  return () => map.setMissingStyleImageResolver(null);
 }
 
 /** Add the canonical SurveyScope annotation marker stack to a GeoJSON source. */

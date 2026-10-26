@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import Button from 'react-bootstrap/Button';
 import { Form } from 'react-bootstrap';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';

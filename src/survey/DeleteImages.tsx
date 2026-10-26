@@ -8,7 +8,7 @@ import {
 } from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';

@@ -1,10 +1,8 @@
-# Pinned to the last Python 3.6 / TF 1.14-compatible versions. The base image
-# (tensorflow/tensorflow:1.14.0-gpu-py3) ships numpy ~1.16; do not let anything pull
-# numpy >= 1.17 or TF 1.14 breaks. All of these have cp36 manylinux wheels (no compile).
-boto3==1.23.10
-Pillow==8.4.0
-numpy==1.16.6
-scipy==1.4.1
-scikit-image==0.17.2
-requests==2.27.1
-requests-aws4auth==1.1.2
+# TensorFlow comes from the base image (tensorflow/tensorflow:2.21.0-gpu, Python 3.11).
+boto3==1.43.118
+Pillow==13.0.0
+numpy==2.4.6
+scipy==1.17.1
+scikit-image==0.26.0
+requests==2.34.2
+requests-aws4auth==1.4.0

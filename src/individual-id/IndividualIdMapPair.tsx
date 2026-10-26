@@ -9,7 +9,7 @@ import {
 import { useHotkeys } from 'react-hotkeys-hook';
 import { GlobalContext } from '../Context';
 import type { CategoryType, ImageType } from '../schemaTypes';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import {
   IndividualIdMap,
   type MapMarker,

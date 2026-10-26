@@ -27,7 +27,8 @@
 
 /// <reference types="node" />
 
-import { Duplex } from 'stream';
+declare type Duplex = import('node:stream').Duplex;
+declare type ColorLike = import('@img/colour').ColorLike;
 
 //#region Constructor functions
 
@@ -40,19 +41,7 @@ import { Duplex } from 'stream';
  */
 declare function sharp(options?: sharp.SharpOptions): sharp.Sharp;
 declare function sharp(
-    input?:
-        | Buffer
-        | ArrayBuffer
-        | Uint8Array
-        | Uint8ClampedArray
-        | Int8Array
-        | Uint16Array
-        | Int16Array
-        | Uint32Array
-        | Int32Array
-        | Float32Array
-        | Float64Array
-        | string,
+    input?: sharp.SharpInput | Array<sharp.SharpInput>,
     options?: sharp.SharpOptions,
 ): sharp.Sharp;
 
@@ -62,33 +51,35 @@ declare namespace sharp {
 
     /** An Object containing the version numbers of sharp, libvips and its dependencies. */
     const versions: {
-        vips: string;
+        aom?: string | undefined;
+        archive?: string | undefined;
         cairo?: string | undefined;
-        croco?: string | undefined;
+        cgif?: string | undefined;
         exif?: string | undefined;
         expat?: string | undefined;
         ffi?: string | undefined;
         fontconfig?: string | undefined;
         freetype?: string | undefined;
-        gdkpixbuf?: string | undefined;
-        gif?: string | undefined;
+        fribidi?: string | undefined;
         glib?: string | undefined;
-        gsf?: string | undefined;
         harfbuzz?: string | undefined;
-        jpeg?: string | undefined;
+        heif?: string | undefined;
+        highway?: string | undefined;
+        imagequant?: string | undefined;
         lcms?: string | undefined;
-        orc?: string | undefined;
+        mozjpeg?: string | undefined;
         pango?: string | undefined;
         pixman?: string | undefined;
         png?: string | undefined;
-        sharp?: string | undefined;
-        svg?: string | undefined;
+        "proxy-libintl"?: string | undefined;
+        rsvg?: string | undefined;
+        sharp: string;
+        spng?: string | undefined;
         tiff?: string | undefined;
+        vips: string;
         webp?: string | undefined;
-        avif?: string | undefined;
-        heif?: string | undefined;
         xml?: string | undefined;
-        zlib?: string | undefined;
+        "zlib-ng"?: string | undefined;
     };
 
     /** An Object containing the available interpolators and their proper values */
@@ -244,14 +235,14 @@ declare namespace sharp {
          * @param tint Parsed by the color module.
          * @returns A sharp instance that can be used to chain operations
          */
-        tint(tint: Color): Sharp;
+        tint(tint: ColorLike): Sharp;
 
         /**
          * Convert to 8-bit greyscale; 256 shades of grey.
          * This is a linear operation.
          * If the input image is in a non-linear colour space such as sRGB, use gamma() with greyscale() for the best results.
-         * By default the output image will be web-friendly sRGB and contain three (identical) color channels.
-         * This may be overridden by other sharp operations such as toColourspace('b-w'), which will produce an output image containing one color channel.
+         * By default the output image will be web-friendly sRGB and contain three (identical) colour channels.
+         * This may be overridden by other sharp operations such as toColourspace('b-w'), which will produce an output image containing one colour channel.
          * An alpha channel may be present, and will be unchanged by the operation.
          * @param greyscale true to enable and false to disable (defaults to true)
          * @returns A sharp instance that can be used to chain operations
@@ -269,7 +260,6 @@ declare namespace sharp {
          * Set the pipeline colourspace.
          * The input image will be converted to the provided colourspace at the start of the pipeline.
          * All operations will use this colourspace before converting to the output colourspace, as defined by toColourspace.
-         * This feature is experimental and has not yet been fully-tested with all operations.
          *
          * @param colourspace pipeline colourspace e.g. rgb16, scrgb, lab, grey16 ...
          * @throws {Error} Invalid parameters
@@ -364,23 +354,71 @@ declare namespace sharp {
         //#region Operation functions
 
         /**
-         * Rotate the output image by either an explicit angle or auto-orient based on the EXIF Orientation tag.
+         * Rotate the output image by either an explicit angle
+         * or auto-orient based on the EXIF `Orientation` tag.
          *
-         * If an angle is provided, it is converted to a valid positive degree rotation. For example, -450 will produce a 270deg rotation.
+         * If an angle is provided, it is converted to a valid positive degree rotation.
+         * For example, `-450` will produce a 270 degree rotation.
          *
-         * When rotating by an angle other than a multiple of 90, the background colour can be provided with the background option.
+         * When rotating by an angle other than a multiple of 90,
+         * the background colour can be provided with the `background` option.
          *
-         * If no angle is provided, it is determined from the EXIF data. Mirroring is supported and may infer the use of a flip operation.
+         * If no angle is provided, it is determined from the EXIF data.
+         * Mirroring is supported and may infer the use of a flip operation.
          *
-         * The use of rotate implies the removal of the EXIF Orientation tag, if any.
+         * The use of `rotate` without an angle will remove the EXIF `Orientation` tag, if any.
          *
-         * Method order is important when both rotating and extracting regions, for example rotate(x).extract(y) will produce a different result to extract(y).rotate(x).
-         * @param angle angle of rotation. (optional, default auto)
-         * @param options if present, is an Object with optional attributes.
+         * Only one rotation can occur per pipeline (aside from an initial call without
+         * arguments to orient via EXIF data). Previous calls to `rotate` in the same
+         * pipeline will be ignored.
+         *
+         * Multi-page images can only be rotated by 180 degrees.
+         *
+         * Method order is important when rotating, resizing and/or extracting regions,
+         * for example `.rotate(x).extract(y)` will produce a different result to `.extract(y).rotate(x)`.
+         *
+         * @example
+         * const pipeline = sharp()
+         *   .rotate()
+         *   .resize(null, 200)
+         *   .toBuffer(function (err, outputBuffer, info) {
+         *     // outputBuffer contains 200px high JPEG image data,
+         *     // auto-rotated using EXIF Orientation tag
+         *     // info.width and info.height contain the dimensions of the resized image
+         *   });
+         * readableStream.pipe(pipeline);
+         *
+         * @example
+         * const rotateThenResize = await sharp(input)
+         *   .rotate(90)
+         *   .resize({ width: 16, height: 8, fit: 'fill' })
+         *   .toBuffer();
+         * const resizeThenRotate = await sharp(input)
+         *   .resize({ width: 16, height: 8, fit: 'fill' })
+         *   .rotate(90)
+         *   .toBuffer();
+         *
+         * @param {number} [angle=auto] angle of rotation.
+         * @param {Object} [options] - if present, is an Object with optional attributes.
+         * @param {string|Object} [options.background="#000000"] parsed by the [color](https://www.npmjs.org/package/color) module to extract values for red, green, blue and alpha.
+         * @returns {Sharp}
          * @throws {Error} Invalid parameters
-         * @returns A sharp instance that can be used to chain operations
          */
         rotate(angle?: number, options?: RotateOptions): Sharp;
+
+        /**
+         * Alias for calling `rotate()` with no arguments, which orients the image based
+         * on EXIF orientsion.
+         *
+         * This operation is aliased to emphasize its purpose, helping to remove any
+         * confusion between rotation and orientation.
+         *
+         * @example
+         * const output = await sharp(input).autoOrient().toBuffer();
+         *
+         * @returns {Sharp}
+         */
+        autoOrient(): Sharp
 
         /**
          * Flip the image about the vertical Y axis. This always occurs after rotation, if any.
@@ -401,7 +439,7 @@ declare namespace sharp {
         /**
          * Perform an affine transform on an image. This operation will always occur after resizing, extraction and rotation, if any.
          * You must provide an array of length 4 or a 2x2 affine transformation matrix.
-         * By default, new pixels are filled with a black background. You can provide a background color with the `background` option.
+         * By default, new pixels are filled with a black background. You can provide a background colour with the `background` option.
          * A particular interpolator may also be specified. Set the `interpolator` option to an attribute of the `sharp.interpolators` Object e.g. `sharp.interpolators.nohalo`.
          *
          * In the case of a 2x2 matrix, the transform is:
@@ -433,21 +471,6 @@ declare namespace sharp {
         sharpen(options?: SharpenOptions): Sharp;
 
         /**
-         * Sharpen the image.
-         * When used without parameters, performs a fast, mild sharpen of the output image.
-         * When a sigma is provided, performs a slower, more accurate sharpen of the L channel in the LAB colour space.
-         * Fine-grained control over the level of sharpening in "flat" (m1) and "jagged" (m2) areas is available.
-         * @param sigma the sigma of the Gaussian mask, where sigma = 1 + radius / 2.
-         * @param flat the level of sharpening to apply to "flat" areas. (optional, default 1.0)
-         * @param jagged the level of sharpening to apply to "jagged" areas. (optional, default 2.0)
-         * @throws {Error} Invalid parameters
-         * @returns A sharp instance that can be used to chain operations
-         *
-         * @deprecated Use the object parameter `sharpen({sigma, m1, m2, x1, y2, y3})` instead
-         */
-        sharpen(sigma?: number, flat?: number, jagged?: number): Sharp;
-
-        /**
          * Apply median filter. When used without parameters the default window is 3x3.
          * @param size square mask size: size x size (optional, default 3)
          * @throws {Error} Invalid parameters
@@ -465,6 +488,22 @@ declare namespace sharp {
          * @returns A sharp instance that can be used to chain operations
          */
         blur(sigma?: number | boolean | BlurOptions): Sharp;
+
+        /**
+         * Expand foreground objects using the dilate morphological operator.
+         * @param {Number} [width=1] dilation width in pixels.
+         * @throws {Error} Invalid parameters
+         * @returns A sharp instance that can be used to chain operations
+         */
+        dilate(width?: number): Sharp;
+
+        /**
+         * Shrink foreground objects using the erode morphological operator.
+         * @param {Number} [width=1] erosion width in pixels.
+         * @throws {Error} Invalid parameters
+         * @returns A sharp instance that can be used to chain operations
+         */
+        erode(width?: number): Sharp;
 
         /**
          * Merge alpha transparency channel, if any, with background.
@@ -619,25 +658,42 @@ declare namespace sharp {
          * @param callback Callback function called on completion with three arguments (err, buffer, info).
          * @returns A sharp instance that can be used to chain operations
          */
-        toBuffer(callback: (err: Error, buffer: Buffer, info: OutputInfo) => void): Sharp;
+        toBuffer(callback: (err: Error, buffer: Buffer<ArrayBuffer>, info: OutputInfo) => void): Sharp;
 
         /**
          * Write output to a Buffer. JPEG, PNG, WebP, AVIF, TIFF, GIF and RAW output are supported.
          * By default, the format will match the input image, except SVG input which becomes PNG output.
+         * The underlying `ArrayBuffer` may be marked as non-transferable by some JavaScript runtimes.
          * @param options resolve options
          * @param options.resolveWithObject Resolve the Promise with an Object containing data and info properties instead of resolving only with data.
          * @returns A promise that resolves with the Buffer data.
          */
-        toBuffer(options?: { resolveWithObject: false }): Promise<Buffer>;
+        toBuffer(options?: { resolveWithObject: false }): Promise<Buffer<ArrayBuffer>>;
 
         /**
          * Write output to a Buffer. JPEG, PNG, WebP, AVIF, TIFF, GIF and RAW output are supported.
          * By default, the format will match the input image, except SVG input which becomes PNG output.
+         * The underlying `ArrayBuffer` may be marked as non-transferable by some JavaScript runtimes.
          * @param options resolve options
          * @param options.resolveWithObject Resolve the Promise with an Object containing data and info properties instead of resolving only with data.
          * @returns A promise that resolves with an object containing the Buffer data and an info object containing the output image format, size (bytes), width, height and channels
          */
-        toBuffer(options: { resolveWithObject: true }): Promise<{ data: Buffer; info: OutputInfo }>;
+        toBuffer(options: { resolveWithObject: true }): Promise<{ data: Buffer<ArrayBuffer>; info: OutputInfo }>;
+
+        /**
+         * Write output to a Uint8Array backed by a transferable ArrayBuffer. JPEG, PNG, WebP, AVIF, TIFF, GIF and RAW output are supported.
+         * By default, the format will match the input image, except SVG input which becomes PNG output.
+         * @returns A promise that resolves with an object containing the Uint8Array data and an info object containing the output image format, size (bytes), width, height and channels
+         */
+        toUint8Array(): Promise<{ data: Uint8Array; info: OutputInfo }>;
+
+        /**
+         * Set output density (DPI) in EXIF metadata.
+         * @param density Density in dots per inch (DPI).
+         * @returns A sharp instance that can be used to chain operations
+         * @throws {Error} Invalid parameters
+         */
+        withDensity(density: number): Sharp;
 
         /**
          * Keep all EXIF metadata from the input image in the output image.
@@ -675,6 +731,20 @@ declare namespace sharp {
          * @throws {Error} Invalid parameters
          */
         withIccProfile(icc: string, options?: WithIccProfileOptions): Sharp;
+
+        /**
+         * Keep all XMP metadata from the input image in the output image.
+         * @returns A sharp instance that can be used to chain operations
+         */
+        keepXmp(): Sharp;
+
+        /**
+         * Set XMP metadata in the output image.
+         * @param {string} xmp - String containing XMP metadata to be embedded in the output image.
+         * @returns A sharp instance that can be used to chain operations
+         * @throws {Error} Invalid parameters
+         */
+        withXmp(xmp: string): Sharp;
 
         /**
          * Include all metadata (EXIF, XMP, IPTC) from the input image in the output image.
@@ -781,7 +851,7 @@ declare namespace sharp {
          * @returns A sharp instance that can be used to chain operations
          */
         toFormat(
-            format: keyof FormatEnum | AvailableFormatInfo,
+            format: keyof FormatEnum | AvailableFormatInfo | "avif",
             options?:
                 | OutputOptions
                 | JpegOptions
@@ -792,6 +862,7 @@ declare namespace sharp {
                 | JxlOptions
                 | GifOptions
                 | Jp2Options
+                | RawOptions
                 | TiffOptions,
         ): Sharp;
 
@@ -799,8 +870,6 @@ declare namespace sharp {
          * Use tile-based deep zoom (image pyramid) output.
          * Set the format and options for tile images via the toFormat, jpeg, png or webp functions.
          * Use a .zip or .szi file extension with toFile to write to a compressed archive file format.
-         *
-         * Warning: multiple sharp instances concurrently producing tile output can expose a possible race condition in some versions of libgsf.
          * @param tile tile options
          * @throws {Error} Invalid options
          * @returns A sharp instance that can be used to chain operations
@@ -836,7 +905,7 @@ declare namespace sharp {
          *  - sharp.gravity: north, northeast, east, southeast, south, southwest, west, northwest, center or centre.
          *  - sharp.strategy: cover only, dynamically crop using either the entropy or attention strategy. Some of these values are based on the object-position CSS property.
          *
-         * The experimental strategy-based approach resizes so one dimension is at its target length then repeatedly ranks edge regions,
+         * The strategy-based approach resizes so one dimension is at its target length then repeatedly ranks edge regions,
          * discarding the edge with the lowest score based on the selected strategy.
          *  - entropy: focus on the region with the highest Shannon entropy.
          *  - attention: focus on the region with the highest luminance frequency, colour saturation and presence of skin tones.
@@ -899,31 +968,50 @@ declare namespace sharp {
         //#endregion
     }
 
+    type SharpInput = Buffer
+        | ArrayBuffer
+        | Uint8Array
+        | Uint8ClampedArray
+        | Int8Array
+        | Uint16Array
+        | Int16Array
+        | Uint32Array
+        | Int32Array
+        | Float32Array
+        | Float64Array
+        | string;
+
     interface SharpOptions {
         /**
+         * Auto-orient based on the EXIF `Orientation` tag, if present.
+         * Mirroring is supported and may infer the use of a flip operation.
+         *
+         * Using this option will remove the EXIF `Orientation` tag, if any.
+         */
+        autoOrient?: boolean | undefined;
+        /**
          *  When to abort processing of invalid pixel data, one of (in order of sensitivity):
-         *  'none' (least), 'truncated', 'error' or 'warning' (most), highers level imply lower levels, invalid metadata will always abort. (optional, default 'warning')
+         *  'none' (least), 'truncated', 'error' or 'warning' (most), highers level imply lower levels, invalid metadata will always abort.
+         *  Use the default 'warning' level with untrusted input. (optional, default 'warning')
          */
         failOn?: FailOnOptions | undefined;
-        /**
-         * By default halt processing and raise an error when loading invalid images.
-         * Set this flag to false if you'd rather apply a "best effort" to decode images,
-         * even if the data is corrupt or invalid. (optional, default true)
-         *
-         * @deprecated Use `failOn` instead
-         */
-        failOnError?: boolean | undefined;
         /**
          * Do not process input images where the number of pixels (width x height) exceeds this limit.
          * Assumes image dimensions contained in the input metadata can be trusted.
          * An integral Number of pixels, zero or false to remove limit, true to use default limit of 268402689 (0x3FFF x 0x3FFF). (optional, default 268402689)
          */
         limitInputPixels?: number | boolean | undefined;
+        /**
+         * Do not process input images where the number of channels exceeds this limit.
+         * Assumes image metadata can be trusted.
+         * An integral Number of channels, zero or false to remove limit, true to use default limit of 5. (optional, default 5)
+         */
+        limitInputChannels?: number | boolean | undefined;
         /** Set this to true to remove safety features that help prevent memory exhaustion (SVG, PNG). (optional, default false) */
         unlimited?: boolean | undefined;
         /** Set this to false to use random access rather than sequential read. Some operations will do this automatically. */
         sequentialRead?: boolean | undefined;
-        /** Number representing the DPI for vector images in the range 1 to 100000. (optional, default 72) */
+        /** The DPI at which to render SVG and PDF images, in the range 1 to 100000. (optional, default 72) */
         density?: number | undefined;
         /** Should the embedded ICC profile, if any, be ignored. */
         ignoreIcc?: boolean | undefined;
@@ -931,9 +1019,21 @@ declare namespace sharp {
         pages?: number | undefined;
         /** Page number to start extracting from for multi-page input (GIF, TIFF, PDF), zero based. (optional, default 0) */
         page?: number | undefined;
-        /** subIFD (Sub Image File Directory) to extract for OME-TIFF, defaults to main image. (optional, default -1) */
+        /** TIFF specific input options */
+        tiff?: TiffInputOptions | undefined;
+        /** SVG specific input options */
+        svg?: SvgInputOptions | undefined;
+        /** PDF specific input options */
+        pdf?: PdfInputOptions | undefined;
+        /** OpenSlide specific input options */
+        openSlide?: OpenSlideInputOptions | undefined;
+        /** JPEG 2000 specific input options */
+        jp2?: Jp2InputOptions | undefined;
+        /** @deprecated Use {@link SharpOptions.tiff} instead */
         subifd?: number | undefined;
-        /** Level to extract from a multi-level input (OpenSlide), zero based. (optional, default 0) */
+        /** @deprecated Use {@link SharpOptions.pdf} instead */
+        pdfBackground?: ColorLike | undefined;
+        /** @deprecated Use {@link SharpOptions.openSlide} instead */
         level?: number | undefined;
         /** Set to `true` to read all frames/pages of an animated image (equivalent of setting `pages` to `-1`). (optional, default false) */
         animated?: boolean | undefined;
@@ -943,6 +1043,8 @@ declare namespace sharp {
         create?: Create | undefined;
         /** Describes a new text image to be created. */
         text?: CreateText | undefined;
+        /** Describes how array of input images should be joined. */
+        join?: Join | undefined;
     }
 
     interface CacheOptions {
@@ -969,25 +1071,32 @@ declare namespace sharp {
     interface Raw {
         width: number;
         height: number;
-        channels: 1 | 2 | 3 | 4;
+        channels: Channels;
     }
 
     interface CreateRaw extends Raw {
         /** Specifies that the raw input has already been premultiplied, set to true to avoid sharp premultiplying the image. (optional, default false) */
         premultiplied?: boolean | undefined;
+        /** The height of each page/frame for animated images, must be an integral factor of the overall image height. */
+        pageHeight?: number | undefined;
     }
+
+    type CreateChannels = 3 | 4;
 
     interface Create {
         /** Number of pixels wide. */
         width: number;
         /** Number of pixels high. */
         height: number;
-        /** Number of bands e.g. 3 for RGB, 4 for RGBA */
-        channels: Channels;
+        /** Number of bands, 3 for RGB, 4 for RGBA */
+        channels: CreateChannels;
         /** Parsed by the [color](https://www.npmjs.org/package/color) module to extract values for red, green, blue and alpha. */
-        background: Color;
+        background: ColorLike;
         /** Describes a noise to be created. */
         noise?: Noise | undefined;
+        /** The height of each page/frame for animated images, must be an integral factor of the overall image height. */
+        pageHeight?: number | undefined;
+
     }
 
     interface CreateText {
@@ -1021,6 +1130,48 @@ declare namespace sharp {
         wrap?: TextWrap;
     }
 
+    interface Join {
+        /** Number of images per row. */
+        across?: number | undefined;
+        /** Treat input as frames of an animated image. */
+        animated?: boolean | undefined;
+        /** Space between images, in pixels. */
+        shim?: number | undefined;
+        /** Background colour. */
+        background?: ColorLike | undefined;
+        /** Horizontal alignment. */
+        halign?: HorizontalAlignment | undefined;
+        /** Vertical alignment. */
+        valign?: VerticalAlignment | undefined;
+    }
+
+    interface TiffInputOptions {
+        /** Sub Image File Directory to extract, defaults to main image. Use -1 for all subifds. */
+        subifd?: number | undefined;
+    }
+
+    interface SvgInputOptions {
+        /** Custom CSS for SVG input, applied with a User Origin during the CSS cascade. */
+        stylesheet?: string | undefined;
+        /** Set to `true` to render SVG input at 32-bits per channel (128-bit) instead of 8-bits per channel (32-bit) RGBA. */
+        highBitdepth?: boolean | undefined;
+    }
+
+    interface PdfInputOptions {
+        /** Background colour to use when PDF is partially transparent. Requires the use of a globally-installed libvips compiled with support for PDFium, Poppler, ImageMagick or GraphicsMagick. */
+        background?: ColorLike | undefined;
+    }
+
+    interface OpenSlideInputOptions {
+        /** Level to extract from a multi-level input, zero based. (optional, default 0) */
+        level?: number | undefined;
+    }
+
+    interface Jp2InputOptions {
+        /** Set to `true` to load JPEG 2000 images using [oneshot mode](https://github.com/libvips/libvips/issues/4205) */
+        oneshot?: boolean | undefined;
+    }
+
     interface ExifDir {
         [k: string]: string;
     }
@@ -1031,6 +1182,29 @@ declare namespace sharp {
         'IFD2'?: ExifDir;
         'IFD3'?: ExifDir;
     }
+
+    type HeifCompression = 'av1' | 'hevc';
+
+    type HeifTune = 'auto' | 'iq' | 'psnr' | 'ssim';
+
+    type Unit = 'inch' | 'cm';
+
+    type MediaType =
+        'application/pdf' |
+        'image/avif' |
+        'image/fits' |
+        'image/gif' |
+        'image/heic' |
+        'image/jp2' |
+        'image/jpeg' |
+        'image/jxl' |
+        'image/png' |
+        'image/svg+xml' |
+        'image/tiff' |
+        'image/vnd.radiance' |
+        'image/webp' |
+        'image/x-exr' |
+        'image/x-portable-pixmap';
 
     interface WriteableMetadata {
         /** Number of pixels per inch (DPI) */
@@ -1053,25 +1227,36 @@ declare namespace sharp {
         /** Number value of the EXIF Orientation header, if present */
         orientation?: number | undefined;
         /** Name of decoder used to decompress image data e.g. jpeg, png, webp, gif, svg */
-        format?: keyof FormatEnum | undefined;
+        format: keyof FormatEnum;
         /** Total size of image in bytes, for Stream and Buffer input only */
         size?: number | undefined;
         /** Number of pixels wide (EXIF orientation is not taken into consideration) */
-        width?: number | undefined;
+        width: number;
         /** Number of pixels high (EXIF orientation is not taken into consideration) */
-        height?: number | undefined;
+        height: number;
+        /** Any changed metadata after the image orientation is applied. */
+        autoOrient: {
+            /** Number of pixels wide (EXIF orientation is taken into consideration) */
+            width: number;
+            /** Number of pixels high (EXIF orientation is taken into consideration) */
+            height: number;
+        };
         /** Name of colour space interpretation */
-        space?: keyof ColourspaceEnum | undefined;
+        space: keyof ColourspaceEnum;
         /** Number of bands e.g. 3 for sRGB, 4 for CMYK */
-        channels?: Channels | undefined;
+        channels: Channels;
         /** Name of pixel depth format e.g. uchar, char, ushort, float ... */
-        depth?: string | undefined;
+        depth: keyof DepthEnum;
         /** Number of pixels per inch (DPI), if present */
         density?: number | undefined;
         /** String containing JPEG chroma subsampling, 4:2:0 or 4:4:4 for RGB, 4:2:0:4 or 4:4:4:4 for CMYK */
         chromaSubsampling?: string | undefined;
         /** Boolean indicating whether the image is interlaced using a progressive scan */
-        isProgressive?: boolean | undefined;
+        isProgressive: boolean;
+        /** Boolean indicating whether the image is palette-based (GIF, PNG). */
+        isPalette: boolean;
+        /** Number of bits per sample for each channel (GIF, PNG). */
+        bitsPerSample?: number | undefined;
         /** Number of pages/frames contained within the image, with support for TIFF, HEIF, PDF, animated GIF and animated WebP */
         pages?: number | undefined;
         /** Number of pixels high each page in a multi-page image will be. */
@@ -1083,9 +1268,9 @@ declare namespace sharp {
         /**  Number of the primary page in a HEIF image */
         pagePrimary?: number | undefined;
         /** Boolean indicating the presence of an embedded ICC profile */
-        hasProfile?: boolean | undefined;
+        hasProfile: boolean;
         /** Boolean indicating the presence of an alpha transparency channel */
-        hasAlpha?: boolean | undefined;
+        hasAlpha: boolean;
         /** Buffer containing raw EXIF data, if present */
         exif?: Buffer | undefined;
         /** Buffer containing raw ICC profile data, if present */
@@ -1094,22 +1279,28 @@ declare namespace sharp {
         iptc?: Buffer | undefined;
         /** Buffer containing raw XMP data, if present */
         xmp?: Buffer | undefined;
+        /** String containing XMP data, if valid UTF-8 */
+        xmpAsString?: string | undefined;
         /** Buffer containing raw TIFFTAG_PHOTOSHOP data, if present */
         tifftagPhotoshop?: Buffer | undefined;
         /** The encoder used to compress an HEIF file, `av1` (AVIF) or `hevc` (HEIC) */
-        compression?: 'av1' | 'hevc';
-        /** Default background colour, if present, for PNG (bKGD) and GIF images, either an RGB Object or a single greyscale value */
-        background?: { r: number; g: number; b: number } | number;
+        compression?: HeifCompression | undefined;
+        /** Default background colour, if present, for PNG (bKGD) and GIF images */
+        background?: { r: number; g: number; b: number } | { gray: number };
         /** Details of each level in a multi-level image provided as an array of objects, requires libvips compiled with support for OpenSlide */
         levels?: LevelMetadata[] | undefined;
         /** Number of Sub Image File Directories in an OME-TIFF image */
         subifds?: number | undefined;
         /** The unit of resolution (density) */
-        resolutionUnit?: 'inch' | 'cm' | undefined;
+        resolutionUnit?: Unit | undefined;
         /** String containing format for images loaded via *magick */
         formatMagick?: string | undefined;
         /** Array of keyword/text pairs representing PNG text blocks, if present. */
         comments?: CommentsMetadata[] | undefined;
+        /** HDR gain map, if present */
+        gainMap?: GainMapMetadata | undefined;
+        /** Media Type (MIME Type) */
+        mediaType?: MediaType | undefined;
     }
 
     interface LevelMetadata {
@@ -1122,16 +1313,21 @@ declare namespace sharp {
         text: string;
     }
 
+    interface GainMapMetadata {
+        /** JPEG image */
+        image: Buffer;
+    }
+
     interface Stats {
         /** Array of channel statistics for each channel in the image. */
         channels: ChannelStats[];
         /** Value to identify if the image is opaque or transparent, based on the presence and use of alpha channel */
         isOpaque: boolean;
-        /** Histogram-based estimation of greyscale entropy, discarding alpha channel if any (experimental) */
+        /** Histogram-based estimation of greyscale entropy, discarding alpha channel if any */
         entropy: number;
-        /** Estimation of greyscale sharpness based on the standard deviation of a Laplacian convolution, discarding alpha channel if any (experimental) */
+        /** Estimation of greyscale sharpness based on the standard deviation of a Laplacian convolution, discarding alpha channel if any */
         sharpness: number;
-        /** Object containing most dominant sRGB colour based on a 4096-bin 3D histogram (experimental) */
+        /** Object containing most dominant sRGB colour based on a 4096-bin 3D histogram */
         dominant: { r: number; g: number; b: number };
     }
 
@@ -1208,7 +1404,7 @@ declare namespace sharp {
         chromaSubsampling?: '4:4:4' | '4:2:0';
     }
 
-    interface JxlOptions extends OutputOptions {
+    interface JxlOptions extends OutputOptions, AnimationOptions {
         /** Maximum encoding error, between 0 (highest quality) and 15 (lowest quality) (optional, default 1.0) */
         distance?: number;
         /** Calculate distance based on JPEG-like quality, between 1 and 100, overrides distance if specified */
@@ -1217,7 +1413,7 @@ declare namespace sharp {
         decodingTier?: number;
         /** Use lossless compression (optional, default false) */
         lossless?: boolean;
-        /** CPU effort, between 3 (fastest) and 9 (slowest) (optional, default 7) */
+        /** CPU effort, between 1 (fastest) and 9 (slowest) (optional, default 7) */
         effort?: number | undefined;
     }
 
@@ -1232,14 +1428,18 @@ declare namespace sharp {
         nearLossless?: boolean | undefined;
         /** Use high quality chroma subsampling (optional, default false) */
         smartSubsample?: boolean | undefined;
+        /** Auto-adjust the deblocking filter, slow but can improve low contrast edges (optional, default false) */
+        smartDeblock?: boolean | undefined;
         /** Level of CPU effort to reduce file size, integer 0-6 (optional, default 4) */
         effort?: number | undefined;
         /** Prevent use of animation key frames to minimise file size (slow) (optional, default false) */
-        minSize?: boolean;
+        minSize?: boolean | undefined;
         /** Allow mixture of lossy and lossless animation frames (slow) (optional, default false) */
-        mixed?: boolean;
+        mixed?: boolean | undefined;
         /** Preset options: one of default, photo, picture, drawing, icon, text (optional, default 'default') */
         preset?: keyof PresetEnum | undefined;
+        /** Preserve the colour data in transparent pixels (optional, default false) */
+        exact?: boolean | undefined;
     }
 
     interface AvifOptions extends OutputOptions {
@@ -1253,13 +1453,15 @@ declare namespace sharp {
         chromaSubsampling?: string | undefined;
         /** Set bitdepth to 8, 10 or 12 bit (optional, default 8) */
         bitdepth?: 8 | 10 | 12 | undefined;
+        /** Tune output for a quality metric, one of 'auto', 'iq', 'psnr' or 'ssim' (optional, default 'auto') */
+        tune?: HeifTune | undefined;
     }
 
     interface HeifOptions extends OutputOptions {
         /** quality, integer 1-100 (optional, default 50) */
         quality?: number | undefined;
         /** compression format: av1, hevc (optional, default 'av1') */
-        compression?: 'av1' | 'hevc' | undefined;
+        compression?: HeifCompression | undefined;
         /** use lossless compression (optional, default false) */
         lossless?: boolean | undefined;
         /** Level of CPU effort to reduce file size, between 0 (fastest) and 9 (slowest) (optional, default 4) */
@@ -1268,6 +1470,8 @@ declare namespace sharp {
         chromaSubsampling?: string | undefined;
         /** Set bitdepth to 8, 10 or 12 bit (optional, default 8) */
         bitdepth?: 8 | 10 | 12 | undefined;
+        /** Tune output for a quality metric, one of 'auto', 'iq', 'psnr' or 'ssim' (optional, default 'auto') */
+        tune?: HeifTune | undefined;
     }
 
     interface GifOptions extends OutputOptions, AnimationOptions {
@@ -1284,9 +1488,11 @@ declare namespace sharp {
         /** Level of Floyd-Steinberg error diffusion, between 0 (least) and 1 (most) (optional, default 1.0) */
         dither?: number | undefined;
         /** Maximum inter-frame error for transparency, between 0 (lossless) and 32 (optional, default 0) */
-        interFrameMaxError?: number;
+        interFrameMaxError?: number | undefined;
         /** Maximum inter-palette error for palette reuse, between 0 and 256 (optional, default 3) */
-        interPaletteMaxError?: number;
+        interPaletteMaxError?: number | undefined;
+        /** Keep duplicate frames in the output instead of combining them (optional, default false) */
+        keepDuplicateFrames?: boolean | undefined;
     }
 
     interface TiffOptions extends OutputOptions {
@@ -1294,6 +1500,8 @@ declare namespace sharp {
         quality?: number | undefined;
         /** Compression options: none, jpeg, deflate, packbits, ccittfax4, lzw, webp, zstd, jp2k (optional, default 'jpeg') */
         compression?: string | undefined;
+        /** Use BigTIFF variant (has no effect when compression is none) (optional, default false) */
+        bigtiff?: boolean | undefined;
         /** Compression predictor options: none, horizontal, float (optional, default 'horizontal') */
         predictor?: string | undefined;
         /** Write an image pyramid (optional, default false) */
@@ -1302,18 +1510,18 @@ declare namespace sharp {
         tile?: boolean | undefined;
         /** Horizontal tile size (optional, default 256) */
         tileWidth?: number | undefined;
-        /** Vertical tile size (optional, default 256) */
+        /** Vertical tile size, valid values are integers in the range 1-32768 (optional, default 256) */
         tileHeight?: number | undefined;
-        /** Horizontal resolution in pixels/mm (optional, default 1.0) */
+        /** Horizontal resolution in pixels/mm, valid values are numbers in the range 0.001-1000000 (optional, default 1.0) */
         xres?: number | undefined;
-        /** Vertical resolution in pixels/mm (optional, default 1.0) */
+        /** Vertical resolution in pixels/mm, valid values are numbers in the range 0.001-1000000 (optional, default 1.0) */
         yres?: number | undefined;
-        /** Reduce bitdepth to 1, 2 or 4 bit (optional, default 8) */
-        bitdepth?: 1 | 2 | 4 | 8 | undefined;
+        /** Reduce bitdepth to 1, 2 or 4 bit (optional) */
+        bitdepth?: 1 | 2 | 4 | undefined;
         /** Write 1-bit images as miniswhite (optional, default false) */
         miniswhite?: boolean | undefined;
         /** Resolution unit options: inch, cm (optional, default 'inch') */
-        resolutionUnit?: 'inch' | 'cm' | undefined;
+        resolutionUnit?: Unit | undefined;
     }
 
     interface PngOptions extends OutputOptions {
@@ -1339,7 +1547,7 @@ declare namespace sharp {
 
     interface RotateOptions {
         /** parsed by the color module to extract values for red, green, blue and alpha. (optional, default "#000000") */
-        background?: Color | undefined;
+        background?: ColorLike | undefined;
     }
 
     type Precision = 'integer' | 'float' | 'approximate';
@@ -1355,7 +1563,7 @@ declare namespace sharp {
 
     interface FlattenOptions {
         /** background colour, parsed by the color module, defaults to black. (optional, default {r:0,g:0,b:0}) */
-        background?: Color | undefined;
+        background?: ColorLike | undefined;
     }
 
     interface NegateOptions {
@@ -1380,7 +1588,7 @@ declare namespace sharp {
         /** Position, gravity or strategy to use when fit is cover or contain. (optional, default 'centre') */
         position?: number | string | undefined;
         /** Background colour when using a fit of contain, parsed by the color module, defaults to black without transparency. (optional, default {r:0,g:0,b:0,alpha:1}) */
-        background?: Color | undefined;
+        background?: ColorLike | undefined;
         /** The kernel to use for image reduction. (optional, default 'lanczos3') */
         kernel?: keyof KernelEnum | undefined;
         /** Do not enlarge if the width or height are already less than the specified dimensions, equivalent to GraphicsMagick's > geometry option. (optional, default false) */
@@ -1392,19 +1600,19 @@ declare namespace sharp {
     }
 
     interface Region {
-        /** zero-indexed offset from left edge */
+        /** zero-indexed offset from left edge, an integer between 0 and 100000000 */
         left: number;
-        /** zero-indexed offset from top edge */
+        /** zero-indexed offset from top edge, an integer between 0 and 100000000 */
         top: number;
-        /** dimension of extracted image */
+        /** dimension of extracted image, an integer between 0 and 100000000 */
         width: number;
-        /** dimension of extracted image */
+        /** dimension of extracted image, an integer between 0 and 100000000 */
         height: number;
     }
 
     interface Noise {
         /** type of generated noise, currently only gaussian is supported. */
-        type?: 'gaussian' | undefined;
+        type: 'gaussian';
         /** mean of pixels in generated noise. */
         mean?: number | undefined;
         /** standard deviation of pixels in generated noise. */
@@ -1414,44 +1622,40 @@ declare namespace sharp {
     type ExtendWith = 'background' | 'copy' | 'repeat' | 'mirror';
 
     interface ExtendOptions {
-        /** single pixel count to top edge (optional, default 0) */
+        /** single pixel count to top edge, valid values are integers in the range 0-10000 (optional, default 0) */
         top?: number | undefined;
-        /** single pixel count to left edge (optional, default 0) */
+        /** single pixel count to left edge, valid values are integers in the range 0-10000 (optional, default 0) */
         left?: number | undefined;
-        /** single pixel count to bottom edge (optional, default 0) */
+        /** single pixel count to bottom edge, valid values are integers in the range 0-10000 (optional, default 0) */
         bottom?: number | undefined;
-        /** single pixel count to right edge (optional, default 0) */
+        /** single pixel count to right edge, valid values are integers in the range 0-10000 (optional, default 0) */
         right?: number | undefined;
         /** background colour, parsed by the color module, defaults to black without transparency. (optional, default {r:0,g:0,b:0,alpha:1}) */
-        background?: Color | undefined;
+        background?: ColorLike | undefined;
         /** how the extension is done, one of: "background", "copy", "repeat", "mirror" (optional, default `'background'`) */
         extendWith?: ExtendWith | undefined;
     }
 
     interface TrimOptions {
         /** Background colour, parsed by the color module, defaults to that of the top-left pixel. (optional) */
-        background?: Color | undefined;
+        background?: ColorLike | undefined;
         /** Allowed difference from the above colour, a positive number. (optional, default 10) */
         threshold?: number | undefined;
         /** Does the input more closely resemble line art (e.g. vector) rather than being photographic? (optional, default false) */
         lineArt?: boolean | undefined;
+        /** Leave a margin around trimmed content, integral number of pixels between 0 and 10000000. (optional, default 0) */
+        margin?: number | undefined;
     }
 
     interface RawOptions {
-        depth?: 'char' | 'uchar' | 'short' | 'ushort' | 'int' | 'uint' | 'float' | 'complex' | 'double' | 'dpcomplex';
+        depth?: keyof DepthEnum;
     }
 
-    /** 3 for sRGB, 4 for CMYK */
-    type Channels = 3 | 4;
+    /** 1 for grayscale, 2 for grayscale + alpha, 3 for sRGB, 4 for CMYK or RGBA */
+    type Channels = 1 | 2 | 3 | 4;
 
-    interface RGBA {
-        r?: number | undefined;
-        g?: number | undefined;
-        b?: number | undefined;
-        alpha?: number | undefined;
-    }
-
-    type Color = string | RGBA;
+    type Colour = ColorLike;
+    type Color = ColorLike;
 
     interface Kernel {
         /** width of the kernel in pixels. */
@@ -1467,11 +1671,11 @@ declare namespace sharp {
     }
 
     interface ClaheOptions {
-        /** width of the region */
+        /** width of the region. Valid values are integers in the range 1-65536. */
         width: number;
-        /** height of the region */
+        /** height of the region. Valid values are integers in the range 1-65536. */
         height: number;
-        /** max slope of the cumulative contrast. A value of 0 disables contrast limiting. Valid values are integers in the range 0-100 (inclusive) (optional, default 3) */
+        /** max slope of the cumulative contrast. A value of 0 disables contrast limiting. Valid values are integers in the range 0-100. (optional, default 3) */
         maxSlope?: number | undefined;
     }
 
@@ -1489,9 +1693,9 @@ declare namespace sharp {
         blend?: Blend | undefined;
         /** gravity at which to place the overlay. (optional, default 'centre') */
         gravity?: Gravity | undefined;
-        /** the pixel offset from the top edge. */
+        /** the pixel offset from the top edge, an integer between -100000000 and 100000000. */
         top?: number | undefined;
-        /** the pixel offset from the left edge. */
+        /** the pixel offset from the left edge, an integer between -100000000 and 100000000. */
         left?: number | undefined;
         /** set to true to repeat the overlay image across the entire image with the given  gravity. (optional, default false) */
         tile?: boolean | undefined;
@@ -1505,6 +1709,8 @@ declare namespace sharp {
         failOn?: FailOnOptions | undefined;
         /** see sharp() constructor, (optional, default 268402689) */
         limitInputPixels?: number | boolean | undefined;
+        /** see sharp() constructor, (optional, default false) */
+        autoOrient?: boolean | undefined;
     }
 
     interface TileOptions {
@@ -1515,7 +1721,7 @@ declare namespace sharp {
         /** Tile angle of rotation, must be a multiple of 90. (optional, default 0) */
         angle?: number | undefined;
         /** background colour, parsed by the color module, defaults to white without transparency. (optional, default {r:255,g:255,b:255,alpha:1}) */
-        background?: string | RGBA | undefined;
+        background?: ColorLike | undefined;
         /** How deep to make the pyramid, possible values are "onepixel", "onetile" or "one" (default based on layout) */
         depth?: string | undefined;
         /** Threshold to skip tile generation, a value 0 - 255 for 8-bit images or 0 - 65535 for 16-bit images */
@@ -1576,9 +1782,11 @@ declare namespace sharp {
         size: number;
         width: number;
         height: number;
-        channels: 1 | 2 | 3 | 4;
+        channels: Channels;
         /** indicating if premultiplication was used */
         premultiplied: boolean;
+        /** Indicates if the output image has an alpha channel */
+        hasAlpha: boolean;
         /** Only defined when using a crop strategy */
         cropOffsetLeft?: number | undefined;
         /** Only defined when using a crop strategy */
@@ -1592,6 +1800,10 @@ declare namespace sharp {
         /** When using the attention crop strategy, the focal point of the cropped region */
         attentionX?: number | undefined;
         attentionY?: number | undefined;
+        /** Number of pages/frames contained within the image, with support for TIFF, HEIF, PDF, animated GIF and animated WebP */
+        pages?: number | undefined;
+        /** Number of pixels high each page in a multi-page image will be. */
+        pageHeight?: number | undefined;
     }
 
     interface AvailableFormatInfo {
@@ -1611,9 +1823,12 @@ declare namespace sharp {
     interface KernelEnum {
         nearest: 'nearest';
         cubic: 'cubic';
+        linear: 'linear';
         mitchell: 'mitchell';
         lanczos2: 'lanczos2';
         lanczos3: 'lanczos3';
+        mks2013: 'mks2013';
+        mks2021: 'mks2021';
     }
 
     interface PresetEnum {
@@ -1632,11 +1847,38 @@ declare namespace sharp {
     }
 
     interface ColourspaceEnum {
-        multiband: string;
         'b-w': string;
-        bw: string;
+        cmc: string;
         cmyk: string;
+        fourier: string;
+        grey16: string;
+        histogram: string;
+        hsv: string;
+        lab: string;
+        labq: string;
+        labs: string;
+        lch: string;
+        matrix: string;
+        multiband: string;
+        rgb: string;
+        rgb16: string;
+        scrgb: string;
         srgb: string;
+        xyz: string;
+        yxy: string;
+    }
+
+    interface DepthEnum {
+        char: string;
+        complex: string;
+        double: string;
+        dpcomplex: string;
+        float: string;
+        int: string;
+        short: string;
+        uchar: string;
+        uint: string;
+        ushort: string;
     }
 
     type FailOnOptions = 'none' | 'truncated' | 'error' | 'warning';
@@ -1644,6 +1886,10 @@ declare namespace sharp {
     type TextAlign = 'left' | 'centre' | 'center' | 'right';
 
     type TextWrap = 'word' | 'char' | 'word-char' | 'none';
+
+    type HorizontalAlignment = 'left' | 'centre' | 'center' | 'right';
+
+    type VerticalAlignment = 'top' | 'centre' | 'center' | 'bottom';
 
     type TileContainer = 'fs' | 'zip';
 
@@ -1699,14 +1945,13 @@ declare namespace sharp {
     }
 
     interface FormatEnum {
-        avif: AvailableFormatInfo;
+        dcraw: AvailableFormatInfo;
         dz: AvailableFormatInfo;
+        exr: AvailableFormatInfo;
         fits: AvailableFormatInfo;
         gif: AvailableFormatInfo;
         heif: AvailableFormatInfo;
-        input: AvailableFormatInfo;
         jpeg: AvailableFormatInfo;
-        jpg: AvailableFormatInfo;
         jp2: AvailableFormatInfo;
         jxl: AvailableFormatInfo;
         magick: AvailableFormatInfo;
@@ -1714,11 +1959,11 @@ declare namespace sharp {
         pdf: AvailableFormatInfo;
         png: AvailableFormatInfo;
         ppm: AvailableFormatInfo;
+        rad: AvailableFormatInfo;
         raw: AvailableFormatInfo;
         svg: AvailableFormatInfo;
         tiff: AvailableFormatInfo;
-        tif: AvailableFormatInfo;
-        v: AvailableFormatInfo;
+        vips: AvailableFormatInfo;
         webp: AvailableFormatInfo;
     }
 

@@ -312,6 +312,11 @@ const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('Chain
 installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
   backend.data.resources.graphqlApi.apiId, guardSource);
 
+// Newer data constructs default tables to AWS-owned keys; keep the existing KMS encryption.
+for (const table of Object.values(backend.data.resources.cfnResources.amplifyDynamoDbTables)) {
+  table.sseSpecification = { sseEnabled: true };
+}
+
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
 userPoolClient.accessTokenValidity = 24 * 60;
 userPoolClient.idTokenValidity = 24 * 60;

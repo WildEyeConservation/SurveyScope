@@ -1,10 +1,7 @@
 # Unified elephant heatmap + point-finder worker (GPU).
 #
-# TensorFlow 1.14 (CUDA 10, Python 3.6) - the exact environment the model checkpoint
-# was trained/served in on the Heatmapper4 AMI. We deliberately keep TF1 rather than
-# porting to TF2/ONNX so the checkpoint loads unchanged. Modern GPU-host NVIDIA drivers
-# run CUDA 10 containers via forward compatibility.
-FROM tensorflow/tensorflow:1.14.0-gpu-py3
+# tf.compat.v1 preserves compatibility with the TF1 MobileNet checkpoint.
+FROM tensorflow/tensorflow:2.21.0-gpu
 
 WORKDIR /workspace
 COPY code/ /workspace/

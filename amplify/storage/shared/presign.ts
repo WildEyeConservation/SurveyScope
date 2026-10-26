@@ -1,4 +1,13 @@
-import type { S3Client } from '@aws-sdk/client-s3';
+import { S3Client, type S3ClientConfig } from '@aws-sdk/client-s3';
+
+// Upload URLs are signed without a body, so default SDK checksums would be of an empty payload.
+export function presignClient(config: S3ClientConfig = {}) {
+  return new S3Client({
+    ...config,
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
+  });
+}
 
 export interface Lifetime {
   expiresIn: number;

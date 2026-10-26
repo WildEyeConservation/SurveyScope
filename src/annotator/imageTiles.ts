@@ -1,4 +1,4 @@
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { getTileBlob, imageTileContext } from '../StorageLayer';
 import { pxBoundsCamera, type ImageProjection } from './imageProjection';
 

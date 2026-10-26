@@ -7,7 +7,7 @@ import {
   useMemo,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Badge, Button, Card } from 'react-bootstrap';
 import { ChevronLeft, ChevronRight, Undo2, SearchCheck, RotateCcw } from 'lucide-react';

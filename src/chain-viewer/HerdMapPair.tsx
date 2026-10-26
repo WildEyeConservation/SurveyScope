@@ -7,7 +7,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from 'lucide-react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import { GlobalContext } from '../Context';
 import {
   IndividualIdMap,

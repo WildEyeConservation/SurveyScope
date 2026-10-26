@@ -5,16 +5,16 @@ numpy==2.1.2
 matplotlib==3.10.5
 scipy==1.15.3
 pycocotools==2.0.10
-pillow==11.0.0
-torch==2.8.0+cu129
-torchvision==0.23.0+cu129
+pillow==13.0.0
+torch==2.13.0+cu129
+torchvision==0.28.0+cu129
 opencv-python-headless
 typing_extensions==4.12.2
 networkx==3.3
-fsspec==2024.6.1
-Jinja2==3.1.4
+fsspec==2026.9.0
+Jinja2==3.1.6
 MarkupSafe==2.1.5
-filelock==3.13.1
-setuptools==70.2.0
-wheel==0.45.1
+filelock==3.20.3
+setuptools==84.1.0
+wheel==0.46.2
 

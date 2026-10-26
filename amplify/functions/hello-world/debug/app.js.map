@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../app.ts"],
-  "sourcesContent": ["import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';\n\n/**\n *\n * Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format\n * @param {Object} event - API Gateway Lambda Proxy Input Format\n *\n * Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html\n * @returns {Object} object - API Gateway Lambda Proxy Output Format\n *\n */\n\nexport const lambdaHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {\n    try {\n        return {\n            statusCode: 200,\n            body: JSON.stringify({\n                message: 'hello world',\n            }),\n        };\n    } catch (err) {\n        console.log(err);\n        return {\n            statusCode: 500,\n            body: JSON.stringify({\n                message: 'some error happened',\n            }),\n        };\n    }\n};\n"],
-  "mappings": "yaAAA,IAAAA,EAAA,GAAAC,EAAAD,EAAA,mBAAAE,IAAA,eAAAC,EAAAH,GAYO,IAAME,EAAgB,MAAOE,GAAgE,CAChG,GAAI,CACA,MAAO,CACH,WAAY,IACZ,KAAM,KAAK,UAAU,CACjB,QAAS,aACb,CAAC,CACL,CACJ,OAASC,EAAK,CACV,eAAQ,IAAIA,CAAG,EACR,CACH,WAAY,IACZ,KAAM,KAAK,UAAU,CACjB,QAAS,qBACb,CAAC,CACL,CACJ,CACJ",
-  "names": ["app_exports", "__export", "lambdaHandler", "__toCommonJS", "event", "err"]
-}
