@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { useLaunchTask } from '../useLaunchTask';
@@ -587,17 +587,16 @@ export default function SpeciesLabelling({
         ) : modelOptions.length > 1 ? (
           <div>
             <Label className='mb-0'>Model</Label>
-            <Select
-              value={model as any}
-              onChange={(m) => {
-                const selectedModel = m ?? undefined;
-                setModel(selectedModel);
-                setLowerLimit(defaultLowerConfidence(selectedModel?.value));
+            <Combobox
+              value={model ?? null}
+              onChange={(option) => {
+                setModel(option ?? undefined);
+                setLowerLimit(defaultLowerConfidence(option?.value));
               }}
               options={modelOptions}
               placeholder='Select a model'
-              className='text-black'
-              isDisabled={launching}
+              disabled={launching}
+              name='Model'
             />
           </div>
         ) : (

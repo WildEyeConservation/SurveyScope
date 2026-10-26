@@ -4,7 +4,7 @@ import { GlobalContext, UserContext } from './Context';
 import type { UserStatsType } from './schemaTypes';
 import exportFromJSON from 'export-from-json';
 import { useUsers } from './apiInterface';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { XIcon } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -500,36 +500,30 @@ export default function UserStats() {
 
           <div className='mt-4'>
             <label className='mb-2'>Select Survey</label>
-            <Select
-              className='text-black'
+            <Combobox
               value={project}
               options={projects.map((p) => ({
                 label: `${p.name} (${p.organization.name})`,
                 value: p.id,
               }))}
-              onChange={(e) => {
-                setProject(e);
+              onChange={(option) => {
+                setProject(option);
                 const sets = projects
-                  .find((p) => p.id === e?.value)
+                  .find((p) => p.id === option?.value)
                   ?.annotationSets?.map((s) => ({ label: s.name, value: s.id })) || [];
                 setSelectedSets(sets);
               }}
-              styles={{
-                valueContainer: (base) => ({
-                  ...base,
-                  overflowY: 'auto',
-                }),
-              }}
+              placeholder='Select a survey'
+              name='Survey'
             />
           </div>
 
           <div className='mt-4'>
             <label className=''>Select Annotation Sets</label>
-            <Select
-              className='text-black basic-multi-select'
-              value={selectedSets}
-              onChange={(e) => setSelectedSets([...e])}
-              isMulti
+            <Combobox
+              value={selectedSets ?? []}
+              onChange={(options) => setSelectedSets(options)}
+              multiple
               name='Annotation sets'
               options={
                 projects
@@ -539,14 +533,7 @@ export default function UserStats() {
                     value: s.id,
                   })) || []
               }
-              classNamePrefix='select'
-              closeMenuOnSelect={false}
-              styles={{
-                valueContainer: (base) => ({
-                  ...base,
-                  overflowY: 'auto',
-                }),
-              }}
+              placeholder='Select annotation sets'
             />
           </div>
 

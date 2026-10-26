@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Table } from '@/components/ui/table';
-import Select, { type MultiValue, type SingleValue } from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import './admin.css';
 import { useUsers } from '../../apiInterface';
 import { useSharedChainData } from '../shared/useSharedChainData';
@@ -154,28 +154,26 @@ export default function ChainShareResults() {
           <div className='flex flex-row flex-wrap gap-4 items-end'>
             <div style={{ minWidth: 320, flex: 1 }}>
               <Label>Share</Label>
-              <Select
+              <Combobox
                 value={shareOptions.find((o) => o.value === shareId) ?? null}
-                onChange={(v: SingleValue<Option>) => setShareId(v?.value)}
+                onChange={(option) => setShareId(option?.value)}
                 options={shareOptions}
-                className='text-black'
                 placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
-                isLoading={sharesLoading}
-                isClearable
+                loading={sharesLoading}
+                clearable
+                name='Share'
               />
             </div>
             <div style={{ minWidth: 320, flex: 2 }}>
               <Label>Reviewers</Label>
-              <Select
-                isMulti
+              <Combobox
+                multiple
                 value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
-                onChange={(v: MultiValue<Option>) =>
-                  setSelectedOwners(v.map((o) => o.value))
-                }
+                onChange={(options) => setSelectedOwners(options.map((o) => o.value))}
                 options={ownerOptions}
-                className='text-black'
                 placeholder='All reviewers'
-                isDisabled={!shareId || ownerOptions.length === 0}
+                disabled={!shareId || ownerOptions.length === 0}
+                name='Reviewers'
               />
             </div>
           </div>

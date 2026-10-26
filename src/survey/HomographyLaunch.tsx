@@ -2,7 +2,7 @@ import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { uploadWorkflowFile } from '../storage/workflowFiles';
 import { Schema } from '../amplify/client-schema';
@@ -484,15 +484,13 @@ export default function HomographyLaunch({
                 By default all labels are included. Select specific labels to
                 narrow which annotations define image pairs.
               </span>
-              <Select
+              <Combobox
                 value={selectedCategories}
-                onChange={(v) => setSelectedCategories(v as CategoryOption[])}
-                isMulti
+                onChange={(options) => setSelectedCategories(options)}
+                multiple
                 name='Labels for homography'
                 options={enrichedCategoryOptions}
-                className='text-black w-full'
-                closeMenuOnSelect={false}
-                isDisabled={launching}
+                disabled={launching}
                 placeholder='All labels (default)'
               />
               {selectedCategories.length > 0 && (

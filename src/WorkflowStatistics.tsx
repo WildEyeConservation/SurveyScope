@@ -20,7 +20,7 @@ import {
 import { fieldBase, fieldSizes } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { RefreshCw, XIcon } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import exportFromJSON from 'export-from-json';
@@ -605,9 +605,8 @@ export default function WorkflowStatistics() {
               <label htmlFor='workflow-survey' className='mb-1 inline-block'>
                 Survey
               </label>
-              <Select
-                inputId='workflow-survey'
-                className='text-black'
+              <Combobox
+                id='workflow-survey'
                 value={project}
                 options={projectOptions}
                 onChange={selectProject}
@@ -618,16 +617,13 @@ export default function WorkflowStatistics() {
               <label htmlFor='workflow-sets' className='mb-1 inline-block'>
                 Annotation sets
               </label>
-              <Select
-                inputId='workflow-sets'
-                className='text-black basic-multi-select'
+              <Combobox
+                id='workflow-sets'
                 value={selectedSets}
-                onChange={(options) => setSelectedSets([...options])}
-                isMulti
-                isDisabled={!project}
+                onChange={(options) => setSelectedSets(options)}
+                multiple
+                disabled={!project}
                 options={setOptions}
-                classNamePrefix='select'
-                closeMenuOnSelect={false}
                 placeholder={
                   needsSetChoice
                     ? 'Choose one or more sets'
@@ -722,13 +718,12 @@ export default function WorkflowStatistics() {
                       Workflow:
                     </label>
                     <div style={{ minWidth: '320px' }}>
-                      <Select
-                        inputId='workflow-type'
-                        className='text-black'
+                      <Combobox
+                        id='workflow-type'
                         value={selectedWorkflow}
                         options={workflowOptions}
                         onChange={(option) => setSelectedWorkflow(option)}
-                        isClearable
+                        clearable
                         placeholder='All workflows'
                       />
                     </div>

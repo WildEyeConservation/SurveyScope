@@ -15,7 +15,7 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { GlobalContext } from '../Context';
 import { useUsers } from '../apiInterface';
 import { fetchAllPaginatedResults } from '../utils';
@@ -280,15 +280,19 @@ export default function SurveyMetrics() {
       <div className='survey-metrics-pickers'>
         <div>
           <Label className='mb-1'>Survey</Label>
-          <Select
-            className='text-black'
+          <Combobox
             options={surveys}
             value={survey}
-            onChange={setSurvey}
-            isLoading={loadingSurveys}
-            isDisabled={running}
-            isClearable
+            onChange={(option) =>
+              setSurvey(
+                surveys.find((item) => item.value === option?.value) ?? null
+              )
+            }
+            loading={loadingSurveys}
+            disabled={running}
+            clearable
             placeholder='Select a survey…'
+            name='Survey'
           />
         </div>
         <div>

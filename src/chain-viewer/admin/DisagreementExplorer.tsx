@@ -6,7 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { ExternalLink } from 'lucide-react';
-import Select, { type MultiValue, type SingleValue } from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { useUsers } from '../../apiInterface';
 import { useSharedChainData } from '../shared/useSharedChainData';
 import { useActiveShares, ownerToUserId } from './useActiveShares';
@@ -183,40 +183,38 @@ export default function DisagreementExplorer() {
           <div className='flex flex-row flex-wrap gap-4 items-end'>
             <div style={{ minWidth: 280, flex: 1 }}>
               <Label>Share</Label>
-              <Select
+              <Combobox
                 value={shareOptions.find((o) => o.value === shareId) ?? null}
-                onChange={(v: SingleValue<Option>) => setShareId(v?.value)}
+                onChange={(option) => setShareId(option?.value)}
                 options={shareOptions}
-                className='text-black'
                 placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
-                isLoading={sharesLoading}
-                isClearable
+                loading={sharesLoading}
+                clearable
+                name='Share'
               />
             </div>
             <div style={{ minWidth: 280, flex: 1 }}>
               <Label>Reviewers</Label>
-              <Select
-                isMulti
+              <Combobox
+                multiple
                 value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
-                onChange={(v: MultiValue<Option>) =>
-                  setSelectedOwners(v.map((o) => o.value))
-                }
+                onChange={(options) => setSelectedOwners(options.map((o) => o.value))}
                 options={ownerOptions}
-                className='text-black'
                 placeholder='All reviewers'
-                isDisabled={!shareId || ownerOptions.length === 0}
+                disabled={!shareId || ownerOptions.length === 0}
+                name='Reviewers'
               />
             </div>
             <div style={{ minWidth: 180 }}>
               <Label>Label</Label>
-              <Select
+              <Combobox
                 value={categoryOptions.find((o) => o.value === categoryFilter) ?? null}
-                onChange={(v: SingleValue<Option>) =>
-                  setCategoryFilter(v?.value ?? 'all')
+                onChange={(option) =>
+                  setCategoryFilter(option?.value ?? 'all')
                 }
                 options={categoryOptions}
-                className='text-black'
-                isDisabled={!shareId}
+                disabled={!shareId}
+                name='Label'
               />
             </div>
           </div>

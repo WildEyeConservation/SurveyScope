@@ -18,12 +18,7 @@
 
 import { useContext } from 'react';
 import { ManagementContext } from './Context';
-import Select, { MultiValue, Options } from 'react-select';
-
-interface OptionType {
-  label: string;
-  value: string;
-}
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 
 interface ImageSetDropdownProps {
   selectedSets: string[] | undefined;
@@ -37,34 +32,30 @@ export function ImageSetDropdown({
   const {
     imageSetsHook: { data: imageSets },
   } = useContext(ManagementContext)!;
-  const options: Options<OptionType> | undefined = imageSets
-    ?.map((x) => ({
-      label: x.name,
-      value: x.id,
-    }))
-    .sort((a, b) => (a.label > b.label ? 1 : -1));
-  const selectedOptions = options?.filter((o) =>
+  const options: ComboboxOption[] =
+    imageSets
+      ?.map((x) => ({
+        label: x.name,
+        value: x.id,
+      }))
+      .sort((a, b) => (a.label > b.label ? 1 : -1)) ?? [];
+  const selectedOptions = options.filter((o) =>
     selectedSets?.includes(o.value)
   );
 
-  function handleChange(selectedOptions: MultiValue<OptionType>) {
+  function handleChange(selectedOptions: ComboboxOption[]) {
     setImageSets(selectedOptions.map((o) => o.value));
   }
 
-  console.log('imageSets');
-  console.log(options);
-
   return (
     <div>
-      <Select
+      <Combobox
         value={selectedOptions}
         onChange={handleChange}
-        isMulti
+        multiple
         name='Image sets'
         options={options}
-        className='basic-multi-select text-black'
-        classNamePrefix='select'
-        closeMenuOnSelect={false}
+        placeholder='Select image sets'
       />
     </div>
   );

@@ -87,7 +87,7 @@ import {
   serializeCameraMasks,
   type CameraMasks,
 } from './types/CameraMask';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import localforage from 'localforage';
 import CameraOverlap from './CameraOverlap';
 import CameraSpecification from './CameraSpecification';
@@ -3052,18 +3052,18 @@ export function FileUploadCore({
         >
           Select the model you wish to use to guide annotation.
         </FormText>
-        <Select
-          className='text-black'
+        <Combobox
           value={model}
           options={MODEL_OPTIONS}
-          onChange={(e) => {
-            if (!e) return;
+          onChange={(option) => {
+            if (!option) return;
             modelTouchedRef.current = true;
             setModelFromSurvey(false);
-            setModel(e);
+            setModel(option);
           }}
           placeholder='Select a model'
-          isDisabled={modelFromSurvey || modelSampling}
+          disabled={modelFromSurvey || modelSampling}
+          name='Model'
         />
         {modelSampling && (
           <FormText className='block text-muted-foreground' style={{ fontSize: 12 }}>
@@ -3317,7 +3317,7 @@ export function FileUploadCore({
             <div className='flex flex-row gap-2 items-center'>
               <div style={{ flex: 0.5 }}>
                 <Label className='mb-0'>FilePath</Label>
-                <Select
+                <Combobox
                   options={[
                     { label: 'None', value: '' },
                     ...headerFields.map((f) => ({ label: f, value: f })),
@@ -3330,15 +3330,15 @@ export function FileUploadCore({
                       }
                       : { label: 'None', value: '' }
                   }
-                  onChange={(opt) => {
+                  onChange={(option) => {
                     columnEditsRef.current = true;
                     setColumnMapping({
                       ...columnMapping,
-                      filepath: opt ? opt.value : undefined,
+                      filepath: option ? option.value : undefined,
                     });
                   }}
                   placeholder='Select FilePath column'
-                  className='text-black'
+                  name='FilePath column'
                 />
               </div>
               <p
@@ -3349,7 +3349,7 @@ export function FileUploadCore({
               </p>
               <div style={{ flex: 0.5 }}>
                 <Label className='mb-0'>Timestamp</Label>
-                <Select
+                <Combobox
                   options={[
                     { label: 'None', value: '' },
                     ...headerFields.map((f) => ({ label: f, value: f })),
@@ -3362,58 +3362,58 @@ export function FileUploadCore({
                       }
                       : { label: 'None', value: '' }
                   }
-                  onChange={(opt) => {
+                  onChange={(option) => {
                     columnEditsRef.current = true;
                     setColumnMapping({
                       ...columnMapping,
-                      timestamp: opt ? opt.value : undefined,
+                      timestamp: option ? option.value : undefined,
                     });
                   }}
                   placeholder='Select Timestamp column'
-                  className='text-black'
+                  name='Timestamp column'
                 />
               </div>
             </div>
             <div className='flex flex-row gap-2 items-start mt-2'>
               <div style={{ flex: 0.5 }}>
                 <Label className='mb-0'>Latitude</Label>
-                <Select
+                <Combobox
                   options={headerFields.map((f) => ({ label: f, value: f }))}
                   value={
                     columnMapping.lat
                       ? { label: columnMapping.lat, value: columnMapping.lat }
                       : null
                   }
-                  onChange={(opt) => {
+                  onChange={(option) => {
                     columnEditsRef.current = true;
                     setUseUtm(false);
                     setColumnMapping({
                       ...columnMapping,
-                      lat: opt ? opt.value : undefined,
+                      lat: option ? option.value : undefined,
                     });
                   }}
                   placeholder='Select Latitude column'
-                  className='text-black'
+                  name='Latitude column'
                 />
                 <div className='mt-2'>
                   <Label className='mb-0'>Longitude</Label>
-                  <Select
+                  <Combobox
                     options={headerFields.map((f) => ({ label: f, value: f }))}
                     value={
                       columnMapping.lng
                         ? { label: columnMapping.lng, value: columnMapping.lng }
                         : null
                     }
-                    onChange={(opt) => {
+                    onChange={(option) => {
                       columnEditsRef.current = true;
                       setUseUtm(false);
                       setColumnMapping({
                         ...columnMapping,
-                        lng: opt ? opt.value : undefined,
+                        lng: option ? option.value : undefined,
                       });
                     }}
                     placeholder='Select Longitude column'
-                    className='text-black'
+                    name='Longitude column'
                   />
                 </div>
               </div>
@@ -3429,7 +3429,7 @@ export function FileUploadCore({
               </p>
               <div style={{ flex: 0.5, alignSelf: 'center' }}>
                 <Label className='mb-0'>UTM</Label>
-                <Select
+                <Combobox
                   options={[
                     { label: 'None', value: '' },
                     ...headerFields.map((f) => ({ label: f, value: f })),
@@ -3439,14 +3439,14 @@ export function FileUploadCore({
                       ? { label: utmColumn, value: utmColumn }
                       : { label: 'None', value: '' }
                   }
-                  onChange={(opt) => {
-                    const val = opt && opt.value ? opt.value : undefined;
+                  onChange={(option) => {
+                    const val = option && option.value ? option.value : undefined;
                     columnEditsRef.current = true;
                     setUtmColumn(val);
                     setUseUtm(Boolean(val));
                   }}
                   placeholder='None'
-                  className='text-black'
+                  name='UTM column'
                 />
               </div>
             </div>
@@ -3467,7 +3467,7 @@ export function FileUploadCore({
                 </div>
               </div>
               <div className='flex flex-row gap-2 items-center'>
-                <Select
+                <Combobox
                   options={[
                     { label: 'None', value: '' },
                     ...headerFields.map((f) => ({ label: f, value: f })),
@@ -3477,25 +3477,27 @@ export function FileUploadCore({
                       ? { label: columnMapping.alt, value: columnMapping.alt }
                       : { label: 'None', value: '' }
                   }
-                  onChange={(opt) => {
+                  onChange={(option) => {
                     columnEditsRef.current = true;
                     setColumnMapping({
                       ...columnMapping,
-                      alt: opt && opt.value ? opt.value : undefined,
+                      alt: option && option.value ? option.value : undefined,
                     });
                   }}
                   placeholder='Select Altitude column'
-                  className='text-black grow'
+                  className='grow'
+                  name='Altitude column'
                 />
-                <Select
+                <Combobox
                   options={altitudeTypeOptions}
                   value={altitudeType}
-                  onChange={(opt) => {
+                  onChange={(option) => {
                     settingEditsRef.current = true;
-                    setAltitudeType(opt ?? { label: 'EGM96', value: 'egm96' });
+                    setAltitudeType(option ?? { label: 'EGM96', value: 'egm96' });
                   }}
                   placeholder='Select Altitude Type'
-                  className='text-black'
+                  className='w-auto'
+                  name='Altitude type'
                 />
               </div>
             </div>

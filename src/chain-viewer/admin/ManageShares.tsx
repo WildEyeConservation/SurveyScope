@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Table } from '@/components/ui/table';
 import { RotateCw } from 'lucide-react';
-import Select, { type SingleValue } from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import './admin.css';
 import { useQueryClient } from '@tanstack/react-query';
 import { GlobalContext } from '../../Context';
@@ -28,23 +28,6 @@ type ShareRow = {
 };
 
 type Option = { label: string; value: string };
-
-// Render the reviewer dropdown into a portal so its menu isn't clipped by the
-// responsive table's horizontal overflow. The portal escapes the `.text-black`
-// wrapper, so set option/value text colours here or they inherit the dark
-// theme's light text on react-select's white menu (invisible).
-const SELECT_PORTAL_PROPS = {
-  menuPortalTarget: typeof document !== 'undefined' ? document.body : null,
-  styles: {
-    menuPortal: (base: Record<string, unknown>) => ({ ...base, zIndex: 9999 }),
-    option: (base: Record<string, unknown>, state: { isSelected: boolean }) => ({
-      ...base,
-      color: state.isSelected ? '#fff' : '#1d2c3a',
-    }),
-    singleValue: (base: Record<string, unknown>) => ({ ...base, color: '#1d2c3a' }),
-    input: (base: Record<string, unknown>) => ({ ...base, color: '#1d2c3a' }),
-  },
-} as const;
 
 /**
  * Sysadmin "Manage Shares" page: provision and manage chain-viewer shares.
@@ -297,27 +280,27 @@ export default function ManageShares() {
             <div className='flex flex-row items-end gap-2 flex-wrap'>
               <div style={{ minWidth: 260, flex: 1 }}>
                 <Label>Survey</Label>
-                <Select
+                <Combobox
                   value={selectedSurvey}
-                  onChange={(v: SingleValue<Option>) => setSelectedSurvey(v)}
+                  onChange={(option) => setSelectedSurvey(option)}
                   options={surveys}
-                  className='text-black'
                   placeholder='Select survey…'
-                  isClearable
+                  clearable
+                  name='Survey'
                 />
               </div>
               <div style={{ minWidth: 260, flex: 1 }}>
                 <Label>Annotation set</Label>
-                <Select
+                <Combobox
                   value={selectedSet}
-                  onChange={(v: SingleValue<Option>) => setSelectedSet(v)}
+                  onChange={(option) => setSelectedSet(option)}
                   options={sets}
-                  className='text-black'
                   placeholder={
                     selectedSurvey ? 'Select annotation set…' : 'Pick a survey first'
                   }
-                  isDisabled={!selectedSurvey}
-                  isClearable
+                  disabled={!selectedSurvey}
+                  clearable
+                  name='Annotation set'
                 />
               </div>
               <Button type='submit' disabled={creating || !selectedSet}>
@@ -400,19 +383,18 @@ export default function ManageShares() {
                       <td style={{ minWidth: 340 }}>
                         <div className='flex flex-row items-center gap-2'>
                           <div style={{ flex: 1, minWidth: 160 }}>
-                            <Select
+                            <Combobox
                               value={selectedUser[share.shareId] ?? null}
-                              onChange={(v: SingleValue<Option>) =>
+                              onChange={(option) =>
                                 setSelectedUser((prev) => ({
                                   ...prev,
-                                  [share.shareId]: v,
+                                  [share.shareId]: option,
                                 }))
                               }
                               options={userOptions}
-                              className='text-black'
                               placeholder='Select account…'
-                              isClearable
-                              {...SELECT_PORTAL_PROPS}
+                              clearable
+                              name='Reviewer account'
                             />
                           </div>
                           <Button

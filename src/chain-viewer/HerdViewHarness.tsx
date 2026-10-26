@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'r
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import Select, { type SingleValue } from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { GlobalContext, ProjectContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
 import type { Lane } from '../individual-id/utils/lanes';
@@ -467,16 +467,14 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       >
         <div style={{ fontWeight: 600 }}>{project.name}</div>
         <div style={{ width: 220 }}>
-          <Select
+          <Combobox
             value={selectedCategory}
-            onChange={(v: SingleValue<{ label: string; value: string }>) =>
-              setSelectedCategory(v)
-            }
-            isClearable
+            onChange={(option) => setSelectedCategory(option)}
+            clearable
             options={categoryOptions}
-            className='text-black'
             placeholder='All labels'
-            isDisabled={loading}
+            disabled={loading}
+            name='Label filter'
           />
         </div>
         {!loading && pairs.length > 0 && (

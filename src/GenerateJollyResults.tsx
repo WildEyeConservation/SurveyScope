@@ -13,7 +13,7 @@ import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { GlobalContext } from './Context.tsx';
 import { useContext, useEffect, useMemo, useState } from 'react';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import { useNavigate } from 'react-router-dom';
 import { readJollyStatus } from './storage/workflowFiles';
@@ -255,15 +255,15 @@ export default function GenerateJollyResults({
               >
                 Select the labels to include in the Jolly results.
               </span>
-              <Select
-                isMulti
-                isDisabled={running}
+              <Combobox
+                multiple
+                disabled={running}
                 options={categoryOptions}
                 value={selectedCategories}
-                onChange={(value) =>
-                  setSelectedCategories([...value])
-                }
-                className='text-black'
+                onChange={(value) => setSelectedCategories(value)}
+                placeholder='Select labels'
+                id='categories'
+                name='Labels'
               />
             </div>
           </form>

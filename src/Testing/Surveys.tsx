@@ -1,6 +1,6 @@
 import MyTable from '../Table';
 import { useState, useContext, useEffect, useRef } from 'react';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { TestingContext, GlobalContext } from '../Context';
 import { Button } from '@/components/ui/button';
 import { Plus, Settings2, Eye } from 'lucide-react';
@@ -106,15 +106,16 @@ export default function Surveys() {
         id: survey.id,
         rowData: [
           survey.name,
-          <Select
-            className='text-black'
-            isMulti
-            value={selectedLocationPools[survey.id]}
+          <Combobox
+            multiple
+            value={selectedLocationPools[survey.id] ?? []}
             options={locationPools.map((pool) => ({
               label: pool.name,
               value: pool.id,
             }))}
-            onChange={(e) => handlePoolsChange(survey.id, e as Option[])}
+            onChange={(options) => handlePoolsChange(survey.id, options)}
+            placeholder='Select location pools'
+            name='Assigned location pools'
           />,
           <Button
             variant='success'

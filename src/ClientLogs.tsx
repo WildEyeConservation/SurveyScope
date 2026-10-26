@@ -1,5 +1,5 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -183,13 +183,13 @@ export default function ClientLogs() {
       <div className='flex gap-2 items-end flex-wrap mb-4'>
         <div style={{ minWidth: 300 }}>
           <Label className='mb-1'>User</Label>
-          <Select
+          <Combobox
             options={userOptions}
             value={selectedUser}
-            onChange={(opt) => setSelectedUser(opt as Option)}
+            onChange={(option) => setSelectedUser(option)}
             placeholder='Select a user...'
-            isClearable
-            className='text-black'
+            name='User'
+            clearable
           />
         </div>
         <div>

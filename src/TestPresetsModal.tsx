@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useContext, useState, useEffect, useRef } from 'react';
 import { GlobalContext } from './Context';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { fetchAllPaginatedResults } from './utils';
 
 export default function TestPresetsModal({
@@ -221,18 +221,13 @@ export default function TestPresetsModal({
           </div>
           <div className='mt-2'>
             <Label>Labels</Label>
-            <Select
-              className='text-black'
+            <Combobox
               value={selectedCategories}
-              options={categories?.map((q) => ({ label: q.name, value: q.id }))}
-              isMulti
-              onChange={(val) => setSelectedCategories(val as { label: string; value: string }[])}
-              styles={{
-                valueContainer: (base) => ({
-                  ...base,
-                  overflowY: 'auto',
-                }),
-              }}
+              options={categories?.map((q) => ({ label: q.name, value: q.id })) ?? []}
+              multiple
+              onChange={(value) => setSelectedCategories(value)}
+              placeholder='Select labels'
+              name='Labels'
             />
           </div>
           <div className='mt-2'>

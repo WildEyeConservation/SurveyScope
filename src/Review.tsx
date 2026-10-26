@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { AnnotationSetDropdown } from './AnnotationSetDropDown';
-import Select, { MultiValue, type CSSObjectWithLabel } from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { ProjectContext, ManagementContext, GlobalContext } from './Context';
 import './Review.css';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,28 +27,6 @@ import { fetchAllPaginatedResults } from './utils';
 import { useInfoTagData } from './useInfoTags';
 
 type Option = { label: string; value: string };
-
-// Render react-select menus in a body portal with a high z-index so they are
-// not clipped by the scrollable Filters card. The portal escapes the
-// `text-black` container class, so option/value text colours are set here to
-// keep the dropdown readable.
-const menuPortalStyles = {
-  menuPortal: (base: CSSObjectWithLabel) => ({ ...base, zIndex: 9999 }),
-  option: (
-    base: CSSObjectWithLabel,
-    state: { isSelected: boolean; isFocused: boolean }
-  ) => ({
-    ...base,
-    color: '#000',
-    backgroundColor: state.isSelected
-      ? '#cfe2ff'
-      : state.isFocused
-        ? '#e9ecef'
-        : '#fff',
-  }),
-  input: (base: CSSObjectWithLabel) => ({ ...base, color: '#000' }),
-  singleValue: (base: CSSObjectWithLabel) => ({ ...base, color: '#000' }),
-};
 
 export function Review({ showAnnotationSetDropdown = true }) {
   const [selectedCategories, setSelectedCategories] = useState<Option[]>([]);
@@ -254,7 +232,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setOptionsBySurvey, surveyIdsKey, project.id]);
 
-  const handleSurveysChange = (newValue: MultiValue<Option>) => {
+  const handleSurveysChange = (newValue: Option[]) => {
     const ids = newValue.map((v) => v.value);
     setSelectedSurveyIds(ids);
     // Drop set selections for surveys no longer selected.
@@ -265,7 +243,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
     });
   };
 
-  const handleSetsChange = (surveyId: string, newValue: MultiValue<Option>) => {
+  const handleSetsChange = (surveyId: string, newValue: Option[]) => {
     setSetsBySurvey((prev) => ({
       ...prev,
       [surveyId]: newValue.map((v) => v.value),
@@ -430,25 +408,22 @@ export function Review({ showAnnotationSetDropdown = true }) {
               >
                 <div className='w-full'>
                   <Label>Labels</Label>
-                  <Select
+                  <Combobox
                     value={selectedCategories}
-                    onChange={(newValue: MultiValue<Option>) =>
-                      setSelectedCategories([...(newValue as Option[])])
-                    }
-                    isMulti
+                    onChange={(options) => setSelectedCategories(options)}
+                    multiple
                     name='Labels to review'
-                    options={categories
-                      ?.filter(
-                        (c) => c.annotationSetId === selectedAnnotationSet
-                      )
-                      .map((q) => ({
-                        label: q.name,
-                        value: q.id,
-                      }))}
-                    className='text-black w-full'
-                    closeMenuOnSelect={false}
-                    menuPortalTarget={document.body}
-                    styles={menuPortalStyles}
+                    options={
+                      categories
+                        ?.filter(
+                          (c) => c.annotationSetId === selectedAnnotationSet
+                        )
+                        .map((q) => ({
+                          label: q.name,
+                          value: q.id,
+                        })) ?? []
+                    }
+                    placeholder='All labels'
                   />
                   {tab === 'map' && (
                     <div className='mt-4 flex items-center gap-2'>
@@ -469,19 +444,13 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 {infoTagOptions.length > 0 && (
                   <div className='w-full'>
                     <Label>Info Tags</Label>
-                    <Select
+                    <Combobox
                       value={selectedInfoTags}
-                      onChange={(newValue: MultiValue<Option>) =>
-                        setSelectedInfoTags([...(newValue as Option[])])
-                      }
-                      isMulti
+                      onChange={(options) => setSelectedInfoTags(options)}
+                      multiple
                       name='Info tags to review'
                       options={infoTagOptions}
-                      className='text-black w-full'
-                      closeMenuOnSelect={false}
                       placeholder='Any tags'
-                      menuPortalTarget={document.body}
-                      styles={menuPortalStyles}
                     />
                     <FormText>
                       Keeps sightings carrying any of the selected tags.
@@ -491,19 +460,13 @@ export function Review({ showAnnotationSetDropdown = true }) {
 
                 <div className='w-full'>
                   <Label>Users</Label>
-                  <Select
+                  <Combobox
                     value={selectedUsers}
-                    onChange={(newValue: MultiValue<Option>) =>
-                      setSelectedUsers([...(newValue as Option[])])
-                    }
-                    isMulti
+                    onChange={(options) => setSelectedUsers(options)}
+                    multiple
                     name='Users to filter'
                     options={userOptions}
-                    className='text-black w-full'
-                    closeMenuOnSelect={false}
                     placeholder='All users'
-                    menuPortalTarget={document.body}
-                    styles={menuPortalStyles}
                   />
                 </div>
 
@@ -539,21 +502,17 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     <div className='flex flex-col gap-2 mt-2'>
                       <div className='w-full'>
                         <Label className='mb-1'>Surveys</Label>
-                        <Select
+                        <Combobox
                           value={selectedSurveyIds.map((id) => ({
                             label: surveyLabel(id),
                             value: id,
                           }))}
                           onChange={handleSurveysChange}
-                          isMulti
+                          multiple
                           name='Surveys to overlay'
                           options={surveyOptions}
-                          isLoading={orgSurveysQuery.isLoading}
-                          className='text-black w-full'
-                          closeMenuOnSelect={false}
+                          loading={orgSurveysQuery.isLoading}
                           placeholder='Add surveys…'
-                          menuPortalTarget={document.body}
-                          styles={menuPortalStyles}
                         />
                         <FormText>
                           Overlay sightings from other surveys in this
@@ -566,7 +525,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                           <Label className='mb-1'>
                             {surveyLabel(sid)}
                           </Label>
-                          <Select
+                          <Combobox
                             value={(setsBySurvey[sid] ?? []).map((aid) => ({
                               label:
                                 setOptionsBySurvey[sid]?.find(
@@ -574,18 +533,14 @@ export function Review({ showAnnotationSetDropdown = true }) {
                                 )?.label ?? aid,
                               value: aid,
                             }))}
-                            onChange={(newValue: MultiValue<Option>) =>
-                              handleSetsChange(sid, newValue)
+                            onChange={(options) =>
+                              handleSetsChange(sid, options)
                             }
-                            isMulti
+                            multiple
                             name={`Annotation sets for ${surveyLabel(sid)}`}
                             options={setOptionsBySurvey[sid] ?? []}
-                            isLoading={setQueries[i]?.isLoading}
-                            className='text-black w-full'
-                            closeMenuOnSelect={false}
+                            loading={setQueries[i]?.isLoading}
                             placeholder='Select annotation sets…'
-                            menuPortalTarget={document.body}
-                            styles={menuPortalStyles}
                           />
                         </div>
                       ))}
@@ -616,31 +571,27 @@ export function Review({ showAnnotationSetDropdown = true }) {
                             placeholder='Transect id(s), comma-separated'
                           />
                         ) : (
-                          <Select
+                          <Combobox
                             value={selectedTransectIds.map((id) => ({
                               label:
                                 transectOptions.find((o) => o.value === id)
                                   ?.label ?? id,
                               value: id,
                             }))}
-                            onChange={(newValue: MultiValue<Option>) =>
+                            onChange={(options) =>
                               setSelectedTransectIds(
-                                newValue.map((v) => v.value)
+                                options.map((v) => v.value)
                               )
                             }
-                            isMulti
+                            multiple
                             name='Transects to filter'
                             options={transectOptions}
-                            isDisabled={transectOptions.length === 0}
-                            className='text-black w-full'
-                            closeMenuOnSelect={false}
+                            disabled={transectOptions.length === 0}
                             placeholder={
                               transectOptions.length === 0
                                 ? 'No transects'
                                 : 'All transects'
                             }
-                            menuPortalTarget={document.body}
-                            styles={menuPortalStyles}
                           />
                         )}
                       </div>

@@ -1,5 +1,5 @@
 import { Label } from '@/components/ui/label';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { useEffect } from 'react';
 
 export default function ImageSetDropdown({
@@ -26,34 +26,28 @@ export default function ImageSetDropdown({
     return null;
   }
 
+  const options = imageSets.map((imageSet) => ({
+    label: imageSet.name,
+    value: imageSet.id,
+  }));
+
   return (
     <div>
       <Label className='mb-0'>Image Sets</Label>
       <span className='text-muted-foreground block mb-1' style={{ fontSize: '12px' }}>
         Select the image sets you want to use.
       </span>
-      <Select
-        className='text-black'
-        options={imageSets.map((imageSet) => ({
-          label: imageSet.name,
-          value: imageSet.id,
-        }))}
-        onChange={(selectedOptions) => {
-          setSelectedImageSets(selectedOptions.map((option) => option.value));
-        }}
-        value={
-          imageSets.length === 1
-            ? {
-                label: imageSets[0].name,
-                value: imageSets[0].id,
-              }
-            : selectedImageSets.map((id) => ({
-                label:
-                  imageSets.find((imageSet) => imageSet.id === id)?.name || '',
-                value: id,
-              }))
+      <Combobox
+        options={options}
+        onChange={(selectedOptions) =>
+          setSelectedImageSets(selectedOptions.map((option) => option.value))
         }
-        isMulti
+        value={options.filter((option) =>
+          selectedImageSets.includes(option.value)
+        )}
+        multiple
+        placeholder='Select image sets'
+        name='Image sets'
       />
     </div>
   );

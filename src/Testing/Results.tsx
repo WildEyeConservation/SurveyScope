@@ -18,7 +18,7 @@ import exportFromJSON from 'export-from-json';
 import { useUpdateProgress } from '../useUpdateProgress';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 // removed modal; pass/fail rules are now inline
 
 const chartConfig = {
@@ -330,8 +330,7 @@ export default function Results() {
     <div className='flex flex-col gap-2 mt-4 w-full'>
       <div>
         <label className='mb-2'>Select Survey</label>
-        <Select
-          className='text-black'
+        <Combobox
           value={selectedProject}
           options={organizationProjects
             .filter((p) => !p.hidden)
@@ -339,37 +338,31 @@ export default function Results() {
               label: `${p.name}`,
               value: p.id,
             }))}
-          onChange={(e) => {
-            setSelectedProject(e);
+          onChange={(option) => {
+            setSelectedProject(option);
             setSelectedUser(null);
             setResults([]);
           }}
-          styles={{
-            valueContainer: (base) => ({
-              ...base,
-              overflowY: 'auto',
-            }),
-          }}
+          placeholder='Select a survey'
+          name='Survey'
         />
       </div>
       <div>
         <label className='mb-2'>Select user</label>
-        <Select
-          className='mb-4 text-black'
+        <Combobox
+          className='mb-4'
           value={selectedUser}
-          options={organizationMembershipsHook.data?.map((m) => ({
-            label: allUsers.find((user) => user.id === m.userId)?.name || '',
-            value: m.userId,
-          }))}
-          onChange={(e) => {
-            setSelectedUser(e);
+          options={
+            organizationMembershipsHook.data?.map((m) => ({
+              label: allUsers.find((user) => user.id === m.userId)?.name || '',
+              value: m.userId,
+            })) ?? []
+          }
+          onChange={(option) => {
+            setSelectedUser(option);
           }}
-          styles={{
-            valueContainer: (base) => ({
-              ...base,
-              overflowY: 'auto',
-            }),
-          }}
+          placeholder='Select a user'
+          name='User'
         />
       </div>
       {selectedProject && selectedUser && (

@@ -6,7 +6,7 @@ import { useRef, useState } from 'react';
 import { Modal, Body, Header, Footer, Title } from '../Modal';
 import { GlobalContext, UserContext } from '../Context';
 import { useContext, useEffect } from 'react';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import MyTable from '../Table';
 import { useUsers } from '../apiInterface';
@@ -381,17 +381,12 @@ export default function NewSurveyModal({
           </div>
           <div>
             <Label>Organisation</Label>
-            <Select
-              className='text-black'
+            <Combobox
               value={organization}
               options={organizations}
-              onChange={(e) => setOrganization(e)}
-              styles={{
-                valueContainer: (base) => ({
-                  ...base,
-                  overflowY: 'auto',
-                }),
-              }}
+              onChange={(option) => setOrganization(option)}
+              placeholder='Select organisation'
+              name='Organisation'
             />
           </div>
           <div>
@@ -407,21 +402,15 @@ export default function NewSurveyModal({
               <Label style={{ fontSize: 14 }}>
                 Annotation Access:
               </Label>
-              <Select
-                className='text-black'
+              <Combobox
                 value={globalAnnotationAccess}
                 placeholder='Default (No)'
                 options={[
                   { value: 'Yes', label: 'Yes' },
                   { value: 'No', label: 'No' },
                 ]}
-                onChange={(e) => setGlobalAnnotationAccess(e)}
-                styles={{
-                  valueContainer: (base) => ({
-                    ...base,
-                    overflowY: 'auto',
-                  }),
-                }}
+                onChange={(option) => setGlobalAnnotationAccess(option)}
+                name='Annotation access'
               />
             </div>
             <div
@@ -457,23 +446,24 @@ export default function NewSurveyModal({
                   tableData={permissionExceptions.map((exception) => ({
                     id: exception.user.id,
                     rowData: [
-                      <Select
-                        className='text-black'
+                      <Combobox
                         value={{
                           label: exception.user.name,
                           value: exception.user.id,
                         }}
-                        options={users[organization?.value || '']
-                          ?.filter(
-                            (u) =>
-                              !permissionExceptions.some(
-                                (pe) => pe.user.id === u.id
-                              )
-                          )
-                          .map((u) => ({
-                            label: u.name,
-                            value: u.id,
-                          }))}
+                        options={
+                          users[organization?.value || '']
+                            ?.filter(
+                              (u) =>
+                                !permissionExceptions.some(
+                                  (pe) => pe.user.id === u.id
+                                )
+                            )
+                            .map((u) => ({
+                              label: u.name,
+                              value: u.id,
+                            })) ?? []
+                        }
                         onChange={(selected) => {
                           setPermissionExceptions(
                             permissionExceptions.map((pe) =>
@@ -491,6 +481,7 @@ export default function NewSurveyModal({
                             )
                           );
                         }}
+                        name='User'
                       />,
                       <LabeledToggleSwitch
                         className='mb-0'

@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext, useMemo } from 'react';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 import { useParams } from 'react-router-dom';
 import { GlobalContext, UserContext } from './Context.tsx';
 import { fetchAllPaginatedResults } from './utils.tsx';
@@ -488,12 +488,13 @@ export default function JollyResults() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Select
-                isMulti
+              <Combobox
+                multiple
                 placeholder='Select labels'
                 options={categoryOptions}
-                onChange={(e) => setSelectedCategories([...e])}
-                className='text-black'
+                value={selectedCategories}
+                onChange={(value) => setSelectedCategories(value)}
+                name='Labels'
               />
             </CardContent>
           </Card>

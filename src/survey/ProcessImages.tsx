@@ -4,7 +4,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Footer } from '../Modal';
 import { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { GlobalContext } from '../Context';
-import Select from 'react-select';
+import { Combobox } from '@/components/ui/combobox';
 
 const MODEL_OPTIONS = [
   { label: 'ScoutBot', value: 'scoutbotv3' },
@@ -266,12 +266,12 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
       <form className='p-4'>
         <div>
           <Label className='mb-0'>Model</Label>
-          <Select
+          <Combobox
             value={model}
-            onChange={(m) => setModel(m)}
+            onChange={(option) => setModel(option)}
             options={MODEL_OPTIONS}
             placeholder='Select a model'
-            className='text-black'
+            name='Model'
           />
           <Button
             variant='primary'
