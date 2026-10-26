@@ -3,6 +3,7 @@ backend:
   phases:
     build:
       commands:
+        - n "${NODE_22_VERSION:-22}" && node -v
         - npm install --cache .npm --prefer-offline
         # NOTE: Amplify executes the console build-spec override, not this file. Keep
         # the two in sync. Only master deploys the backend; other branches reuse
@@ -27,6 +28,7 @@ frontend:
   phases:
     build:
       commands:
+        - n "${NODE_22_VERSION:-22}" && node -v
         - npm run build
   artifacts:
     baseDirectory: dist
