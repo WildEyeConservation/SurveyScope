@@ -1,7 +1,6 @@
 # Unified elephant heatmap + point-finder worker (GPU).
 #
-# TensorFlow 2 (CUDA 12, Python 3.11). The TF1 MobileNet checkpoint loads unchanged:
-# mobilenet_heatmapper.py rebuilds the original slim graph in tf.compat.v1 ops.
+# tf.compat.v1 preserves compatibility with the TF1 MobileNet checkpoint.
 FROM tensorflow/tensorflow:2.21.0-gpu
 
 WORKDIR /workspace

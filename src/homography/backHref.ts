@@ -1,5 +1,4 @@
-// react-router 6 still follows `//host` and `/\host` off-site, and browsers drop
-// tabs/newlines from URLs, so only accept plain same-app absolute paths.
+// Reject URL characters browsers normalize into off-site destinations.
 export function sameAppPath(href: string | null): string | undefined {
   if (!href || !href.startsWith('/') || href.startsWith('//')) return undefined;
   for (const char of href) {
