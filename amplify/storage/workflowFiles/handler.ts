@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import {
-  S3Client,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -16,7 +15,7 @@ import {
   type ProjectRow,
   type StorageIdentity,
 } from '../shared/identity';
-import { signingLifetime } from '../shared/presign';
+import { presignClient, signingLifetime } from '../shared/presign';
 
 /*
 Browser access to workflow files in the outputs bucket. Every key is derived
@@ -82,7 +81,7 @@ async function getRecord<T>(
   return result.Item as T | undefined;
 }
 
-export function createWorkflowFilesHandler(s3 = new S3Client({})) {
+export function createWorkflowFilesHandler(s3 = presignClient()) {
   const bucket = () => env('OUTPUTS_BUCKET_NAME');
 
   async function authorizedProject(
