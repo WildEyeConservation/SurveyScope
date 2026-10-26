@@ -885,6 +885,87 @@ if (clientErrorRecipients.length) {
   );
 }
 
+const inviteFunction = backend.inviteUserToOrganization.resources.lambda;
+const inviteLimitsTable = new dynamodb.Table(
+  Stack.of(inviteFunction),
+  'InviteLimits',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    timeToLiveAttribute: 'expiresAt',
+    removalPolicy: RemovalPolicy.DESTROY,
+  }
+);
+inviteLimitsTable.grant(inviteFunction, 'dynamodb:UpdateItem');
+backend.inviteUserToOrganization.addEnvironment(
+  'INVITE_LIMITS_TABLE',
+  inviteLimitsTable.tableName
+);
+inviteFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['ses:SendEmail'],
+    resources: [
+      Stack.of(inviteFunction).formatArn({
+        service: 'ses',
+        resource: 'identity',
+        resourceName: 'surveyscope.org',
+      }),
+    ],
+    conditions: {
+      StringEquals: { 'ses:FromAddress': 'no-reply@surveyscope.org' },
+    },
+  })
+);
+if (process.env.AUTH_REPLY_TO_EMAIL) {
+  backend.inviteUserToOrganization.addEnvironment(
+    'INVITE_REPLY_TO_EMAIL',
+    process.env.AUTH_REPLY_TO_EMAIL
+  );
+}
+
+// SES metrics are account-wide, so these also cover the Cognito auth emails.
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'SesDailySendVolume', {
+    metric: new cloudwatch.Metric({
+      namespace: 'AWS/SES',
+      metricName: 'Send',
+      statistic: 'Sum',
+      period: Duration.days(1),
+    }),
+    threshold: 200,
+    evaluationPeriods: 1,
+    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'SesBounceRate', {
+    metric: new cloudwatch.Metric({
+      namespace: 'AWS/SES',
+      metricName: 'Reputation.BounceRate',
+      statistic: 'Maximum',
+      period: Duration.hours(1),
+    }),
+    threshold: 0.04,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'SesComplaintRate', {
+    metric: new cloudwatch.Metric({
+      namespace: 'AWS/SES',
+      metricName: 'Reputation.ComplaintRate',
+      statistic: 'Maximum',
+      period: Duration.hours(1),
+    }),
+    threshold: 0.0008,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+
 const workflowStatsEnvName = envName
   .toLowerCase()
   .replace(/[^a-z0-9-]/g, '-')
