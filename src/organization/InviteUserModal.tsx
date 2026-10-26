@@ -3,6 +3,7 @@ import Form from 'react-bootstrap/Form';
 import { Modal } from 'react-bootstrap';
 import { useContext, useState } from 'react';
 import { GlobalContext } from '../Context';
+import { graphqlErrorMessage } from '../reportClientErrorCore';
 
 export default function InviteUserModal({
   organization,
@@ -47,8 +48,8 @@ export default function InviteUserModal({
           300
         );
       }
-    } catch (err: any) {
-      alert(err.message ?? 'Failed to send invite');
+    } catch (err) {
+      alert(graphqlErrorMessage(err) || 'Failed to send invite');
     }
 
     setIsSubmitting(false);
