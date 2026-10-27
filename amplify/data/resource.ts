@@ -1402,6 +1402,7 @@ const schema = a
         scopeId: a.string().required(),
         fields: a.string().array().required(),
         beginsWith: a.string(),
+        between: a.float().array(),
         cursor: a.string(),
       })
       .returns(a.json())
@@ -1913,6 +1914,7 @@ export type GetRowChunkHandler = MutationHandler<
     scopeId: string;
     fields: (string | null)[];
     beginsWith?: string | null;
+    between?: (number | null)[] | null;
     cursor?: string | null;
   },
   { data: string; count: number; cursor: string | null }

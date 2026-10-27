@@ -7,6 +7,7 @@ import type {
 } from './types/LaunchTask';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from './utils';
+import { loadRows } from './rowChunks';
 import {
   countMaskRegions,
   isPointMasked,
@@ -14,6 +15,7 @@ import {
   type CameraMasks,
 } from './types/CameraMask';
 import { loadProjectImages } from './projectImages';
+import { isCentreObserved, type Box } from '../shared/locationGeometry';
 
 export const LEGACY_STORMFLY_BOX_SIZE = 64;
 
@@ -79,6 +81,11 @@ export function useLaunchTask(
 
   type AnnotationPoint = { x: number; y: number; imageId: string };
 
+  type ObservedLocations = {
+    ids: Set<string>;
+    boxesByImage: Map<string, Box[]>;
+  };
+
   type LocationQueryResult = {
     locations: LocationWithConfidence[];
     queriedCount: number;
@@ -141,24 +148,12 @@ export function useLaunchTask(
     onProgress?: (message: string) => void
   ): Promise<LocationQueryResult> {
     onProgress?.('Querying locations...');
-    const allLocations = await fetchAllPaginatedResults(
-      client.models.Location.locationsBySetIdAndConfidence,
-      {
-        setId: locationSetId,
-        confidence: { between: [options.lowerLimit, options.upperLimit] },
-        sortDirection: 'DESC',
-        limit: 10000,
-        selectionSet: [
-          'id',
-          'x',
-          'y',
-          'width',
-          'height',
-          'confidence',
-          'imageId',
-          'source',
-        ] as const,
-      }
+    const allLocations = await loadRows(
+      client,
+      'locationsBySetIdAndConfidence',
+      locationSetId,
+      ['x', 'y', 'width', 'height', 'imageId', 'source'],
+      { between: [options.lowerLimit, options.upperLimit] }
     );
     const invalidCounts = {
       confidence: 0,
@@ -205,12 +200,12 @@ export function useLaunchTask(
       locations.push({
         id: loc.id,
         confidence,
-        x: loc.x,
-        y: loc.y,
+        x: loc.x!,
+        y: loc.y!,
         width,
         height,
         imageId: loc.imageId!,
-        source: loc.source,
+        source: loc.source ?? '',
       });
     }
     const invalidCount = allLocations.length - locations.length;
@@ -232,17 +227,50 @@ export function useLaunchTask(
   async function queryObservations(
     annotationSetId: string,
     onProgress?: (message: string) => void
-  ): Promise<string[]> {
+  ): Promise<ObservedLocations> {
     onProgress?.('Querying observations...');
-    const allObs = await fetchAllPaginatedResults(
-      client.models.Observation.observationsByAnnotationSetId,
-      {
-        annotationSetId,
-        limit: 10000,
-        selectionSet: ['locationId'] as const,
-      }
+    const allObs = await loadRows(
+      client,
+      'observationsByAnnotationSetId',
+      annotationSetId,
+      [
+        'locationId',
+        'location.imageId',
+        'location.x',
+        'location.y',
+        'location.width',
+        'location.height',
+      ]
     );
-    return allObs.map(o => o.locationId);
+    const observed: ObservedLocations = {
+      ids: new Set(),
+      boxesByImage: new Map(),
+    };
+    for (const obs of allObs) {
+      if (obs.locationId) observed.ids.add(obs.locationId);
+      const imageId = obs['location.imageId'];
+      const x = obs['location.x'];
+      const y = obs['location.y'];
+      if (!imageId || x == null || y == null) continue;
+      const boxes = observed.boxesByImage.get(imageId) ?? [];
+      boxes.push({
+        x,
+        y,
+        width: obs['location.width'] ?? 0,
+        height: obs['location.height'] ?? 0,
+      });
+      observed.boxesByImage.set(imageId, boxes);
+    }
+    return observed;
+  }
+
+  function isLocationObserved(
+    location: LocationWithConfidence,
+    observed: ObservedLocations
+  ): boolean {
+    if (observed.ids.has(location.id)) return true;
+    const boxes = observed.boxesByImage.get(location.imageId);
+    return !!boxes && isCentreObserved(location, boxes);
   }
 
   // Query normal (non-FN) annotations for an annotation set (for filtering locations with existing annotations)
@@ -251,21 +279,19 @@ export function useLaunchTask(
     onProgress?: (message: string) => void
   ): Promise<AnnotationPoint[]> {
     onProgress?.('Querying annotations...');
-    const allAnnos = await fetchAllPaginatedResults(
-      client.models.Annotation.annotationsByAnnotationSetId,
-      {
-        setId: annotationSetId,
-        filter: {
-          or: [
-            { source: { attributeExists: false } },
-            { source: { notContains: 'false-negative' } },
-          ],
-        },
-        limit: 10000,
-        selectionSet: ['x', 'y', 'imageId'] as const,
-      }
+    const allAnnos = await loadRows(
+      client,
+      'annotationsByAnnotationSetId',
+      annotationSetId,
+      ['x', 'y', 'imageId', 'source']
     );
-    return allAnnos.map(a => ({ x: a.x, y: a.y, imageId: a.imageId }));
+    const points: AnnotationPoint[] = [];
+    for (const a of allAnnos) {
+      if (a.source?.includes('false-negative')) continue;
+      if (a.x == null || a.y == null || !a.imageId) continue;
+      points.push({ x: a.x, y: a.y, imageId: a.imageId });
+    }
+    return points;
   }
 
   // Check if an annotation falls within a location's bounds
@@ -339,9 +365,9 @@ export function useLaunchTask(
       let collectedLocations: string[] | undefined;
 
       if (!tiledRequest) {
-        const allSeenLocations = options.filterObserved
-          ? new Set(await queryObservations(options.annotationSetId, onProgress))
-          : new Set<string>();
+        const observed = options.filterObserved
+          ? await queryObservations(options.annotationSetId, onProgress)
+          : null;
 
         // If skipLocationWithAnnotations is enabled, query all annotations for the set
         const allAnnotations = options.skipLocationWithAnnotations
@@ -372,9 +398,11 @@ export function useLaunchTask(
         );
 
         // Collect locations from all sets, filter observed, and sort by confidence (descending)
-        let allLocationsWithConfidence = validLocations.filter(
-          (location) => !allSeenLocations.has(location.id)
-        );
+        let allLocationsWithConfidence = observed
+          ? validLocations.filter(
+              (location) => !isLocationObserved(location, observed)
+            )
+          : validLocations;
         const observedLocationCount =
           validLocations.length - allLocationsWithConfidence.length;
         if (options.filterObserved) {

@@ -1,5 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
+  BatchGetCommand,
   DynamoDBDocumentClient,
   GetCommand,
   QueryCommand,
@@ -7,12 +8,13 @@ import {
 import type { GetRowChunkHandler } from '../../data/resource';
 import { authorizeRequest } from '../shared/authorizeRequest';
 import {
-  chunkFields,
   rowSource,
+  SCOPE_MODELS,
+  splitJoined,
   unknownFields,
   type RowScope,
 } from '../../../shared/rowSources';
-import { decodeCursor, readChunk } from './core';
+import { decodeCursor, joinRows, readChunk } from './core';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const tables = JSON.parse(process.env.ROW_CHUNK_TABLES!) as Record<
@@ -34,16 +36,46 @@ async function getItem(model: string, id: string, attribute: string) {
   return value;
 }
 
-async function organizationOf(scope: RowScope, scopeId: string) {
-  const projectId =
-    scope === 'project'
-      ? scopeId
-      : await getItem('AnnotationSet', scopeId, 'projectId');
-  return getItem('Project', projectId, 'organizationId');
+async function projectOf(scope: RowScope, scopeId: string) {
+  return scope === 'project'
+    ? scopeId
+    : getItem(SCOPE_MODELS[scope], scopeId, 'projectId');
+}
+
+async function batchGet(
+  model: string,
+  ids: string[],
+  attributes: readonly string[]
+) {
+  const projected = Array.from(new Set(['id', 'projectId', ...attributes]));
+  const names = Object.fromEntries(
+    projected.map((name, i) => [`#j${i}`, name])
+  );
+  const table = tables[model];
+  const { Responses, UnprocessedKeys } = await db.send(
+    new BatchGetCommand({
+      RequestItems: {
+        [table]: {
+          Keys: ids.map((id) => ({ id })),
+          ProjectionExpression: Object.keys(names).join(', '),
+          ExpressionAttributeNames: names,
+        },
+      },
+    })
+  );
+  return {
+    items: Responses?.[table] ?? [],
+    unprocessed: (UnprocessedKeys?.[table]?.Keys ?? []).map((key) =>
+      String(key.id)
+    ),
+  };
 }
 
 export const handler: GetRowChunkHandler = async (event) => {
   const { scopeId, cursor, beginsWith } = event.arguments;
+  const between = event.arguments.between?.filter(
+    (bound): bound is number => typeof bound === 'number'
+  );
   const source = rowSource(event.arguments.source);
   if (!source) throw new Error(`Unknown source ${event.arguments.source}`);
   if (!scopeId) throw new Error('scopeId is required');
@@ -53,13 +85,21 @@ export const handler: GetRowChunkHandler = async (event) => {
   const unknown = unknownFields(source, requested);
   if (unknown.length)
     throw new Error(`Unsupported fields: ${unknown.join(', ')}`);
-  if (beginsWith != null && !source.sortKey) {
+  if ((beginsWith != null || between) && !source.sortKey) {
     throw new Error('This source has no sort key to filter on');
   }
+  if (between && (between.length !== 2 || beginsWith != null)) {
+    throw new Error('between takes two bounds and excludes beginsWith');
+  }
 
-  authorizeRequest(event.identity, await organizationOf(source.scope, scopeId));
+  const projectId = await projectOf(source.scope, scopeId);
+  authorizeRequest(
+    event.identity,
+    await getItem('Project', projectId, 'organizationId')
+  );
 
-  const projected = chunkFields(source, requested);
+  const { own, joined } = splitJoined(source, requested);
+  const projected = Array.from(new Set([...source.key, ...own]));
   const names = Object.fromEntries(
     projected.map((name, i) => [`#f${i}`, name])
   );
@@ -68,12 +108,17 @@ export const handler: GetRowChunkHandler = async (event) => {
   if (beginsWith != null && source.sortKey) {
     condition += ' AND begins_with(#sk, :prefix)';
     values[':prefix'] = beginsWith;
+  } else if (between && source.sortKey) {
+    condition += ' AND #sk BETWEEN :low AND :high';
+    values[':low'] = between[0];
+    values[':high'] = between[1];
   }
+  const join = joined.length ? source.join : undefined;
 
   // AppSync caps resolver responses at 5 MB and requests at 30 s.
   return readChunk(
-    (startKey, limit) =>
-      db.send(
+    async (startKey, limit) => {
+      const page = await db.send(
         new QueryCommand({
           TableName: tables[source.model],
           IndexName: source.index,
@@ -85,12 +130,25 @@ export const handler: GetRowChunkHandler = async (event) => {
           ExpressionAttributeNames: {
             ...names,
             '#pk': source.partitionKey,
-            ...(source.sortKey && beginsWith != null
+            ...(source.sortKey && (beginsWith != null || between)
               ? { '#sk': source.sortKey }
               : {}),
           },
         })
-      ),
+      );
+      if (!join || !page.Items) return page;
+      return {
+        ...page,
+        // A reference may point outside the authorized project.
+        Items: await joinRows(
+          page.Items,
+          join,
+          joined,
+          (ids) => batchGet(join.model, ids, joined),
+          (item) => item.projectId === projectId
+        ),
+      };
+    },
     source,
     decodeCursor(source, scopeId, cursor),
     requested,

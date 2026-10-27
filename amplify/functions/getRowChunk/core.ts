@@ -80,3 +80,60 @@ export async function readChunk(
   const next = count < rows.length ? rows[count - 1] : startKey;
   return { data, count, cursor: next ? encodeCursor(source, next) : null };
 }
+
+export type BatchGet = (
+  ids: string[]
+) => Promise<{ items: Row[]; unprocessed: string[] }>;
+
+const BATCH_GET_LIMIT = 100;
+
+export async function joinRows(
+  rows: Row[],
+  join: NonNullable<RowSource['join']>,
+  attributes: readonly string[],
+  batchGet: BatchGet,
+  accept: (item: Row) => boolean,
+  { concurrency = 8, attempts = 5, backoffMs = 50 } = {}
+): Promise<Row[]> {
+  const ids = Array.from(
+    new Set(
+      rows
+        .map((row) => row[join.foreignKey])
+        .filter((id): id is string => typeof id === 'string')
+    )
+  );
+  const batches: string[][] = [];
+  for (let i = 0; i < ids.length; i += BATCH_GET_LIMIT) {
+    batches.push(ids.slice(i, i + BATCH_GET_LIMIT));
+  }
+  const found = new Map<string, Row>();
+  let next = 0;
+  const worker = async () => {
+    while (next < batches.length) {
+      let pending = batches[next++];
+      for (let attempt = 0; pending.length; attempt++) {
+        if (attempt === attempts) {
+          throw new Error(`${join.model} lookups were not processed`);
+        }
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, backoffMs * 2 ** attempt));
+        }
+        const { items, unprocessed } = await batchGet(pending);
+        for (const item of items) {
+          if (accept(item)) found.set(String(item.id), item);
+        }
+        pending = unprocessed;
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, batches.length) }, worker)
+  );
+  return rows.map((row) => {
+    const item = found.get(String(row[join.foreignKey]));
+    const joined = Object.fromEntries(
+      attributes.map((name) => [`${join.prefix}.${name}`, item?.[name]])
+    );
+    return { ...row, ...joined };
+  });
+}
