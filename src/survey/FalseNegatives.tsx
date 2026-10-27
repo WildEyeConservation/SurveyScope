@@ -12,6 +12,7 @@ import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { loadLocationCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
+import { isCentreObserved } from '../../shared/locationGeometry';
 
 type LaunchHandler = {
   execute: (
@@ -332,8 +333,7 @@ export default function FalseNegatives({
       const candidates = tiles.filter((tile) => {
         const obs = observationPoints.get(tile.imageId) || [];
         const anns = annotationPoints.get(tile.imageId) || [];
-        // Check if any observed location overlaps with this tile
-        const hasObservation = obs.some((o) => tilesOverlap(tile, o));
+        const hasObservation = isCentreObserved(tile, obs);
         const hasAnnotation = anns.some((pt) => isInsideTile(pt.x, pt.y, tile));
         return !hasObservation && !hasAnnotation;
       });
@@ -1270,28 +1270,4 @@ function isInsideTile(
   const minY = tile.y - halfH;
   const maxY = tile.y + halfH;
   return px >= minX && px <= maxX && py >= minY && py <= maxY;
-}
-
-// Check if two tiles overlap (both have center x,y and width,height)
-function tilesOverlap(
-  tile1: MinimalTileForCheck,
-  tile2: { x: number; y: number; width: number; height: number }
-): boolean {
-  const halfW1 = tile1.width / 2;
-  const halfH1 = tile1.height / 2;
-  const halfW2 = tile2.width / 2;
-  const halfH2 = tile2.height / 2;
-
-  const minX1 = tile1.x - halfW1;
-  const maxX1 = tile1.x + halfW1;
-  const minY1 = tile1.y - halfH1;
-  const maxY1 = tile1.y + halfH1;
-
-  const minX2 = tile2.x - halfW2;
-  const maxX2 = tile2.x + halfW2;
-  const minY2 = tile2.y - halfH2;
-  const maxY2 = tile2.y + halfH2;
-
-  // Check if rectangles overlap
-  return minX1 < maxX2 && maxX1 > minX2 && minY1 < maxY2 && maxY1 > minY2;
 }

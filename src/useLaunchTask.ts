@@ -14,6 +14,7 @@ import {
   type CameraMasks,
 } from './types/CameraMask';
 import { loadProjectImages } from './projectImages';
+import { isCentreObserved, type Box } from '../shared/locationGeometry';
 
 export const LEGACY_STORMFLY_BOX_SIZE = 64;
 
@@ -78,6 +79,11 @@ export function useLaunchTask(
   };
 
   type AnnotationPoint = { x: number; y: number; imageId: string };
+
+  type ObservedLocations = {
+    ids: Set<string>;
+    boxesByImage: Map<string, Box[]>;
+  };
 
   type LocationQueryResult = {
     locations: LocationWithConfidence[];
@@ -232,17 +238,50 @@ export function useLaunchTask(
   async function queryObservations(
     annotationSetId: string,
     onProgress?: (message: string) => void
-  ): Promise<string[]> {
+  ): Promise<ObservedLocations> {
     onProgress?.('Querying observations...');
     const allObs = await fetchAllPaginatedResults(
       client.models.Observation.observationsByAnnotationSetId,
       {
         annotationSetId,
         limit: 10000,
-        selectionSet: ['locationId'] as const,
+        selectionSet: [
+          'locationId',
+          'location.imageId',
+          'location.x',
+          'location.y',
+          'location.width',
+          'location.height',
+        ] as const,
       }
     );
-    return allObs.map(o => o.locationId);
+    const observed: ObservedLocations = {
+      ids: new Set(),
+      boxesByImage: new Map(),
+    };
+    for (const obs of allObs) {
+      observed.ids.add(obs.locationId);
+      const location = obs.location;
+      if (!location?.imageId) continue;
+      const boxes = observed.boxesByImage.get(location.imageId) ?? [];
+      boxes.push({
+        x: location.x,
+        y: location.y,
+        width: location.width ?? 0,
+        height: location.height ?? 0,
+      });
+      observed.boxesByImage.set(location.imageId, boxes);
+    }
+    return observed;
+  }
+
+  function isLocationObserved(
+    location: LocationWithConfidence,
+    observed: ObservedLocations
+  ): boolean {
+    if (observed.ids.has(location.id)) return true;
+    const boxes = observed.boxesByImage.get(location.imageId);
+    return !!boxes && isCentreObserved(location, boxes);
   }
 
   // Query normal (non-FN) annotations for an annotation set (for filtering locations with existing annotations)
@@ -339,9 +378,9 @@ export function useLaunchTask(
       let collectedLocations: string[] | undefined;
 
       if (!tiledRequest) {
-        const allSeenLocations = options.filterObserved
-          ? new Set(await queryObservations(options.annotationSetId, onProgress))
-          : new Set<string>();
+        const observed = options.filterObserved
+          ? await queryObservations(options.annotationSetId, onProgress)
+          : null;
 
         // If skipLocationWithAnnotations is enabled, query all annotations for the set
         const allAnnotations = options.skipLocationWithAnnotations
@@ -372,9 +411,11 @@ export function useLaunchTask(
         );
 
         // Collect locations from all sets, filter observed, and sort by confidence (descending)
-        let allLocationsWithConfidence = validLocations.filter(
-          (location) => !allSeenLocations.has(location.id)
-        );
+        let allLocationsWithConfidence = observed
+          ? validLocations.filter(
+              (location) => !isLocationObserved(location, observed)
+            )
+          : validLocations;
         const observedLocationCount =
           validLocations.length - allLocationsWithConfidence.length;
         if (options.filterObserved) {
