@@ -6,6 +6,7 @@ import Form from 'react-bootstrap/Form';
 import Row from 'react-bootstrap/Row';
 import Col from 'react-bootstrap/Col';
 import { LineChart } from '@mui/x-charts/LineChart';
+import { DateTime } from 'luxon';
 import { useAdminStatsData } from './useAdminStatsData';
 
 function SummaryTile(props: {
@@ -166,11 +167,6 @@ export default function AdminStats() {
         total: data.annotations.total,
         thisMonth: data.annotations.thisMonth,
       },
-      {
-        title: 'Primary Annotations',
-        total: data.primaryAnnotations.total,
-        thisMonth: data.primaryAnnotations.thisMonth,
-      },
     ],
     [data]
   );
@@ -201,6 +197,12 @@ export default function AdminStats() {
             </button>
           </div>
         </div>
+        {data.updatedAt && (
+          <div className='text-muted small mb-2'>
+            Counts updated{' '}
+            {DateTime.fromISO(data.updatedAt).toRelative()}, refreshed hourly
+          </div>
+        )}
       </div>
 
       {data.error && (
@@ -216,7 +218,7 @@ export default function AdminStats() {
         </div>
       ) : null}
 
-      <Row xs={1} md={3} lg={6} className='g-3'>
+      <Row xs={1} md={3} lg={5} className='g-3'>
         {summary.map((m) => (
           <Col key={m.title}>
             <SummaryTile

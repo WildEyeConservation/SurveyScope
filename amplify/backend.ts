@@ -2,6 +2,8 @@ import { imageAccess } from './storage/imageAccess/resource';
 import { infoTagWork } from './functions/infoTagWork/resource';
 import { recomputeBoundaryStatus } from './functions/recomputeBoundaryStatus/resource';
 import { getRowChunk } from './functions/getRowChunk/resource';
+import { getAdminStats } from './functions/getAdminStats/resource';
+import { updateAdminStats } from './functions/updateAdminStats/resource';
 import { ROW_SOURCES, SCOPE_MODELS } from '../shared/rowSources';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
@@ -102,6 +104,8 @@ const backend = defineBackend({
   infoTagWork,
   recomputeBoundaryStatus,
   getRowChunk,
+  getAdminStats,
+  updateAdminStats,
   chainMutationGuard,
   revokeChainShare,
   workflowFiles,
@@ -265,6 +269,50 @@ rowChunkLambda.addToRolePolicy(
 backend.getRowChunk.addEnvironment(
   'ROW_CHUNK_TABLES',
   JSON.stringify(rowChunkTables)
+);
+
+const adminStatsTable = new dynamodb.Table(
+  Stack.of(backend.data.resources.graphqlApi),
+  'AdminStats',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    // Rebuildable from the source tables with a backfill run.
+    removalPolicy: RemovalPolicy.DESTROY,
+  }
+);
+const updateAdminStatsLambda = backend.updateAdminStats.resources.lambda;
+adminStatsTable.grantReadWriteData(updateAdminStatsLambda);
+adminStatsTable.grantReadData(backend.getAdminStats.resources.lambda);
+for (const resource of [backend.updateAdminStats, backend.getAdminStats]) {
+  resource.addEnvironment('ADMIN_STATS_TABLE', adminStatsTable.tableName);
+}
+const adminStatsSources: Record<string, string> = {};
+for (const model of ['Project', 'ImageSet', 'Image', 'Annotation', 'ClientLog'] as const) {
+  const table = backend.data.resources.tables[model];
+  adminStatsSources[model] = table.tableName;
+  updateAdminStatsLambda.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['dynamodb:Scan', 'dynamodb:Query'],
+      resources: [table.tableArn, `${table.tableArn}/index/*`],
+    })
+  );
+}
+backend.updateAdminStats.addEnvironment(
+  'ADMIN_STATS_SOURCE_TABLES',
+  JSON.stringify(adminStatsSources)
+);
+backend.updateAdminStats.addEnvironment(
+  'USER_POOL_ID',
+  backend.auth.resources.userPool.userPoolId
+);
+updateAdminStatsLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['cognito-idp:ListUsers'],
+    resources: [backend.auth.resources.userPool.userPoolArn],
+  })
 );
 
 const guardFunction = backend.chainMutationGuard.resources.lambda;

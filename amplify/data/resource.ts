@@ -61,6 +61,7 @@ import { releaseIndividualIdTransects } from '../functions/releaseIndividualIdTr
 import { createChainShare } from '../functions/createChainShare/resource';
 import { revokeChainShare } from '../functions/revokeChainShare/resource';
 import { reportClientError } from '../functions/reportClientError/resource';
+import { getAdminStats } from '../functions/getAdminStats/resource';
 import { generateTile } from '../storage/generateTile/resource';
 
 const schema = a
@@ -303,10 +304,15 @@ const schema = a
         infoTaggedBy: a.string(),
         infoTagRevision: a.integer(),
         group: a.string(),
+        // Declared so it can sort an index; still filled in automatically.
+        createdAt: a.datetime().required(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.owner(), allow.groupDefinedIn('group')])
       .secondaryIndexes((index) => [
         index('setId').queryField('annotationsByAnnotationSetId'),
+        index('projectId')
+          .sortKeys(['createdAt'])
+          .queryField('annotationsByProjectIdAndCreatedAt'),
         index('imageId')
           .sortKeys(['setId'])
           .queryField('annotationsByImageIdAndSetId'),
@@ -1191,10 +1197,14 @@ const schema = a
         connectionType: a.string(),
         downlink: a.float(),
         rtt: a.float(),
+        createdAt: a.datetime().required(),
       })
       .authorization((allow) => [allow.owner().to(['create', 'read']), allow.group("sysadmin")])
       .secondaryIndexes((index) => [
         index('userId').queryField('clientLogsByUserId'),
+        index('userId')
+          .sortKeys(['createdAt'])
+          .queryField('clientLogsByUserIdAndCreatedAt'),
       ]),
     AdminActionLog: a
       .model({
@@ -1380,6 +1390,11 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(queryWorkflowStats)),
+    getAdminStats: a
+      .query()
+      .returns(a.json())
+      .authorization((allow) => [allow.group('sysadmin')])
+      .handler(a.handler.function(getAdminStats)),
     getRowChunk: a
       .query()
       .arguments({
