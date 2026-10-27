@@ -3,29 +3,44 @@ import { Footer } from '../Modal';
 import { useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { GlobalContext } from '../Context';
 import Select from 'react-select';
+import { parseLaunchResponse } from './launchResponse';
+import {
+  MODELS,
+  dispatchBatches,
+  findUnprocessedImages,
+  type ModelValue,
+  type ScanImage,
+} from './processImagesScan';
 
-const MODEL_OPTIONS = [
-  { label: 'ScoutBot', value: 'scoutbotv3' },
-  { label: 'Elephant Detection Nadir', value: 'elephant' },
-  { label: 'MAD', value: 'mad' },
-  { label: 'OWL-D (Overhead Wildlife Locator)', value: 'owl-d' },
-];
+const MODEL_OPTIONS = (Object.keys(MODELS) as ModelValue[]).map((value) => ({
+  label: MODELS[value].label,
+  value,
+}));
 
-export default function ProcessImages({ projectId, organizationId }: { projectId: string; organizationId: string }) {
+const BATCH_SIZE = 500;
+const DISPATCH_CONCURRENCY = 4;
+
+export default function ProcessImages({
+  projectId,
+  organizationId,
+}: {
+  projectId: string;
+  organizationId: string;
+}) {
   const { client, backend, showModal } = useContext(GlobalContext)!;
-  const [model, setModel] = useState<{ label: string; value: string } | null>(
-    () => MODEL_OPTIONS.find((o) => o.value === 'owl-d')!
-  );
-  const [loading, setLoading] = useState(false);
-  const [unprocessedImages, setUnprocessedImages] = useState<
-    {
-      id: string;
-      originalPath: string;
-    }[]
-  >([]);
+  const [model, setModel] = useState<{
+    label: string;
+    value: ModelValue;
+  } | null>(() => MODEL_OPTIONS.find((o) => o.value === 'owl-d')!);
+  const [scanning, setScanning] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [scan, setScan] = useState<{
+    model: ModelValue;
+    images: ScanImage[];
+  } | null>(null);
   const [imagesLoaded, setImagesLoaded] = useState<number | null>(null);
-  const [scanned, setScanned] = useState(false);
-  const [disabled, setDisabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusPending, setStatusPending] = useState<ModelValue | null>(null);
   const scanAbortRef = useRef(new AbortController());
 
   useEffect(() => {
@@ -49,7 +64,7 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
           {
             selectionSet: ['id', 'name'],
             limit: 10000,
-          }
+          },
         );
         const match =
           res.data?.find((ls: { name?: string | null }) => ls?.name === name) ??
@@ -61,69 +76,60 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
       } while (nextToken);
       return null;
     },
-    [client.models.LocationSet, projectId]
+    [client.models.LocationSet, projectId],
   );
 
   const scanImages = useCallback(async () => {
     if (!model) return;
-    // New elephant results use the legacy 'heatmap' source.
-    const processedSource = model.value === 'elephant' ? 'heatmap' : model.value;
     const { signal } = scanAbortRef.current;
-    setLoading(true);
-    let unprocessed: { id: string; originalPath: string }[] = [];
-    let nextToken: string | null | undefined = undefined;
-    let imgCount = 0;
-    do {
-      let res;
-      try {
-        res = await client.models.Image.imagesByProjectId(
-          { projectId },
-          { selectionSet: ['id', 'originalPath', 'processedBy.source'], nextToken, limit: 10000, signal }
-        );
-      } catch (error) {
-        if (signal.aborted) return;
-        throw error;
-      }
-      const page = (res.data ?? []).flatMap((img) =>
-        img?.id && img?.originalPath && !img.processedBy?.some((p: { source: string }) => p.source === processedSource)
-          ? [{ id: img.id, originalPath: img.originalPath }]
-          : []
+    setScanning(true);
+    setScan(null);
+    setError(null);
+    setImagesLoaded(0);
+    try {
+      const images = await findUnprocessedImages(
+        client,
+        projectId,
+        MODELS[model.value].source,
+        {
+          signal,
+          onProgress: (count) => {
+            if (!signal.aborted) setImagesLoaded(count);
+          },
+        },
       );
-      unprocessed = unprocessed.concat(page);
-      nextToken = res.nextToken as string | null | undefined;
-      imgCount += (res.data ?? []).length;
-      setImagesLoaded(imgCount);
-    } while (nextToken);
-
-    setUnprocessedImages(unprocessed);
-    setLoading(false);
-    setScanned(true);
+      if (signal.aborted) return;
+      setScan({ model: model.value, images });
+    } catch (err) {
+      if (signal.aborted) return;
+      console.error('Failed to scan images', err);
+      setError('Failed to scan images, please try again.');
+    } finally {
+      if (!signal.aborted) setScanning(false);
+    }
   }, [client, projectId, model]);
 
   useEffect(() => {
     // reset when model changes
-    setScanned(false);
-    setUnprocessedImages([]);
+    setScan(null);
     setImagesLoaded(null);
+    setError(null);
   }, [model]);
 
-  const processImages = async () => {
-    if (!model) {
-      return;
-    }
+  const canProcess =
+    !!model &&
+    !scanning &&
+    !processing &&
+    (statusPending === model.value ||
+      (scan?.model === model.value && scan.images.length > 0));
 
-    setDisabled(true);
-    setLoading(true);
-
-    const locationSetName =
-      model.value === 'elephant'
-        ? `${projectId}_elephant-detection-nadir`
-        : model.value === 'scoutbotv3'
-          ? `${projectId}_scoutbot`
-          : `${projectId}_${model.value}`;
-    let locationSet =
-      (await findLocationSetByName(locationSetName)) ??
-      null;
+  const dispatchImages = async (
+    modelValue: ModelValue,
+    images: ScanImage[],
+  ) => {
+    const config = MODELS[modelValue];
+    const locationSetName = `${projectId}_${config.setSuffix}`;
+    let locationSet = (await findLocationSetByName(locationSetName)) ?? null;
     if (!locationSet) {
       const { data: createdLocationSet } =
         await client.models.LocationSet.create({
@@ -133,19 +139,18 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
         });
       locationSet = createdLocationSet ?? null;
     }
-
     if (!locationSet?.id) {
-      console.error('Failed to create location set');
-      alert('Something went wrong, please try again.');
-      return;
+      throw new Error('Failed to create location set');
     }
+    const setId = locationSet.id;
 
     // Fetch project to determine organization and legacy handling
     const { data: project } = await client.models.Project.get(
       { id: projectId },
-      { selectionSet: ['id', 'organizationId', 'tags'] as const }
+      { selectionSet: ['id', 'organizationId', 'tags'] as const },
     );
-    const projRecord = (project ?? {}) as Record<string, unknown>;
+    if (!project) throw new Error('Failed to load survey');
+    const projRecord = project as Record<string, unknown>;
     const projOrganizationId: string | undefined =
       typeof projRecord['organizationId'] === 'string'
         ? (projRecord['organizationId'] as string)
@@ -160,103 +165,95 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
         ? `${projOrganizationId}/${projectId}/${orig}`
         : orig;
 
-    const BATCH_SIZE = 500;
-
-    switch (model.value) {
-      case 'scoutbotv3':
-        for (let i = 0; i < unprocessedImages.length; i += BATCH_SIZE) {
-          const batch = unprocessedImages.slice(i, i + BATCH_SIZE);
-          const batchStrings = batch.map(
-            (image) => `${image.id}---${makeKey(image.originalPath)}`
+    const bucket = backend.storage.buckets[1].bucket_name;
+    const runBatch = (batchStrings: string[]) => {
+      const args = { projectId, images: batchStrings, setId, bucket };
+      switch (modelValue) {
+        case 'scoutbotv3':
+          return client.mutations.runScoutbot(
+            { ...args, queueUrl: backend.custom.scoutbotTaskQueueUrl },
+            { retry: false },
           );
-
-          client.mutations.runScoutbot({
-            projectId: projectId,
-            images: batchStrings,
-            setId: locationSet.id,
-            bucket: backend.storage.buckets[1].bucket_name,
-            queueUrl: backend.custom.scoutbotTaskQueueUrl,
-          }, { retry: false });
-
-          await client.models.Project.update({
-            id: projectId,
-            status: 'processing-scoutbot',
-          });
-        }
-        break;
-      case 'elephant':
-        for (let i = 0; i < unprocessedImages.length; i += BATCH_SIZE) {
-          const batch = unprocessedImages.slice(i, i + BATCH_SIZE);
-          const batchStrings = batch.map(
-            (image) => `${image.id}---${makeKey(image.originalPath)}`
+        case 'elephant':
+          return client.mutations.runElephantDetector(
+            { ...args, queueUrl: backend.custom.elephantDetectorTaskQueueUrl },
+            { retry: false },
           );
-
-          client.mutations.runElephantDetector({
-            projectId,
-            images: batchStrings,
-            setId: locationSet.id,
-            bucket: backend.storage.buckets[1].bucket_name,
-            queueUrl: backend.custom.elephantDetectorTaskQueueUrl,
-          }, { retry: false });
-        }
-
-        await client.models.Project.update({
-          id: projectId,
-          status: 'processing-pointFinder',
-        });
-        break;
-      case 'mad':
-        for (let i = 0; i < unprocessedImages.length; i += BATCH_SIZE) {
-          const batch = unprocessedImages.slice(i, i + BATCH_SIZE);
-          const batchStrings = batch.map(
-            (image) => `${image.id}---${makeKey(image.originalPath)}`
+        case 'mad':
+          return client.mutations.runMadDetector(
+            { ...args, queueUrl: backend.custom.madDetectorTaskQueueUrl },
+            { retry: false },
           );
-
-          client.mutations.runMadDetector({
-            projectId: projectId,
-            images: batchStrings,
-            setId: locationSet.id,
-            bucket: backend.storage.buckets[1].bucket_name,
-            queueUrl: backend.custom.madDetectorTaskQueueUrl,
-          }, { retry: false });
-
-          await client.models.Project.update({
-            id: projectId,
-            status: 'processing-mad',
-          });
-        }
-        break;
-      case 'owl-d':
-        for (let i = 0; i < unprocessedImages.length; i += BATCH_SIZE) {
-          const batch = unprocessedImages.slice(i, i + BATCH_SIZE);
-          const batchStrings = batch.map(
-            (image) => `${image.id}---${makeKey(image.originalPath)}`
+        case 'owl-d':
+          return client.mutations.runOwlDDetector(
+            { ...args, queueUrl: backend.custom.owlDDetectorTaskQueueUrl },
+            { retry: false },
           );
+      }
+    };
 
-          client.mutations.runOwlDDetector({
-            projectId,
-            images: batchStrings,
-            setId: locationSet.id,
-            bucket: backend.storage.buckets[1].bucket_name,
-            queueUrl: backend.custom.owlDDetectorTaskQueueUrl,
-          }, { retry: false });
-        }
-
-        await client.models.Project.update({
-          id: projectId,
-          status: 'processing-owl-d',
-        });
-        break;
+    const { queued, error: dispatchError } = await dispatchBatches(
+      images,
+      BATCH_SIZE,
+      DISPATCH_CONCURRENCY,
+      async (batch) =>
+        parseLaunchResponse(
+          await runBatch(
+            batch.map(
+              (image) => `${image.id}---${makeKey(image.originalPath)}`,
+            ),
+          ),
+          `${config.label} dispatch failed`,
+        ),
+    );
+    if (dispatchError) {
+      setScan(null);
+      throw new Error(
+        `${dispatchError.message}. ${queued} of ${images.length} images were confirmed queued and others may be too; scan again once they finish to process the rest.`,
+      );
     }
+  };
 
-    client.mutations.updateProjectMemberships({
-      projectId: projectId,
-    });
+  const processImages = async () => {
+    if (!canProcess || !model) return;
+    const config = MODELS[model.value];
 
-    setLoading(false);
-    setDisabled(false);
+    setProcessing(true);
+    setError(null);
 
-    showModal(null);
+    try {
+      if (statusPending !== model.value) {
+        await dispatchImages(model.value, scan!.images);
+        setScan(null);
+        setStatusPending(model.value);
+      }
+
+      const { errors } = await client.models.Project.update({
+        id: projectId,
+        status: config.status,
+      });
+      if (errors?.length) {
+        throw new Error(
+          `Images were queued but the survey status update failed: ${errors[0].message}`,
+        );
+      }
+      setStatusPending(null);
+
+      client.mutations.updateProjectMemberships({
+        projectId: projectId,
+      });
+
+      showModal(null);
+    } catch (err) {
+      console.error('Failed to process images', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Something went wrong, please try again.',
+      );
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
@@ -270,40 +267,54 @@ export default function ProcessImages({ projectId, organizationId }: { projectId
             options={MODEL_OPTIONS}
             placeholder='Select a model'
             className='text-black'
+            isDisabled={scanning || processing}
           />
           <Button
             variant='primary'
             onClick={scanImages}
-            disabled={!model || loading}
+            disabled={!model || scanning || processing}
             className='mt-2'
           >
             Scan
           </Button>
-          {loading ? (
+          {scanning ? (
             <div className='d-flex flex-column align-items-center'>
               <Spinner animation='border' role='status' />
               <p className='mb-0'>Determining images to process...</p>
               <p className='mb-1'>Found {imagesLoaded ?? 0} images</p>
             </div>
-          ) : scanned ? (
-            unprocessedImages.length > 0 ? (
+          ) : scan ? (
+            scan.images.length > 0 ? (
               <p className='mb-0 mt-2'>
-                Found {unprocessedImages.length} unprocessed images
+                Found {scan.images.length} unprocessed images
               </p>
             ) : (
               <p className='mb-0 mt-2'>All images have been processed</p>
             )
           ) : null}
+          {processing && (
+            <div className='d-flex flex-column align-items-center mt-2'>
+              <Spinner animation='border' role='status' />
+              <p className='mb-0'>Queueing images...</p>
+            </div>
+          )}
+          {error && <p className='mb-0 mt-2 text-danger'>{error}</p>}
         </Form.Group>
       </Form>
       <Footer>
-        <Button variant='primary' onClick={processImages} disabled={disabled}>
-          Process Images
+        <Button
+          variant='primary'
+          onClick={processImages}
+          disabled={!canProcess}
+        >
+          {statusPending && statusPending === model?.value
+            ? 'Retry status update'
+            : 'Process Images'}
         </Button>
         <Button
           variant='dark'
           onClick={() => showModal(null)}
-          disabled={disabled}
+          disabled={processing}
         >
           Close
         </Button>
