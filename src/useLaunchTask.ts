@@ -7,6 +7,7 @@ import type {
 } from './types/LaunchTask';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from './utils';
+import { loadRows } from './rowChunks';
 import {
   countMaskRegions,
   isPointMasked,
@@ -147,24 +148,12 @@ export function useLaunchTask(
     onProgress?: (message: string) => void
   ): Promise<LocationQueryResult> {
     onProgress?.('Querying locations...');
-    const allLocations = await fetchAllPaginatedResults(
-      client.models.Location.locationsBySetIdAndConfidence,
-      {
-        setId: locationSetId,
-        confidence: { between: [options.lowerLimit, options.upperLimit] },
-        sortDirection: 'DESC',
-        limit: 10000,
-        selectionSet: [
-          'id',
-          'x',
-          'y',
-          'width',
-          'height',
-          'confidence',
-          'imageId',
-          'source',
-        ] as const,
-      }
+    const allLocations = await loadRows(
+      client,
+      'locationsBySetIdAndConfidence',
+      locationSetId,
+      ['x', 'y', 'width', 'height', 'imageId', 'source'],
+      { between: [options.lowerLimit, options.upperLimit] }
     );
     const invalidCounts = {
       confidence: 0,
@@ -211,12 +200,12 @@ export function useLaunchTask(
       locations.push({
         id: loc.id,
         confidence,
-        x: loc.x,
-        y: loc.y,
+        x: loc.x!,
+        y: loc.y!,
         width,
         height,
         imageId: loc.imageId!,
-        source: loc.source,
+        source: loc.source ?? '',
       });
     }
     const invalidCount = allLocations.length - locations.length;
@@ -240,37 +229,37 @@ export function useLaunchTask(
     onProgress?: (message: string) => void
   ): Promise<ObservedLocations> {
     onProgress?.('Querying observations...');
-    const allObs = await fetchAllPaginatedResults(
-      client.models.Observation.observationsByAnnotationSetId,
-      {
-        annotationSetId,
-        limit: 10000,
-        selectionSet: [
-          'locationId',
-          'location.imageId',
-          'location.x',
-          'location.y',
-          'location.width',
-          'location.height',
-        ] as const,
-      }
+    const allObs = await loadRows(
+      client,
+      'observationsByAnnotationSetId',
+      annotationSetId,
+      [
+        'locationId',
+        'location.imageId',
+        'location.x',
+        'location.y',
+        'location.width',
+        'location.height',
+      ]
     );
     const observed: ObservedLocations = {
       ids: new Set(),
       boxesByImage: new Map(),
     };
     for (const obs of allObs) {
-      observed.ids.add(obs.locationId);
-      const location = obs.location;
-      if (!location?.imageId) continue;
-      const boxes = observed.boxesByImage.get(location.imageId) ?? [];
+      if (obs.locationId) observed.ids.add(obs.locationId);
+      const imageId = obs['location.imageId'];
+      const x = obs['location.x'];
+      const y = obs['location.y'];
+      if (!imageId || x == null || y == null) continue;
+      const boxes = observed.boxesByImage.get(imageId) ?? [];
       boxes.push({
-        x: location.x,
-        y: location.y,
-        width: location.width ?? 0,
-        height: location.height ?? 0,
+        x,
+        y,
+        width: obs['location.width'] ?? 0,
+        height: obs['location.height'] ?? 0,
       });
-      observed.boxesByImage.set(location.imageId, boxes);
+      observed.boxesByImage.set(imageId, boxes);
     }
     return observed;
   }
@@ -290,21 +279,19 @@ export function useLaunchTask(
     onProgress?: (message: string) => void
   ): Promise<AnnotationPoint[]> {
     onProgress?.('Querying annotations...');
-    const allAnnos = await fetchAllPaginatedResults(
-      client.models.Annotation.annotationsByAnnotationSetId,
-      {
-        setId: annotationSetId,
-        filter: {
-          or: [
-            { source: { attributeExists: false } },
-            { source: { notContains: 'false-negative' } },
-          ],
-        },
-        limit: 10000,
-        selectionSet: ['x', 'y', 'imageId'] as const,
-      }
+    const allAnnos = await loadRows(
+      client,
+      'annotationsByAnnotationSetId',
+      annotationSetId,
+      ['x', 'y', 'imageId', 'source']
     );
-    return allAnnos.map(a => ({ x: a.x, y: a.y, imageId: a.imageId }));
+    const points: AnnotationPoint[] = [];
+    for (const a of allAnnos) {
+      if (a.source?.includes('false-negative')) continue;
+      if (a.x == null || a.y == null || !a.imageId) continue;
+      points.push({ x: a.x, y: a.y, imageId: a.imageId });
+    }
+    return points;
   }
 
   // Check if an annotation falls within a location's bounds

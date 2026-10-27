@@ -1,6 +1,6 @@
 import type { ColumnKind, ValueOfKind } from './rowChunk';
 
-export type RowScope = 'project' | 'annotationSet';
+export type RowScope = 'project' | 'annotationSet' | 'locationSet';
 
 export interface RowSource {
   model: string;
@@ -13,6 +13,8 @@ export interface RowSource {
   key: readonly string[];
   fields: Record<string, ColumnKind>;
   sortBy?: string;
+  // Fields named `${prefix}.<attribute>` are read from `model` by `foreignKey`.
+  join?: { prefix: string; model: string; foreignKey: string };
 }
 
 export const ROW_SOURCES = {
@@ -67,12 +69,36 @@ export const ROW_SOURCES = {
     scope: 'annotationSet',
     partitionKey: 'annotationSetId',
     key: ['id', 'createdAt'],
+    join: { prefix: 'location', model: 'Location', foreignKey: 'locationId' },
     fields: {
       id: 'str',
       createdAt: 'str',
       locationId: 'dict',
       owner: 'dict',
       source: 'dict',
+      'location.imageId': 'dict',
+      'location.x': 'num',
+      'location.y': 'num',
+      'location.width': 'num',
+      'location.height': 'num',
+    },
+  },
+  locationsBySetIdAndConfidence: {
+    model: 'Location',
+    index: 'locationsBySetIdAndConfidence',
+    scope: 'locationSet',
+    partitionKey: 'setId',
+    sortKey: 'confidence',
+    key: ['id', 'confidence'],
+    fields: {
+      id: 'str',
+      confidence: 'num',
+      source: 'dict',
+      imageId: 'dict',
+      x: 'num',
+      y: 'num',
+      width: 'num',
+      height: 'num',
     },
   },
   locationsByProjectIdAndSource: {
@@ -156,6 +182,7 @@ export type RowOf<S extends RowSourceName, F extends FieldOf<S>> = {
 export const SCOPE_MODELS = {
   project: 'Project',
   annotationSet: 'AnnotationSet',
+  locationSet: 'LocationSet',
 } as const satisfies Record<RowScope, string>;
 
 export function rowSource(name: unknown): RowSource | undefined {
@@ -167,6 +194,16 @@ export function rowSource(name: unknown): RowSource | undefined {
 
 export function chunkFields(source: RowSource, requested: readonly string[]) {
   return Array.from(new Set([...source.key, ...requested]));
+}
+
+export function splitJoined(source: RowSource, fields: readonly string[]) {
+  const prefix = source.join ? `${source.join.prefix}.` : undefined;
+  const joined = prefix
+    ? fields.filter((f) => f.startsWith(prefix)).map((f) => f.slice(prefix.length))
+    : [];
+  const own = prefix ? fields.filter((f) => !f.startsWith(prefix)) : [...fields];
+  if (joined.length && source.join) own.push(source.join.foreignKey);
+  return { own: Array.from(new Set(own)), joined };
 }
 
 export function unknownFields(source: RowSource, fields: readonly string[]) {

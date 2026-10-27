@@ -266,6 +266,12 @@ rowChunkLambda.addToRolePolicy(
     }),
   })
 );
+for (const source of Object.values(ROW_SOURCES)) {
+  if (!('join' in source)) continue;
+  const table = backend.data.resources.tables[source.join.model];
+  table.grant(rowChunkLambda, 'dynamodb:BatchGetItem');
+  rowChunkTables[source.join.model] = table.tableName;
+}
 backend.getRowChunk.addEnvironment(
   'ROW_CHUNK_TABLES',
   JSON.stringify(rowChunkTables)

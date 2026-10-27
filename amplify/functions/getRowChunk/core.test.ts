@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { decodeRows } from '../../../shared/rowChunk';
 import { ROW_SOURCES, type RowSource } from '../../../shared/rowSources';
-import { decodeCursor, readChunk, type QueryPage } from './core';
+import { decodeCursor, joinRows, readChunk, type QueryPage } from './core';
 
 const images: RowSource = ROW_SOURCES.imagesByProjectId;
 const processedBy: RowSource = ROW_SOURCES.processedByProjectIdAndSource;
@@ -153,4 +153,71 @@ test('cursors cannot leave the scope or carry other attributes', () => {
   ]) {
     assert.throws(() => decodeCursor(images, 'p', encode(bad)));
   }
+});
+
+test('joins referenced items in batches and retries unprocessed keys', async () => {
+  const join = ROW_SOURCES.observationsByAnnotationSetId.join;
+  const rows = Array.from({ length: 250 }, (_, i) => ({
+    id: `obs-${i}`,
+    locationId: `loc-${i % 150}`,
+  }));
+  rows.push({ id: 'orphan', locationId: 'deleted' });
+  const calls: string[][] = [];
+  const retried = new Set<string>();
+  const joined = await joinRows(
+    rows,
+    join,
+    ['x'],
+    async (ids) => {
+      calls.push(ids);
+      const unprocessed = ids.filter((id) => id === 'loc-7' && !retried.has(id));
+      unprocessed.forEach((id) => retried.add(id));
+      const items = ids
+        .filter((id) => id !== 'deleted' && !unprocessed.includes(id))
+        .map((id) => ({ id, x: Number(id.slice(4)) }));
+      return { items, unprocessed };
+    },
+    () => true,
+    { backoffMs: 0 }
+  );
+  assert.ok(calls.every((ids) => ids.length <= 100));
+  assert.equal(new Set(calls.flat()).size, 151);
+  assert.deepEqual(calls.at(-1), ['loc-7']);
+  assert.equal(joined[7]['location.x'], 7);
+  assert.equal(joined[157]['location.x'], 7);
+  assert.equal(joined.at(-1)?.['location.x'], undefined);
+});
+
+test('fails when lookups stay unprocessed', async () => {
+  await assert.rejects(
+    joinRows(
+      [{ id: 'o', locationId: 'l' }],
+      ROW_SOURCES.observationsByAnnotationSetId.join,
+      ['x'],
+      async (ids) => ({ items: [], unprocessed: ids }),
+      () => true,
+      { backoffMs: 0, attempts: 3 }
+    )
+  );
+});
+
+test('drops joined items the caller may not see', async () => {
+  const [mine, theirs] = await joinRows(
+    [
+      { id: 'o1', locationId: 'l1' },
+      { id: 'o2', locationId: 'l2' },
+    ],
+    ROW_SOURCES.observationsByAnnotationSetId.join,
+    ['x'],
+    async () => ({
+      items: [
+        { id: 'l1', projectId: 'p', x: 1 },
+        { id: 'l2', projectId: 'other', x: 2 },
+      ],
+      unprocessed: [],
+    }),
+    (item) => item.projectId === 'p'
+  );
+  assert.equal(mine['location.x'], 1);
+  assert.equal(theirs['location.x'], undefined);
 });

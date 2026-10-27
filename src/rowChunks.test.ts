@@ -237,3 +237,67 @@ test('streams fall back only before the first chunk', async () => {
     console.warn = warn;
   }
 });
+
+test('paginates sort-key ranges', async () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const calls: unknown[][] = [];
+    const client = {
+      queries: {},
+      models: {
+        Location: {
+          locationsBySetIdAndConfidence: async (...args: unknown[]) => {
+            calls.push(args);
+            return { data: [], nextToken: null };
+          },
+        },
+      },
+    };
+    await loadRows(client, 'locationsBySetIdAndConfidence', 's', ['x'], {
+      between: [0.6, 1],
+    });
+    assert.deepEqual(calls[0][0], {
+      setId: 's',
+      confidence: { between: [0.6, 1] },
+    });
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test('flattens joined fields when paginating', async () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const client = {
+      queries: {},
+      models: {
+        Observation: {
+          observationsByAnnotationSetId: async () => ({
+            data: [
+              { id: 'o1', locationId: 'l1', location: { x: 5, imageId: 'i' } },
+              { id: 'o2', locationId: 'gone', location: null },
+            ],
+            nextToken: null,
+          }),
+        },
+      },
+    };
+    const rows = await loadRows(
+      client,
+      'observationsByAnnotationSetId',
+      'a',
+      ['locationId', 'location.x', 'location.imageId']
+    );
+    assert.deepEqual(
+      rows.map((row) => [row['location.x'], row['location.imageId']]),
+      [
+        [5, 'i'],
+        [undefined, undefined],
+      ]
+    );
+  } finally {
+    console.warn = warn;
+  }
+});

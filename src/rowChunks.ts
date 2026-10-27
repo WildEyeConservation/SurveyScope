@@ -15,6 +15,7 @@ type ChunkQuery = (
     scopeId: string;
     fields: string[];
     beginsWith?: string;
+    between?: [number, number];
     cursor?: string;
   },
   options: { signal?: AbortSignal }
@@ -30,6 +31,8 @@ export interface RowQueryOptions {
   signal?: AbortSignal;
   // Prefix of the source's sort key, e.g. a detector name.
   beginsWith?: string;
+  // Inclusive range of a numeric sort key.
+  between?: [number, number];
 }
 
 export interface LoadRowsOptions extends RowQueryOptions {
@@ -64,7 +67,7 @@ export async function forEachRowChunk<
   scopeId: string,
   fields: readonly F[],
   onRows: (rows: RowOf<S, F>[]) => void,
-  { signal, beginsWith }: RowQueryOptions = {}
+  { signal, beginsWith, between }: RowQueryOptions = {}
 ): Promise<boolean> {
   const query = resolveChunkQuery(client);
   if (!query) return false;
@@ -77,6 +80,7 @@ export async function forEachRowChunk<
         scopeId,
         fields: [...fields],
         ...(beginsWith === undefined ? {} : { beginsWith }),
+        ...(between === undefined ? {} : { between }),
         cursor: cursor ?? undefined,
       },
       { signal }
@@ -98,30 +102,48 @@ export async function forEachRowChunk<
   return true;
 }
 
-function paginate(
+async function paginate(
   client: unknown,
   name: RowSourceName,
   scopeId: string,
   fields: readonly string[],
-  { signal, beginsWith }: RowQueryOptions,
+  { signal, beginsWith, between }: RowQueryOptions,
   onProgress?: (count: number) => void
 ): Promise<unknown[]> {
   const source = ROW_SOURCES[name] as RowSource;
   const models = (client as { models: Record<string, Record<string, never>> })
     .models;
-  return fetchAllPaginatedResults(
+  const sortCondition =
+    beginsWith !== undefined ? { beginsWith } : between && { between };
+  const selection = chunkFields(source, fields);
+  const rows = await fetchAllPaginatedResults<Record<string, unknown>>(
     models[source.model][name],
     {
       [source.partitionKey]: scopeId,
-      ...(beginsWith !== undefined && source.sortKey
-        ? { [source.sortKey]: { beginsWith } }
+      ...(sortCondition && source.sortKey
+        ? { [source.sortKey]: sortCondition }
         : {}),
-      selectionSet: chunkFields(source, fields),
+      selectionSet: selection,
       limit: 10000,
       signal,
     },
     onProgress
   );
+  // Joined fields come back nested; chunks carry them flat.
+  const nested = selection.filter((field) => field.includes('.'));
+  if (!nested.length) return rows;
+  return rows.map((row) => {
+    const flat = { ...row };
+    for (const field of nested) {
+      flat[field] = field
+        .split('.')
+        .reduce<unknown>(
+          (value, key) => (value as Record<string, unknown> | null)?.[key],
+          row
+        );
+    }
+    return flat;
+  });
 }
 
 export async function loadRows<S extends RowSourceName, F extends FieldOf<S>>(
