@@ -1403,6 +1403,7 @@ const schema = a
         fields: a.string().array().required(),
         beginsWith: a.string(),
         between: a.float().array(),
+        betweenText: a.string().array(),
         cursor: a.string(),
       })
       .returns(a.json())
@@ -1915,6 +1916,7 @@ export type GetRowChunkHandler = MutationHandler<
     fields: (string | null)[];
     beginsWith?: string | null;
     between?: (number | null)[] | null;
+    betweenText?: (string | null)[] | null;
     cursor?: string | null;
   },
   { data: string; count: number; cursor: string | null }

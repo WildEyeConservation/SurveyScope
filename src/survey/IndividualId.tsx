@@ -5,6 +5,9 @@ import { uploadWorkflowFile } from '../storage/workflowFiles';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
+import { loadProjectImages } from '../projectImages';
+import { loadProjectNeighbours } from '../projectNeighbours';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import type {
@@ -63,7 +66,7 @@ type AnnotationRow = {
 // timestamp/originalPath drive the reunion search's chronological endpoint
 // ordering — without them every image falls back to id order and the
 // launch-time check could disagree with the harness.
-type ImageWithNeighbours = Pick<
+type ProjectImage = Pick<
   ImageType,
   | 'id'
   | 'width'
@@ -72,9 +75,11 @@ type ImageWithNeighbours = Pick<
   | 'timestamp'
   | 'originalPath'
   | 'boundaryStatus'
-> & {
-  leftNeighbours?: ImageNeighbourType[] | null;
-  rightNeighbours?: ImageNeighbourType[] | null;
+>;
+
+type ProjectImages = {
+  images: ProjectImage[];
+  neighbours: ImageNeighbourType[];
 };
 
 export default function IndividualId({
@@ -97,7 +102,10 @@ export default function IndividualId({
 
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [allAnnotations, setAllAnnotations] = useState<AnnotationRow[]>([]);
-  const [projectImages, setProjectImages] = useState<ImageWithNeighbours[]>([]);
+  const [projectImages, setProjectImages] = useState<ProjectImages>({
+    images: [],
+    neighbours: [],
+  });
   const [loading, setLoading] = useState(true);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>(
     INITIAL_LOAD_STATUS
@@ -143,7 +151,7 @@ export default function IndividualId({
   const { imagesById, imageIdsByTransect, rawNeighbours } = useMemo(() => {
     const byId: Record<string, ImageType> = {};
     const byTransect = new Map<string, Set<string>>();
-    for (const img of projectImages) {
+    for (const img of projectImages.images) {
       byId[img.id] = img as unknown as ImageType;
       const group = isOnEffort(img.boundaryStatus)
         ? img.transectId
@@ -157,25 +165,10 @@ export default function IndividualId({
         set.add(img.id);
       }
     }
-    const seen = new Set<string>();
-    const neighbours: ImageNeighbourType[] = [];
-    for (const img of projectImages) {
-      for (const n of [
-        ...(img.leftNeighbours ?? []),
-        ...(img.rightNeighbours ?? []),
-      ]) {
-        if (n.skipped) continue;
-        if (!byId[n.image1Id] || !byId[n.image2Id]) continue;
-        const k = `${n.image1Id}__${n.image2Id}`;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        neighbours.push(n);
-      }
-    }
     return {
       imagesById: byId,
       imageIdsByTransect: byTransect,
-      rawNeighbours: neighbours,
+      rawNeighbours: projectImages.neighbours.filter((n) => !n.skipped),
     };
   }, [projectImages]);
 
@@ -300,7 +293,7 @@ export default function IndividualId({
           if (mounted)
             setLoadStatus((s) => ({
               ...s,
-              images: r.length,
+              images: r.images.length,
               imagesDone: true,
             }));
           return r;
@@ -531,77 +524,57 @@ async function fetchSetAnnotations(
   annotationSetId: string,
   onProgress?: (count: number) => void
 ): Promise<AnnotationRow[]> {
-  const allItems: AnnotationRow[] = [];
-  let nextToken: string | null | undefined = undefined;
-  let lastReported = 0;
-
-  do {
-    const { data, nextToken: nt } =
-      await client.models.Annotation.annotationsByAnnotationSetId(
-        { setId: annotationSetId },
-        {
-          selectionSet: [
-            'id',
-            'categoryId',
-            'imageId',
-            'x',
-            'y',
-            'objectId',
-            'oov',
-          ] as const,
-          limit: 10000,
-          nextToken,
-        }
-      );
-    for (const item of data || []) {
-      allItems.push({
-        id: item.id,
-        categoryId: item.categoryId,
-        imageId: item.imageId,
-        x: item.x,
-        y: item.y,
-        objectId: (item as { objectId?: string | null }).objectId ?? null,
-        oov: (item as { oov?: boolean | null }).oov ?? null,
-      });
-    }
-    const currentThousand = Math.floor(allItems.length / 1000);
-    if (onProgress && currentThousand > lastReported) {
-      lastReported = currentThousand;
-      onProgress(allItems.length);
-    }
-    nextToken = nt as string | null | undefined;
-  } while (nextToken);
-
-  return allItems;
+  const rows = await loadRows(
+    client,
+    'annotationsByAnnotationSetId',
+    annotationSetId,
+    ['categoryId', 'imageId', 'x', 'y', 'objectId', 'oov'],
+    { onProgress }
+  );
+  return rows.flatMap((row) =>
+    row.categoryId && row.imageId && row.x !== null && row.y !== null
+      ? [
+          {
+            id: row.id,
+            categoryId: row.categoryId,
+            imageId: row.imageId,
+            x: row.x,
+            y: row.y,
+            objectId: row.objectId,
+            oov: row.oov,
+          },
+        ]
+      : []
+  );
 }
 
-// Project images plus their neighbour edges, mirroring useTransectData's
-// selection set but project-wide (the modal can't scope to one transect yet).
 async function fetchProjectImages(
   client: DataClient,
   projectId: string,
   onProgress?: (count: number) => void
-): Promise<ImageWithNeighbours[]> {
-  const images = await fetchAllPaginatedResults<ImageWithNeighbours>(
-    client.models.Image.imagesByProjectId,
-    {
-      projectId,
-      limit: 10000,
-      selectionSet: [
-        'id',
-        'width',
-        'height',
-        'transectId',
-        'timestamp',
-        'originalPath',
-        'boundaryStatus',
-        'leftNeighbours.*',
-        'rightNeighbours.*',
-      ],
-    },
-    onProgress
+): Promise<ProjectImages> {
+  const images = await loadProjectImages(
+    client,
+    projectId,
+    [
+      'width',
+      'height',
+      'transectId',
+      'timestamp',
+      'originalPath',
+      'boundaryStatus',
+    ],
+    { onProgress }
   );
-  return images;
+  const neighbours = await loadProjectNeighbours(
+    client,
+    projectId,
+    new Set(images.map((image) => image.id))
+  );
+  return {
+    images: images as ProjectImage[],
+    neighbours: neighbours as unknown as ImageNeighbourType[],
+  };
 }
 
 async function sendLaunchIndividualIdRequest(

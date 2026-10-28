@@ -2,6 +2,8 @@ import { Button } from 'react-bootstrap';
 import { Modal, Body, Header, Footer, Title } from './Modal';
 import { useNavigate } from 'react-router-dom';
 import { fetchAllPaginatedResults } from './utils.tsx';
+import { loadRows } from './rowChunks';
+import { loadProjectImages } from './projectImages';
 import exportFromJSON from 'export-from-json';
 import { GlobalContext } from './Context.tsx';
 import { useContext, useState, useEffect, useMemo } from 'react';
@@ -15,12 +17,26 @@ import {
 import {
   createStratumAssigner,
   isOnEffort,
+  type BoundaryStatus,
   type LatLngRing,
 } from '../shared/boundaryStatus';
 import {
   hasDistanceInputs,
   perpendicularDistance,
 } from '../shared/distanceSampling';
+
+const NO_IMAGE = {
+  originalPath: null,
+  timestamp: null,
+  latitude: null,
+  longitude: null,
+  transectId: null,
+  boundaryStatus: null,
+  altitude_agl: null,
+  width: null,
+  height: null,
+  cameraId: null,
+};
 
 const formatDistance = (distance: number | null) =>
   distance === null ? '' : Math.round(distance * 100) / 100;
@@ -103,59 +119,54 @@ export default function AnnotationSetResults({
       return;
     }
 
-    const annotationSetsResult = await Promise.all(
-      annotationSets.map(async (annotationSet) => {
-        return await fetchAllPaginatedResults(
-          client.models.Annotation.annotationsByAnnotationSetId,
-          {
-            setId: annotationSet.id,
-
-            selectionSet: [
+    let fetched = 0;
+    const [annotationSetsResult, images, categories] = await Promise.all([
+      Promise.all(
+        annotationSets.map((annotationSet) =>
+          loadRows(
+            client,
+            'annotationsByAnnotationSetId',
+            annotationSet.id,
+            [
               'y',
               'x',
-              'category.name',
+              'categoryId',
+              'imageId',
               'owner',
               'source',
               'obscured',
-              'id',
               'objectId',
               'reviewCatId',
               'reviewedBy',
               'infoTaggedBy',
-              'image.originalPath',
-              'image.timestamp',
-              'image.latitude',
-              'image.longitude',
-              'image.transectId',
-              'image.boundaryStatus',
-              'image.altitude_agl',
-              'image.width',
-              'image.height',
-              'image.cameraId',
-            ] as const,
-            limit: 10000,
-          },
-          (stepsCompleted) => {
-            setExportStatus(`Fetching annotations... (${stepsCompleted} fetched)`);
-          }
-        );
-      })
-    );
-
-    const categories = await fetchAllPaginatedResults(
-      client.models.Category.categoriesByProjectId,
-      {
-        projectId: surveyId,
-        selectionSet: ['id', 'name'],
-        limit: 100,
-      },
-      (stepsCompleted) => {
-        setExportStatus(`Fetching labels... (${stepsCompleted} fetched)`);
-      }
-    );
+            ],
+            {
+              onProgress: (count) => {
+                fetched = count;
+                setExportStatus(`Fetching annotations... (${fetched} fetched)`);
+              },
+            }
+          )
+        )
+      ),
+      loadProjectImages(client, surveyId, [
+        'originalPath',
+        'timestamp',
+        'latitude',
+        'longitude',
+        'transectId',
+        'boundaryStatus',
+        'altitude_agl',
+        'width',
+        'height',
+        'cameraId',
+      ]),
+      loadRows(client, 'categoriesByProjectId', surveyId, ['name']),
+    ]);
+    const imageById = new Map(images.map((image) => [image.id, image]));
 
     const categoryMap = categories.reduce((acc, category) => {
-      acc[category.id] = category.name;
+      acc[category.id] = category.name ?? '';
       return acc;
     }, {} as Record<string, string>);
 
@@ -174,9 +185,9 @@ export default function AnnotationSetResults({
     const stratumName = (image: {
       latitude?: number | null;
       longitude?: number | null;
-      boundaryStatus?: 'inside' | 'outside' | 'excluded' | null;
+      boundaryStatus?: string | null;
     }) => {
-      if (!isOnEffort(image.boundaryStatus)) return 'None';
+      if (!isOnEffort(image.boundaryStatus as BoundaryStatus | null)) return 'None';
       if (
         typeof image.latitude !== 'number' ||
         typeof image.longitude !== 'number'
@@ -213,8 +224,12 @@ export default function AnnotationSetResults({
     let i = 0;
     let a = 0;
 
-    for (const annotations of annotationSetsResult) {
-      a += annotations.length;
+    for (const rows of annotationSetsResult) {
+      a += rows.length;
+      const annotations = rows.map((anno) => ({
+        ...anno,
+        image: imageById.get(anno.imageId ?? '') ?? NO_IMAGE,
+      }));
 
       const fileName = `SurveyScope-${survey.name}-${annotationSets[i].name}`;
       const exportType = exportFromJSON.types.csv;
@@ -229,7 +244,7 @@ export default function AnnotationSetResults({
       exportFromJSON({
         data: annotations.map((anno, index) => {
           return {
-            category: anno.category?.name || 'Unknown',
+            category: categoryMap[anno.categoryId ?? ''] || 'Unknown',
             image: anno.image.originalPath || 'Unknown',
             transect: anno.image.transectId || 'Unknown',
             stratum: stratumName(anno.image),

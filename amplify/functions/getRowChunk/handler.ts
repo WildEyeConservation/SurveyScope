@@ -29,7 +29,7 @@ async function getItem(model: string, id: string, attribute: string) {
       Key: { id },
       ProjectionExpression: '#a',
       ExpressionAttributeNames: { '#a': attribute },
-    })
+    }),
   );
   const value = Item?.[attribute];
   if (typeof value !== 'string') throw new Error(`${model} ${id} not found`);
@@ -45,11 +45,11 @@ async function projectOf(scope: RowScope, scopeId: string) {
 async function batchGet(
   model: string,
   ids: string[],
-  attributes: readonly string[]
+  attributes: readonly string[],
 ) {
   const projected = Array.from(new Set(['id', 'projectId', ...attributes]));
   const names = Object.fromEntries(
-    projected.map((name, i) => [`#j${i}`, name])
+    projected.map((name, i) => [`#j${i}`, name]),
   );
   const table = tables[model];
   const { Responses, UnprocessedKeys } = await db.send(
@@ -61,26 +61,31 @@ async function batchGet(
           ExpressionAttributeNames: names,
         },
       },
-    })
+    }),
   );
   return {
     items: Responses?.[table] ?? [],
     unprocessed: (UnprocessedKeys?.[table]?.Keys ?? []).map((key) =>
-      String(key.id)
+      String(key.id),
     ),
   };
 }
 
 export const handler: GetRowChunkHandler = async (event) => {
   const { scopeId, cursor, beginsWith } = event.arguments;
-  const between = event.arguments.between?.filter(
-    (bound): bound is number => typeof bound === 'number'
+  const numeric = event.arguments.between?.filter(
+    (bound): bound is number => typeof bound === 'number',
   );
+  const text = event.arguments.betweenText?.filter(
+    (bound): bound is string => typeof bound === 'string',
+  );
+  if (numeric && text) throw new Error('Pass between or betweenText, not both');
+  const between: (number | string)[] | undefined = numeric ?? text;
   const source = rowSource(event.arguments.source);
   if (!source) throw new Error(`Unknown source ${event.arguments.source}`);
   if (!scopeId) throw new Error('scopeId is required');
   const requested = event.arguments.fields.filter(
-    (field): field is string => typeof field === 'string'
+    (field): field is string => typeof field === 'string',
   );
   const unknown = unknownFields(source, requested);
   if (unknown.length)
@@ -95,13 +100,13 @@ export const handler: GetRowChunkHandler = async (event) => {
   const projectId = await projectOf(source.scope, scopeId);
   authorizeRequest(
     event.identity,
-    await getItem('Project', projectId, 'organizationId')
+    await getItem('Project', projectId, 'organizationId'),
   );
 
   const { own, joined } = splitJoined(source, requested);
   const projected = Array.from(new Set([...source.key, ...own]));
   const names = Object.fromEntries(
-    projected.map((name, i) => [`#f${i}`, name])
+    projected.map((name, i) => [`#f${i}`, name]),
   );
   const values: Record<string, unknown> = { ':scope': scopeId };
   let condition = '#pk = :scope';
@@ -134,7 +139,7 @@ export const handler: GetRowChunkHandler = async (event) => {
               ? { '#sk': source.sortKey }
               : {}),
           },
-        })
+        }),
       );
       if (!join || !page.Items) return page;
       return {
@@ -145,13 +150,13 @@ export const handler: GetRowChunkHandler = async (event) => {
           join,
           joined,
           (ids) => batchGet(join.model, ids, joined),
-          (item) => item.projectId === projectId
+          (item) => item.projectId === projectId,
         ),
       };
     },
     source,
     decodeCursor(source, scopeId, cursor),
     requested,
-    { maxPayloadBytes: 4_000_000, rowTarget: 80_000, readDeadlineMs: 15_000 }
+    { maxPayloadBytes: 4_000_000, rowTarget: 80_000, readDeadlineMs: 15_000 },
   );
 };

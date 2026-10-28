@@ -10,6 +10,7 @@ import { Button, Form, Spinner } from 'react-bootstrap';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
 import { GlobalContext, TestingContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
 import LightLocationView from './LightLocationView';
 import ProjectContext from './ProjectContext';
@@ -152,27 +153,38 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       // OPTIMIZATION 1: Batch fetch observations for all annotation sets
       // Instead of nested loops, collect all observations with their location data
       const observationPromises = annotationSets.map(async (as) => {
-        const observations = (await fetchAllPaginatedResults(
-          (client as any).models.Observation.observationsByAnnotationSetId,
-          {
+        const rows = await loadRows(
+          client,
+          'observationsByAnnotationSetId',
+          as.id,
+          [
+            'locationId',
+            'annotationCount',
+            'location.imageId',
+            'location.width',
+            'location.height',
+            'location.x',
+            'location.y',
+            'location.source',
+          ]
+        );
+        const annotated = rows.filter((obs) => (obs.annotationCount ?? 0) > 0);
+        updateObservationCount(annotated.length);
+        return annotated.map((obs) => ({
+            locationId: obs.locationId,
             annotationSetId: as.id,
-            filter: { annotationCount: { gt: 0 } },
-            selectionSet: [
-              'locationId',
-              'annotationSetId',
-              'location.id',
-              'location.imageId',
-              'location.width',
-              'location.height',
-              'location.x',
-              'location.y',
-              'location.source',
-            ] as const,
-            limit: 10000,
-          },
-          updateObservationCount
-        )) as any[];
-        return observations;
+            location: obs['location.imageId']
+              ? {
+                  id: obs.locationId,
+                  imageId: obs['location.imageId'],
+                  width: obs['location.width'],
+                  height: obs['location.height'],
+                  x: obs['location.x'],
+                  y: obs['location.y'],
+                  source: obs['location.source'],
+                }
+              : null,
+          }));
       });
 
       // Wait for all observation queries to complete

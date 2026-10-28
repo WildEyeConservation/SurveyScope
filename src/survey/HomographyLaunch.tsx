@@ -7,6 +7,7 @@ import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import pLimit from 'p-limit';
 
@@ -182,17 +183,20 @@ export default function HomographyLaunch({
         }));
 
         // 2. Fetch ALL annotations for the set (no category filter)
-        const annotations = await fetchAllPaginatedResults<AnnotationItem>(
-          (client.models.Annotation as any).annotationsByAnnotationSetId,
+        const rows = await loadRows(
+          client,
+          'annotationsByAnnotationSetId',
+          annotationSet.id,
+          ['imageId', 'categoryId'],
           {
-            setId: annotationSet.id,
-            limit: 10000,
-            selectionSet: ['id', 'imageId', 'categoryId'] as const,
-          },
-          (count) => {
-            if (!cancelled)
-              setLoadStatus((s) => ({ ...s, annotations: count }));
+            onProgress: (count) => {
+              if (!cancelled)
+                setLoadStatus((s) => ({ ...s, annotations: count }));
+            },
           }
+        );
+        const annotations = rows.filter(
+          (row): row is AnnotationItem => !!row.imageId && !!row.categoryId
         );
         if (cancelled) return;
         setAllAnnotations(annotations);

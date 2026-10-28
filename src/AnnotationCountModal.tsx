@@ -3,26 +3,32 @@ import { Button, Spinner } from 'react-bootstrap';
 import { Modal, Body, Header, Footer, Title } from './Modal';
 
 import { GlobalContext } from './Context';
-import { fetchAllPaginatedResults } from './utils';
+import { loadRows } from './rowChunks';
 import MyTable from './Table';
 import LabeledToggleSwitch from './LabeledToggleSwitch';
-import { Schema } from './amplify/client-schema';
+
+interface AnnotationRow {
+  id: string;
+  objectId: string | null;
+  source: string | null;
+  category: string;
+}
 
 interface Props {
   show: boolean;
   handleClose: () => void;
   setId: string;
+  projectId: string;
 }
 
 const AnnotationCountModal: React.FC<Props> = ({
   show,
   handleClose,
   setId,
+  projectId,
 }) => {
   const { client } = useContext(GlobalContext)!;
-  const [annotations, setAnnotations] = useState<
-    Schema['Annotation']['type'][]
-  >([]);
+  const [annotations, setAnnotations] = useState<AnnotationRow[]>([]);
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hasFalseNegatives, setHasFalseNegatives] = useState(false);
@@ -31,21 +37,29 @@ const AnnotationCountModal: React.FC<Props> = ({
     async function getAnnotationCounts() {
       setLoading(true);
 
-      const result = await fetchAllPaginatedResults(
-        client.models.Annotation.annotationsByAnnotationSetId,
-        {
-          setId: setId,
-          selectionSet: ['id', 'category.name', 'objectId', 'source'] as const,
-          limit: 10000,
-        }
-      );
+      // Categories load by survey: a set can use another set's category.
+      const [rows, categories] = await Promise.all([
+        loadRows(client, 'annotationsByAnnotationSetId', setId, [
+          'categoryId',
+          'objectId',
+          'source',
+        ]),
+        loadRows(client, 'categoriesByProjectId', projectId, ['name']),
+      ]);
+      const names = new Map(categories.map((c) => [c.id, c.name]));
+      const result = rows.map((a) => ({
+        id: a.id,
+        objectId: a.objectId,
+        source: a.source,
+        category: names.get(a.categoryId ?? '') ?? 'Unknown',
+      }));
       setAnnotations(result);
 
       setLoading(false);
 
       if (
         result.some((annotation) =>
-          annotation.source.includes('false-negative')
+          annotation.source?.includes('false-negative')
         )
       ) {
         setHasFalseNegatives(true);
@@ -55,24 +69,24 @@ const AnnotationCountModal: React.FC<Props> = ({
     if (setId && show) {
       getAnnotationCounts();
     }
-  }, [setId, show]);
+  }, [setId, projectId, show]);
 
   //reduce to group by category
   const annotationByCategory = annotations.reduce((acc, annotation) => {
-    const category = annotation.category?.name ?? 'Unknown';
+    const category = annotation.category;
     if (!acc[category]) {
       acc[category] = [];
     }
     acc[category].push(annotation);
     return acc;
-  }, {} as { [category: string]: Schema['Annotation']['type'][] });
+  }, {} as { [category: string]: AnnotationRow[] });
 
   const falseNegativesByCategory = annotations.reduce((acc, annotation) => {
-    const category = annotation.category?.name ?? 'Unknown';
+    const category = annotation.category;
     if (!acc[category]) {
       acc[category] = 0;
     }
-    if (annotation.source.includes('false-negative')) {
+    if (annotation.source?.includes('false-negative')) {
       acc[category]++;
     }
     return acc;

@@ -3,7 +3,6 @@ import {
   orientationCorrectionFor,
   orientationGroupForDimensions,
 } from '../../types/Orientation';
-import { fetchAllPaginatedResults } from '../../utils';
 import { logAdminAction } from '../../utils/adminActionLogger';
 import { PhashIndex } from '../phashDedup';
 import { PhashService } from '../phashService';
@@ -300,23 +299,24 @@ export class UploadOrchestrator {
     const paths = new Set(skipped.map((item) => item.originalPath));
 
     // Delete dependent records before their parent, then update the manifest.
-    const dbImages = (await fetchAllPaginatedResults(
-      session.client.models.Image.imagesByProjectId,
-      {
-        projectId: session.projectId,
-        selectionSet: ['id', 'originalPath', 'memberships.id', 'files.id'],
-        limit: 10000,
-      }
-    )) as {
-      id: string;
-      originalPath: string;
-      memberships: { id: string }[];
-      files: { id: string }[];
-    }[];
+    const dbImages = await loadProjectImages(
+      session.client,
+      session.projectId,
+      ['originalPath']
+    );
 
-    const orphans = dbImages.filter((img) => paths.has(img.originalPath));
+    const orphans = dbImages.filter(
+      (img) => img.originalPath !== null && paths.has(img.originalPath)
+    );
     if (orphans.length > 0) {
-      await runPool(orphans, SKIP_DELETE_CONCURRENCY, async (img) => {
+      await runPool(orphans, SKIP_DELETE_CONCURRENCY, async ({ id }) => {
+        const result = await session.client.models.Image.get(
+          { id },
+          { selectionSet: ['memberships.id', 'files.id'] }
+        );
+        assertMutationSucceeded(result, `load image ${id}`);
+        const img = result.data;
+        if (!img) return;
         for (const m of img.memberships ?? []) {
           assertMutationSucceeded(
             await session.client.models.ImageSetMembership.delete({ id: m.id }),
@@ -330,8 +330,8 @@ export class UploadOrchestrator {
           );
         }
         assertMutationSucceeded(
-          await session.client.models.Image.delete({ id: img.id }),
-          `delete image ${img.id}`
+          await session.client.models.Image.delete({ id }),
+          `delete image ${id}`
         );
       });
     }

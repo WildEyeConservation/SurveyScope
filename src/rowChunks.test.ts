@@ -9,8 +9,8 @@ import { loadRows, streamRows } from './rowChunks';
 const pack = (rows: Record<string, unknown>[]) =>
   gzipSync(
     JSON.stringify(
-      encodeRows(rows, ROW_SOURCES.imagesByProjectId.fields, ['id', 'width'])
-    )
+      encodeRows(rows, ROW_SOURCES.imagesByProjectId.fields, ['id', 'width']),
+    ),
   ).toString('base64');
 
 const fallbackRows = [{ id: 'fallback', width: 1 }];
@@ -65,7 +65,7 @@ test('falls back when the query is missing or fails', async () => {
   try {
     assert.deepEqual(
       await loadProjectImages({ queries: {} }, 'p', ['width'], { fallback }),
-      fallbackRows
+      fallbackRows,
     );
     const failing = {
       queries: {
@@ -74,7 +74,7 @@ test('falls back when the query is missing or fails', async () => {
     };
     assert.deepEqual(
       await loadProjectImages(failing, 'p', ['width'], { fallback }),
-      fallbackRows
+      fallbackRows,
     );
   } finally {
     console.warn = warn;
@@ -145,7 +145,7 @@ test('does not fall back once cancelled', async () => {
         fellBack = true;
         return [];
       },
-    })
+    }),
   );
   assert.equal(fellBack, false);
 });
@@ -171,7 +171,7 @@ test('paginates sort-key prefixes through the matching model query', async () =>
       'locationsByProjectIdAndSource',
       'p',
       ['x'],
-      { beginsWith: 'mad' }
+      { beginsWith: 'mad' },
     );
     assert.deepEqual(rows, [{ id: 'l', source: 'mad-v1' }]);
     assert.deepEqual(calls[0][0], {
@@ -204,7 +204,7 @@ test('streams fall back only before the first chunk', async () => {
       (rows) => seen.push(...rows),
       {
         fallback: async (onRows) => onRows([{ id: 'f', width: 1 }]),
-      }
+      },
     );
     assert.deepEqual(seen, [{ id: 'f', width: 1 }]);
 
@@ -230,7 +230,7 @@ test('streams fall back only before the first chunk', async () => {
           fellBack = true;
         },
       }),
-      /boom/
+      /boom/,
     );
     assert.equal(fellBack, false);
   } finally {
@@ -266,6 +266,32 @@ test('paginates sort-key ranges', async () => {
   }
 });
 
+test('sends string ranges as betweenText', async () => {
+  const calls: unknown[] = [];
+  const client = {
+    queries: {
+      getRowChunk: async (input: unknown) => {
+        calls.push(input);
+        return {
+          data: JSON.stringify({ data: pack([]), count: 0, cursor: null }),
+        };
+      },
+    },
+  };
+  await loadRows(client, 'observationsByAnnotationSetId', 's', ['owner'], {
+    between: ['2026-01-01', '2026-02-01'],
+  });
+  assert.deepEqual(calls, [
+    {
+      source: 'observationsByAnnotationSetId',
+      scopeId: 's',
+      fields: ['owner'],
+      betweenText: ['2026-01-01', '2026-02-01'],
+      cursor: undefined,
+    },
+  ]);
+});
+
 test('flattens joined fields when paginating', async () => {
   const warn = console.warn;
   console.warn = () => {};
@@ -284,18 +310,17 @@ test('flattens joined fields when paginating', async () => {
         },
       },
     };
-    const rows = await loadRows(
-      client,
-      'observationsByAnnotationSetId',
-      'a',
-      ['locationId', 'location.x', 'location.imageId']
-    );
+    const rows = await loadRows(client, 'observationsByAnnotationSetId', 'a', [
+      'locationId',
+      'location.x',
+      'location.imageId',
+    ]);
     assert.deepEqual(
       rows.map((row) => [row['location.x'], row['location.imageId']]),
       [
         [5, 'i'],
         [undefined, undefined],
-      ]
+      ],
     );
   } finally {
     console.warn = warn;
