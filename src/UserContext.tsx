@@ -90,9 +90,10 @@ export function Project({
         value={{
           project: currentProject,
           categoriesHook: categoriesHook as unknown as ProjectContextType['categoriesHook'],
-          currentPM: myMembershipHook.data.find(
-            (m) => m.projectId == currentProject.id
-          )!,
+          // The shared list can lag a group the user was just added to.
+          currentPM:
+            myMembershipHook.data.find((m) => m.projectId == currentProject.id) ??
+            currentPM,
           currentCategory,
           setCurrentCategory,
           expandLegend,

@@ -7,6 +7,7 @@ import { updateAdminStats } from './functions/updateAdminStats/resource';
 import { ROW_SOURCES, SCOPE_MODELS } from '../shared/rowSources';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
+import { installSubscriptionGroupAuth } from './data/subscriptionGroupAuth';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
 import { reportClientError } from './functions/reportClientError/resource';
 import { workflowFiles } from './storage/workflowFiles/resource';
@@ -52,7 +53,7 @@ import { respondToInvite } from './functions/respondToInvite/resource';
 import { removeUserFromOrganization } from './functions/removeUserFromOrganization/resource';
 import { updateOrganizationMemberAdmin } from './functions/updateOrganizationMemberAdmin/resource';
 import { deleteQueue } from './functions/deleteQueue/resource';
-import { updateActiveOrganizations } from './functions/updateActiveOrganizations/resource';
+import { syncOrganizationGroups } from './functions/syncOrganizationGroups/resource';
 import { launchQCReview } from './functions/launchQCReview/resource';
 import { launchInfoTags } from './functions/launchInfoTags/resource';
 import { launchHomography } from './functions/launchHomography/resource';
@@ -134,7 +135,7 @@ const backend = defineBackend({
   removeUserFromOrganization,
   updateOrganizationMemberAdmin,
   deleteQueue,
-  updateActiveOrganizations,
+  syncOrganizationGroups,
   launchQCReview,
   launchInfoTags,
   launchHomography,
@@ -366,6 +367,11 @@ guardFunction.addToRolePolicy(new iam.PolicyStatement({
 const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('ChainMutationGuard', guardFunction);
 installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
   backend.data.resources.graphqlApi.apiId, guardSource);
+
+const subscriptionProjectSource = backend.data.resources.graphqlApi.addDynamoDbDataSource(
+  'SubscriptionProjectLookup', backend.data.resources.tables['Project']);
+installSubscriptionGroupAuth(backend.data.resources.cfnResources.cfnResolvers,
+  backend.data.resources.graphqlApi.apiId, subscriptionProjectSource);
 
 // Newer data constructs default tables to AWS-owned keys; keep the existing KMS encryption.
 for (const table of Object.values(backend.data.resources.cfnResources.amplifyDynamoDbTables)) {
