@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { reportClientError } from './reportClientError';
 
 interface ErrorWithDetails {
+  name?: string;
   message?: string;
   statusText?: string;
   status?: number;
@@ -21,6 +22,9 @@ export default function ErrorPage() {
   }, [error]);
 
   const errorObj = error as ErrorWithDetails;
+  const isWebGLError =
+    errorObj?.name === 'GPUInitializationError' ||
+    /WebGL/i.test(errorObj?.message ?? '');
 
   const handleGoHome = () => {
     navigate('/');
@@ -76,7 +80,30 @@ ${errorDetails.stack}
       className='d-flex flex-column align-items-center justify-content-center min-vh-100 text-center'
     >
       <h1>Oops!</h1>
-      <p>Sorry, an unexpected error has occurred.</p>
+      {isWebGLError ? (
+        <div style={{ maxWidth: 560 }}>
+          <p>
+            Your browser can&apos;t show the images and maps SurveyScope needs.
+          </p>
+          <p className='mb-1 text-start'>Try these solutions:</p>
+          <ul className='text-start small'>
+            <li>
+              Turn on hardware acceleration. In Edge, go to Settings &gt; System
+              and performance and switch on &quot;Use graphics acceleration when
+              available&quot;. In Chrome, go to Settings &gt; System.
+            </li>
+            <li>Close and reopen your browser, then try again.</li>
+            <li>Try a different browser, such as Chrome, Edge or Firefox.</li>
+            <li>Update your browser and graphics drivers.</li>
+            <li>
+              If you are using a remote desktop or virtual machine, use a
+              browser on your own computer instead.
+            </li>
+          </ul>
+        </div>
+      ) : (
+        <p>Sorry, an unexpected error has occurred.</p>
+      )}
       <div className='d-flex gap-2'>
         <Button variant='primary' onClick={handleGoHome}>
           Back to Surveys
