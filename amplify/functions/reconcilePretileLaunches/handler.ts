@@ -9,6 +9,7 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import pLimit from 'p-limit';
+import { loadImageTileStates } from '../shared/loadImageTileStates';
 
 Amplify.configure(
   {
@@ -60,15 +61,6 @@ const listProjectsQuery = /* GraphQL */ `
         pretileManifestS3Key
       }
       nextToken
-    }
-  }
-`;
-
-const getImageTiledAtQuery = /* GraphQL */ `
-  query GetImage($id: ID!) {
-    getImage(id: $id) {
-      id
-      tiledAt
     }
   }
 `;
@@ -170,6 +162,7 @@ type ImageStatusSummary = {
 };
 
 async function inspectImageStatus(
+  projectId: string,
   imageIds: string[],
   manifestCreatedAt: string,
   sampleSize = 20
@@ -191,41 +184,35 @@ async function inspectImageStatus(
   // means the stamp is stale (left over from a previous launch); workers
   // still need to touch the S3 tiles for this launch.
   const createdAtMs = Date.parse(manifestCreatedAt);
-  const limit = pLimit(20);
+  const states = await loadImageTileStates(projectId, imageIds, executeGraphql);
   let doneCount = 0;
   let missingCount = 0;
   let noTiledAtCount = 0;
   let staleTiledAtCount = 0;
   const sample: ImageStatusSummary['sample'] = [];
-  await Promise.all(
-    imageIds.map((id) =>
-      limit(async () => {
-        const data = await executeGraphql<{
-          getImage?: { tiledAt: string | null } | null;
-        }>(getImageTiledAtQuery, { id });
-        if (!data.getImage) {
-          missingCount++;
-          if (sample.length < sampleSize) sample.push({ id, reason: 'missing' });
-          return;
-        }
-        const tiledAt = data.getImage.tiledAt;
-        if (!tiledAt) {
-          noTiledAtCount++;
-          if (sample.length < sampleSize)
-            sample.push({ id, reason: 'no-tiledAt', tiledAt: null });
-          return;
-        }
-        const tiledAtMs = Date.parse(tiledAt);
-        if (!Number.isFinite(tiledAtMs) || tiledAtMs < createdAtMs) {
-          staleTiledAtCount++;
-          if (sample.length < sampleSize)
-            sample.push({ id, reason: 'stale', tiledAt });
-          return;
-        }
-        doneCount++;
-      })
-    )
-  );
+  for (const id of imageIds) {
+    const state = states.get(id);
+    if (!state) {
+      missingCount++;
+      if (sample.length < sampleSize) sample.push({ id, reason: 'missing' });
+      continue;
+    }
+    const tiledAt = state.tiledAt;
+    if (!tiledAt) {
+      noTiledAtCount++;
+      if (sample.length < sampleSize)
+        sample.push({ id, reason: 'no-tiledAt', tiledAt: null });
+      continue;
+    }
+    const tiledAtMs = Date.parse(tiledAt);
+    if (!Number.isFinite(tiledAtMs) || tiledAtMs < createdAtMs) {
+      staleTiledAtCount++;
+      if (sample.length < sampleSize)
+        sample.push({ id, reason: 'stale', tiledAt });
+      continue;
+    }
+    doneCount++;
+  }
   return {
     done: missingCount + noTiledAtCount + staleTiledAtCount === 0,
     total,
@@ -300,6 +287,7 @@ export const handler: Handler = async () => {
         }
 
         const summary = await inspectImageStatus(
+          project.id,
           manifest.imageIds,
           manifest.createdAt
         );
