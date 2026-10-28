@@ -2,6 +2,7 @@ import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
+import { loadImageTileStates, type ImageTileState } from './loadImageTileStates';
 
 const MANIFEST_PREFIX = 'pretile-launch-manifests';
 
@@ -71,16 +72,6 @@ const getProjectQuery = /* GraphQL */ `
   }
 `;
 
-const getImageTiledAtQuery = /* GraphQL */ `
-  query GetImage($id: ID!) {
-    getImage(id: $id) {
-      id
-      tiledAt
-      originalPath
-    }
-  }
-`;
-
 const updateProjectMutation = /* GraphQL */ `
   mutation UpdateProject($input: UpdateProjectInput!) {
     updateProject(input: $input) {
@@ -96,11 +87,7 @@ type ProjectRow = {
   tags: string[] | null;
 };
 
-type ImageRow = {
-  id: string;
-  tiledAt: string | null;
-  originalPath: string | null;
-};
+type ImageRow = ImageTileState;
 
 /**
  * Write a pretile manifest, stamp the Project with the manifest key, and enqueue
@@ -141,25 +128,17 @@ export async function enqueuePretile(
   const isLegacy = project.tags?.includes('legacy') ?? false;
   const imageKeyPrefix = isLegacy ? 'images/' : `images/${project.organizationId}/${projectId}/`;
 
-  const imageLookupLimit = pLimit(20);
-  const imageRows = await Promise.all(
-    dedupedIds.map((id) =>
-      imageLookupLimit(async () => {
-        const data = await executeGraphql<{ getImage?: ImageRow | null }>(
-          getImageTiledAtQuery,
-          { id }
-        );
-        const row = data.getImage;
-        if (!row) {
-          console.warn(
-            JSON.stringify({ msg: 'enqueue_pretile_missing_image', imageId: id })
-          );
-          return null;
-        }
-        return row;
-      })
-    )
-  );
+  const tileStates = await loadImageTileStates(projectId, dedupedIds, executeGraphql);
+  const imageRows = dedupedIds.map((id) => {
+    const row = tileStates.get(id);
+    if (!row) {
+      console.warn(
+        JSON.stringify({ msg: 'enqueue_pretile_missing_image', imageId: id })
+      );
+      return null;
+    }
+    return row;
+  });
 
   // Partition images into four buckets:
   //   - skippedFresh:    tiledAt < 30 days old → tiles are fresh, no work needed
