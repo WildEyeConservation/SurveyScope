@@ -86,6 +86,7 @@ import {
   SqsEventSource,
 } from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -368,8 +369,16 @@ const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('Chain
 installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
   backend.data.resources.graphqlApi.apiId, guardSource);
 
-const subscriptionProjectSource = backend.data.resources.graphqlApi.addDynamoDbDataSource(
-  'SubscriptionProjectLookup', backend.data.resources.tables['Project']);
+// Imported by name: referencing the Project nested stack's table creates a dependency cycle.
+const subscriptionProjectTable = dynamodb.Table.fromTableName(
+  backend.data.stack, 'SubscriptionProjectTable',
+  `Project-${backend.data.resources.graphqlApi.apiId}-NONE`);
+const subscriptionProjectSource = new appsync.DynamoDbDataSource(
+  backend.data.stack, 'SubscriptionProjectLookup', {
+    api: backend.data.resources.graphqlApi,
+    table: subscriptionProjectTable,
+    readOnlyAccess: true,
+  });
 installSubscriptionGroupAuth(backend.data.resources.cfnResources.cfnResolvers,
   backend.data.resources.graphqlApi.apiId, subscriptionProjectSource);
 
