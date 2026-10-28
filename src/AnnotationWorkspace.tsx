@@ -240,18 +240,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     () => (isTest ? crypto.randomUUID() : annotationSetId),
     [isTest, annotationSetId]
   );
-  const subscriptionFilter = useMemo(() => {
-    const conditions: Array<
-      { setId: { eq: string } } | { imageId: { eq: string } }
-    > = [];
-    // Tests write to an ephemeral set, so only filter by set outside test mode.
-    if (!isTest) {
-      conditions.push({ setId: { eq: annotationSetId } });
-    }
-    conditions.push({ imageId: { eq: location.image.id } });
-    return { filter: { and: conditions } };
-  }, [annotationSetId, location.image.id, isTest]);
   const {
+    project,
     categoriesHook: { data: projectCategories },
     expandLegend,
     setExpandLegend,
@@ -260,6 +250,20 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     CategoryType[] | null
   >(null);
   const legendCollapsed = !expandLegend;
+  const subscriptionFilter = useMemo(() => {
+    // projectId lets the server authorise users with many organisation groups.
+    const conditions: Array<
+      | { setId: { eq: string } }
+      | { imageId: { eq: string } }
+      | { projectId: { eq: string } }
+    > = [{ projectId: { eq: project.id } }];
+    // Tests write to an ephemeral set, so only filter by set outside test mode.
+    if (!isTest) {
+      conditions.push({ setId: { eq: annotationSetId } });
+    }
+    conditions.push({ imageId: { eq: location.image.id } });
+    return { filter: { and: conditions } };
+  }, [project.id, annotationSetId, location.image.id, isTest]);
 
   const toggleLegendCollapsed = () => {
     setExpandLegend((wasExpanded) => {

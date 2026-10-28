@@ -40,7 +40,7 @@ import { removeUserFromOrganization } from '../functions/removeUserFromOrganizat
 import { updateOrganizationMemberAdmin } from '../functions/updateOrganizationMemberAdmin/resource';
 import { deleteQueue } from '../functions/deleteQueue/resource';
 import { cancelIndividualIdJob } from '../functions/cancelIndividualIdJob/resource';
-import { updateActiveOrganizations } from '../functions/updateActiveOrganizations/resource';
+import { syncOrganizationGroups } from '../functions/syncOrganizationGroups/resource';
 import { launchQCReview } from '../functions/launchQCReview/resource';
 import { launchInfoTags } from '../functions/launchInfoTags/resource';
 import { launchHomography } from '../functions/launchHomography/resource';
@@ -1616,14 +1616,11 @@ const schema = a
       .returns(a.string())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(getJwtSecret)),
-    updateActiveOrganizations: a
+    syncOrganizationGroups: a
       .mutation()
-      .arguments({
-        activatedOrganizationIds: a.string().array().required(),
-      })
-      .returns(a.json())
+      .returns(a.boolean())
       .authorization((allow) => [allow.authenticated()])
-      .handler(a.handler.function(updateActiveOrganizations)),
+      .handler(a.handler.function(syncOrganizationGroups)),
     // Image storage: originals and tiles are only reachable via imageAccess.
     signImageTiles: a
       .query()
@@ -1825,7 +1822,7 @@ const schema = a
     allow.resource(updateOrganizationMemberAdmin),
     allow.resource(deleteQueue),
     allow.resource(cancelIndividualIdJob),
-    allow.resource(updateActiveOrganizations),
+    allow.resource(syncOrganizationGroups),
     allow.resource(launchIndividualId),
     allow.resource(updateImageTransect),
     allow.resource(claimIndividualIdTransect),
@@ -1909,7 +1906,7 @@ export type RemoveUserFromOrganizationHandler = MutationHandler<{ organizationId
 export type UpdateOrganizationMemberAdminHandler = MutationHandler<{ organizationId: string; userId: string; isAdmin: boolean }>;
 export type DeleteQueueHandler = MutationHandler<{ queueId: string }>;
 export type CancelIndividualIdJobHandler = MutationHandler<{ jobId: string }>;
-export type UpdateActiveOrganizationsHandler = MutationHandler<{ activatedOrganizationIds: string[] }>;
+export type SyncOrganizationGroupsHandler = MutationHandler<Record<string, never>>;
 export type LaunchIndividualIdHandler = MutationHandler<{ request: string }>;
 export type RecomputeBoundaryStatusHandler = MutationHandler<{ projectId: string }>;
 export type GetRowChunkHandler = MutationHandler<
