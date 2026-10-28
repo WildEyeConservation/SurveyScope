@@ -10,6 +10,7 @@ import Select from 'react-select';
 import { Card, Button, Spinner } from 'react-bootstrap';
 import SnapshotStatsModal from './SnapshotStatsModal';
 import { fetchAllPaginatedResults } from './utils';
+import { loadRows } from './rowChunks';
 
 export default function UserStats() {
   const { myOrganizationHook, myMembershipHook } =
@@ -327,26 +328,29 @@ export default function UserStats() {
   ): Promise<any[]> {
     const lower = lowerLimitOverride ?? `${startString}T00:00:00Z`;
     const upper = upperLimitOverride ?? `${endString}T23:59:59Z`;
-    const allObs = await fetchAllPaginatedResults(
-      client.models.Observation.observationsByAnnotationSetId,
-      {
-        annotationSetId,
-        createdAt: { between: [lower, upper] },
-        limit: 10000,
-        selectionSet: [
-          'createdAt', 'annotationCount', 'timeTaken', 'waitingTime', 'owner', 'locationId',
-          'location.id', 'location.confidence',
-        ] as const,
-      }
+    const allObs = await loadRows(
+      client,
+      'observationsByAnnotationSetId',
+      annotationSetId,
+      [
+        'createdAt',
+        'annotationCount',
+        'timeTaken',
+        'waitingTime',
+        'owner',
+        'locationId',
+        'location.confidence',
+      ],
+      { between: [lower, upper] }
     );
-    return allObs.map(o => ({
+    return allObs.map((o) => ({
       createdAt: o.createdAt,
       annotationCount: o.annotationCount,
       timeTaken: o.timeTaken,
       waitingTime: o.waitingTime,
       owner: o.owner,
       locationId: o.locationId,
-      confidence: (o as any).location?.confidence ?? null,
+      confidence: o['location.confidence'] ?? null,
     }));
   }
 

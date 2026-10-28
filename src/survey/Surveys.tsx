@@ -509,6 +509,7 @@ export default function Surveys() {
           size={size}
           variant='primary'
           onClick={() => {
+            setSelectedProject(project);
             setSelectedAnnotationSet(annotationSet);
             showModal('annotationCount');
           }}
@@ -1264,9 +1265,10 @@ export default function Surveys() {
           surveyId={selectedProject.id}
         />
       )}
-      {selectedAnnotationSet && (
+      {selectedAnnotationSet && selectedProject && (
         <AnnotationCountModal
           setId={selectedAnnotationSet.id}
+          projectId={selectedProject.id}
           show={modalToShow === 'annotationCount'}
           handleClose={() => {
             showModal(null);

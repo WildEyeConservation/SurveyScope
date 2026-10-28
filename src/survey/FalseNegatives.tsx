@@ -7,7 +7,7 @@ import {
 } from '../storage/workflowFiles';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { loadLocationCandidates } from './zoomPreview';
@@ -278,21 +278,19 @@ export default function FalseNegatives({
       onProgress?: (message: string) => void
     ): Promise<MinimalTile[]> => {
       onProgress?.('Querying locations...');
-      const allLocs = await fetchAllPaginatedResults(
-        client.models.Location.locationsBySetIdAndConfidence,
-        {
-          setId: locationSetId,
-          limit: 10000,
-          selectionSet: ['id', 'imageId', 'x', 'y', 'width', 'height'] as const,
-        }
+      const allLocs = await loadRows(
+        client,
+        'locationsBySetIdAndConfidence',
+        locationSetId,
+        ['imageId', 'x', 'y', 'width', 'height']
       );
       return allLocs
         .filter(loc => loc.x !== 0 && loc.y !== 0 && (loc.width ?? 0) !== 0 && (loc.height ?? 0) !== 0)
         .map(loc => ({
           id: loc.id,
           imageId: loc.imageId!,
-          x: loc.x,
-          y: loc.y,
+          x: loc.x!,
+          y: loc.y!,
           width: loc.width!,
           height: loc.height!,
         }));

@@ -4,6 +4,7 @@ import { LoadingProgressCard } from './LoadingProgressCard';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { useUsers } from '../apiInterface';
@@ -561,37 +562,25 @@ async function fetchAnnotationsByAnnotationSet(
   annotationSetId: string,
   onProgress?: (count: number) => void
 ): Promise<Array<{ id: string; categoryId: string; reviewCatId: string | null; owner: string | null }>> {
-  const allItems: Array<{ id: string; categoryId: string; reviewCatId: string | null; owner: string | null }> = [];
-  let nextToken: string | null | undefined = undefined;
-  let lastReported = 0;
-
-  do {
-    const { data, nextToken: nt } =
-      await client.models.Annotation.annotationsByAnnotationSetId(
-        { setId: annotationSetId },
-        {
-          selectionSet: ['id', 'categoryId', 'reviewCatId', 'owner'] as const,
-          limit: 10000,
-          nextToken,
-        }
-      );
-    for (const item of data || []) {
-      allItems.push({
-        id: item.id,
-        categoryId: item.categoryId,
-        reviewCatId: (item as any).reviewCatId ?? null,
-        owner: (item as any).owner ?? null,
-      });
-    }
-    const currentThousand = Math.floor(allItems.length / 1000);
-    if (onProgress && currentThousand > lastReported) {
-      lastReported = currentThousand;
-      onProgress(allItems.length);
-    }
-    nextToken = nt as string | null | undefined;
-  } while (nextToken);
-
-  return allItems;
+  const rows = await loadRows(
+    client,
+    'annotationsByAnnotationSetId',
+    annotationSetId,
+    ['categoryId', 'reviewCatId', 'owner'],
+    { onProgress }
+  );
+  return rows.flatMap((row) =>
+    row.categoryId
+      ? [
+          {
+            id: row.id,
+            categoryId: row.categoryId,
+            reviewCatId: row.reviewCatId,
+            owner: row.owner,
+          },
+        ]
+      : []
+  );
 }
 
 // Send the QC review launch request to the Lambda.
