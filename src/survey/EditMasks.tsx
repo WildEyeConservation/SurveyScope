@@ -2,6 +2,7 @@ import { Alert, Button } from 'react-bootstrap';
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { Footer } from '../Modal';
 import { GlobalContext } from '../Context';
+import { loadProjectImages } from '../projectImages';
 import CameraMaskEditor, { type MaskTarget } from './masks/CameraMaskEditor';
 import {
   MASK_HELP,
@@ -18,7 +19,6 @@ import {
   type ImageOrientationGroup,
 } from '../types/Orientation';
 
-const SAMPLE_PAGE_SIZE = 2000;
 const SAMPLES_KEPT_PER_GROUP = 200;
 
 type SampleImage = {
@@ -51,34 +51,25 @@ export default function EditMasks({ projectId }: { projectId: string }) {
           )
         ).data ?? [];
       const grouped: Record<string, SampleImage[]> = {};
-      let nextToken: string | null | undefined;
-      do {
-        const result = await client.models.Image.imagesByProjectId(
-          { projectId },
-          {
-            limit: SAMPLE_PAGE_SIZE,
-            nextToken,
-            selectionSet: [
-              'id',
-              'cameraId',
-              'width',
-              'height',
-              'originalPath',
-            ] as const,
-            signal,
-          }
-        );
-        for (const image of result.data ?? []) {
-          if (!image.cameraId) continue;
-          const shape = orientationGroupForDimensions(
-            image.width,
-            image.height
-          );
-          const group = (grouped[`${image.cameraId}:${shape}`] ??= []);
-          if (group.length < SAMPLES_KEPT_PER_GROUP) group.push(image);
-        }
-        nextToken = result.nextToken;
-      } while (nextToken && !signal.aborted);
+      const images = await loadProjectImages(
+        client,
+        projectId,
+        ['cameraId', 'width', 'height', 'originalPath'],
+        { signal }
+      );
+      for (const image of images) {
+        if (!image.cameraId || image.width === null || image.height === null)
+          continue;
+        const shape = orientationGroupForDimensions(image.width, image.height);
+        const group = (grouped[`${image.cameraId}:${shape}`] ??= []);
+        if (group.length < SAMPLES_KEPT_PER_GROUP)
+          group.push({
+            id: image.id,
+            width: image.width,
+            height: image.height,
+            originalPath: image.originalPath,
+          });
+      }
       if (signal.aborted) return;
       setCameras(cameraRows.map((c) => ({ id: c.id, name: c.name })));
       setMasks(

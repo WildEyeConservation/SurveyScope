@@ -1,6 +1,7 @@
 import pLimit from 'p-limit';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from './utils';
+import { loadRows } from './rowChunks';
 
 export const INFO_TAG_CSV_DELIMITER = '|';
 
@@ -53,14 +54,12 @@ export async function fetchInfoTagDataForSet(
     return { tagIdsByAnnotation: new Map(), nameById };
   }
 
-  const links = await fetchAllPaginatedResults(
-    client.models.AnnotationInfoTag.annotationInfoTagsByAnnotationSetId,
-    {
-      annotationSetId,
-      selectionSet: ['annotationId', 'infoTagId'] as const,
-      limit: 10000,
-    },
-    onProgress
+  const links = await loadRows(
+    client,
+    'annotationInfoTagsByAnnotationSetId',
+    annotationSetId,
+    [],
+    { onProgress }
   );
 
   const tagIdsByAnnotation = new Map<string, string[]>();
@@ -272,13 +271,11 @@ export async function deleteInfoTagDataForSet(
   annotationSetId: string
 ): Promise<void> {
   const limit = pLimit(10);
-  const links = await fetchAllPaginatedResults(
-    client.models.AnnotationInfoTag.annotationInfoTagsByAnnotationSetId,
-    {
-      annotationSetId,
-      selectionSet: ['annotationId', 'infoTagId'] as const,
-      limit: 1000,
-    }
+  const links = await loadRows(
+    client,
+    'annotationInfoTagsByAnnotationSetId',
+    annotationSetId,
+    []
   );
   await Promise.all(
     links.map((link) =>

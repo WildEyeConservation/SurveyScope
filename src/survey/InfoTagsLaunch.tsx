@@ -4,6 +4,7 @@ import { LoadingProgressCard } from './LoadingProgressCard';
 import type { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { shouldIgnoreLaunchError } from './QCReview';
@@ -90,20 +91,15 @@ export default function InfoTagsLaunch({
       }
       return rows;
     });
-    const annotationsPromise = fetchAllPaginatedResults(
-      client.models.Annotation.annotationsByAnnotationSetId,
+    const annotationsPromise = loadRows(
+      client,
+      'annotationsByAnnotationSetId',
+      annotationSet.id,
+      ['categoryId', 'imageId', 'infoTaggedBy'],
       {
-        setId: annotationSet.id,
-        selectionSet: [
-          'id',
-          'categoryId',
-          'imageId',
-          'infoTaggedBy',
-        ] as const,
-        limit: 10000,
-      },
-      (count) => {
-        if (mounted) setLoadStatus((state) => ({ ...state, annotations: count }));
+        onProgress: (count) => {
+          if (mounted) setLoadStatus((state) => ({ ...state, annotations: count }));
+        },
       }
     ).then((rows) => {
       if (mounted) {
@@ -141,12 +137,18 @@ export default function InfoTagsLaunch({
         if (!mounted) return;
         setCategories(categoryRows);
         setAnnotations(
-          annotationRows.map((row) => ({
-            id: row.id,
-            categoryId: row.categoryId,
-            imageId: row.imageId,
-            infoTaggedBy: row.infoTaggedBy ?? null,
-          }))
+          annotationRows.flatMap((row) =>
+            row.categoryId && row.imageId
+              ? [
+                  {
+                    id: row.id,
+                    categoryId: row.categoryId,
+                    imageId: row.imageId,
+                    infoTaggedBy: row.infoTaggedBy ?? null,
+                  },
+                ]
+              : []
+          )
         );
         setInfoTagCount(infoTagRows.length);
       })

@@ -1,6 +1,7 @@
 import { registerImageFile } from '../../storage/api';
 import type { CreatedImage } from '../../types/ImageData';
 import { fetchAllPaginatedResults } from '../../utils';
+import { loadRows } from '../../rowChunks';
 import { logAdminAction } from '../../utils/adminActionLogger';
 import { DETECTOR_DISPATCH } from './modelDispatch';
 import type { UploadStateStore } from './persistence';
@@ -279,17 +280,22 @@ export class Finalizer {
   }
 
   private async fetchDispatchedImageIds(): Promise<Set<string>> {
+    return this.fetchProcessedImageIds(REGISTRATION_DISPATCH_SOURCE);
+  }
+
+  // beginsWith then an exact match, since sources can share a prefix.
+  private async fetchProcessedImageIds(source: string): Promise<Set<string>> {
     const { client, projectId } = this.ctx;
-    const rows = (await fetchAllPaginatedResults(
-      client.models.ImageProcessedBy.processedByProjectIdAndSource,
-      {
-        projectId,
-        source: { eq: REGISTRATION_DISPATCH_SOURCE },
-        selectionSet: ['imageId'],
-        limit: 10000,
-      }
-    )) as { imageId: string }[];
-    return new Set(rows.map((r) => r.imageId));
+    const rows = await loadRows(
+      client,
+      'processedByProjectIdAndSource',
+      projectId,
+      ['source'],
+      { beginsWith: source }
+    );
+    return new Set(
+      rows.filter((row) => row.source === source).map((row) => row.imageId)
+    );
   }
 
   /** False means unconfirmed, not failed. */
@@ -392,17 +398,8 @@ export class Finalizer {
     }
 
     // Skip images the detector has already processed.
-    const processedRecords = await fetchAllPaginatedResults(
-      client.models.ImageProcessedBy.processedByProjectIdAndSource,
-      {
-        projectId,
-        source: { eq: config.processedSource },
-        selectionSet: ['imageId'],
-        limit: 10000,
-      }
-    );
-    const processedImageIds = new Set(
-      (processedRecords as { imageId: string }[]).map((r) => r.imageId)
+    const processedImageIds = await this.fetchProcessedImageIds(
+      config.processedSource
     );
     const unprocessedImages = allProjectImages.filter(
       (img) => !processedImageIds.has(img.id)
