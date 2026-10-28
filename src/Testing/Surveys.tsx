@@ -64,6 +64,8 @@ export default function Surveys() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+
     async function getSelectedLocationPools() {
       if (locationPools.length === 0) return;
 
@@ -74,15 +76,19 @@ export default function Surveys() {
             await client.models.TestPresetProject.testPresetsByProjectId({
               projectId: survey.id,
             });
+          if (cancelled) return;
 
           setSelectedLocationPools((prev) => {
             originalSelectedLocationPools.current = {
               ...prev,
-              [survey.id]: selectedLocationPools.map((pool) => ({
-                label: locationPools.find((p) => p.id === pool.testPresetId)!
-                  .name,
-                value: pool.testPresetId,
-              })),
+              [survey.id]: selectedLocationPools.flatMap((pool) => {
+                const preset = locationPools.find(
+                  (p) => p.id === pool.testPresetId
+                );
+                return preset
+                  ? [{ label: preset.name, value: pool.testPresetId }]
+                  : [];
+              }),
             };
             return originalSelectedLocationPools.current;
           });
@@ -91,7 +97,14 @@ export default function Surveys() {
     }
 
     getSelectedLocationPools();
+    return () => {
+      cancelled = true;
+    };
   }, [surveys, locationPools]);
+
+  const surveyPreset = (surveyId: string) =>
+    locationPools.find((pool) => pool.ownerProjectId === surveyId);
+  const selectedPreset = selectedSurvey && surveyPreset(selectedSurvey.value);
 
   const tableData = surveys
     .filter((survey) => !survey.hidden)
@@ -101,6 +114,7 @@ export default function Surveys() {
         'editLocationPoolModal',
         'configModal',
       ].includes(modalToShow || '');
+      const hasPreset = !!surveyPreset(survey.id);
 
       return {
         id: survey.id,
@@ -126,7 +140,7 @@ export default function Surveys() {
               });
               showModal('addLocationsToPoolModal');
             }}
-            disabled={isDisabled}
+            disabled={isDisabled || !hasPreset}
           >
             <Plus />
           </Button>,
@@ -140,7 +154,7 @@ export default function Surveys() {
               });
               showModal('editLocationPoolModal');
             }}
-            disabled={isDisabled}
+            disabled={isDisabled || !hasPreset}
           >
             <Eye />
           </Button>,
@@ -193,28 +207,18 @@ export default function Surveys() {
           survey={{ id: selectedSurvey.value, name: selectedSurvey.label }}
         />
       )}
-      {selectedSurvey && (
+      {selectedSurvey && selectedPreset && (
         <EditLocationsModal
           key={selectedSurvey.value}
           show={modalToShow === 'editLocationPoolModal'}
-          preset={{
-            id: locationPools.find(
-              (pool) => pool.name === selectedSurvey.label
-            )!.id,
-            name: selectedSurvey.label,
-          }}
+          preset={{ id: selectedPreset.id, name: selectedPreset.name }}
           surveyId={selectedSurvey.value}
         />
       )}
-      {selectedSurvey && (
+      {selectedSurvey && selectedPreset && (
         <AddLocationsModal
           show={modalToShow === 'addLocationsToPoolModal'}
-          preset={{
-            id: locationPools.find(
-              (pool) => pool.name === selectedSurvey.label
-            )!.id,
-            name: selectedSurvey.label,
-          }}
+          preset={{ id: selectedPreset.id, name: selectedPreset.name }}
           surveyId={selectedSurvey.value}
         />
       )}

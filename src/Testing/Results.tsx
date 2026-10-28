@@ -51,6 +51,7 @@ export default function Results() {
           selectionSet: [
             'id',
             'testPreset.name',
+            'testPreset.ownerProjectId',
             'testAnimals',
             'projectId',
             'totalMissedAnimals',
@@ -104,14 +105,7 @@ export default function Results() {
     const createdAt = result.createdAt ?? new Date().toISOString();
     const date = new Date(createdAt);
     const pool = result.testPreset.name;
-    let surveyId = selectedProject?.value;
-
-    if (pool !== selectedProject?.label) {
-      const project = organizationProjects.find((p) => p.name === pool);
-      if (project) {
-        surveyId = project.id;
-      }
-    }
+    const surveyId = result.testPreset.ownerProjectId ?? selectedProject?.value;
 
     const missedAnimals =
       result.totalMissedAnimals > 0 ? result.totalMissedAnimals : 0;
