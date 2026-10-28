@@ -630,6 +630,8 @@ const schema = a
         organizationId: a.id().required(),
         organization: a.belongsTo('Organization', 'organizationId'),
         name: a.string().required(),
+        // Set on the pool a survey creates for itself; shared pools have none.
+        ownerProjectId: a.id(),
         locations: a.hasMany('TestPresetLocation', 'testPresetId'),
         projects: a.hasMany('TestPresetProject', 'testPresetId'),
         testResults: a.hasMany('TestResult', 'testPresetId'),
@@ -639,6 +641,7 @@ const schema = a
       .secondaryIndexes((index) => [
         index('organizationId').queryField('testPresetsByOrganizationId'),
         index('name').queryField('testPresetsByName'),
+        index('ownerProjectId').queryField('testPresetsByOwnerProjectId'),
       ]),
     TestPresetLocation: a
       .model({

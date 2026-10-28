@@ -248,6 +248,7 @@ export default function NewSurveyModal({
 
     const { data: testPreset } = await client.models.TestPreset.create({
       name: name,
+      ownerProjectId: project.id,
       organizationId: organization.value,
       group: organization.value,
     });
