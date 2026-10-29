@@ -4,6 +4,6 @@ export const updateImageTransect = defineFunction({
   name: 'updateImageTransect',
   entry: './handler.ts',
   timeoutSeconds: 120,
-  runtime: 20,
+  runtime: 24,
   memoryMB: 512,
 });

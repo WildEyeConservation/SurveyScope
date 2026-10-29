@@ -4,5 +4,5 @@ export const createChainShare = defineFunction({
   name: 'createChainShare',
   timeoutSeconds: 900,
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
 });

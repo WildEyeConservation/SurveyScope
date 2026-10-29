@@ -5,7 +5,7 @@ export const updateAdminStats = defineFunction({
   // Reads the model tables directly; in the data stack to avoid a cycle.
   resourceGroupName: 'data',
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
   schedule: 'every 1h',
   timeoutSeconds: 900,
   memoryMB: 1024,

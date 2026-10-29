@@ -661,7 +661,7 @@ const projectTable = backend.data.resources.tables['Project'];
 const backfillFn = new NodejsFunction(backfillStack, 'BackfillLocationGroupFn', {
   entry: path.join(__dirname, 'functions/backfillLocationGroup/handler.ts'),
   handler: 'handler',
-  runtime: lambda.Runtime.NODEJS_20_X,
+  runtime: lambda.Runtime.NODEJS_24_X,
   timeout: Duration.seconds(60),
   memorySize: 512,
   environment: {
@@ -1364,7 +1364,7 @@ const recordWorkflowTaskEventFunction = new NodejsFunction(
       'functions/workflowStats/recordTaskEvent.ts'
     ),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_20_X,
+    runtime: lambda.Runtime.NODEJS_24_X,
     architecture: lambda.Architecture.ARM_64,
     timeout: Duration.seconds(15),
     memorySize: 512,
@@ -1438,7 +1438,7 @@ const workflowStatsObservationProjector = new NodejsFunction(
       'functions/workflowStats/projectObservation.ts'
     ),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_20_X,
+    runtime: lambda.Runtime.NODEJS_24_X,
     architecture: lambda.Architecture.ARM_64,
     timeout: Duration.seconds(30),
     memorySize: 512,
@@ -2077,7 +2077,7 @@ if (enableEcs) {
           'functions/finalizeJollyResults/handler.ts'
         ),
         handler: 'handler',
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_24_X,
         timeout: Duration.minutes(5),
         memorySize: 1024,
         environment: {

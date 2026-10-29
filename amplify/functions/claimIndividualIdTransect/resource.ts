@@ -4,5 +4,5 @@ export const claimIndividualIdTransect = defineFunction({
   name: 'claimIndividualIdTransect',
   entry: './handler.ts',
   timeoutSeconds: 30,
-  runtime: 20,
+  runtime: 24,
 });

@@ -1838,7 +1838,6 @@ export type ServerSchema = typeof schema;
 
 interface LambdaContext {
   awsRequestId?: string;
-  callbackWaitsForEmptyEventLoop: boolean;
   getRemainingTimeInMillis: () => number;
 }
 

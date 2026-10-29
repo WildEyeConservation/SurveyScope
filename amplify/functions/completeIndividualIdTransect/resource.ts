@@ -4,5 +4,5 @@ export const completeIndividualIdTransect = defineFunction({
   name: 'completeIndividualIdTransect',
   entry: './handler.ts',
   timeoutSeconds: 60,
-  runtime: 20,
+  runtime: 24,
 });

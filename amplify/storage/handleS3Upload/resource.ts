@@ -5,7 +5,7 @@ export const handleS3Upload =
     defineFunction({
     name: 'handleS3Upload',
     entry: './app.mjs',
-        runtime: 20,
+        runtime: 24,
         timeoutSeconds: 720,
     memoryMB: 4096,
     environment: {

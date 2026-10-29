@@ -5,7 +5,7 @@ export const getRowChunk = defineFunction({
   // Reads the model tables directly; in the data stack to avoid a cycle.
   resourceGroupName: 'data',
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
   timeoutSeconds: 30,
   // More memory buys more CPU for gzip.
   memoryMB: 2048,

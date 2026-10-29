@@ -10,7 +10,7 @@
     "unit": "jest",
     "lint": "eslint '*.ts' --quiet --fix",
     "compile": "tsc",
-    "build:debug": "esbuild --bundle handler.ts --outfile=debug/handler.js --sourcemap --platform=node --target=node20 --minify",
+    "build:debug": "esbuild --bundle handler.ts --outfile=debug/handler.js --sourcemap --platform=node --target=node24 --minify",
     "test": "npm run compile && npm run unit"
   },
   "dependencies": {
