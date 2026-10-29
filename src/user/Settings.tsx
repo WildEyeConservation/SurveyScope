@@ -1,10 +1,18 @@
-import { UserIcon } from 'lucide-react';
+import {
+  EraserIcon,
+  LogOutIcon,
+  MailIcon,
+  PencilIcon,
+  UserIcon,
+  XIcon,
+} from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import {
   confirmUserAttribute,
   fetchUserAttributes,
   updateUserAttribute,
 } from 'aws-amplify/auth';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormText, Label } from '@/components/ui/label';
@@ -12,6 +20,9 @@ import { Modal, Header, Title, Body, Footer } from '../Modal';
 import { isValidEmail, normalizeEmail } from '../../shared/email';
 
 type Status = { variant: 'success' | 'danger'; text: string } | null;
+
+const sectionHeading =
+  'mb-4 border-b border-white/10 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground';
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -27,6 +38,7 @@ export default function Settings({ signOut }: { signOut: () => void }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
+  const [editing, setEditing] = useState(false);
 
   const loadAttributes = useCallback(async () => {
     const attrs = await fetchUserAttributes();
@@ -40,7 +52,7 @@ export default function Settings({ signOut }: { signOut: () => void }) {
     if (!show) return;
     setStatus(null);
     loadAttributes().catch((error) =>
-      setStatus({ variant: 'danger', text: errorText(error) })
+      setStatus({ variant: 'danger', text: errorText(error) }),
     );
   }, [show, loadAttributes]);
 
@@ -117,10 +129,24 @@ export default function Settings({ signOut }: { signOut: () => void }) {
     setStatus(null);
   };
 
+  const initial = (username || email).charAt(0).toUpperCase();
+  const profileOpen = editing || pendingEmail !== null;
+
+  const stopEditing = () => {
+    setEditing(false);
+    setUsernameDraft(username);
+    setEmailDraft(email);
+  };
+
+  const closeSettings = () => {
+    setShow(false);
+    setEditing(false);
+  };
+
   const clearSiteData = () => {
     if (
       !window.confirm(
-        'Are you sure you want to clear the site data? Do not proceed if you have unsaved work or busy uploading files.'
+        'Are you sure you want to clear the site data? Do not proceed if you have unsaved work or busy uploading files.',
       )
     ) {
       return;
@@ -173,152 +199,225 @@ export default function Settings({ signOut }: { signOut: () => void }) {
         <span className='block lg:hidden'>User</span>
       </button>
 
-      <Modal
-        show={show}
-        onHide={() => setShow(false)}
-        size='lg'
-        centered
-      >
+      <Modal show={show} onHide={closeSettings} size='lg' centered>
         <Header>
           <Title>Settings</Title>
         </Header>
-        <Body className='p-0'>
-          <div className='p-4'>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (usernameChanged) saveUsername();
-              }}
-            >
-              <div className='mb-4'>
-                <Label htmlFor='settings-username'>Username</Label>
-                <div className='flex gap-2'>
-                  <Input
-                    id='settings-username'
-                    value={usernameDraft}
-                    onChange={(e) => setUsernameDraft(e.target.value)}
-                    disabled={busy}
-                    maxLength={128}
-                  />
-                  <Button
-                    type='submit'
-                    variant='primary'
-                    disabled={busy || !usernameChanged}
+        <Body>
+          <div className='flex flex-col gap-6 p-4'>
+            <div className='flex items-center gap-3'>
+              <div className='flex size-12 shrink-0 items-center justify-center rounded-full bg-primary text-xl text-white'>
+                {initial || <UserIcon className='size-6' />}
+              </div>
+              <div className='min-w-0 flex-1'>
+                <div className='truncate text-lg leading-tight'>
+                  {username || 'Your account'}
+                </div>
+                <div className='truncate text-sm text-muted-foreground'>
+                  {email}
+                </div>
+              </div>
+              {!pendingEmail && (
+                <Button
+                  variant='outline-light'
+                  className='w-32'
+                  onClick={editing ? stopEditing : () => setEditing(true)}
+                  disabled={busy}
+                >
+                  {editing ? (
+                    <>
+                      <XIcon className='size-4' />
+                      Cancel
+                    </>
+                  ) : (
+                    <>
+                      <PencilIcon className='size-4' />
+                      Edit profile
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            {status && (
+              <Alert
+                variant={status.variant}
+                onClose={() => setStatus(null)}
+                className='mb-0'
+              >
+                {status.text}
+              </Alert>
+            )}
+
+            {profileOpen && (
+              <section>
+                <h3 className={sectionHeading}>Edit profile</h3>
+                <div className='flex flex-col gap-5'>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (usernameChanged) saveUsername();
+                    }}
                   >
-                    Save
+                    <Label htmlFor='settings-username'>Username</Label>
+                    <div className='flex gap-2'>
+                      <Input
+                        id='settings-username'
+                        value={usernameDraft}
+                        onChange={(e) => setUsernameDraft(e.target.value)}
+                        disabled={busy}
+                        maxLength={128}
+                      />
+                      <Button
+                        type='submit'
+                        variant='primary'
+                        className='w-24'
+                        disabled={busy || !usernameChanged}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </form>
+
+                  {pendingEmail ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (code.trim()) confirmEmail();
+                      }}
+                    >
+                      <Label htmlFor='settings-email-code'>
+                        Verify your new email
+                      </Label>
+                      <p className='mb-2 flex items-center gap-2 text-sm text-muted-foreground'>
+                        <MailIcon className='size-4 shrink-0' />
+                        <span>
+                          Enter the code we sent to{' '}
+                          <span className='text-foreground'>
+                            {pendingEmail}
+                          </span>
+                        </span>
+                      </p>
+                      <div className='flex gap-2'>
+                        <Input
+                          id='settings-email-code'
+                          value={code}
+                          onChange={(e) => setCode(e.target.value)}
+                          disabled={busy}
+                          autoComplete='one-time-code'
+                          inputMode='numeric'
+                          placeholder='Verification code'
+                        />
+                        <Button
+                          type='submit'
+                          variant='primary'
+                          className='w-24'
+                          disabled={busy || !code.trim()}
+                        >
+                          Confirm
+                        </Button>
+                        <Button
+                          type='button'
+                          variant='outline-light'
+                          onClick={cancelEmailChange}
+                          disabled={busy}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      <FormText>
+                        Didn&apos;t get it?{' '}
+                        <Button
+                          type='button'
+                          variant='link'
+                          className='p-0 align-baseline text-[length:inherit]'
+                          onClick={() => sendEmailCode(pendingEmail)}
+                          disabled={busy}
+                        >
+                          Send a new code
+                        </Button>
+                      </FormText>
+                    </form>
+                  ) : (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (emailChanged) sendEmailCode(newEmail);
+                      }}
+                    >
+                      <Label htmlFor='settings-email'>Email</Label>
+                      <div className='flex gap-2'>
+                        <Input
+                          id='settings-email'
+                          type='email'
+                          value={emailDraft}
+                          onChange={(e) => setEmailDraft(e.target.value)}
+                          disabled={busy}
+                        />
+                        <Button
+                          type='submit'
+                          variant='primary'
+                          className='w-24'
+                          disabled={busy || !emailChanged}
+                        >
+                          Change
+                        </Button>
+                      </div>
+                      {emailChanged && (
+                        <FormText>
+                          We&apos;ll send a code to the new address to confirm
+                          it. You keep signing in with your current email until
+                          then.
+                        </FormText>
+                      )}
+                    </form>
+                  )}
+                </div>
+              </section>
+            )}
+
+            <section>
+              <h3 className={sectionHeading}>This device</h3>
+              <div className='divide-y divide-white/10'>
+                <div className='flex items-center justify-between gap-4 py-3 first:pt-0'>
+                  <div>
+                    <div>Clear cache</div>
+                    <div className='text-sm text-muted-foreground'>
+                      Removes data stored in this browser and reloads. Unsaved
+                      work and uploads in progress are lost.
+                    </div>
+                  </div>
+                  <Button
+                    variant='outline-warning'
+                    className='w-32'
+                    onClick={clearSiteData}
+                  >
+                    <EraserIcon className='size-4' />
+                    Clear
+                  </Button>
+                </div>
+                <div className='flex items-center justify-between gap-4 py-3 first:pt-0'>
+                  <div>
+                    <div>Sign out</div>
+                    <div className='text-sm text-muted-foreground'>
+                      Sign out of SurveyScope on this browser.
+                    </div>
+                  </div>
+                  <Button
+                    variant='outline-danger'
+                    className='w-32'
+                    onClick={signOut}
+                  >
+                    <LogOutIcon className='size-4' />
+                    Sign out
                   </Button>
                 </div>
               </div>
-            </form>
-            {pendingEmail ? (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (code.trim()) confirmEmail();
-                }}
-              >
-                <div className='mb-4'>
-                  <Label htmlFor='settings-email-code'>
-                    Verification code sent to {pendingEmail}
-                  </Label>
-                  <div className='flex gap-2'>
-                    <Input
-                      id='settings-email-code'
-                      value={code}
-                      onChange={(e) => setCode(e.target.value)}
-                      disabled={busy}
-                      autoComplete='one-time-code'
-                      inputMode='numeric'
-                    />
-                    <Button
-                      type='submit'
-                      variant='primary'
-                      disabled={busy || !code.trim()}
-                    >
-                      Confirm
-                    </Button>
-                    <Button
-                      type='button'
-                      variant='outline-secondary'
-                      onClick={cancelEmailChange}
-                      disabled={busy}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                  <FormText>
-                    Didn&apos;t get it?{' '}
-                    <Button
-                      type='button'
-                      variant='link'
-                      className='p-0 align-baseline'
-                      onClick={() => sendEmailCode(pendingEmail)}
-                      disabled={busy}
-                    >
-                      Send a new code
-                    </Button>
-                  </FormText>
-                </div>
-              </form>
-            ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (emailChanged) sendEmailCode(newEmail);
-                }}
-              >
-                <div className='mb-4'>
-                  <Label htmlFor='settings-email'>Email</Label>
-                  <div className='flex gap-2'>
-                    <Input
-                      id='settings-email'
-                      type='email'
-                      value={emailDraft}
-                      onChange={(e) => setEmailDraft(e.target.value)}
-                      disabled={busy}
-                    />
-                    <Button
-                      type='submit'
-                      variant='primary'
-                      disabled={busy || !emailChanged}
-                    >
-                      Change
-                    </Button>
-                  </div>
-                  <FormText>
-                    You sign in with this email. We&apos;ll send a code to the
-                    new address to confirm it.
-                  </FormText>
-                </div>
-              </form>
-            )}
-            {status && (
-              <p
-                className={`mb-0 ${
-                  status.variant === 'success' ? 'text-success' : 'text-danger'
-                }`}
-              >
-                {status.text}
-              </p>
-            )}
-            <Button
-              className='w-full mt-4'
-              variant='outline-danger'
-              onClick={signOut}
-            >
-              Sign Out
-            </Button>
-            <Button
-              className='w-full mt-2'
-              variant='outline-warning'
-              onClick={clearSiteData}
-            >
-              Clear Cache
-            </Button>
+            </section>
           </div>
         </Body>
         <Footer>
-          <Button variant='dark' onClick={() => setShow(false)}>
+          <Button variant='dark' onClick={closeSettings}>
             Close
           </Button>
         </Footer>

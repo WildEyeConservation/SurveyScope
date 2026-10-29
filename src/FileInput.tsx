@@ -22,6 +22,9 @@ export default function FileInput({
   onFileChange,
   onDirectoryHandle,
   onReadingChange,
+  variant,
+  buttonSize,
+  showSelection = true,
   children,
   ...fileProps
 }: {
@@ -31,6 +34,9 @@ export default function FileInput({
   /** Directory handle used to resume Chromium folder uploads. */
   onDirectoryHandle?: (handle: unknown) => void;
   onReadingChange?: (reading: boolean) => void;
+  variant?: React.ComponentProps<typeof Button>['variant'];
+  buttonSize?: React.ComponentProps<typeof Button>['size'];
+  showSelection?: boolean;
   children: React.ReactNode;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
   const [fileNames, setFileNames] = useState<string[]>([]);
@@ -79,6 +85,8 @@ export default function FileInput({
     return (
       <div className='flex flex-row items-center gap-2'>
         <Button
+          variant={variant}
+          size={buttonSize}
           style={{ width: 'fit-content' }}
           onClick={handlePick}
           disabled={disabled || reading}
@@ -91,6 +99,7 @@ export default function FileInput({
             Reading folder... {readCount} files found
           </span>
         ) : (
+          showSelection &&
           fileNames.length > 0 && <i className='mb-0'>{fileNames.join(', ')}</i>
         )}
       </div>
@@ -101,6 +110,8 @@ export default function FileInput({
     <div className='flex flex-row items-center gap-2'>
       <Button
         asChild
+        variant={variant}
+        size={buttonSize}
         style={{ width: 'fit-content' }}
         className={cn(
           'cursor-pointer',
@@ -121,7 +132,7 @@ export default function FileInput({
           />
         </label>
       </Button>
-      {fileNames.length > 0 && (
+      {showSelection && fileNames.length > 0 && (
         <i className='mb-0'>
           {fileNames.join(', ').slice(0, 50)}
           {fileNames.join(', ').length > 50 ? '...' : ''}

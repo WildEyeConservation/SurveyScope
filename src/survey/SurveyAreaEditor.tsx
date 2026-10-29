@@ -5,13 +5,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Alert } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
-import { Label, FormText } from '@/components/ui/label';
+import { FormText } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -21,6 +22,24 @@ import {
   TerraDrawSelectMode,
   TerraDrawRenderMode,
 } from 'terra-draw';
+import {
+  CrosshairIcon,
+  LayersIcon,
+  Maximize2Icon,
+  Minimize2Icon,
+  MinusIcon,
+  MousePointer2Icon,
+  PentagonIcon,
+  PlusIcon,
+  Redo2Icon,
+  ScanIcon,
+  SplineIcon,
+  Trash2Icon,
+  Undo2Icon,
+  WandSparklesIcon,
+  XIcon,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import * as turf from '@turf/turf';
 import FileInput from '../FileInput';
@@ -105,7 +124,7 @@ const LYR_IMPORT_LABEL = 'area-import-label';
 
 const HISTORY_LIMIT = 30;
 
-type Tool = 'boundary' | 'exclusion' | 'edit' | 'strata';
+type Tool = 'boundary' | 'exclusion' | 'strata';
 
 type Hit = NetworkTarget & { snapped: boolean };
 
@@ -145,7 +164,7 @@ const ROLE_COLOR = [
 
 const SELECT_FLAGS = {
   feature: {
-    draggable: true,
+    draggable: false,
     coordinates: {
       draggable: true,
       midpoints: { draggable: true },
@@ -219,6 +238,7 @@ export default function SurveyAreaEditor({
     null
   );
   const [history, setHistory] = useState<SurveyArea[]>([]);
+  const [future, setFuture] = useState<SurveyArea[]>([]);
   const [pendingImport, setPendingImport] = useState<ImportedPolygon[] | null>(
     null
   );
@@ -244,6 +264,11 @@ export default function SurveyAreaEditor({
   pointsRef.current = points;
   const toolRef = useRef(activeTool);
   toolRef.current = activeTool;
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [layersOpen, setLayersOpen] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
   const chainRef = useRef<NetworkTarget | null>(null);
   const dragRef = useRef<{ index: number; x: number; y: number } | null>(null);
   const dragNetworkRef = useRef<StrataNetwork | null>(null);
@@ -255,6 +280,7 @@ export default function SurveyAreaEditor({
     if (JSON.stringify(previous) === JSON.stringify(next)) return;
     valueRef.current = next;
     setHistory((stack) => [...stack.slice(-(HISTORY_LIMIT - 1)), previous]);
+    setFuture([]);
     if (fromDraw) syncedRef.current = next;
     onChangeRef.current(next);
   }, []);
@@ -302,10 +328,6 @@ export default function SurveyAreaEditor({
       attributionControl: { compact: true },
     });
     mapRef.current = map;
-    map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right'
-    );
     map.addControl(
       new maplibregl.ScaleControl({ unit: 'metric' }),
       'bottom-left'
@@ -612,27 +634,47 @@ export default function SurveyAreaEditor({
               [MODE_BOUNDARY]: SELECT_FLAGS,
               [MODE_EXCLUSION]: SELECT_FLAGS,
             },
+            // Deletion goes through the editor so it is committed once.
+            keyEvents: {
+              deselect: 'Escape',
+              delete: null,
+              rotate: null,
+              scale: null,
+            },
           }),
           new TerraDrawRenderMode({ modeName: MODE_IDLE, styles: {} }),
         ],
       });
       drawRef.current = draw;
       draw.start();
-      draw.setMode(MODE_IDLE);
+      draw.setMode(lockedRef.current ? MODE_IDLE : MODE_SELECT);
 
       draw.on('finish', (id, context) => {
-        const drewBoundary =
-          context.action === 'draw' && context.mode === MODE_BOUNDARY;
+        const drew = context.action === 'draw';
+        const drewBoundary = drew && context.mode === MODE_BOUNDARY;
         if (drewBoundary) {
           const others = areaPolygons(draw, MODE_BOUNDARY)
             .filter((feature: any) => feature.id !== id)
             .map((feature: any) => feature.id);
           if (others.length) draw.removeFeatures(others);
+          // Later features draw on top and win clicks; keep exclusions above.
+          const exclusions = areaPolygons(draw, MODE_EXCLUSION);
+          if (exclusions.length) {
+            draw.removeFeatures(exclusions.map((feature) => feature.id));
+            draw.addFeatures(
+              exclusions.map((feature) => ({
+                ...feature,
+                properties: { mode: feature.properties.mode },
+              }))
+            );
+          }
         }
         commitSnapshot();
-        if (drewBoundary) {
-          draw.setMode(MODE_IDLE);
+        // A finished shape hands back to selecting, with the new shape selected.
+        if (drew) {
+          draw.setMode(MODE_SELECT);
           setActiveTool(null);
+          draw.selectFeature(id);
         }
       });
       draw.on('change', (_ids, type, context) => {
@@ -651,6 +693,22 @@ export default function SurveyAreaEditor({
       });
       draw.on('select', (id) => setSelectedFeatureId(String(id)));
       draw.on('deselect', () => setSelectedFeatureId(null));
+
+      // A selected boundary otherwise keeps winning clicks inside exclusions.
+      map.on('click', (e) => {
+        if (draw.getMode() !== MODE_SELECT) return;
+        const onHandle = draw
+          .getFeaturesAtLngLat(e.lngLat)
+          .some((feature) => feature.geometry.type === 'Point');
+        if (onHandle) return;
+        const point: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        const exclusion = areaPolygons(draw, MODE_EXCLUSION)
+          .reverse()
+          .find((feature) => turf.booleanPointInPolygon(point, feature));
+        if (!exclusion) return;
+        // Runs after terra-draw's own click handling.
+        setTimeout(() => draw.selectFeature(exclusion.id));
+      });
 
       setMapLoaded(true);
     });
@@ -683,7 +741,7 @@ export default function SurveyAreaEditor({
 
   const stopTool = useCallback(() => {
     try {
-      drawRef.current?.setMode(MODE_IDLE);
+      drawRef.current?.setMode(lockedRef.current ? MODE_IDLE : MODE_SELECT);
     } catch {
       /* ignore */
     }
@@ -899,11 +957,9 @@ export default function SurveyAreaEditor({
   }, [activeTool]);
 
   useEffect(() => {
-    if (locked) {
-      stopTool();
-      setPendingImport(null);
-    }
-  }, [locked, stopTool]);
+    if (locked) setPendingImport(null);
+    if (mapLoaded) stopTool();
+  }, [locked, mapLoaded, stopTool]);
 
   const toggleTool = (tool: Tool) => {
     const draw = drawRef.current;
@@ -918,8 +974,6 @@ export default function SurveyAreaEditor({
     draw.setMode(
       tool === 'strata'
         ? MODE_IDLE
-        : tool === 'edit'
-        ? MODE_SELECT
         : tool === 'boundary'
         ? MODE_BOUNDARY
         : MODE_EXCLUSION
@@ -955,9 +1009,20 @@ export default function SurveyAreaEditor({
     const previous = history[history.length - 1];
     if (!previous) return;
     setHistory(history.slice(0, -1));
+    setFuture((stack) => [...stack, valueRef.current]);
     chainRef.current = null;
     setPreview(null);
     onChange(previous);
+  };
+
+  const redo = () => {
+    const next = future[future.length - 1];
+    if (!next) return;
+    setFuture(future.slice(0, -1));
+    setHistory((stack) => [...stack, valueRef.current]);
+    chainRef.current = null;
+    setPreview(null);
+    onChange(next);
   };
 
   const handleFiles = async (files: File[]) => {
@@ -1025,309 +1090,581 @@ export default function SurveyAreaEditor({
       id={`${inputId}-area-files`}
       fileType={AREA_FILE_TYPES}
       disabled={importing}
+      variant='outline-secondary'
+      buttonSize='sm'
+      showSelection={false}
       onFileChange={handleFiles}
     >
-      <p className='mb-0'>{rings.length > 0 ? 'Add files' : 'Upload files'}</p>
+      {rings.length > 0 ? 'Import more' : 'Import file'}
     </FileInput>
   );
 
-  const toolHint =
-    activeTool === 'strata'
-      ? 'Click to place points; a line finishes when it reaches the boundary or another line, or press Esc. Drag a point to move it. Right-click a point or line to delete it.'
-      : activeTool === 'edit'
-      ? 'Click a shape to select it, then drag it or its points. Right-click a point to delete it.'
-      : activeTool
-      ? 'Click on the map to place points, then click the first point to finish.'
+  const toggleFullscreen = () => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void frame.requestFullscreen?.();
+  };
+
+  useEffect(() => {
+    const onChange = () =>
+      setFullscreen(document.fullscreenElement === frameRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  // Shortcuts only while this map is on screen; wizard steps stay mounted.
+  const shortcutsRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  shortcutsRef.current = (e: KeyboardEvent) => {
+    const frame = frameRef.current;
+    if (!frame || !frame.offsetParent || !mapLoaded) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) {
+      return;
+    }
+    const mod = e.ctrlKey || e.metaKey;
+    const k = e.key.toLowerCase();
+    if (mod && (k === 'z' || k === 'y')) {
+      if (locked || pendingImport) return;
+      e.preventDefault();
+      if (k === 'y' || e.shiftKey) redo();
+      else undo();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key === 'f') fitAll();
+    else if (key === 'l') setLayersOpen((open) => !open);
+    if (locked || pendingImport) return;
+    if (key === 'escape' && activeTool) stopTool();
+    else if ((key === 'delete' || key === 'backspace') && selectedFeatureId) {
+      e.preventDefault();
+      deleteSelected();
+    } else if (key === 'v') stopTool();
+    else if (key === 'b' && !value.boundary) toggleTool('boundary');
+    else if (key === 'e') toggleTool('exclusion');
+    else if (key === 's' && strata && value.boundary) toggleTool('strata');
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => shortcutsRef.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const selectedKind = (() => {
+    if (!selectedFeatureId) return null;
+    const feature = drawRef.current
+      ?.getSnapshot()
+      .find((f) => String(f.id) === selectedFeatureId);
+    return feature
+      ? feature.properties?.mode === MODE_BOUNDARY
+        ? 'boundary'
+        : 'exclusion'
+      : null;
+  })();
+
+  const hint = locked
+    ? null
+    : pendingImport
+    ? 'Choose what each imported polygon is in the panel'
+    : activeTool === 'strata'
+    ? 'Click to place points; a line ends at the boundary or another line · drag a point to move it · right-click to delete'
+    : activeTool
+    ? 'Click to add corners · double-click or Enter to finish'
+    : selectedKind
+    ? 'Drag corners to reshape · right-click a corner to remove it'
+    : rings.length === 0
+    ? 'Draw a boundary, trace it around the images, or import a file'
+    : null;
+  const hintKeys =
+    activeTool && activeTool !== 'strata'
+      ? 'Esc cancel'
+      : activeTool === 'strata'
+      ? 'Esc stop'
+      : selectedKind
+      ? 'Del delete'
       : null;
 
+  const controls = 'bg-white shadow-lg';
+  const divider = 'my-2 w-px bg-black/15';
+  const canTrace = !locked && (points?.length ?? 0) > 0;
+
+  const railTools: {
+    tool: Tool | null;
+    label: string;
+    shortcut?: string;
+    icon: ReactNode;
+    disabled?: boolean;
+    divider?: boolean;
+  }[] = [
+    {
+      tool: null,
+      label: 'Select and edit',
+      shortcut: 'V',
+      icon: <MousePointer2Icon className='size-4' />,
+    },
+    {
+      tool: 'boundary',
+      label: value.boundary
+        ? 'Delete the boundary to draw a new one'
+        : 'Draw boundary',
+      shortcut: value.boundary ? undefined : 'B',
+      icon: <PentagonIcon className='size-4' style={{ color: BOUNDARY_COLOR }} />,
+      disabled: !!value.boundary,
+      divider: true,
+    },
+    {
+      tool: 'exclusion',
+      label: 'Draw exclusion',
+      shortcut: 'E',
+      icon: <PentagonIcon className='size-4' style={{ color: EXCLUSION_COLOR }} />,
+      divider: true,
+    },
+    ...(strata
+      ? [
+          {
+            tool: 'strata' as Tool,
+            label: 'Draw strata lines',
+            shortcut: 'S',
+            icon: <SplineIcon className='size-4' style={{ color: NETWORK_COLOR }} />,
+            disabled: !value.boundary,
+            divider: true,
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <div className='flex flex-wrap gap-4'>
+    <div className='flex flex-col gap-2'>
+      {importErrors.map((error) => (
+        <Alert key={error} variant='warning' className='mb-0 p-2'>
+          {error}
+        </Alert>
+      ))}
       <div
-        className='flex flex-col gap-2'
-        style={{ flex: '1 1 260px', maxWidth: 360, minWidth: 0 }}
+        ref={frameRef}
+        className={cn('survey-map', fullscreen && 'h-full rounded-none border-0')}
       >
-        {pendingImport ? (
-          <>
-            <Label className='mb-0'>
-              {pendingImport.length} polygon
-              {pendingImport.length === 1 ? '' : 's'} found
-            </Label>
-            <FormText className='mt-0' style={{ fontSize: 12 }}>
-              Choose what each polygon is. A survey has one boundary, so picking
-              a new one replaces the current choice.
-            </FormText>
-            <div
-              className='flex flex-col gap-2'
-              style={{ maxHeight: 380, overflowY: 'auto' }}
-            >
-              {pendingImport.map((polygon, index) => (
-                <div
-                  key={polygon.id}
-                  className='flex items-center gap-2 border border-dark p-2'
-                >
-                  <div className='grow' style={{ minWidth: 0 }}>
-                    <div className='truncate'>
-                      {index + 1}. {polygon.name}
-                    </div>
-                    <div
-                      className='text-muted-foreground truncate'
-                      style={{ fontSize: 12 }}
-                    >
-                      {polygon.source}, {formatArea(polygon.areaKm2)}
-                    </div>
-                  </div>
-                  <NativeSelect
-                    size='sm'
-                    aria-label={`Role of ${polygon.name}`}
-                    style={{ width: 120, flex: '0 0 auto' }}
-                    value={polygon.role}
-                    onChange={(e) =>
-                      setPendingImport(
-                        setImportRole(
-                          pendingImport,
-                          polygon.id,
-                          e.target.value as AreaRole
-                        )
-                      )
-                    }
-                  >
-                    <option value='boundary'>Boundary</option>
-                    <option value='exclusion'>Exclusion</option>
-                    <option value='ignore'>Ignore</option>
-                  </NativeSelect>
-                </div>
-              ))}
-            </div>
-            <div className='flex gap-2'>
-              <Button
-                size='sm'
-                variant='primary'
-                onClick={() => {
-                  commit(applyImport(value, pendingImport));
-                  setPendingImport(null);
-                }}
-              >
-                Use these
-              </Button>
-              <Button
-                size='sm'
-                variant='outline-light'
-                onClick={() => setPendingImport(null)}
-              >
-                Cancel import
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <Label className='mb-0'>Survey area</Label>
-            {rings.length === 0 && (
-              <FormText className='mt-0' style={{ fontSize: 12 }}>
-                {locked
-                  ? 'This survey has no boundary.'
-                  : 'Upload one or more zipped shapefiles, GeoJSON or KML files, draw the boundary on the map, or trace it around your images.'}
-              </FormText>
-            )}
-            {rings.map(({ label, ring, color }, index) => (
-              <div
-                key={label}
-                className='flex items-center gap-2 border border-dark p-2'
-              >
-                <span
-                  style={{
-                    width: 12,
-                    height: 12,
-                    flex: '0 0 auto',
-                    border: `2px solid ${color}`,
-                  }}
-                />
-                <div className='grow' style={{ minWidth: 0 }}>
-                  <div>{label}</div>
-                  <div className='text-muted-foreground' style={{ fontSize: 12 }}>
-                    {formatArea(ringAreaKm2(ring))}
-                  </div>
-                </div>
-                <Button
-                  size='sm'
-                  variant='outline-light'
-                  onClick={() => fitToRings([ring])}
-                >
-                  Show
-                </Button>
-                {!locked && (
-                  <Button
-                    size='sm'
-                    variant='outline-danger'
-                    onClick={() => removeRing(index)}
-                  >
-                    Remove
-                  </Button>
-                )}
-              </div>
-            ))}
-            {!locked && (
-              <div className='flex flex-wrap items-center gap-2'>
-                {fileInput}
-                {importing && <Spinner animation='border' size='sm' />}
-                {!value.boundary && (points?.length ?? 0) > 0 && (
-                  <Button variant='outline-light' onClick={trace}>
-                    Trace around my images
-                  </Button>
-                )}
-              </div>
-            )}
-          </>
-        )}
-        {importErrors.map((error) => (
-          <Alert key={error} variant='warning' className='mb-0 p-2'>
-            {error}
-          </Alert>
-        ))}
-        {children}
-        {strata && !pendingImport && (
-          <>
-            <Label className='mb-0 mt-2'>Strata</Label>
-            <FormText className='mt-0' style={{ fontSize: 12 }}>
-              {value.boundary
-                ? 'Draw lines across the survey area to divide it into strata, then name each one. Without lines the whole area is one stratum.'
-                : 'Add a boundary to define strata.'}
-            </FormText>
-            {strata.status}
-            {strata.sections.map((ring, i) => (
-              <div
-                key={i}
-                className='flex items-center gap-2 border border-dark p-2'
-                onMouseEnter={() => setHighlighted(i)}
-                onMouseLeave={() => setHighlighted(null)}
-              >
-                <span
-                  style={{
-                    width: 12,
-                    height: 12,
-                    flex: '0 0 auto',
-                    background: strataColors[i % strataColors.length],
-                  }}
-                />
-                <Input
-                  size='sm'
-                  aria-label={`Name of stratum ${i + 1}`}
-                  value={strata.names[i] ?? ''}
-                  disabled={locked}
-                  aria-invalid={strata.invalid?.[i] || undefined}
-                  onChange={(e) => strata.onNameChange(i, e.target.value)}
-                />
-                <Button
-                  size='sm'
-                  variant='outline-light'
-                  onClick={() => fitToRings([ring])}
-                >
-                  Show
-                </Button>
-              </div>
-            ))}
-            {strata.dangling && (
-              <span className='text-warning' style={{ fontSize: 12 }}>
-                Some strata lines do not reach the boundary or another line at
-                both ends, so they do not divide the area.
-              </span>
-            )}
-          </>
-        )}
-      </div>
-      <div
-        className='flex flex-col gap-2'
-        style={{ flex: '3 1 480px', minWidth: 0 }}
-      >
+        {/* Inline: maplibre's unlayered CSS overrides layered utilities here. */}
+        <div
+          ref={mapContainerRef}
+          style={{ position: 'absolute', inset: 0 }}
+        />
+
         {!locked && !pendingImport && (
-          <div className='flex gap-2 flex-wrap items-center'>
-            <Button
-              size='sm'
-              variant={
-                activeTool === 'boundary' ? 'primary' : 'outline-primary'
-              }
-              onClick={() => toggleTool('boundary')}
-              disabled={!mapLoaded}
-            >
-              {activeTool === 'boundary'
-                ? 'Drawing boundary…'
-                : value.boundary
-                ? 'Redraw boundary'
-                : 'Draw boundary'}
-            </Button>
-            <Button
-              size='sm'
-              variant={
-                activeTool === 'exclusion' ? 'primary' : 'outline-primary'
-              }
-              onClick={() => toggleTool('exclusion')}
-              disabled={!mapLoaded}
-            >
-              {activeTool === 'exclusion'
-                ? 'Drawing exclusions…'
-                : 'Draw exclusion'}
-            </Button>
-            {strata && (
-              <Button
-                size='sm'
-                variant={
-                  activeTool === 'strata' ? 'primary' : 'outline-primary'
-                }
-                onClick={() => toggleTool('strata')}
-                disabled={!mapLoaded || !value.boundary}
-              >
-                {activeTool === 'strata'
-                  ? 'Drawing strata lines…'
-                  : value.network
-                  ? 'Draw strata lines'
-                  : 'Redraw strata'}
-              </Button>
+          <div
+            className={cn(
+              'absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2',
+              controls
             )}
-            <Button
-              size='sm'
-              variant={activeTool === 'edit' ? 'primary' : 'outline-primary'}
-              onClick={() => toggleTool('edit')}
-              disabled={!mapLoaded || rings.length === 0}
-            >
-              {activeTool === 'edit' ? 'Editing…' : 'Edit shapes'}
-            </Button>
-            <Button
-              size='sm'
-              variant='outline-danger'
-              onClick={deleteSelected}
-              disabled={!selectedFeatureId}
-            >
-              Delete selected
-            </Button>
-            <Button
-              size='sm'
-              variant='outline-light'
-              onClick={undo}
+          >
+            {railTools.map((item) => (
+              <div key={item.label} className='flex'>
+                {item.divider && <div className={divider} />}
+                <MapButton
+                  tipSide='top'
+                  label={item.label}
+                  shortcut={item.shortcut}
+                  active={activeTool === item.tool}
+                  disabled={!mapLoaded || item.disabled}
+                  onClick={() =>
+                    item.tool ? toggleTool(item.tool) : stopTool()
+                  }
+                >
+                  {item.icon}
+                </MapButton>
+              </div>
+            ))}
+            {canTrace && (
+              <>
+                <div className={divider} />
+                <MapButton
+                  tipSide='top'
+                  label='Trace boundary around images'
+                  disabled={!mapLoaded}
+                  onClick={trace}
+                >
+                  <WandSparklesIcon className='size-4' />
+                </MapButton>
+              </>
+            )}
+            <div className={divider} />
+            <MapButton
+              tipSide='top'
+              label='Undo'
+              shortcut='Ctrl Z'
               disabled={history.length === 0}
+              onClick={undo}
             >
-              Undo
-            </Button>
-            <Button
-              size='sm'
-              variant='outline-light'
-              onClick={fitAll}
-              disabled={!mapLoaded}
+              <Undo2Icon className='size-4' />
+            </MapButton>
+            <MapButton
+              tipSide='top'
+              label='Redo'
+              shortcut='Ctrl Shift Z'
+              disabled={future.length === 0}
+              onClick={redo}
             >
-              Fit
-            </Button>
+              <Redo2Icon className='size-4' />
+            </MapButton>
+            <MapButton
+              tipSide='top'
+              label='Delete selected'
+              shortcut='Del'
+              disabled={!selectedFeatureId}
+              onClick={deleteSelected}
+            >
+              <Trash2Icon className='size-4' />
+            </MapButton>
           </div>
         )}
-        {toolHint && (
-          <span className='text-muted-foreground' style={{ fontSize: 12 }}>
-            {toolHint}
-          </span>
-        )}
-        <div className='survey-map'>
-          <div
-            ref={mapContainerRef}
-            style={{ position: 'absolute', inset: 0 }}
-          />
+
+        <div className='absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] items-start gap-2'>
+          {layersOpen ? (
+            <div
+              className='flex max-h-full w-80 flex-col overflow-hidden bg-white text-foreground shadow-lg'
+              style={LIGHT_THEME}
+            >
+              <div className='flex items-center gap-2 border-b border-black/10 px-3 py-2 text-sm'>
+                <LayersIcon className='size-4' />
+                <span className='flex-1 font-semibold'>
+                  {pendingImport
+                    ? `${pendingImport.length} polygon${
+                        pendingImport.length === 1 ? '' : 's'
+                      } found`
+                    : 'Survey area'}
+                </span>
+                <Kbd>L</Kbd>
+                <button
+                  type='button'
+                  aria-label='Hide panel'
+                  onClick={() => setLayersOpen(false)}
+                  className='p-0.5 hover:text-primary'
+                >
+                  <XIcon className='size-4' />
+                </button>
+              </div>
+              <div className='flex flex-col overflow-y-auto'>
+                {pendingImport ? (
+                  <div className='flex flex-col gap-2 p-3'>
+                    <FormText className='mt-0'>
+                      Choose what each polygon is. A survey has one boundary,
+                      so picking a new one replaces the current choice.
+                    </FormText>
+                    {pendingImport.map((polygon, index) => (
+                      <div
+                        key={polygon.id}
+                        className='flex items-center gap-2 border border-black/15 p-2'
+                      >
+                        <div className='min-w-0 grow'>
+                          <div className='truncate text-sm'>
+                            {index + 1}. {polygon.name}
+                          </div>
+                          <div className='truncate text-xs text-muted-foreground'>
+                            {polygon.source}, {formatArea(polygon.areaKm2)}
+                          </div>
+                        </div>
+                        <NativeSelect
+                          size='sm'
+                          aria-label={`Role of ${polygon.name}`}
+                          style={{ width: 110, flex: '0 0 auto' }}
+                          value={polygon.role}
+                          onChange={(e) =>
+                            setPendingImport(
+                              setImportRole(
+                                pendingImport,
+                                polygon.id,
+                                e.target.value as AreaRole
+                              )
+                            )
+                          }
+                        >
+                          <option value='boundary'>Boundary</option>
+                          <option value='exclusion'>Exclusion</option>
+                          <option value='ignore'>Ignore</option>
+                        </NativeSelect>
+                      </div>
+                    ))}
+                    <div className='flex gap-2'>
+                      <Button
+                        size='sm'
+                        variant='primary'
+                        onClick={() => {
+                          commit(applyImport(value, pendingImport));
+                          setPendingImport(null);
+                        }}
+                      >
+                        Use these
+                      </Button>
+                      <Button
+                        size='sm'
+                        variant='outline-secondary'
+                        onClick={() => setPendingImport(null)}
+                      >
+                        Cancel import
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className='py-1'>
+                      {rings.length === 0 && (
+                        <div className='px-3 py-1.5 text-xs text-muted-foreground'>
+                          {locked ? (
+                            'This survey has no boundary.'
+                          ) : (
+                            <>
+                              No boundary yet. Press <Kbd>B</Kbd> to draw one
+                              {canTrace ? ', trace it around the images,' : ''}{' '}
+                              or import a shapefile, GeoJSON or KML file.
+                            </>
+                          )}
+                        </div>
+                      )}
+                      {rings.map(({ label, ring, color }, index) => (
+                        <div
+                          key={label}
+                          className='group flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-black/5'
+                        >
+                          <span
+                            className='inline-block size-3 shrink-0 border-2'
+                            style={{
+                              borderColor: color,
+                              background:
+                                color === EXCLUSION_COLOR ? `${color}55` : undefined,
+                            }}
+                          />
+                          <span className='flex-1 truncate'>{label}</span>
+                          <span className='text-xs text-muted-foreground'>
+                            {formatArea(ringAreaKm2(ring))}
+                          </span>
+                          <button
+                            type='button'
+                            title='Zoom to'
+                            aria-label={`Zoom to ${label}`}
+                            className='p-1 opacity-60 hover:text-primary group-hover:opacity-100'
+                            onClick={() => fitToRings([ring])}
+                          >
+                            <CrosshairIcon className='size-3.5' />
+                          </button>
+                          {!locked && (
+                            <button
+                              type='button'
+                              title='Delete'
+                              aria-label={`Delete ${label}`}
+                              className='p-1 opacity-60 hover:text-danger group-hover:opacity-100'
+                              onClick={() => removeRing(index)}
+                            >
+                              <Trash2Icon className='size-3.5' />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    {!locked && (
+                      <div className='flex flex-wrap items-center gap-2 border-t border-black/10 px-3 py-2.5'>
+                        {fileInput}
+                        {importing && <Spinner animation='border' size='sm' />}
+                        {canTrace && !value.boundary && (
+                          <Button variant='outline-secondary' size='sm' onClick={trace}>
+                            <WandSparklesIcon className='size-4' />
+                            Trace around images
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {children && (
+                      <div className='border-t border-black/10 px-3 pb-3 pt-1'>
+                        {children}
+                      </div>
+                    )}
+                    {strata && (
+                      <div className='flex flex-col gap-2 border-t border-black/10 p-3'>
+                        <div className='text-xs font-semibold uppercase tracking-wider text-muted-foreground'>
+                          Strata
+                        </div>
+                        <FormText className='mt-0'>
+                          {value.boundary ? (
+                            <>
+                              Press <Kbd>S</Kbd> to draw lines across the area
+                              to divide it into strata, then name each one.
+                              Without lines the whole area is one stratum.
+                            </>
+                          ) : (
+                            'Add a boundary to define strata.'
+                          )}
+                        </FormText>
+                        {strata.status}
+                        {strata.sections.map((ring, i) => (
+                          <div
+                            key={i}
+                            className='flex items-center gap-2'
+                            onMouseEnter={() => setHighlighted(i)}
+                            onMouseLeave={() => setHighlighted(null)}
+                          >
+                            <span
+                              className='inline-block size-3 shrink-0'
+                              style={{
+                                background: strataColors[i % strataColors.length],
+                              }}
+                            />
+                            <Input
+                              size='sm'
+                              aria-label={`Name of stratum ${i + 1}`}
+                              value={strata.names[i] ?? ''}
+                              disabled={locked}
+                              aria-invalid={strata.invalid?.[i] || undefined}
+                              onChange={(e) =>
+                                strata.onNameChange(i, e.target.value)
+                              }
+                            />
+                            <button
+                              type='button'
+                              title='Zoom to'
+                              aria-label={`Zoom to stratum ${i + 1}`}
+                              className='p-1 opacity-70 hover:text-primary hover:opacity-100'
+                              onClick={() => fitToRings([ring])}
+                            >
+                              <CrosshairIcon className='size-3.5' />
+                            </button>
+                          </div>
+                        ))}
+                        {strata.dangling && (
+                          <span className='text-xs text-warning'>
+                            Some strata lines do not reach the boundary or
+                            another line at both ends, so they do not divide
+                            the area.
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <MapButton
+              label='Show panel'
+              shortcut='L'
+              tipSide='left'
+              className={controls}
+              onClick={() => setLayersOpen(true)}
+            >
+              <LayersIcon className='size-4' />
+            </MapButton>
+          )}
         </div>
+
+        <div className={cn('absolute left-3 top-3 z-10 flex flex-col', controls)}>
+          <MapButton
+            label={fullscreen ? 'Exit full screen' : 'Full screen'}
+            shortcut={fullscreen ? 'Esc' : undefined}
+            onClick={toggleFullscreen}
+          >
+            {fullscreen ? (
+              <Minimize2Icon className='size-4' />
+            ) : (
+              <Maximize2Icon className='size-4' />
+            )}
+          </MapButton>
+          <div className='mx-2 h-px bg-black/15' />
+          <MapButton
+            label='Zoom in'
+            onClick={() => mapRef.current?.zoomIn()}
+          >
+            <PlusIcon className='size-4' />
+          </MapButton>
+          <MapButton
+            label='Zoom out'
+            onClick={() => mapRef.current?.zoomOut()}
+          >
+            <MinusIcon className='size-4' />
+          </MapButton>
+          <MapButton label='Fit to area' shortcut='F' onClick={fitAll}>
+            <ScanIcon className='size-4' />
+          </MapButton>
+        </div>
+
+        {hint && (
+          <div className='pointer-events-none absolute bottom-[5.5rem] left-1/2 z-10 -translate-x-1/2'>
+            <div
+              className={cn(
+                'flex items-center gap-2 whitespace-nowrap border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
+                controls
+              )}
+            >
+              {hint}
+              {hintKeys && <Kbd>{hintKeys}</Kbd>}
+            </div>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+// Light-theme tokens for white panels inside the dark app.
+const LIGHT_THEME = {
+  '--foreground': '#212529',
+  '--muted-foreground': '#6c757d',
+  '--border': '#dee2e6',
+  '--input': '#ced4da',
+  '--accent': 'rgba(0, 0, 0, 0.075)',
+  '--accent-foreground': '#212529',
+} as CSSProperties;
+
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className='rounded-sm border border-black/20 bg-black/5 px-1 font-mono text-[10px] leading-4 text-[#495057]'>
+      {children}
+    </kbd>
+  );
+}
+
+function MapButton({
+  label,
+  shortcut,
+  active,
+  disabled,
+  onClick,
+  children,
+  className,
+  tipSide = 'right',
+}: {
+  label: string;
+  shortcut?: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+  tipSide?: 'right' | 'left' | 'top';
+}) {
+  return (
+    <button
+      type='button'
+      aria-label={label}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'group relative flex size-9 items-center justify-center text-[#212529] transition-colors disabled:cursor-not-allowed disabled:[&>svg]:opacity-35',
+        active ? 'bg-primary text-white [&_svg]:!text-white' : 'enabled:hover:bg-black/10',
+        className
+      )}
+    >
+      {children}
+      <span
+        className={cn(
+          'pointer-events-none absolute z-20 hidden items-center gap-1.5 whitespace-nowrap border border-black/10 bg-white px-2 py-1 text-xs text-[#212529] shadow-md group-hover:flex group-focus-visible:flex',
+          tipSide === 'right' && 'left-full ml-2',
+          tipSide === 'left' && 'right-full mr-2',
+          tipSide === 'top' && 'bottom-full mb-2'
+        )}
+      >
+        {label}
+        {shortcut && <Kbd>{shortcut}</Kbd>}
+      </span>
+    </button>
   );
 }

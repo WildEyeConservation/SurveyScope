@@ -19,12 +19,19 @@ import {
 import { Button } from '@/components/ui/button';
 import {
   Alert,
-  AlertTitle,
   alertVariants,
-  type AlertVariant,
 } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
+import { Progress } from '@/components/ui/progress';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  FileTextIcon,
+  FileX2Icon,
+  FolderIcon,
+  MapPinOffIcon,
+} from 'lucide-react';
 import { Label, FormText } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
@@ -169,6 +176,10 @@ interface FilesUploadBaseProps {
   resumingUpload?: boolean;
   /** Signals when every image has a position, before any filtering. */
   setLocationReady?: React.Dispatch<React.SetStateAction<boolean>>;
+  /** Set while GPS file columns await confirmation; the wizard's Next calls it. */
+  setConfirmLocation?: React.Dispatch<React.SetStateAction<(() => void) | null>>;
+  /** Called when columns confirmed via Next leave every image located. */
+  onLocationConfirmed?: () => void;
   /**
    * Wizard step whose section is visible. Undefined renders all sections at
    * once (legacy single-page layout). State lives here regardless of the
@@ -287,6 +298,8 @@ export function FileUploadCore({
   newProject = true,
   resumingUpload = false,
   setLocationReady,
+  setConfirmLocation,
+  onLocationConfirmed,
   project,
   currentStep,
   setImagesReady,
@@ -310,8 +323,8 @@ export function FileUploadCore({
   const [missingGpsData, setMissingGpsData] = useState(false);
   const [skipImagesWithoutGps, setSkipImagesWithoutGps] = useState(false);
   const [associateByTimestamp, setAssociateByTimestamp] = useState(false);
-  const [minTimestamp, setMinTimestamp] = useState(0);
-  const [maxTimestamp, setMaxTimestamp] = useState(0);
+  const [, setMinTimestamp] = useState(0);
+  const [, setMaxTimestamp] = useState(0);
   const [file, setFile] = useState<File | undefined>();
   const [scanningEXIF, setScanningEXIF] = useState(false);
   const [readingFolder, setReadingFolder] = useState(false);
@@ -537,6 +550,9 @@ export function FileUploadCore({
   // UTM handling
   const [useUtm, setUseUtm] = useState(false);
   const [utmColumn, setUtmColumn] = useState<string | undefined>(undefined);
+  const [matchByChoice, setMatchByChoice] = useState<
+    'timestamp' | 'filepath' | null
+  >(null);
 
   // Track visited wizard steps so heavy children (the map and mask editor)
   // only mount once their section is actually visible —
@@ -890,20 +906,50 @@ export function FileUploadCore({
     if (!useUtm) {
       if (!latCol || !lngCol) {
         alert('Please map the Latitude and Longitude columns.');
-        return;
+        return false;
       }
     } else {
       if (!utmColumn) {
         alert('Please select the UTM column.');
-        return;
+        return false;
       }
     }
     if (!timestampCol && !filepathCol) {
       alert('Please map at least Timestamp or FilePath column.');
-      return;
+      return false;
     }
     setMappingConfirmed(true);
+    return true;
   };
+
+  const advanceAfterMappingRef = useRef(false);
+  useEffect(() => {
+    setMatchByChoice(null);
+    advanceAfterMappingRef.current = false;
+  }, [file]);
+
+  const matchBy =
+    matchByChoice ?? (columnMapping.filepath ? 'filepath' : 'timestamp');
+  const matchColumnMissing =
+    matchBy === 'filepath' ? !columnMapping.filepath : !columnMapping.timestamp;
+  const mappingPending = Boolean(file && headerFields && !mappingConfirmed);
+  const mappingComplete =
+    !matchColumnMissing &&
+    (useUtm ? Boolean(utmColumn) : Boolean(columnMapping.lat && columnMapping.lng));
+
+  const confirmMappingRef = useRef(handleConfirmMapping);
+  confirmMappingRef.current = handleConfirmMapping;
+  useEffect(() => {
+    if (!setConfirmLocation) return;
+    setConfirmLocation(
+      mappingPending
+        ? () => () => {
+            if (confirmMappingRef.current()) advanceAfterMappingRef.current = true;
+          }
+        : null
+    );
+  }, [mappingPending, setConfirmLocation]);
+
 
   // Extract CSV header fields on file selection or skip for GPX
   useEffect(() => {
@@ -2069,6 +2115,126 @@ export function FileUploadCore({
     filteredImageFiles.length > 0 &&
     (invalidGpsFiles.length === 0 || skipImagesWithoutGps);
 
+  // Display only: excludes unreadable files and skipped no-GPS images.
+  const uploadSummary = useMemo(() => {
+    const excluded = new Set(failedFiles.map((f) => f.path));
+    if (skipImagesWithoutGps) {
+      for (const path of invalidGpsFiles) excluded.add(path);
+    }
+    const files = toUploadFiles.filter(
+      (file) => !excluded.has(file.webkitRelativePath)
+    );
+    return {
+      count: files.length,
+      size: files.reduce((acc, f) => acc + f.size, 0),
+    };
+  }, [toUploadFiles, failedFiles, invalidGpsFiles, skipImagesWithoutGps]);
+
+  const gpsCoverage = useMemo(() => {
+    const failed = new Set(failedFiles.map((f) => f.path));
+    const missing = new Set(invalidGpsFiles);
+    const images = filteredImageFiles.filter(
+      (f) => !failed.has(f.webkitRelativePath)
+    );
+    const timesOf = (paths: string[]) =>
+      paths
+        .map((p) => exifData[p]?.timestamp)
+        .filter((t): t is number => typeof t === 'number' && t > 0);
+    const located = images
+      .map((f) => f.webkitRelativePath)
+      .filter((p) => !missing.has(p));
+    const locatedRange = minMaxOf(timesOf(located));
+    const imageRange = minMaxOf(timesOf(images.map((f) => f.webkitRelativePath)));
+    let before = 0;
+    let after = 0;
+    for (const path of invalidGpsFiles) {
+      const t = exifData[path]?.timestamp;
+      if (!associateByTimestamp || !locatedRange || typeof t !== 'number') continue;
+      if (t < locatedRange.min) before++;
+      else if (t > locatedRange.max) after++;
+    }
+    return {
+      total: images.length,
+      located: located.length,
+      before,
+      after,
+      other: invalidGpsFiles.length - before - after,
+      locatedRange,
+      imageRange,
+    };
+  }, [filteredImageFiles, failedFiles, invalidGpsFiles, exifData, associateByTimestamp]);
+
+  const gpsSkippedByAdmin =
+    !file &&
+    !!fullCsvData &&
+    fullCsvData.length > 0 &&
+    fullCsvData.every((row) => row.lat === 0 && row.lng === 0);
+
+  const gpsResultSegments: GpsSegment[] =
+    gpsCoverage.located === 0
+      ? [{ count: 0, label: `of ${gpsCoverage.total.toLocaleString()} located`, tone: 'bad' }]
+      : skipImagesWithoutGps
+      ? [
+          { count: gpsCoverage.located, label: 'located', tone: 'ok' },
+          { count: invalidGpsFiles.length, label: 'left out', tone: 'left' },
+        ]
+      : [
+          { count: gpsCoverage.before, label: 'before the log starts', tone: 'warn' },
+          { count: gpsCoverage.located, label: 'located', tone: 'ok' },
+          {
+            count: gpsCoverage.after,
+            label: gpsCoverage.before > 0 ? 'after it ends' : 'after the log ends',
+            tone: 'warn',
+          },
+          {
+            count: gpsCoverage.other,
+            label: associateByTimestamp ? 'without a position' : 'not in the file',
+            tone: 'warn',
+          },
+        ];
+
+  const formatUtcTime = (t: number) =>
+    new Date(t).toLocaleTimeString(undefined, { timeZone: 'UTC' });
+  const formatUtcDate = (t: number) =>
+    new Date(t).toLocaleDateString(undefined, {
+      timeZone: 'UTC',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+
+  const gpsResultNote = (() => {
+    const { located, locatedRange, imageRange } = gpsCoverage;
+    if (located === 0) {
+      return associateByTimestamp
+        ? "None of the images fall within the GPS log's time range. Check the log's time zone, or choose another file."
+        : `None of the image paths are in the file. Paths should look like ${
+            filteredImageFiles[0]?.webkitRelativePath ?? 'folder/image.jpg'
+          }.`;
+    }
+    if (skipImagesWithoutGps && invalidGpsFiles.length > 0) {
+      return `Only the ${located.toLocaleString()} located images will be uploaded.`;
+    }
+    if (!associateByTimestamp) {
+      return invalidGpsFiles.length === 0
+        ? 'Every image is listed in the file.'
+        : undefined;
+    }
+    if (!locatedRange || !imageRange) return undefined;
+    if (invalidGpsFiles.length === 0) {
+      return `Every image falls within the log (${formatUtcTime(
+        imageRange.min
+      )} – ${formatUtcTime(imageRange.max)} UTC, ${formatUtcDate(
+        imageRange.min
+      )}).`;
+    }
+    return `Positions cover ${formatUtcTime(locatedRange.min)} – ${formatUtcTime(
+      locatedRange.max
+    )} UTC; the images span ${formatUtcTime(imageRange.min)} – ${formatUtcTime(
+      imageRange.max
+    )}.`;
+  })();
+
   useEffect(() => {
     if (setImagesReady) {
       setImagesReady(
@@ -2093,8 +2259,10 @@ export function FileUploadCore({
       setLocationReady(
         !scanningEXIF &&
           !loadingExistingImages &&
-          hasValidGpsForAllImages &&
-          Boolean(fullCsvData && fullCsvData.length > 0)
+          (mappingPending
+            ? mappingComplete
+            : hasValidGpsForAllImages &&
+              Boolean(fullCsvData && fullCsvData.length > 0))
       );
     }
   }, [
@@ -2103,7 +2271,19 @@ export function FileUploadCore({
     loadingExistingImages,
     hasValidGpsForAllImages,
     fullCsvData,
+    mappingPending,
+    mappingComplete,
   ]);
+
+  // Advance once the file confirmed by Next has been processed.
+  useEffect(() => {
+    if (!advanceAfterMappingRef.current || !mappingConfirmed) return;
+    advanceAfterMappingRef.current = false;
+    if (hasValidGpsForAllImages && fullCsvData && fullCsvData.length > 0) {
+      onLocationConfirmed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullCsvData]);
 
   useEffect(() => {
     if (setGpsDataReady) {
@@ -3096,309 +3276,402 @@ export function FileUploadCore({
           Upload the survey files by selecting the entire folder you wish to
           upload.
         </p>
-        <div
-          className='p-2 mb-2 bg-white text-black'
-          style={{ minHeight: '136px', overflow: 'auto' }}
-        >
-          {scannedFiles.length === 0 && loadingExistingImages && (
-            <code className='m-0 text-dark flex items-center gap-2'>
-              <Spinner animation='border' size='sm' />
-              Loading existing survey images...
-            </code>
-          )}
-          {scannedFiles.length > 0 && (
-            <code className='m-0 text-dark'>
-              Folder name: {name}
-              <br />
-              Total files: {scannedFiles.length}
-              <br />
-              Image files: {imageFiles.length}
-              <br />
-              Image files size: {formatFileSize(totalImageSize)}
-              <br />
-              {loadingExistingImages ? (
-                <span className='inline-flex items-center gap-2'>
-                  <Spinner animation='border' size='sm' />
-                  Loading existing survey images...
-                </span>
-              ) : (
-                <>
-                  To upload: {toUploadFiles.length}
-                  {toUploadFiles.length > 0 && (
-                    <>
-                      <br />
-                      To upload size: {formatFileSize(toUploadSize)}
-                    </>
-                  )}
-                </>
-              )}
-            </code>
-          )}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div>
-            <FileInput
-              id='filepicker'
-              webkitdirectory=''
-              disabled={scanningEXIF}
-              onFileChange={handleFileInputChange}
-              onDirectoryHandle={setDirectoryHandle}
-              onReadingChange={setReadingFolder}
-            >
-              <p style={{ margin: 0 }}>
-                {scannedFiles.length > 0
-                  ? 'Change source folder'
-                  : 'Select Folder'}
-              </p>
-            </FileInput>
-          </div>
-          {/* <div>
-          <div>
-            <Switch
-              id="custom-switch"
-              label="Advanced Options"
-              checked={advancedImageOptions}
-              onChange={(x) => {
-                setAdvancedImageOptions(x.target.checked);
-                if (!x.target.checked) {
-                  setUpload(true);
-                  setIntegrityCheck(true);
-                }
-              }}
-            />
-          </div>
-          {advancedImageOptions && (
-              <div>
-                <Switch
-                  type="switch"
-                  id="custom-switch"
-                  label="Upload files to S3"
-                  checked={upload}
-                  onChange={(x) => {
-                    setUpload(x.target.checked);
-                  }}
-                />
-              </div>
-          )}
-        </div> */}
-        </div>
-      </div>
-      {scanningEXIF && (
-        <div className='mt-4 mb-0 flex items-center gap-2'>
-          <Spinner animation='border' size='sm' />
-          <p className='mb-0'>
-            Scanning images for GPS data: {`${scanCount}/${scanTotal}`}
-          </p>
-        </div>
-      )}
-      {!scanningEXIF && failedFiles.length > 0 && (
-        <Alert variant='warning' className='mt-4 mb-4'>
-          <AlertTitle>
-            {failedFiles.length} file{failedFiles.length === 1 ? '' : 's'} failed
-            to scan
-          </AlertTitle>
-          <p className='mb-2' style={{ fontSize: '14px' }}>
-            The following file{failedFiles.length === 1 ? '' : 's'} could not be
-            processed (may be corrupt or unreadable). These files will be
-            excluded from the upload, but you can continue with the remaining
-            files.
-          </p>
-          <div
-            style={{
-              maxHeight: '200px',
-              overflowY: 'auto',
-              backgroundColor: '#f8f9fa',
-              padding: '8px',
-              borderRadius: '4px',
-              fontSize: '12px',
-            }}
-          >
-            <ul className='mb-0' style={{ paddingLeft: '20px' }}>
-              {failedFiles.map((failed, idx) => (
-                <li key={idx} className='mb-1'>
-                  <code style={{ fontSize: '11px' }}>{failed.path}</code>
-                  {failed.error && (
-                    <span className='ms-2' style={{ fontSize: '11px', color: '#dc3545' }}>
-                      ({failed.error})
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <Button
-            variant='outline-dark'
-            size='sm'
-            className='mt-2'
-            onClick={() => {
-              const rows = failedFiles.map((failed) => ({
-                originalPath: failed.path,
-                reason: failed.error || 'Could not be read',
-                category: 'scan-failed',
-              }));
-              downloadFailedImagesCsv(
-                failedImagesCsvName(rows, project?.id ?? 'survey'),
-                rows
-              );
-            }}
-          >
-            Download CSV
-          </Button>
-        </Alert>
-      )}
-      </div>
-      <div className={sectionClass('georeference')}>
-      {!scanningEXIF && Object.keys(exifData).length > 0 && imageFiles.length > 0 ? (
-        <div className='mt-4 flex flex-col gap-2'>
-          <div>
-            <Label className='mb-0'>
-              {missingGpsData ? 'Missing GPS data' : 'GPS data found'}
-            </Label>
-            <FormText className='block mb-0' style={{ fontSize: '12px' }}>
-              {missingGpsData
-                ? 'Some images do not have GPS data. Please upload the gpx or csv file containing the GPS data for all images.'
-                : 'The selected images have GPS data. Would you like to upload a separate file containing the GPS data for all images?'}
-            </FormText>
-            <FormText className='block mb-0' style={{ fontSize: '12px' }}>
-              Your CSV file should have the following columns (their headings
-              may be different):
-              <ul className='mb-0'>
-                <li>timestamp and/or filepath</li>
-                <li>lat</li>
-                <li>lng</li>
-                <li>alt</li>
-              </ul>
-            </FormText>
-            <FormText className='block mb-0' style={{ fontSize: '12px' }}>
-              If your data contains file paths instead of timestamps, the format
-              should be:{' '}
-              <code className='text-primary' style={{ fontSize: '14px' }}>
-                {imageFiles[0].webkitRelativePath}
-              </code>
-            </FormText>
-          </div>
-          <div className='flex gap-2 items-center'>
-            <FileInput
-              id='gps-metadata-file'
-              fileType='.csv,.gpx'
-              onFileChange={(files) => setFile(files[0])}
-            >
-              <p className='mb-0'>Select GPS metadata file</p>
-            </FileInput>
-            {cognitoGroups.includes('sysadmin') && (
-              <Button
-                variant='outline-warning'
-                size='sm'
-                onClick={handleSkipGps}
-              >
-                Skip GPS selection (Admin)
-              </Button>
+        {scannedFiles.length === 0 ? (
+          <div className='flex flex-col items-center gap-3 border border-dashed border-white/40 px-4 py-7 text-center'>
+            {loadingExistingImages ? (
+              <span className='flex items-center gap-2 text-sm'>
+                <Spinner animation='border' size='sm' />
+                Loading existing survey images...
+              </span>
+            ) : (
+              <>
+                <FolderIcon className='size-6 text-muted-foreground' />
+                <p className='mb-0 text-sm'>
+                  No folder selected. Only JPEG images are uploaded.
+                </p>
+                <FileInput
+                  id='filepicker'
+                  webkitdirectory=''
+                  disabled={scanningEXIF}
+                  showSelection={false}
+                  onFileChange={handleFileInputChange}
+                  onDirectoryHandle={setDirectoryHandle}
+                  onReadingChange={setReadingFolder}
+                >
+                  Select Folder
+                </FileInput>
+              </>
             )}
           </div>
-        </div>
-      ) : null}
-      {headerFields && !mappingConfirmed && (
-        <div className='mt-4'>
-          <Label className='mb-0'>Confirm File Structure</Label>
-          <p className='text-muted-foreground mb-1' style={{ fontSize: 12 }}>
-            Select which columns from your file correspond to the following
-            fields:
-          </p>
-          <div
-            className='flex flex-col gap-2 border border-dark p-2 shadow-sm'
-            style={{ backgroundColor: '#697582' }}
-          >
-            <div className='flex flex-row gap-2 items-center'>
-              <div style={{ flex: 0.5 }}>
-                <Label className='mb-0'>FilePath</Label>
-                <Combobox
-                  options={[
-                    { label: 'None', value: '' },
-                    ...headerFields.map((f) => ({ label: f, value: f })),
-                  ]}
-                  value={
-                    columnMapping.filepath
-                      ? {
-                        label: columnMapping.filepath,
-                        value: columnMapping.filepath,
-                      }
-                      : { label: 'None', value: '' }
-                  }
-                  onChange={(option) => {
-                    columnEditsRef.current = true;
-                    setColumnMapping({
-                      ...columnMapping,
-                      filepath: option ? option.value : undefined,
-                    });
-                  }}
-                  placeholder='Select FilePath column'
-                  name='FilePath column'
-                />
+        ) : (
+          <div className='divide-y divide-white/15 border border-white/20 bg-white/10'>
+            <div className='flex items-center gap-3 p-3'>
+              <FolderIcon className='size-5 shrink-0' />
+              <div className='min-w-0 flex-1'>
+                <div className='truncate font-semibold'>{name}</div>
+                <div className='text-xs text-muted-foreground'>
+                  {scannedFiles.length.toLocaleString()} files ·{' '}
+                  {imageFiles.length.toLocaleString()} images ·{' '}
+                  {formatFileSize(totalImageSize)}
+                </div>
               </div>
-              <p
-                className='mb-0'
-                style={{ width: '50px', textAlign: 'center' }}
+              <FileInput
+                id='filepicker'
+                webkitdirectory=''
+                disabled={scanningEXIF}
+                variant='outline-light'
+                buttonSize='sm'
+                showSelection={false}
+                onFileChange={handleFileInputChange}
+                onDirectoryHandle={setDirectoryHandle}
+                onReadingChange={setReadingFolder}
               >
-                or
-              </p>
-              <div style={{ flex: 0.5 }}>
-                <Label className='mb-0'>Timestamp</Label>
-                <Combobox
-                  options={[
-                    { label: 'None', value: '' },
-                    ...headerFields.map((f) => ({ label: f, value: f })),
-                  ]}
-                  value={
-                    columnMapping.timestamp
-                      ? {
-                        label: columnMapping.timestamp,
-                        value: columnMapping.timestamp,
-                      }
-                      : { label: 'None', value: '' }
-                  }
-                  onChange={(option) => {
-                    columnEditsRef.current = true;
-                    setColumnMapping({
-                      ...columnMapping,
-                      timestamp: option ? option.value : undefined,
-                    });
-                  }}
-                  placeholder='Select Timestamp column'
-                  name='Timestamp column'
+                Change folder
+              </FileInput>
+            </div>
+            {imageFiles.length === 0 && !readingFolder ? (
+              <UploadNotice
+                tone='danger'
+                icon={<FileX2Icon className='size-4' />}
+                title='This folder has no JPEG images'
+                detail='Only JPEG images can be uploaded.'
+              />
+            ) : scanningEXIF ? (
+              <div className='p-3'>
+                <div className={uploadStatLabel}>Reading images</div>
+                <div className='mb-2 flex items-baseline gap-2'>
+                  <span className='text-3xl leading-none'>
+                    {scanCount.toLocaleString()}
+                  </span>
+                  <span>of {scanTotal.toLocaleString()}</span>
+                </div>
+                <Progress
+                  value={scanCount}
+                  max={Math.max(scanTotal, 1)}
+                  className='h-3 bg-dark/40'
                 />
               </div>
-            </div>
-            <div className='flex flex-row gap-2 items-start mt-2'>
-              <div style={{ flex: 0.5 }}>
-                <Label className='mb-0'>Latitude</Label>
-                <Combobox
-                  options={headerFields.map((f) => ({ label: f, value: f }))}
-                  value={
-                    columnMapping.lat
-                      ? { label: columnMapping.lat, value: columnMapping.lat }
-                      : null
+            ) : loadingExistingImages ? (
+              <div className='flex items-center gap-2 p-3 text-sm'>
+                <Spinner animation='border' size='sm' />
+                Loading existing survey images...
+              </div>
+            ) : (
+              <div className='flex items-end justify-between gap-4 p-3'>
+                <div>
+                  <div className={uploadStatLabel}>To upload</div>
+                  <div className='flex items-baseline gap-2'>
+                    <span className='text-3xl leading-none'>
+                      {uploadSummary.count.toLocaleString()}
+                    </span>
+                    <span>
+                      {uploadSummary.count === 1 ? 'image' : 'images'}
+                    </span>
+                  </div>
+                </div>
+                <span className='text-sm text-muted-foreground'>
+                  {formatFileSize(uploadSummary.size)}
+                </span>
+              </div>
+            )}
+            {!scanningEXIF &&
+              Object.keys(exifData).length > 0 &&
+              invalidGpsFiles.length > 0 && (
+                <UploadNotice
+                  tone='warning'
+                  icon={<MapPinOffIcon className='size-4' />}
+                  title={
+                    skipImagesWithoutGps
+                      ? `${invalidGpsFiles.length.toLocaleString()} ${
+                          invalidGpsFiles.length === 1
+                            ? 'image without GPS data is'
+                            : 'images without GPS data are'
+                        } left out`
+                      : `${invalidGpsFiles.length.toLocaleString()} ${
+                          invalidGpsFiles.length === 1
+                            ? 'image has'
+                            : 'images have'
+                        } no GPS data`
                   }
-                  onChange={(option) => {
-                    columnEditsRef.current = true;
-                    setUseUtm(false);
-                    setColumnMapping({
-                      ...columnMapping,
-                      lat: option ? option.value : undefined,
-                    });
-                  }}
-                  placeholder='Select Latitude column'
-                  name='Latitude column'
+                  detail={
+                    skipImagesWithoutGps
+                      ? 'Skipped on the Location Data step.'
+                      : `You choose a GPS file for ${
+                          invalidGpsFiles.length === 1 ? 'it' : 'them'
+                        } on the next step.`
+                  }
                 />
-                <div className='mt-2'>
-                  <Label className='mb-0'>Longitude</Label>
+              )}
+            {!scanningEXIF && failedFiles.length > 0 && (
+              <UploadNotice
+                tone='danger'
+                icon={<FileX2Icon className='size-4' />}
+                title={`${failedFiles.length.toLocaleString()} ${
+                  failedFiles.length === 1 ? 'file' : 'files'
+                } could not be read`}
+                detail={`${
+                  failedFiles.length === 1 ? 'It is' : 'They are'
+                } left out; the rest can still be uploaded.`}
+                action={
+                  <Button
+                    variant='outline-light'
+                    size='sm'
+                    onClick={() => {
+                      const rows = failedFiles.map((failed) => ({
+                        originalPath: failed.path,
+                        reason: failed.error || 'Could not be read',
+                        category: 'scan-failed',
+                      }));
+                      downloadFailedImagesCsv(
+                        failedImagesCsvName(rows, project?.id ?? 'survey'),
+                        rows
+                      );
+                    }}
+                  >
+                    Download CSV
+                  </Button>
+                }
+              >
+                <div className='mt-2 max-h-40 overflow-y-auto bg-black/20 px-2 py-1.5 font-mono text-xs'>
+                  {failedFiles.map((failed, idx) => (
+                    <div key={idx} className='py-0.5'>
+                      {failed.path}
+                      {failed.error && (
+                        <span className='ms-2 text-[#ff8a85]'>
+                          ({failed.error})
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </UploadNotice>
+            )}
+          </div>
+        )}
+      </div>
+      </div>
+      <div className={sectionClass('georeference')}>
+      {!scanningEXIF && Object.keys(exifData).length > 0 && imageFiles.length > 0 && (
+        <div className='divide-y divide-white/15 border border-white/20 bg-white/10'>
+          {file ? (
+            <div className='flex items-center gap-3 p-3'>
+              <FileTextIcon className='size-5 shrink-0' />
+              <div className='min-w-0 flex-1'>
+                <div className='truncate font-semibold'>{file.name}</div>
+                <div className='text-xs text-muted-foreground'>GPS file</div>
+              </div>
+              <FileInput
+                id='gps-metadata-file'
+                fileType='.csv,.gpx'
+                variant='outline-light'
+                buttonSize='sm'
+                showSelection={false}
+                onFileChange={(files) => setFile(files[0])}
+              >
+                Change file
+              </FileInput>
+            </div>
+          ) : gpsSkippedByAdmin ? (
+            <div className='p-3'>
+              <GpsCoverage
+                segments={[
+                  {
+                    count: gpsCoverage.total,
+                    label: 'without location',
+                    tone: 'pending',
+                  },
+                ]}
+                source='skipped by admin'
+                note='Images are uploaded with no coordinates.'
+              />
+            </div>
+          ) : missingGpsData ? (
+            <>
+              <div className='p-3'>
+                <GpsCoverage
+                  segments={[
+                    { count: gpsCoverage.located, label: 'have GPS', tone: 'ok' },
+                    {
+                      count: gpsCoverage.total - gpsCoverage.located,
+                      label: 'need a GPS file',
+                      tone: 'pending',
+                    },
+                  ]}
+                  note="Add the flight's GPS log to locate the rest."
+                />
+              </div>
+              <div className='flex flex-col items-center gap-3 p-4 text-center'>
+                <FileInput
+                  id='gps-metadata-file'
+                  fileType='.csv,.gpx'
+                  showSelection={false}
+                  onFileChange={(files) => setFile(files[0])}
+                >
+                  Select GPS file
+                </FileInput>
+                <GpsFileExample filepath={imageFiles[0].webkitRelativePath} />
+                {cognitoGroups.includes('sysadmin') && (
+                  <Button
+                    variant='link'
+                    size='sm'
+                    className='p-0 text-muted-foreground'
+                    onClick={handleSkipGps}
+                  >
+                    Skip GPS selection (admin)
+                  </Button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className='p-3'>
+              <GpsCoverage
+                segments={[
+                  { count: gpsCoverage.located, label: 'located', tone: 'ok' },
+                ]}
+                action={
+                  <FileInput
+                    id='gps-metadata-file'
+                    fileType='.csv,.gpx'
+                    variant='outline-light'
+                    buttonSize='sm'
+                    showSelection={false}
+                    onFileChange={(files) => setFile(files[0])}
+                  >
+                    Use a GPS file instead
+                  </FileInput>
+                }
+              />
+            </div>
+          )}
+        </div>
+      )}
+      {headerFields && !mappingConfirmed && (() => {
+        const columnOptions = headerFields.map((f) => ({ label: f, value: f }));
+        const optionalColumnOptions = [{ label: 'None', value: '' }, ...columnOptions];
+        const rowLabel = 'mb-0 text-sm';
+        return (
+          <div className='mt-3 border border-white/20 bg-white/10 p-3'>
+            <div className='mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground'>
+              Match columns
+            </div>
+            <div className='grid grid-cols-[9rem_1fr] items-center gap-x-4 gap-y-2.5'>
+              <Label className={rowLabel}>Match images by</Label>
+              <Segmented
+                value={matchBy}
+                options={[
+                  { value: 'timestamp', label: 'Timestamp' },
+                  { value: 'filepath', label: 'File path' },
+                ]}
+                onChange={(mode) => {
+                  setMatchByChoice(mode);
+                  if (mode === 'timestamp' && columnMapping.filepath) {
+                    columnEditsRef.current = true;
+                    setColumnMapping({ ...columnMapping, filepath: undefined });
+                  }
+                }}
+              />
+              {matchBy === 'timestamp' ? (
+                <>
+                  <Label className={rowLabel}>Timestamp column</Label>
                   <Combobox
-                    options={headerFields.map((f) => ({ label: f, value: f }))}
+                    options={columnOptions}
+                    value={
+                      columnMapping.timestamp
+                        ? {
+                          label: columnMapping.timestamp,
+                          value: columnMapping.timestamp,
+                        }
+                        : null
+                    }
+                    onChange={(option) => {
+                      columnEditsRef.current = true;
+                      setColumnMapping({
+                        ...columnMapping,
+                        timestamp: option ? option.value : undefined,
+                      });
+                    }}
+                    placeholder='Select column'
+                    name='Timestamp column'
+                  />
+                </>
+              ) : (
+                <>
+                  <Label className={rowLabel}>File path column</Label>
+                  <Combobox
+                    options={columnOptions}
+                    value={
+                      columnMapping.filepath
+                        ? {
+                          label: columnMapping.filepath,
+                          value: columnMapping.filepath,
+                        }
+                        : null
+                    }
+                    onChange={(option) => {
+                      columnEditsRef.current = true;
+                      setColumnMapping({
+                        ...columnMapping,
+                        filepath: option ? option.value : undefined,
+                      });
+                    }}
+                    placeholder='Select column'
+                    name='FilePath column'
+                  />
+                </>
+              )}
+
+              <Label className={rowLabel}>Position</Label>
+              <Segmented
+                value={useUtm ? 'utm' : 'latlng'}
+                options={[
+                  { value: 'latlng', label: 'Latitude / longitude' },
+                  { value: 'utm', label: 'UTM' },
+                ]}
+                onChange={(mode) => {
+                  columnEditsRef.current = true;
+                  setUseUtm(mode === 'utm');
+                }}
+              />
+              {useUtm ? (
+                <>
+                  <Label className={rowLabel}>UTM column</Label>
+                  <Combobox
+                    options={columnOptions}
+                    value={utmColumn ? { label: utmColumn, value: utmColumn } : null}
+                    onChange={(option) => {
+                      const val = option && option.value ? option.value : undefined;
+                      columnEditsRef.current = true;
+                      setUtmColumn(val);
+                      setUseUtm(true);
+                    }}
+                    placeholder='Select column'
+                    name='UTM column'
+                  />
+                </>
+              ) : (
+                <>
+                  <Label className={rowLabel}>Latitude</Label>
+                  <Combobox
+                    options={columnOptions}
+                    value={
+                      columnMapping.lat
+                        ? { label: columnMapping.lat, value: columnMapping.lat }
+                        : null
+                    }
+                    onChange={(option) => {
+                      columnEditsRef.current = true;
+                      setUseUtm(false);
+                      setColumnMapping({
+                        ...columnMapping,
+                        lat: option ? option.value : undefined,
+                      });
+                    }}
+                    placeholder='Select column'
+                    name='Latitude column'
+                  />
+                  <Label className={rowLabel}>Longitude</Label>
+                  <Combobox
+                    options={columnOptions}
                     value={
                       columnMapping.lng
                         ? { label: columnMapping.lng, value: columnMapping.lng }
@@ -3412,66 +3685,19 @@ export function FileUploadCore({
                         lng: option ? option.value : undefined,
                       });
                     }}
-                    placeholder='Select Longitude column'
+                    placeholder='Select column'
                     name='Longitude column'
                   />
-                </div>
-              </div>
-              <p
-                className='mb-0'
-                style={{
-                  width: '50px',
-                  textAlign: 'center',
-                  alignSelf: 'center',
-                }}
-              >
-                or
-              </p>
-              <div style={{ flex: 0.5, alignSelf: 'center' }}>
-                <Label className='mb-0'>UTM</Label>
+                </>
+              )}
+
+              <Label className={rowLabel}>
+                Altitude{' '}
+                <span className='text-muted-foreground'>(optional)</span>
+              </Label>
+              <div className='flex items-center gap-2'>
                 <Combobox
-                  options={[
-                    { label: 'None', value: '' },
-                    ...headerFields.map((f) => ({ label: f, value: f })),
-                  ]}
-                  value={
-                    utmColumn
-                      ? { label: utmColumn, value: utmColumn }
-                      : { label: 'None', value: '' }
-                  }
-                  onChange={(option) => {
-                    const val = option && option.value ? option.value : undefined;
-                    columnEditsRef.current = true;
-                    setUtmColumn(val);
-                    setUseUtm(Boolean(val));
-                  }}
-                  placeholder='None'
-                  name='UTM column'
-                />
-              </div>
-            </div>
-            <div>
-              <div className='flex flex-row gap-4 items-center'>
-                <Label className='mb-0'>Altitude (optional)</Label>
-                <div className='flex flex-row gap-1 items-center'>
-                  <label className='me-2'>ft</label>
-                  <Switch
-                    id='altitude-in-meters'
-                    checked={altitudeInMeters}
-                    onCheckedChange={(checked) => {
-                      settingEditsRef.current = true;
-                      setAltitudeInMeters(checked);
-                    }}
-                  />
-                  <label>m</label>
-                </div>
-              </div>
-              <div className='flex flex-row gap-2 items-center'>
-                <Combobox
-                  options={[
-                    { label: 'None', value: '' },
-                    ...headerFields.map((f) => ({ label: f, value: f })),
-                  ]}
+                  options={optionalColumnOptions}
                   value={
                     columnMapping.alt
                       ? { label: columnMapping.alt, value: columnMapping.alt }
@@ -3484,8 +3710,8 @@ export function FileUploadCore({
                       alt: option && option.value ? option.value : undefined,
                     });
                   }}
-                  placeholder='Select Altitude column'
-                  className='grow'
+                  placeholder='Select column'
+                  className='flex-1'
                   name='Altitude column'
                 />
                 <Combobox
@@ -3495,109 +3721,69 @@ export function FileUploadCore({
                     settingEditsRef.current = true;
                     setAltitudeType(option ?? { label: 'EGM96', value: 'egm96' });
                   }}
-                  placeholder='Select Altitude Type'
-                  className='w-auto'
+                  placeholder='Altitude type'
+                  className='w-32'
                   name='Altitude type'
                 />
+                <div className='flex items-center gap-1.5 text-sm'>
+                  <span>ft</span>
+                  <Switch
+                    id='altitude-in-meters'
+                    aria-label='Altitude in metres'
+                    checked={altitudeInMeters}
+                    onCheckedChange={(checked) => {
+                      settingEditsRef.current = true;
+                      setAltitudeInMeters(checked);
+                    }}
+                  />
+                  <span>m</span>
+                </div>
+              </div>
+
+              <div />
+              <div>
+                <Button
+                  variant='primary'
+                  disabled={matchColumnMissing}
+                  onClick={handleConfirmMapping}
+                >
+                  Confirm columns
+                </Button>
               </div>
             </div>
           </div>
-          <Button
-            variant='primary'
-            className='mt-2'
-            onClick={handleConfirmMapping}
+        );
+      })()}
+      {file && csvData && (!headerFields || mappingConfirmed) && (
+        <div className='mt-3 border border-white/20 bg-white/10 p-3'>
+          <GpsCoverage
+            segments={gpsResultSegments}
+            source={associateByTimestamp ? undefined : 'by file path'}
+            note={gpsResultNote}
           >
-            Confirm File Structure
-          </Button>
+            {!associateByTimestamp && invalidGpsFiles.length > 0 && (
+              <div className='mt-1 font-mono text-xs text-muted-foreground'>
+                {invalidGpsFiles.slice(0, 5).join(', ')}
+                {invalidGpsFiles.length > 5 &&
+                  ` and ${(invalidGpsFiles.length - 5).toLocaleString()} more`}
+              </div>
+            )}
+            {invalidGpsFiles.length > 0 && gpsCoverage.located > 0 && (
+              <div className='mt-2 flex items-center gap-2'>
+                <Checkbox
+                  id='skip-images-without-gps'
+                  checked={skipImagesWithoutGps}
+                  onCheckedChange={(c) => setSkipImagesWithoutGps(c === true)}
+                />
+                <Label htmlFor='skip-images-without-gps' className='mb-0'>
+                  {invalidGpsFiles.length === 1
+                    ? 'Leave this image out and continue'
+                    : `Leave these ${invalidGpsFiles.length.toLocaleString()} images out and continue`}
+                </Label>
+              </div>
+            )}
+          </GpsCoverage>
         </div>
-      )}
-      {csvData && (
-        <>
-          <div className='mt-4'>
-            {invalidGpsFiles.length > 0 && (() => {
-              const sample = invalidGpsFiles.slice(0, 5);
-              const plural = invalidGpsFiles.length === 1 ? '' : 's';
-              const examplePlural = sample.length === 1 ? '' : 's';
-              return (
-                <Alert
-                  variant={skipImagesWithoutGps ? 'warning' : 'danger'}
-                  className='mb-2'
-                >
-                  <div>
-                    Missing GPS coordinates for {invalidGpsFiles.length} image
-                    {plural}. Example{examplePlural}: {sample.join(', ')}
-                  </div>
-                  <div className='mt-2 flex items-center gap-2'>
-                    <Checkbox
-                      id='skip-images-without-gps'
-                      checked={skipImagesWithoutGps}
-                      onCheckedChange={(c) => setSkipImagesWithoutGps(c === true)}
-                    />
-                    <Label htmlFor='skip-images-without-gps' className='mb-0'>
-                      {`Skip ${invalidGpsFiles.length} image${plural} without GPS data and continue`}
-                    </Label>
-                  </div>
-                </Alert>
-              );
-            })()}
-            {(invalidGpsFiles.length === 0 || skipImagesWithoutGps) && (() => {
-              let message = '';
-              const hasTimestampData =
-                csvData &&
-                fullCsvData &&
-                fullCsvData.some((row) => row.timestamp);
-              if (associateByTimestamp || hasTimestampData) {
-                const csvRange = minMaxOf(
-                  (fullCsvData ?? csvData.data).map((row) => row.timestamp || 0)
-                );
-                const csvMin = csvRange?.min ?? 0;
-                const csvMax = csvRange?.max ?? 0;
-                if (csvRange) {
-                  const formatTimestamp = (timestamp: number) =>
-                    new Date(timestamp).toLocaleString(undefined, {
-                      timeZone: 'UTC',
-                    }) + ' UTC';
-                  if (csvMin < minTimestamp || csvMax > maxTimestamp) {
-                    message = `Timestamp mismatch: CSV timestamps (${formatTimestamp(
-                      csvMin
-                    )} - ${formatTimestamp(
-                      csvMax
-                    )}) are outside the image timestamps range.`;
-                  } else {
-                    message = `Timestamp range valid: CSV timestamps (${formatTimestamp(
-                      csvMin
-                    )} - ${formatTimestamp(
-                      csvMax
-                    )}) are within the image timestamps range.`;
-                  }
-                }
-              } else {
-                const total = filteredImageFiles.length;
-                if (total > 0) {
-                  const matched = filteredImageFiles.filter((file) =>
-                    csvIndex.byFilepath.has(
-                      file.webkitRelativePath.toLowerCase()
-                    )
-                  ).length;
-                  const percent = Math.round((matched / total) * 100);
-                  message = `${percent}% of image files have corresponding CSV file paths.`;
-                } else {
-                  message = `No image files available for CSV file path matching.`;
-                }
-              }
-              const hasData = (fullCsvData ?? csvData.data).length > 0;
-              const alertVariant: AlertVariant = hasData ? 'info' : 'danger';
-              const displayMessage = hasData
-                ? message
-                : 'No matching GPS data for selected images.';
-              return (
-                <Alert variant={alertVariant} className='mb-0'>
-                  {displayMessage}
-                </Alert>
-              );
-            })()}
-          </div>
-        </>
       )}
       </div>
       <div className={sectionClass('surveyArea')}>
@@ -4403,6 +4589,7 @@ const MODAL_WIZARD_STEPS = [
   'Cameras',
   'Review & Submit',
 ];
+const MODAL_LOCATION_STEP = MODAL_WIZARD_STEPS.indexOf('Location Data');
 const MODAL_CORE_STEPS: UploadWizardStep[] = [
   'images',
   'georeference',
@@ -4413,6 +4600,181 @@ const MODAL_CORE_STEPS: UploadWizardStep[] = [
 ];
 
 // Original modal version
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className='flex w-fit border border-white/30'>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type='button'
+          aria-pressed={value === o.value}
+          onClick={() => value !== o.value && onChange(o.value)}
+          className={cn(
+            'px-3 py-1 text-sm transition-colors',
+            value === o.value
+              ? 'bg-primary text-white'
+              : 'text-foreground hover:bg-white/10'
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type GpsSegment = {
+  count: number;
+  label: string;
+  tone: 'ok' | 'warn' | 'pending' | 'left' | 'bad';
+};
+
+const gpsToneClass: Record<GpsSegment['tone'], string> = {
+  ok: 'bg-success',
+  warn: 'bg-warning',
+  pending: 'bg-light/45',
+  left: 'bg-[repeating-linear-gradient(45deg,rgba(171,182,194,0.45)_0_4px,rgba(171,182,194,0.15)_4px_8px)]',
+  bad: 'bg-danger',
+};
+
+function GpsCoverage({
+  segments,
+  source,
+  note,
+  action,
+  children,
+}: {
+  segments: GpsSegment[];
+  source?: string;
+  note?: string;
+  action?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const shown = segments.filter((s) => s.count > 0 || s.tone === 'bad');
+  const total = shown.reduce((acc, s) => acc + s.count, 0);
+  return (
+    <div>
+      <div className='flex items-center gap-4'>
+        <div className='min-w-0 flex-1'>
+          <div className='flex flex-wrap items-center gap-x-4 gap-y-1 text-sm'>
+            {shown.map((s) => (
+              <span key={s.label} className='flex items-center gap-1.5'>
+                <span className={cn('size-2 rounded-full', gpsToneClass[s.tone])} />
+                <span className='font-semibold'>{s.count.toLocaleString()}</span>
+                {s.label}
+              </span>
+            ))}
+            {source && (
+              <span className='ml-auto text-xs text-muted-foreground'>
+                {source}
+              </span>
+            )}
+          </div>
+          <div className='my-2 flex h-3 overflow-hidden'>
+            {shown.map((s) => (
+              <div
+                key={s.label}
+                className={gpsToneClass[s.tone]}
+                style={{
+                  width: total > 0 ? `${(s.count / total) * 100}%` : '100%',
+                  minWidth: s.count > 0 ? 4 : undefined,
+                }}
+              />
+            ))}
+          </div>
+          {note && <div className='text-xs text-muted-foreground'>{note}</div>}
+        </div>
+        {action && <div className='shrink-0'>{action}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function GpsFileExample({ filepath }: { filepath: string }) {
+  const cell = 'border border-white/15 px-2.5 py-1 text-left';
+  const or = <span className='font-sans text-[11px] text-muted-foreground'> or </span>;
+  return (
+    <table className='border-collapse font-mono text-xs'>
+      <thead className='bg-black/15'>
+        <tr>
+          <th className={cell}>
+            timestamp{or}filepath
+          </th>
+          <th className={cell}>lat</th>
+          <th className={cell}>lng</th>
+          <th className={cell}>
+            alt{' '}
+            <span className='font-normal text-muted-foreground'>(optional)</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody className='text-muted-foreground'>
+        <tr>
+          <td className={cell}>
+            2024-09-02 05:06:30{or}
+            {filepath}
+          </td>
+          <td className={cell}>-24.0137</td>
+          <td className={cell}>31.4852</td>
+          <td className={cell}>412.5</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+const uploadStatLabel =
+  'mb-1 text-xs uppercase tracking-wider text-muted-foreground';
+
+function UploadNotice({
+  tone,
+  icon,
+  title,
+  detail,
+  action,
+  children,
+}: {
+  tone: 'warning' | 'danger';
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+  action?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex gap-3 border-l-4 p-3',
+        tone === 'warning' ? 'border-l-warning' : 'border-l-danger'
+      )}
+    >
+      <span
+        className={cn(
+          'mt-0.5 shrink-0',
+          tone === 'warning' ? 'text-warning' : 'text-danger'
+        )}
+      >
+        {icon}
+      </span>
+      <div className='min-w-0 flex-1'>
+        <div className='text-sm'>{title}</div>
+        <div className='text-xs text-muted-foreground'>{detail}</div>
+        {children}
+      </div>
+      {action && <div className='shrink-0'>{action}</div>}
+    </div>
+  );
+}
+
 export default function FilesUploadComponent({
   show,
   handleClose,
@@ -4431,6 +4793,14 @@ export default function FilesUploadComponent({
   const [imagesReady, setImagesReady] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
   const [locationReady, setLocationReady] = useState(false);
+  const [confirmLocation, setConfirmLocation] = useState<(() => void) | null>(
+    null
+  );
+  const advance = () => {
+    const next = stepIndex + 1;
+    setStepIndex(next);
+    setFurthestIndex((prev) => Math.max(prev, next));
+  };
 
   const stepReadyToAdvance = (index: number): boolean => {
     switch (index) {
@@ -4506,6 +4876,10 @@ export default function FilesUploadComponent({
               setReadyToSubmit={setReadyToSubmit}
               setGpsDataReady={setGpsReady}
               setLocationReady={setLocationReady}
+              setConfirmLocation={setConfirmLocation}
+              onLocationConfirmed={() => {
+                if (stepIndex === MODAL_LOCATION_STEP) advance();
+              }}
               setImagesReady={setImagesReady}
               currentStep={MODAL_CORE_STEPS[stepIndex]}
               newProject={false}
@@ -4514,38 +4888,9 @@ export default function FilesUploadComponent({
           </form>
         </DialogBody>
         <DialogFooter>
-          {stepIndex > 0 && (
-            <Button
-              variant='secondary'
-              disabled={isSubmitting || isClosing}
-              onClick={() => setStepIndex(stepIndex - 1)}
-            >
-              Back
-            </Button>
-          )}
-          {stepIndex < MODAL_WIZARD_STEPS.length - 1 ? (
-            <Button
-              variant='primary'
-              disabled={!stepReadyToAdvance(stepIndex)}
-              onClick={() => {
-                const next = stepIndex + 1;
-                setStepIndex(next);
-                setFurthestIndex((prev) => Math.max(prev, next));
-              }}
-            >
-              Next
-            </Button>
-          ) : (
-            <Button
-              variant='primary'
-              disabled={!readyToSubmit || isSubmitting || isClosing}
-              onClick={handleModalSubmit}
-            >
-              Submit
-            </Button>
-          )}
           <Button
-            variant='dark'
+            variant='ghost'
+            className='mr-auto'
             disabled={isSubmitting || isClosing}
             onClick={() => {
               setIsClosing(true);
@@ -4554,6 +4899,38 @@ export default function FilesUploadComponent({
           >
             Cancel
           </Button>
+          {stepIndex > 0 && (
+            <Button
+              variant='outline-light'
+              disabled={isSubmitting || isClosing}
+              onClick={() => setStepIndex(stepIndex - 1)}
+            >
+              <ChevronLeftIcon className='size-4' />
+              Back
+            </Button>
+          )}
+          {stepIndex < MODAL_WIZARD_STEPS.length - 1 ? (
+            <Button
+              variant='primary'
+              disabled={!stepReadyToAdvance(stepIndex)}
+              onClick={
+                stepIndex === MODAL_LOCATION_STEP && confirmLocation
+                  ? confirmLocation
+                  : advance
+              }
+            >
+              Next
+              <ChevronRightIcon className='size-4' />
+            </Button>
+          ) : (
+            <Button
+              variant='primary'
+              disabled={!readyToSubmit || isSubmitting || isClosing}
+              onClick={handleModalSubmit}
+            >
+              Upload files
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
