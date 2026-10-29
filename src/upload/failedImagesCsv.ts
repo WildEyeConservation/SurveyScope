@@ -1,15 +1,10 @@
+import { escapeCsvValue } from '../../shared/csv';
+
 export interface FailedImageRow {
   originalPath: string;
   reason: string;
   /** Machine-readable failure grouping. */
   category?: string;
-}
-
-function csvEscape(value: string): string {
-  const safeValue = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\n\r]/.test(safeValue)
-    ? `"${safeValue.replace(/"/g, '""')}"`
-    : safeValue;
 }
 
 export function failedImagesCsvName(
@@ -34,7 +29,7 @@ export function downloadFailedImagesCsv(
         row.reason,
         row.category ?? '',
       ]
-        .map(csvEscape)
+        .map(escapeCsvValue)
         .join(',')
     ),
   ];

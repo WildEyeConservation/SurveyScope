@@ -5,6 +5,7 @@ import { fetchAllPaginatedResults } from './utils.tsx';
 import { loadRows } from './rowChunks';
 import { loadProjectImages } from './projectImages';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../shared/csv';
 import { GlobalContext } from './Context.tsx';
 import { useContext, useState, useEffect, useMemo } from 'react';
 import { useUsers } from './apiInterface';
@@ -242,7 +243,7 @@ export default function AnnotationSetResults({
       }));
       const includeDistance = distanceInputs.every(hasDistanceInputs);
       exportFromJSON({
-        data: annotations.map((anno, index) => {
+        data: neutraliseCsvRows(annotations.map((anno, index) => {
           return {
             category: categoryMap[anno.categoryId ?? ''] || 'Unknown',
             image: anno.image.originalPath || 'Unknown',
@@ -272,7 +273,7 @@ export default function AnnotationSetResults({
             reviewedBy: userMap[anno.reviewedBy ?? ''],
             reviewedCategory: categoryMap[anno.reviewCatId ?? ''],
           };
-        }),
+        })),
         fileName,
         exportType,
       });
