@@ -6,6 +6,9 @@ import {
   layout,
   paragraph,
 } from '../shared/emailLayout';
+import { isValidEmail, normalizeEmail } from '../../../shared/email';
+
+export { isValidEmail, normalizeEmail };
 
 export const SENDER = 'SurveyScope <no-reply@surveyscope.org>';
 
@@ -38,16 +41,6 @@ export type LimitUpdate =
       expiresAt: number;
       max: number;
     };
-
-export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-export function isValidEmail(email: string): boolean {
-  return (
-    email.length <= 254 && /^[^\s@"\\]+@[^\s@"\\]+\.[^\s@"\\]+$/.test(email)
-  );
-}
 
 // Apply identical limits whether or not the address has an account.
 export function limitUpdates(
