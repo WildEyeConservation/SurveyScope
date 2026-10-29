@@ -4,7 +4,7 @@ export const generateTile = defineFunction({
   name: 'generateTile',
   resourceGroupName: 'data',
   entry: './handler.mjs',
-  runtime: 20,
+  runtime: 24,
   timeoutSeconds: 30,
   memoryMB: 2048,
 });

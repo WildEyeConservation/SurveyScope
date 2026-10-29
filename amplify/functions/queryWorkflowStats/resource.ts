@@ -5,7 +5,7 @@ import { defineFunction } from '@aws-amplify/backend';
 // statistics tables without the function stack depending on any other stack.
 export const queryWorkflowStats = defineFunction({
   name: 'queryWorkflowStats',
-  runtime: 20,
+  runtime: 24,
   timeoutSeconds: 30,
   memoryMB: 512,
 });

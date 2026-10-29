@@ -5,6 +5,6 @@ export const monitorScoutbotDlq = defineFunction({
   schedule: 'every 30m',
   timeoutSeconds: 900,
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
 });
 

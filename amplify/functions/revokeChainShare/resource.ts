@@ -5,5 +5,5 @@ export const revokeChainShare = defineFunction({
   resourceGroupName: 'data',
   timeoutSeconds: 900,
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
 });

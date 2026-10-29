@@ -4,6 +4,6 @@ export const launchIndividualId = defineFunction({
   name: 'launchIndividualId',
   entry: './handler.ts',
   timeoutSeconds: 900,
-  runtime: 20,
+  runtime: 24,
   memoryMB: 2048,
 });

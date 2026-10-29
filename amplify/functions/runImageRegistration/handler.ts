@@ -655,10 +655,9 @@ function isConditionalCheckFailure(e: unknown): boolean {
 // Reset per invocation; skipped pairs are not failures, only thrown ones.
 let pairBuildFailures = 0;
 
-export const handler: RunImageRegistrationHandler = async (event, context) => {
+export const handler: RunImageRegistrationHandler = async (event) => {
   pairBuildFailures = 0;
   try {
-    context.callbackWaitsForEmptyEventLoop = false;
     const projectId = event.arguments.projectId;
     const metadata = JSON.parse(event.arguments.metadata) as {
       masks?: number[][][];

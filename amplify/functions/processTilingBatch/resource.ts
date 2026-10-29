@@ -4,6 +4,6 @@ export const processTilingBatch = defineFunction({
   name: 'processTilingBatch',
   timeoutSeconds: 900,
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
 });
 

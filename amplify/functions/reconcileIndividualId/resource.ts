@@ -5,6 +5,6 @@ export const reconcileIndividualId = defineFunction({
   entry: './handler.ts',
   schedule: 'every 5m',
   timeoutSeconds: 300,
-  runtime: 20,
+  runtime: 24,
   memoryMB: 1024,
 });

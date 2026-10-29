@@ -5,6 +5,6 @@ import { defineFunction } from "@aws-amplify/backend";
 // $amplify/env identifier and breaks type checking.
 export const updateUserStats = defineFunction({
   name: "updateUserStats",
-  runtime: 20,
+  runtime: 24,
   timeoutSeconds: 60,
 });
