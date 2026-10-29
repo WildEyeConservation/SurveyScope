@@ -7,6 +7,7 @@ import { GlobalContext } from './Context';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
 import type { Schema } from './amplify/client-schema';
+import { escapeCsvValue } from '../shared/csv';
 
 type Option = { label: string; value: string };
 
@@ -28,14 +29,6 @@ export default function ClientLogs() {
   const [end, setEnd] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<Schema['ClientLog']['type'][]>([]);
-
-  function escapeCsvValue(value: unknown): string {
-    const stringValue =
-      value === null || value === undefined ? '' : String(value);
-    const needsQuoting = /[",\n\r]/.test(stringValue);
-    const escaped = stringValue.replace(/"/g, '""');
-    return needsQuoting ? `"${escaped}"` : escaped;
-  }
 
   function exportFilteredLogsToCsv() {
     if (!filteredLogs.length) return;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button, Form, Spinner } from 'react-bootstrap';
+import { escapeCsvValue } from '../../shared/csv';
 
 export type ImageInfo = {
   id: string;
@@ -80,14 +81,6 @@ function flattenRows(cameras: Camera[]): FlatRow[] {
   );
 }
 
-function csvEscape(value: string | number | null | undefined) {
-  if (value === null || value === undefined) return '';
-  const stringValue = String(value);
-  return /[",\n\r]/.test(stringValue)
-    ? `"${stringValue.replace(/"/g, '""')}"`
-    : stringValue;
-}
-
 function downloadCsv(filename: string, rows: FlatRow[]) {
   const lines = [
     [
@@ -113,7 +106,7 @@ function downloadCsv(filename: string, rows: FlatRow[]) {
         row.altitude,
         row.timestamp ? new Date(row.timestamp * 1000).toISOString() : '',
       ]
-        .map(csvEscape)
+        .map(escapeCsvValue)
         .join(',')
     ),
   ];

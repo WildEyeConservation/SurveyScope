@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Modal, Button } from 'react-bootstrap';
 import MyTable from './Table';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../shared/csv';
 
 type AnnotationSet = { label: string; value: string };
 type UserType = { id: string; name: string };
@@ -161,7 +162,11 @@ export default function SnapshotStatsModal({
         / /g,
         '_'
       );
-    exportFromJSON({ data, fileName, exportType: exportFromJSON.types.csv });
+    exportFromJSON({
+      data: neutraliseCsvRows(data),
+      fileName,
+      exportType: exportFromJSON.types.csv
+    });
   };
 
   return (

@@ -6,6 +6,7 @@ import MyTable from '../Table';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { Tab, Tabs } from '../Tabs';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../../shared/csv';
 import { useUpdateProgress } from '../useUpdateProgress';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
@@ -247,13 +248,13 @@ export default function Results() {
     setTotalFilesCompiled(2);
 
     exportFromJSON({
-      data: results.map((result) => ({
+      data: neutraliseCsvRows(results.map((result) => ({
         date: result.createdAt,
         preset: result.testPreset.name,
         testAnimals: result.testAnimals,
         missedAnimals: result.totalMissedAnimals,
         passed: passedForResult(result),
-      })),
+      }))),
       fileName: `${selectedUser?.label}-test-results`,
       exportType: 'csv',
     });
@@ -261,10 +262,10 @@ export default function Results() {
     setCompilingFiles(1);
 
     exportFromJSON({
-      data: accuracyByCategory.map((category) => ({
+      data: neutraliseCsvRows(accuracyByCategory.map((category) => ({
         label: category.name,
         overUnderPercentage: category.countPercentage.toFixed(4),
-      })),
+      }))),
       fileName: `${selectedUser?.label}-label-accuracy`,
       exportType: 'csv',
     });

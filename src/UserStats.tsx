@@ -5,6 +5,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import type { UserStatsType } from './schemaTypes';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../shared/csv';
 import { useUsers } from './apiInterface';
 import Select from 'react-select';
 import { Card, Button, Spinner } from 'react-bootstrap';
@@ -403,7 +404,11 @@ export default function UserStats() {
         / /g,
         '_'
       );
-    exportFromJSON({ data: rows, fileName, exportType: exportFromJSON.types.csv });
+    exportFromJSON({
+      data: neutraliseCsvRows(rows),
+      fileName,
+      exportType: exportFromJSON.types.csv
+    });
   };
 
   const handleExportData = async () => {
@@ -424,7 +429,7 @@ export default function UserStats() {
           );
         const exportType = exportFromJSON.types.csv;
         exportFromJSON({
-          data: observations.map((o) => {
+          data: neutraliseCsvRows(observations.map((o) => {
             const { confidence, ...rest } = o;
             return {
               ...rest,
@@ -432,7 +437,7 @@ export default function UserStats() {
               owner: userLookup.get(o.owner),
               locationConfidence: confidence,
             };
-          }),
+          })),
           fileName,
           exportType,
         });

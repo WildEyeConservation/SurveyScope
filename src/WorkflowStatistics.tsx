@@ -12,6 +12,7 @@ import { RefreshCw } from 'lucide-react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../shared/csv';
 import MyTable from './Table';
 import { GlobalContext } from './Context';
 import { useUsers } from './apiInterface';
@@ -527,7 +528,7 @@ export default function WorkflowStatistics() {
       ),
     }));
     exportFromJSON({
-      data: rows,
+      data: neutraliseCsvRows(rows),
       fileName: `${exportBaseName}_DailyStats`,
       exportType: exportFromJSON.types.csv,
     });
@@ -553,7 +554,9 @@ export default function WorkflowStatistics() {
         return;
       }
       exportFromJSON({
-        data: events.map((event) => eventToCsvRow(event, userName, runName)),
+        data: neutraliseCsvRows(
+          events.map((event) => eventToCsvRow(event, userName, runName))
+        ),
         fileName: `${exportBaseName}_TaskEvents`,
         exportType: exportFromJSON.types.csv,
       });
