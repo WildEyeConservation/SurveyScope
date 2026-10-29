@@ -1,4 +1,5 @@
 import './index.css';
+import './maplibreWorker';
 import ReactDOM from 'react-dom/client';
 import AppWithAuthenticator from './App.tsx';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

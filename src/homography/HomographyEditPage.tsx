@@ -13,6 +13,7 @@ import { inv, matrix } from 'mathjs';
 import { GlobalContext } from '../Context';
 import type { ImageType } from '../schemaTypes';
 import { array2Matrix, makeTransform } from '../utils';
+import { sameAppPath } from './backHref';
 import { HomographyWorkbench } from './HomographyWorkbench';
 import { type Point } from './ManualHomographyEditor';
 import {
@@ -39,7 +40,7 @@ export default function HomographyEditPage() {
   const image1Id = searchParams.get('image1Id') ?? undefined;
   const image2Id = searchParams.get('image2Id') ?? undefined;
   const annotationSetId = searchParams.get('annotationSetId') ?? undefined;
-  const backHref = searchParams.get('backHref') ?? undefined;
+  const backHref = sameAppPath(searchParams.get('backHref'));
 
   const [images, setImages] = useState<[ImageType, ImageType] | null>(null);
   const [imagesError, setImagesError] = useState<string | null>(null);

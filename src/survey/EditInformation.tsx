@@ -9,7 +9,6 @@ import SurveyStructure, { Camera } from './SurveyStructure';
 
 export default function EditInformation({ projectId }: { projectId: string }) {
   const { client, showModal } = useContext(GlobalContext)!;
-  const [oldProjectName, setOldProjectName] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
   const [fetching, setFetching] = useState(false);
   const [structureFetching, setStructureFetching] = useState(false);
@@ -29,8 +28,8 @@ export default function EditInformation({ projectId }: { projectId: string }) {
     if (project?.name === newProjectName) {
       const {
         data: [testPreset],
-      } = await client.models.TestPreset.testPresetsByName({
-        name: oldProjectName,
+      } = await client.models.TestPreset.testPresetsByOwnerProjectId({
+        ownerProjectId: projectId,
       });
 
       if (testPreset) {
@@ -39,8 +38,6 @@ export default function EditInformation({ projectId }: { projectId: string }) {
           name: newProjectName,
         });
       }
-
-      setOldProjectName(newProjectName);
     }
 
     await client.mutations.updateProjectMemberships({
@@ -66,7 +63,6 @@ export default function EditInformation({ projectId }: { projectId: string }) {
       );
 
       if (project) {
-        setOldProjectName(project.name);
         setNewProjectName(project.name);
       }
 

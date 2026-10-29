@@ -15,6 +15,7 @@ import MyTable from '../Table';
 import { Bar, BarChart, Cell, XAxis, YAxis } from 'recharts';
 import { Tab, Tabs } from '../Tabs';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../../shared/csv';
 import { useUpdateProgress } from '../useUpdateProgress';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
@@ -64,6 +65,7 @@ export default function Results() {
           selectionSet: [
             'id',
             'testPreset.name',
+            'testPreset.ownerProjectId',
             'testAnimals',
             'projectId',
             'totalMissedAnimals',
@@ -117,14 +119,7 @@ export default function Results() {
     const createdAt = result.createdAt ?? new Date().toISOString();
     const date = new Date(createdAt);
     const pool = result.testPreset.name;
-    let surveyId = selectedProject?.value;
-
-    if (pool !== selectedProject?.label) {
-      const project = organizationProjects.find((p) => p.name === pool);
-      if (project) {
-        surveyId = project.id;
-      }
-    }
+    const surveyId = result.testPreset.ownerProjectId ?? selectedProject?.value;
 
     const missedAnimals =
       result.totalMissedAnimals > 0 ? result.totalMissedAnimals : 0;
@@ -266,13 +261,13 @@ export default function Results() {
     setTotalFilesCompiled(2);
 
     exportFromJSON({
-      data: results.map((result) => ({
+      data: neutraliseCsvRows(results.map((result) => ({
         date: result.createdAt,
         preset: result.testPreset.name,
         testAnimals: result.testAnimals,
         missedAnimals: result.totalMissedAnimals,
         passed: passedForResult(result),
-      })),
+      }))),
       fileName: `${selectedUser?.label}-test-results`,
       exportType: 'csv',
     });
@@ -280,10 +275,10 @@ export default function Results() {
     setCompilingFiles(1);
 
     exportFromJSON({
-      data: accuracyByCategory.map((category) => ({
+      data: neutraliseCsvRows(accuracyByCategory.map((category) => ({
         label: category.name,
         overUnderPercentage: category.countPercentage.toFixed(4),
-      })),
+      }))),
       fileName: `${selectedUser?.label}-label-accuracy`,
       exportType: 'csv',
     });

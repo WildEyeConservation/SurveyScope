@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { S3Client } from '@aws-sdk/client-s3';
+import { presignClient } from '../shared/presign';
 import { clearAccessCache, db, resolveImageAccess } from './repository';
 import {
   createImageAccessHandler,
@@ -96,7 +96,7 @@ function fixture(t: TestContext) {
   });
 
   // Synthetic signing material: no AWS calls or local credential lookup.
-  const s3 = new S3Client({
+  const s3 = presignClient({
     region: 'eu-west-1',
     credentials: {
       accessKeyId: 'TESTONLYACCESSKEY',
@@ -306,7 +306,9 @@ test('upload grant binds ownership metadata and conditional creation; registrati
   assert.equal(grant.exists, false);
   assert.equal(grant.headers['If-None-Match'], '*');
   assert.equal(grant.headers['x-amz-meta-project-id'], 'p');
-  const signed = new URL(grant.url).searchParams.get('X-Amz-SignedHeaders')!;
+  const grantUrl = new URL(grant.url);
+  assert.equal(grantUrl.searchParams.get('x-amz-checksum-crc32'), null);
+  const signed = grantUrl.searchParams.get('X-Amz-SignedHeaders')!;
   for (const header of [
     'if-none-match',
     'x-amz-meta-project-id',
@@ -382,6 +384,7 @@ test('multipart uploads fix ownership at creation and complete without overwriti
   const url = new URL(signed.parts[1].url);
   assert.equal(url.searchParams.get('partNumber'), '2');
   assert.equal(url.searchParams.get('uploadId'), 'upload-1');
+  assert.equal(url.searchParams.get('x-amz-checksum-crc32'), null);
   assert(url.pathname.endsWith('/images/old/big.tif'));
   await assert.rejects(
     handler(

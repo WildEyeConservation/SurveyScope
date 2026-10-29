@@ -5,6 +5,6 @@ export const findAndRequeueMissingLocations = defineFunction({
   schedule: 'every 15m',
   timeoutSeconds: 900,  // 15 minutes to handle large location sets
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
   memoryMB: 1024,  // Extra memory for large sets
 });

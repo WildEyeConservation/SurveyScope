@@ -2,7 +2,8 @@ export function graphqlOperation(query: string, variables: any) {
   return { query, variables };
 }
 
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import './App.css';
 import { configure } from 'react-hotkeys';
 // import { withAuthenticator } from "@aws-amplify/ui-react";
@@ -25,6 +26,8 @@ import {
 //import { ErrorHandler } from './ErrorHandler';
 //import {TaskProgressHandler} from './TaskProgressHandler';
 import UploadManager from './upload/UploadManager.tsx';
+import { loadCognitoGroups, useCognitoGroups } from './cognitoGroups';
+import { GlobalContext } from './Context';
 import ClientLogger from './ClientLogger.tsx';
 
 configure({ ignoreRepeatedEventsWhenKeyHeldDown: false });
@@ -43,7 +46,10 @@ interface AppProps {
 
 function App({ signOut = () => { }, user }: AppProps) {
   const [session, setSession] = useState<any>();
-  const [cognitoGroups, setCognitoGroups] = useState<string[]>([]);
+  const cognitoGroups = useCognitoGroups();
+  const queryClient = useQueryClient();
+  const { client } = useContext(GlobalContext);
+  const previousGroups = useRef(cognitoGroups);
   const [continueOnMobile, setContinueOnMobile] = useState(false);
   // const [userAttributes, setUserAttributes] = useState<any>(null);
 
@@ -101,15 +107,21 @@ function App({ signOut = () => { }, user }: AppProps) {
     return () => clearInterval(id);
   }, []);
   useEffect(() => {
-    fetchAuthSession().then((sess) => {
-      setSession(sess);
-      if (sess?.tokens?.accessToken?.payload['cognito:groups']) {
-        setCognitoGroups(
-          sess.tokens.accessToken.payload['cognito:groups'] as string[]
-        );
-      }
-    });
+    loadCognitoGroups().then(setSession);
+    client.mutations
+      .syncOrganizationGroups()
+      .then(({ data }) => (data ? loadCognitoGroups(true) : undefined))
+      .catch((err) => console.error('Failed to sync organisation groups', err));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Cached lists were fetched under the old groups, so refetch them.
+  useEffect(() => {
+    if (previousGroups.current === cognitoGroups) return;
+    previousGroups.current = cognitoGroups;
+    if (session) queryClient.invalidateQueries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cognitoGroups]);
 
   return session ? (
     continueOnMobile ? (

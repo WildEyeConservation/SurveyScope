@@ -44,7 +44,8 @@ export default function Testing() {
       }),
     {
       filter: { organizationId: { eq: organization.id } },
-    }
+    },
+    { staleTime: 5 * 60 * 1000 }
   );
 
   const membershipsHook = useOptimisticUpdates<

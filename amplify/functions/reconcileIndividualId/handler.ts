@@ -9,6 +9,7 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import pLimit from 'p-limit';
+import { loadImageTileStates } from '../shared/loadImageTileStates';
 
 // Safety net only: if a per-image decrement is permanently lost (SQS message
 // dropped after the image write but before the counter update), the fanout
@@ -69,12 +70,6 @@ const listIndividualIdJobsQuery = /* GraphQL */ `
       }
       nextToken
     }
-  }
-`;
-
-const getImageTiledAtQuery = /* GraphQL */ `
-  query GetImage($id: ID!) {
-    getImage(id: $id) { id tiledAt }
   }
 `;
 
@@ -163,33 +158,19 @@ async function loadManifest(key: string): Promise<PretileManifest | null> {
 }
 
 async function allImagesTiled(
+  projectId: string,
   imageIds: string[],
   manifestCreatedAt: string
 ): Promise<boolean> {
   if (imageIds.length === 0) return true;
   const createdAtMs = Date.parse(manifestCreatedAt);
-  const limit = pLimit(20);
-  let firstUntiled: string | null = null;
-  await Promise.all(
-    imageIds.map((id) =>
-      limit(async () => {
-        if (firstUntiled) return;
-        const data = await executeGraphql<{
-          getImage?: { tiledAt: string | null } | null;
-        }>(getImageTiledAtQuery, { id });
-        const tiledAt = data.getImage?.tiledAt;
-        if (!tiledAt) {
-          firstUntiled = id;
-          return;
-        }
-        const tiledAtMs = Date.parse(tiledAt);
-        if (!Number.isFinite(tiledAtMs) || tiledAtMs < createdAtMs) {
-          firstUntiled = id;
-        }
-      })
-    )
-  );
-  return firstUntiled === null;
+  const states = await loadImageTileStates(projectId, imageIds, executeGraphql);
+  return imageIds.every((id) => {
+    const tiledAt = states.get(id)?.tiledAt;
+    if (!tiledAt) return false;
+    const tiledAtMs = Date.parse(tiledAt);
+    return Number.isFinite(tiledAtMs) && tiledAtMs >= createdAtMs;
+  });
 }
 
 async function completeLaunch(job: JobRow): Promise<void> {
@@ -241,6 +222,7 @@ export const handler: Handler = async () => {
             pretileDone = true; // manifest gone — treat as done
           } else {
             pretileDone = await allImagesTiled(
+              job.projectId,
               manifest.imageIds,
               manifest.createdAt
             );

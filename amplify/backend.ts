@@ -2,9 +2,12 @@ import { imageAccess } from './storage/imageAccess/resource';
 import { infoTagWork } from './functions/infoTagWork/resource';
 import { recomputeBoundaryStatus } from './functions/recomputeBoundaryStatus/resource';
 import { getRowChunk } from './functions/getRowChunk/resource';
+import { getAdminStats } from './functions/getAdminStats/resource';
+import { updateAdminStats } from './functions/updateAdminStats/resource';
 import { ROW_SOURCES, SCOPE_MODELS } from '../shared/rowSources';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
+import { installSubscriptionGroupAuth } from './data/subscriptionGroupAuth';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
 import { reportClientError } from './functions/reportClientError/resource';
 import { workflowFiles } from './storage/workflowFiles/resource';
@@ -12,7 +15,7 @@ import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { addUserToGroup } from './functions/add-user-to-group/resource';
-import { ArnFormat, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { ArnFormat, Aspects, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import { outputBucket, inputBucket } from './storage/resource';
@@ -22,6 +25,7 @@ import * as ecs from 'aws-cdk-lib/aws-ecs';
 import { AutoProcessor } from './autoProcessor';
 import { postDeploy } from './functions/postDeploy/resource';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import type { IConstruct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { updateUserStats } from './functions/updateUserStats/resource';
 import { Policy, PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
@@ -49,7 +53,7 @@ import { respondToInvite } from './functions/respondToInvite/resource';
 import { removeUserFromOrganization } from './functions/removeUserFromOrganization/resource';
 import { updateOrganizationMemberAdmin } from './functions/updateOrganizationMemberAdmin/resource';
 import { deleteQueue } from './functions/deleteQueue/resource';
-import { updateActiveOrganizations } from './functions/updateActiveOrganizations/resource';
+import { syncOrganizationGroups } from './functions/syncOrganizationGroups/resource';
 import { launchQCReview } from './functions/launchQCReview/resource';
 import { launchInfoTags } from './functions/launchInfoTags/resource';
 import { launchHomography } from './functions/launchHomography/resource';
@@ -82,6 +86,7 @@ import {
   SqsEventSource,
 } from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -101,6 +106,8 @@ const backend = defineBackend({
   infoTagWork,
   recomputeBoundaryStatus,
   getRowChunk,
+  getAdminStats,
+  updateAdminStats,
   chainMutationGuard,
   revokeChainShare,
   workflowFiles,
@@ -129,7 +136,7 @@ const backend = defineBackend({
   removeUserFromOrganization,
   updateOrganizationMemberAdmin,
   deleteQueue,
-  updateActiveOrganizations,
+  syncOrganizationGroups,
   launchQCReview,
   launchInfoTags,
   launchHomography,
@@ -261,9 +268,59 @@ rowChunkLambda.addToRolePolicy(
     }),
   })
 );
+for (const source of Object.values(ROW_SOURCES)) {
+  if (!('join' in source)) continue;
+  const table = backend.data.resources.tables[source.join.model];
+  table.grant(rowChunkLambda, 'dynamodb:BatchGetItem');
+  rowChunkTables[source.join.model] = table.tableName;
+}
 backend.getRowChunk.addEnvironment(
   'ROW_CHUNK_TABLES',
   JSON.stringify(rowChunkTables)
+);
+
+const adminStatsTable = new dynamodb.Table(
+  Stack.of(backend.data.resources.graphqlApi),
+  'AdminStats',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    // Rebuildable from the source tables with a backfill run.
+    removalPolicy: RemovalPolicy.DESTROY,
+  }
+);
+const updateAdminStatsLambda = backend.updateAdminStats.resources.lambda;
+adminStatsTable.grantReadWriteData(updateAdminStatsLambda);
+adminStatsTable.grantReadData(backend.getAdminStats.resources.lambda);
+for (const resource of [backend.updateAdminStats, backend.getAdminStats]) {
+  resource.addEnvironment('ADMIN_STATS_TABLE', adminStatsTable.tableName);
+}
+const adminStatsSources: Record<string, string> = {};
+for (const model of ['Project', 'ImageSet', 'Image', 'Annotation', 'ClientLog'] as const) {
+  const table = backend.data.resources.tables[model];
+  adminStatsSources[model] = table.tableName;
+  updateAdminStatsLambda.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['dynamodb:Scan', 'dynamodb:Query'],
+      resources: [table.tableArn, `${table.tableArn}/index/*`],
+    })
+  );
+}
+backend.updateAdminStats.addEnvironment(
+  'ADMIN_STATS_SOURCE_TABLES',
+  JSON.stringify(adminStatsSources)
+);
+backend.updateAdminStats.addEnvironment(
+  'USER_POOL_ID',
+  backend.auth.resources.userPool.userPoolId
+);
+updateAdminStatsLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['cognito-idp:ListUsers'],
+    resources: [backend.auth.resources.userPool.userPoolArn],
+  })
 );
 
 const guardFunction = backend.chainMutationGuard.resources.lambda;
@@ -312,6 +369,69 @@ const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('Chain
 installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
   backend.data.resources.graphqlApi.apiId, guardSource);
 
+// Imported by name: referencing the Project nested stack's table creates a dependency cycle.
+const subscriptionProjectTable = dynamodb.Table.fromTableName(
+  backend.data.stack, 'SubscriptionProjectTable',
+  `Project-${backend.data.resources.graphqlApi.apiId}-NONE`);
+const subscriptionProjectSource = new appsync.DynamoDbDataSource(
+  backend.data.stack, 'SubscriptionProjectLookup', {
+    api: backend.data.resources.graphqlApi,
+    table: subscriptionProjectTable,
+    readOnlyAccess: true,
+  });
+installSubscriptionGroupAuth(backend.data.resources.cfnResources.cfnResolvers,
+  backend.data.resources.graphqlApi.apiId, subscriptionProjectSource);
+
+// Newer data constructs default tables to AWS-owned keys; keep the existing KMS encryption.
+for (const table of Object.values(backend.data.resources.cfnResources.amplifyDynamoDbTables)) {
+  table.sseSpecification = { sseEnabled: true };
+}
+
+// Newer storage constructs rename these policies; keep the deployed names so CloudFormation updates
+// them in place instead of briefly doubling the sysadmin role's inline policies past IAM's limit.
+const deployedStorageAccessPolicies: Record<number, string> = {
+  3: 'storageAccess472A5D2AC',
+  4: 'storageAccess524979CAB',
+  5: 'storageAccess6EC622D4F',
+  6: 'storageAccess7F1BC521E',
+  7: 'storageAccess88C62AFCE',
+  8: 'storageAccess9320E39B2',
+  9: 'storageAccess1095206323',
+  10: 'storageAccess11E714650A',
+  11: 'storageAccess129A593C0E',
+  12: 'storageAccess13FDD69442',
+  13: 'storageAccess14A4903EF5',
+  14: 'storageAccess154EA1D574',
+  15: 'storageAccess16ACD6002A',
+  16: 'storageAccess17A7480C16',
+  17: 'storageAccess18D35BB1A5',
+  18: 'storageAccess198921F442',
+  19: 'storageAccess20A1A7EB98',
+  20: 'storageAccess2197BF4D53',
+  21: 'storageAccess22D15B92CA',
+  22: 'storageAccess23C33B2DF7',
+  23: 'storageAccess246D32F733',
+  24: 'storageAccess25DEFE3768',
+  25: 'storageAccess26D2892142',
+  26: 'storageAccess2776898E5F',
+  30: 'storageAccess31CBCD62C4',
+  31: 'storageAccess328D13CFDB',
+  32: 'storageAccess33F4F530D3',
+  33: 'storageAccess342CB53227',
+  34: 'storageAccess3522037AC8',
+};
+Aspects.of(Stack.of(backend.outputBucket.resources.bucket)).add({
+  visit(node: IConstruct) {
+    const index = /--storageAccess(\d+)$/.exec(node.node.id)?.[1];
+    const name = index && deployedStorageAccessPolicies[Number(index)];
+    if (name && node instanceof Policy) {
+      const policy = node.node.defaultChild as iam.CfnPolicy;
+      policy.overrideLogicalId(name);
+      policy.policyName = name;
+    }
+  },
+});
+
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
 userPoolClient.accessTokenValidity = 24 * 60;
 userPoolClient.idTokenValidity = 24 * 60;
@@ -320,6 +440,17 @@ userPoolClient.tokenValidityUnits = {
   idToken: 'minutes',
   refreshToken: 'days',
 };
+
+// Amplify points SES at the from address; send under the verified domain
+// identity from infra/email instead.
+backend.auth.resources.cfnResources.cfnUserPool.addPropertyOverride(
+  'EmailConfiguration.SourceArn',
+  Stack.of(backend.auth.resources.userPool).formatArn({
+    service: 'ses',
+    resource: 'identity',
+    resourceName: 'surveyscope.org',
+  })
+);
 
 const observationTable = backend.data.resources.tables['Observation'];
 const statsDataStack = Stack.of(observationTable);
@@ -530,7 +661,7 @@ const projectTable = backend.data.resources.tables['Project'];
 const backfillFn = new NodejsFunction(backfillStack, 'BackfillLocationGroupFn', {
   entry: path.join(__dirname, 'functions/backfillLocationGroup/handler.ts'),
   handler: 'handler',
-  runtime: lambda.Runtime.NODEJS_20_X,
+  runtime: lambda.Runtime.NODEJS_24_X,
   timeout: Duration.seconds(60),
   memorySize: 512,
   environment: {
@@ -874,6 +1005,87 @@ if (clientErrorRecipients.length) {
   );
 }
 
+const inviteFunction = backend.inviteUserToOrganization.resources.lambda;
+const inviteLimitsTable = new dynamodb.Table(
+  Stack.of(inviteFunction),
+  'InviteLimits',
+  {
+    partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    timeToLiveAttribute: 'expiresAt',
+    removalPolicy: RemovalPolicy.DESTROY,
+  }
+);
+inviteLimitsTable.grant(inviteFunction, 'dynamodb:UpdateItem');
+backend.inviteUserToOrganization.addEnvironment(
+  'INVITE_LIMITS_TABLE',
+  inviteLimitsTable.tableName
+);
+inviteFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['ses:SendEmail'],
+    resources: [
+      Stack.of(inviteFunction).formatArn({
+        service: 'ses',
+        resource: 'identity',
+        resourceName: 'surveyscope.org',
+      }),
+    ],
+    conditions: {
+      StringEquals: { 'ses:FromAddress': 'no-reply@surveyscope.org' },
+    },
+  })
+);
+if (process.env.AUTH_REPLY_TO_EMAIL) {
+  backend.inviteUserToOrganization.addEnvironment(
+    'INVITE_REPLY_TO_EMAIL',
+    process.env.AUTH_REPLY_TO_EMAIL
+  );
+}
+
+// SES metrics are account-wide, so these also cover the Cognito auth emails.
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'SesDailySendVolume', {
+    metric: new cloudwatch.Metric({
+      namespace: 'AWS/SES',
+      metricName: 'Send',
+      statistic: 'Sum',
+      period: Duration.days(1),
+    }),
+    threshold: 200,
+    evaluationPeriods: 1,
+    comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'SesBounceRate', {
+    metric: new cloudwatch.Metric({
+      namespace: 'AWS/SES',
+      metricName: 'Reputation.BounceRate',
+      statistic: 'Maximum',
+      period: Duration.hours(1),
+    }),
+    threshold: 0.04,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+withStatsAlarmAction(
+  new cloudwatch.Alarm(statsReliabilityStack, 'SesComplaintRate', {
+    metric: new cloudwatch.Metric({
+      namespace: 'AWS/SES',
+      metricName: 'Reputation.ComplaintRate',
+      statistic: 'Maximum',
+      period: Duration.hours(1),
+    }),
+    threshold: 0.0008,
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  })
+);
+
 const workflowStatsEnvName = envName
   .toLowerCase()
   .replace(/[^a-z0-9-]/g, '-')
@@ -1152,7 +1364,7 @@ const recordWorkflowTaskEventFunction = new NodejsFunction(
       'functions/workflowStats/recordTaskEvent.ts'
     ),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_20_X,
+    runtime: lambda.Runtime.NODEJS_24_X,
     architecture: lambda.Architecture.ARM_64,
     timeout: Duration.seconds(15),
     memorySize: 512,
@@ -1226,7 +1438,7 @@ const workflowStatsObservationProjector = new NodejsFunction(
       'functions/workflowStats/projectObservation.ts'
     ),
     handler: 'handler',
-    runtime: lambda.Runtime.NODEJS_20_X,
+    runtime: lambda.Runtime.NODEJS_24_X,
     architecture: lambda.Architecture.ARM_64,
     timeout: Duration.seconds(30),
     memorySize: 512,
@@ -1626,6 +1838,20 @@ if (enableEcs) {
   }
 
   if (enableElephantDetector) {
+    const elephantPipeline = {
+      downloadThreads: 2,
+      prefetch: 2,
+      postQueue: 16,
+      postThreads: 3,
+    };
+    // Every pipeline slot plus the GPU thread can hold a message at once.
+    const elephantMaxInFlight =
+      elephantPipeline.downloadThreads +
+      elephantPipeline.prefetch +
+      1 +
+      elephantPipeline.postQueue +
+      elephantPipeline.postThreads;
+
     const elephantDetectorAutoProcessor = new AutoProcessor(
       ecsStack,
       'ElephantDetectorAutoProcessor',
@@ -1642,11 +1868,16 @@ if (enableEcs) {
         environment: {
           API_ENDPOINT: backend.data.graphqlUrl,
           BUCKET: backend.inputBucket.resources.bucket.bucketName,
+          ELEPHANT_DOWNLOAD_THREADS: String(elephantPipeline.downloadThreads),
+          ELEPHANT_PREFETCH: String(elephantPipeline.prefetch),
+          ELEPHANT_POST_QUEUE: String(elephantPipeline.postQueue),
+          ELEPHANT_POST_THREADS: String(elephantPipeline.postThreads),
         },
         machineImage: ecs.EcsOptimizedImage.amazonLinux2(
           ecs.AmiHardwareType.GPU
         ),
         rootVolumeSize: 100,
+        inFlightPerTask: elephantMaxInFlight,
       }
     );
 
@@ -1846,7 +2077,7 @@ if (enableEcs) {
           'functions/finalizeJollyResults/handler.ts'
         ),
         handler: 'handler',
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: lambda.Runtime.NODEJS_24_X,
         timeout: Duration.minutes(5),
         memorySize: 1024,
         environment: {

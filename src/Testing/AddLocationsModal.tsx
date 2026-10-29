@@ -15,6 +15,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
 import { GlobalContext, TestingContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
 import LightLocationView from './LightLocationView';
 import ProjectContext from './ProjectContext';
@@ -55,7 +56,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const [pendingMaxAnnotations, setPendingMaxAnnotations] = useState<
     number | ''
   >('');
-  const [loadedCount, setLoadedCount] = useState(0);
+  const [loadedCount, setLoadedCount] = useState({
+    observations: 0,
+    annotations: 0,
+  });
   const [locationSets, setLocationSets] = useState<any[]>([]);
   const [loadingLocationSets, setLoadingLocationSets] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState<boolean>(false);
@@ -109,7 +113,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   >(
     async (label: string, maxAnn: number | '') => {
       setLoading(true);
-      setLoadedCount(0);
+      setLoadedCount({ observations: 0, annotations: 0 });
 
       // Get existing preset locations to exclude
       const presetLocations: PresetLocation[] = await (
@@ -149,108 +153,94 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         categories.map((c: any) => [c.id, c.name])
       );
 
-      // Callback to update observation count as they're loaded
-      const updateObservationCount = (count: number) => {
-        setLoadedCount((prev) => prev + count);
+      // Each loadRows call reports its own running total.
+      const progress = new Map<string, number>();
+      const reportProgress = (key: string) => (count: number) => {
+        progress.set(key, count);
+        let observations = 0;
+        let annotations = 0;
+        for (const [k, n] of progress) {
+          if (k.startsWith('obs:')) observations += n;
+          else annotations += n;
+        }
+        setLoadedCount({ observations, annotations });
       };
 
-      // OPTIMIZATION 1: Batch fetch observations for all annotation sets
-      // Instead of nested loops, collect all observations with their location data
-      const observationPromises = annotationSets.map(async (as) => {
-        const observations = (await fetchAllPaginatedResults(
-          (client as any).models.Observation.observationsByAnnotationSetId,
-          {
-            annotationSetId: as.id,
-            filter: { annotationCount: { gt: 0 } },
-            selectionSet: [
-              'locationId',
-              'annotationSetId',
-              'location.id',
-              'location.imageId',
-              'location.width',
-              'location.height',
-              'location.x',
-              'location.y',
-              'location.source',
-            ] as const,
-            limit: 10000,
-          },
-          updateObservationCount
-        )) as any[];
-        return observations;
-      });
-
-      // Wait for all observation queries to complete
-      const observationResults = await Promise.all(observationPromises);
-      const allObservations = observationResults.flat();
-
-      // OPTIMIZATION 2: Group observations by image to batch annotation queries
-      const imageGroups = new Map<string, any[]>();
-      for (const obs of allObservations) {
-        if (
-          !obs.location ||
-          obs.location.width == null ||
-          obs.location.height == null ||
-          obs.location.source === 'testing'
-        ) {
-          continue;
-        }
-        const key = `${obs.annotationSetId}_${obs.location.imageId}`;
-        if (!imageGroups.has(key)) {
-          imageGroups.set(key, []);
-        }
-        imageGroups.get(key)!.push(obs);
-      }
-
-      // OPTIMIZATION 3: Batch annotation queries by image
-      const annotationPromises = Array.from(imageGroups.entries()).map(
-        async ([key, observations]) => {
-          const [annotationSetId, imageId] = key.split('_');
-          const annotations = (await fetchAllPaginatedResults(
-            (client as any).models.Annotation.annotationsByImageIdAndSetId,
-            {
-              imageId,
-              setId: { eq: annotationSetId },
-              selectionSet: ['x', 'y', 'categoryId'] as const,
-              limit: 10000,
+      const entries = await Promise.all(
+        annotationSets.map(async (as) => {
+          const [rows, annotationRows] = await Promise.all([
+            loadRows(
+              client,
+              'observationsByAnnotationSetId',
+              as.id,
+              [
+                'locationId',
+                'annotationCount',
+                'location.imageId',
+                'location.width',
+                'location.height',
+                'location.x',
+                'location.y',
+                'location.source',
+              ],
+              { onProgress: reportProgress(`obs:${as.id}`) }
+            ),
+            loadRows(
+              client,
+              'annotationsByAnnotationSetId',
+              as.id,
+              ['imageId', 'x', 'y', 'categoryId'],
+              { onProgress: reportProgress(`ann:${as.id}`) }
+            ),
+          ]);
+          const annotationsByImage = new Map<string, typeof annotationRows>();
+          for (const ann of annotationRows) {
+            if (!ann.imageId) continue;
+            const list = annotationsByImage.get(ann.imageId);
+            if (list) list.push(ann);
+            else annotationsByImage.set(ann.imageId, [ann]);
+          }
+          const setEntries: PoolEntry[] = [];
+          for (const obs of rows) {
+            const imageId = obs['location.imageId'];
+            const x = obs['location.x'];
+            const y = obs['location.y'];
+            const width = obs['location.width'];
+            const height = obs['location.height'];
+            if (
+              !(obs.annotationCount ?? 0) ||
+              !obs.locationId ||
+              !imageId ||
+              x == null ||
+              y == null ||
+              width == null ||
+              height == null ||
+              obs['location.source'] === 'testing'
+            ) {
+              continue;
             }
-          )) as any[];
-
-          return { key, annotations, observations };
-        }
-      );
-
-      // Wait for all annotation queries to complete
-      const annotationResults = await Promise.all(annotationPromises);
-
-      // Process results
-      const entries: PoolEntry[] = [];
-      for (const { annotations, observations } of annotationResults) {
-        for (const obs of observations) {
-          const location = obs.location;
-          const minX = location.x - location.width / 2;
-          const minY = location.y - location.height / 2;
-          const maxX = location.x + location.width / 2;
-          const maxY = location.y + location.height / 2;
-
-          // Filter annotations inside location bounds
-          const inside = annotations.filter(
-            (ann: any) =>
-              ann.x >= minX && ann.y >= minY && ann.x <= maxX && ann.y <= maxY
-          );
-
-          if (inside.length > 0) {
-            entries.push({
-              annotationSetId: obs.annotationSetId,
+            const inside = (annotationsByImage.get(imageId) ?? []).filter(
+              (ann) =>
+                ann.x != null &&
+                ann.y != null &&
+                ann.x >= x - width / 2 &&
+                ann.y >= y - height / 2 &&
+                ann.x <= x + width / 2 &&
+                ann.y <= y + height / 2
+            );
+            if (inside.length === 0) continue;
+            setEntries.push({
+              annotationSetId: as.id,
               locationId: obs.locationId,
-              location,
+              location: { imageId, width, height, x, y },
               labels: inside.map(
-                (ann: any) => labelById.get(ann.categoryId) ?? ''
+                (ann) => labelById.get(ann.categoryId ?? '') ?? ''
               ),
             });
           }
-        }
-      }
+          return setEntries;
+        })
+      ).then((sets) => sets.flat());
 
       setLabels(
         [...new Set(entries.flatMap((entry) => entry.labels))]
@@ -539,8 +529,9 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           >
             {loading ? (
               <p className='flex items-center gap-2 p-2'>
-                <Spinner animation='border' size='sm' /> {loadedCount}{' '}
-                observations loaded
+                <Spinner animation='border' size='sm' /> Loaded{' '}
+                {loadedCount.observations} observations and{' '}
+                {loadedCount.annotations} annotations
               </p>
             ) : pool.length === 0 ? (
               <p>No available locations to add.</p>

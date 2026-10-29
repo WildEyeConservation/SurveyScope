@@ -13,7 +13,7 @@ import { Alert } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { Label, FormText } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   TerraDraw,

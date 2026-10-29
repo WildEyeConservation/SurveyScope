@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { S3Client } from '@aws-sdk/client-s3';
+import { presignClient } from '../shared/presign';
 import { createWorkflowFilesHandler, db, type AppSyncEvent } from './handler';
 
 type Row = Record<string, unknown>;
@@ -37,7 +37,7 @@ function fixture(t: TestContext) {
       };
     }
   );
-  const s3 = new S3Client({
+  const s3 = presignClient({
     region: 'eu-west-1',
     credentials: {
       accessKeyId: 'TESTONLYACCESSKEY',
@@ -159,6 +159,7 @@ test('workflow uploads get a server-chosen key under the requested prefix with o
   assert.equal(grant.headers['x-amz-meta-project-id'], 'p');
   const url = new URL(grant.url);
   assert(url.pathname.endsWith(`/${grant.key}`));
+  assert.equal(url.searchParams.get('x-amz-checksum-crc32'), null);
   assert(
     url.searchParams.get('X-Amz-SignedHeaders')!.includes('if-none-match')
   );

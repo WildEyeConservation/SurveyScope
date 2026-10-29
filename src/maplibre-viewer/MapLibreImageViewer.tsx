@@ -1,5 +1,5 @@
 import { useRef, useEffect, useCallback, useMemo, useState, type ReactNode } from 'react';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RotateCw, MoreVertical, Copy, Check } from 'lucide-react';

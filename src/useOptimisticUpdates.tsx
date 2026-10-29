@@ -47,6 +47,7 @@ import { useEffect, useContext, useMemo, useCallback } from 'react';
 import type { Schema } from './amplify/client-schema';
 import type { DataModels, SubscriptionOptions } from '../amplify/shared/data-schema.generated';
 import { GlobalContext, ProjectContext } from './Context';
+import { useCognitoGroups } from './cognitoGroups';
 import {
   isMissingRow,
   withRowReinstated,
@@ -115,7 +116,9 @@ export function useOptimisticUpdates<
     },
   });
   const stableData = useMemo(() => data ?? [], [data]);
+  const cognitoGroups = useCognitoGroups();
 
+  // Resubscribe when groups change: a subscription's auth filter is fixed at start.
   useEffect(() => {
     const subOptions = options?.authMode
       ? ({ ...(subscriptionFilter ?? {}), authMode: options.authMode } as typeof subscriptionFilter)
@@ -160,7 +163,7 @@ export function useOptimisticUpdates<
       deleteSub.unsubscribe();
     };
     //eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subscriptionFilter]);
+  }, [subscriptionFilter, cognitoGroups]);
 
   /*
   Rollbacks go through the pure transforms in utils/optimisticCache so a failed

@@ -17,6 +17,7 @@ type LoadedLocation = {
   width: number;
   height: number;
   annotationSetId: string;
+  projectId: string;
   image: { id: string; width: number; height: number };
 };
 
@@ -67,6 +68,12 @@ export default function LightLocationView({
         selectionSet: ['id', 'type', 'key'] as const,
       });
       const files = filesResp.data as Array<{ type: string; key: string }>;
+      // The set may belong to another project than the one in context.
+      const { data: annotationSet } = await client.models.AnnotationSet.get(
+        { id: locationRef.annotationSetId },
+        { selectionSet: ['projectId'] }
+      );
+      if (!annotationSet) return;
       const jpeg = files.find((f) => f.type === 'image/jpeg') || files[0];
       if (!cancelled) {
         setSourceKey(jpeg?.key || null);
@@ -77,6 +84,7 @@ export default function LightLocationView({
           width: (loc.width ?? 100) as number,
           height: (loc.height ?? 100) as number,
           annotationSetId: locationRef.annotationSetId,
+          projectId: annotationSet.projectId,
           image: {
             id: image.id,
             width: image.width as number,
@@ -96,12 +104,13 @@ export default function LightLocationView({
     return {
       filter: {
         and: [
+          { projectId: { eq: loaded.projectId } },
           { setId: { eq: (loaded as any).annotationSetId } },
           { imageId: { eq: (loaded as any).image.id } },
         ],
       },
     } as any;
-  }, [loaded?.annotationSetId, loaded?.image?.id]);
+  }, [loaded?.projectId, loaded?.annotationSetId, loaded?.image?.id]);
 
   const annotationsHook = (useOptimisticUpdates as any)(
     'Annotation',

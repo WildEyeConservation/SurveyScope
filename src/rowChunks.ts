@@ -15,9 +15,11 @@ type ChunkQuery = (
     scopeId: string;
     fields: string[];
     beginsWith?: string;
+    between?: [number, number];
+    betweenText?: [string, string];
     cursor?: string;
   },
-  options: { signal?: AbortSignal }
+  options: { signal?: AbortSignal },
 ) => Promise<{ data?: unknown; errors?: { message?: string }[] }>;
 
 interface ChunkPage {
@@ -30,6 +32,8 @@ export interface RowQueryOptions {
   signal?: AbortSignal;
   // Prefix of the source's sort key, e.g. a detector name.
   beginsWith?: string;
+  // Inclusive range of the sort key.
+  between?: [number, number] | [string, string];
 }
 
 export interface LoadRowsOptions extends RowQueryOptions {
@@ -57,14 +61,14 @@ async function gunzipJson(base64: string): Promise<RowChunk> {
 // Resolves false when the deployed API has no chunk query.
 export async function forEachRowChunk<
   S extends RowSourceName,
-  F extends FieldOf<S>
+  F extends FieldOf<S>,
 >(
   client: unknown,
   source: S,
   scopeId: string,
   fields: readonly F[],
   onRows: (rows: RowOf<S, F>[]) => void,
-  { signal, beginsWith }: RowQueryOptions = {}
+  { signal, beginsWith, between }: RowQueryOptions = {},
 ): Promise<boolean> {
   const query = resolveChunkQuery(client);
   if (!query) return false;
@@ -77,18 +81,22 @@ export async function forEachRowChunk<
         scopeId,
         fields: [...fields],
         ...(beginsWith === undefined ? {} : { beginsWith }),
+        ...(between === undefined
+          ? {}
+          : typeof between[0] === 'string'
+            ? { betweenText: between as [string, string] }
+            : { between: between as [number, number] }),
         cursor: cursor ?? undefined,
       },
-      { signal }
+      { signal },
     );
     if (errors?.length) {
       throw new Error(
-        errors.map((entry) => entry.message ?? 'Unknown error').join('; ')
+        errors.map((entry) => entry.message ?? 'Unknown error').join('; '),
       );
     }
     const page = (typeof data === 'string' ? JSON.parse(data) : data) as
-      | ChunkPage
-      | undefined;
+      ChunkPage | undefined;
     if (!page) throw new Error(`Empty ${source} chunk response`);
     const chunk = await gunzipJson(page.data);
     signal?.throwIfAborted();
@@ -98,30 +106,48 @@ export async function forEachRowChunk<
   return true;
 }
 
-function paginate(
+async function paginate(
   client: unknown,
   name: RowSourceName,
   scopeId: string,
   fields: readonly string[],
-  { signal, beginsWith }: RowQueryOptions,
-  onProgress?: (count: number) => void
+  { signal, beginsWith, between }: RowQueryOptions,
+  onProgress?: (count: number) => void,
 ): Promise<unknown[]> {
   const source = ROW_SOURCES[name] as RowSource;
   const models = (client as { models: Record<string, Record<string, never>> })
     .models;
-  return fetchAllPaginatedResults(
+  const sortCondition =
+    beginsWith !== undefined ? { beginsWith } : between && { between };
+  const selection = chunkFields(source, fields);
+  const rows = await fetchAllPaginatedResults<Record<string, unknown>>(
     models[source.model][name],
     {
       [source.partitionKey]: scopeId,
-      ...(beginsWith !== undefined && source.sortKey
-        ? { [source.sortKey]: { beginsWith } }
+      ...(sortCondition && source.sortKey
+        ? { [source.sortKey]: sortCondition }
         : {}),
-      selectionSet: chunkFields(source, fields),
+      selectionSet: selection,
       limit: 10000,
       signal,
     },
-    onProgress
+    onProgress,
   );
+  // Joined fields come back nested; chunks carry them flat.
+  const nested = selection.filter((field) => field.includes('.'));
+  if (!nested.length) return rows;
+  return rows.map((row) => {
+    const flat = { ...row };
+    for (const field of nested) {
+      flat[field] = field
+        .split('.')
+        .reduce<unknown>(
+          (value, key) => (value as Record<string, unknown> | null)?.[key],
+          row,
+        );
+    }
+    return flat;
+  });
 }
 
 export async function loadRows<S extends RowSourceName, F extends FieldOf<S>>(
@@ -129,7 +155,7 @@ export async function loadRows<S extends RowSourceName, F extends FieldOf<S>>(
   source: S,
   scopeId: string,
   fields: readonly F[],
-  options: LoadRowsOptions = {}
+  options: LoadRowsOptions = {},
 ): Promise<RowOf<S, F>[]> {
   const { signal, onProgress, fallback } = options;
   const rows: RowOf<S, F>[] = [];
@@ -143,7 +169,7 @@ export async function loadRows<S extends RowSourceName, F extends FieldOf<S>>(
         for (const row of page) rows.push(row);
         onProgress?.(rows.length);
       },
-      options
+      options,
     );
     if (loaded) return rows;
   } catch (error) {
@@ -165,7 +191,7 @@ export async function streamRows<S extends RowSourceName, F extends FieldOf<S>>(
   onRows: (rows: RowOf<S, F>[]) => void,
   options: RowQueryOptions & {
     fallback: (onRows: (rows: RowOf<S, F>[]) => void) => Promise<void>;
-  }
+  },
 ): Promise<void> {
   let delivered = false;
   try {
@@ -178,7 +204,7 @@ export async function streamRows<S extends RowSourceName, F extends FieldOf<S>>(
         delivered = true;
         onRows(rows);
       },
-      options
+      options,
     );
     if (loaded) return;
   } catch (error) {

@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../shared/csv';
 import MyTable from './Table';
 import {
   eventToContribution,
@@ -114,7 +115,7 @@ export default function WorkflowSnapshotModal({
     if (!sections) return;
     sections.forEach((section) => {
       exportFromJSON({
-        data: sectionToCsvRows(section),
+        data: neutraliseCsvRows(sectionToCsvRows(section)),
         fileName: `${projectLabel}_${section.label}_Snapshot_${startString}_${startTime}_${endString}_${endTime}`.replace(
           /[\s:]/g,
           '_'

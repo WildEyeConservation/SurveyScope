@@ -1,19 +1,12 @@
 import { useContext, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { GlobalContext, ProjectContext } from '../../Context';
-import { fetchAllPaginatedResults } from '../../utils';
+import { loadProjectImages } from '../../projectImages';
+import { loadProjectNeighbours } from '../../projectNeighbours';
 import type {
   ImageNeighbourType,
   ImageType,
 } from '../../schemaTypes';
-
-type ImageWithNeighbours = Pick<
-  ImageType,
-  'id' | 'width' | 'height' | 'originalPath' | 'timestamp' | 'cameraId'
-> & {
-  leftNeighbours?: ImageNeighbourType[] | null;
-  rightNeighbours?: ImageNeighbourType[] | null;
-};
 
 export interface HerdLoadProgress {
   phase: 'idle' | 'images' | 'cameras' | 'done';
@@ -47,44 +40,24 @@ export function useHerdData() {
     staleTime: Infinity,
     queryFn: async () => {
       setProgress({ phase: 'images', images: 0 });
-      const images = (await fetchAllPaginatedResults<ImageType>(
-        client.models.Image.imagesByProjectId,
-        {
-          projectId: project!.id,
-          limit: 10000,
-          selectionSet: [
-            'id',
-            'width',
-            'height',
-            'originalPath',
-            'timestamp',
-            'cameraId',
-            'leftNeighbours.*',
-            'rightNeighbours.*',
-          ],
-        },
-        (n) => setProgress((p) => ({ ...p, images: n }))
-      )) as unknown as ImageWithNeighbours[];
+      const images = await loadProjectImages(
+        client,
+        project!.id,
+        ['width', 'height', 'originalPath', 'timestamp', 'cameraId'],
+        { onProgress: (n) => setProgress((p) => ({ ...p, images: n })) }
+      );
 
       const imagesById: Record<string, ImageType> = {};
       for (const img of images) imagesById[img.id] = img as unknown as ImageType;
 
-      const imageIds = new Set(images.map((i) => i.id));
-      const seen = new Set<string>();
-      const rawNeighbours: ImageNeighbourType[] = [];
-      for (const img of images) {
-        for (const n of [
-          ...(img.leftNeighbours ?? []),
-          ...(img.rightNeighbours ?? []),
-        ]) {
-          if (n.skipped) continue;
-          if (!imageIds.has(n.image1Id) || !imageIds.has(n.image2Id)) continue;
-          const k = `${n.image1Id}__${n.image2Id}`;
-          if (seen.has(k)) continue;
-          seen.add(k);
-          rawNeighbours.push(n);
-        }
-      }
+      const neighbours = await loadProjectNeighbours(
+        client,
+        project!.id,
+        new Set(images.map((i) => i.id))
+      );
+      const rawNeighbours = neighbours.filter(
+        (n) => !n.skipped
+      ) as unknown as ImageNeighbourType[];
 
       setProgress((p) => ({ ...p, phase: 'cameras' }));
       const cameraResp = await client.models.Camera.camerasByProjectId(

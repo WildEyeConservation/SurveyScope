@@ -10,6 +10,7 @@ import { Schema } from '../amplify/client-schema';
 import { fetchAllPaginatedResults } from '../utils';
 import { Download } from 'lucide-react';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../../shared/csv';
 import { useUsers } from '../apiInterface';
 import MyTable from '../Table';
 import { Footer } from '../Modal';
@@ -139,7 +140,7 @@ export default function Logs({ projectId }: { projectId: string }) {
     }));
 
     exportFromJSON({
-      data: exportData,
+      data: neutraliseCsvRows(exportData),
       fileName: `admin-logs-${projectId}-${startDate}-to-${endDate}`,
       exportType: exportFromJSON.types.csv,
     });

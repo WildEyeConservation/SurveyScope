@@ -1,5 +1,4 @@
 import {
-  S3Client,
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
@@ -11,7 +10,10 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
-import { signingLifetime as sharedSigningLifetime } from '../shared/presign';
+import {
+  presignClient,
+  signingLifetime as sharedSigningLifetime,
+} from '../shared/presign';
 import {
   MAX_TILE_BATCH,
   validTile,
@@ -98,7 +100,7 @@ function uploadIntent(args: Args) {
   return { contentType, rotation };
 }
 
-export function createImageAccessHandler(s3 = new S3Client({})) {
+export function createImageAccessHandler(s3 = presignClient()) {
   const bucket = (name: 'INPUTS' | 'OUTPUTS') => {
     const value = process.env[`${name}_BUCKET_NAME`];
     if (!value) throw new Error(`Missing ${name} bucket`);

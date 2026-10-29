@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { Table } from '@/components/ui/table';
+import { DateTime } from 'luxon';
 import { useAdminStatsData } from './useAdminStatsData';
 
 function SummaryTile(props: {
@@ -193,11 +194,6 @@ export default function AdminStats() {
         total: data.annotations.total,
         thisMonth: data.annotations.thisMonth,
       },
-      {
-        title: 'Primary Annotations',
-        total: data.primaryAnnotations.total,
-        thisMonth: data.primaryAnnotations.thisMonth,
-      },
     ],
     [data]
   );
@@ -228,6 +224,12 @@ export default function AdminStats() {
             </Button>
           </div>
         </div>
+        {data.updatedAt && (
+          <div className='text-muted-foreground text-sm mb-2'>
+            Counts updated{' '}
+            {DateTime.fromISO(data.updatedAt).toRelative()}, refreshed hourly
+          </div>
+        )}
       </div>
 
       {data.error && (
@@ -243,7 +245,7 @@ export default function AdminStats() {
         </div>
       ) : null}
 
-      <div className='grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-6'>
+      <div className='grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5'>
         {summary.map((m) => (
           <div key={m.title}>
             <SummaryTile

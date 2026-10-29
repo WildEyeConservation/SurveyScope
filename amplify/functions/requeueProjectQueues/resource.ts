@@ -4,6 +4,6 @@ export const requeueProjectQueues = defineFunction({
   name: 'requeueProjectQueues',
   timeoutSeconds: 900,
   schedule: '0 0 * * ? *',
-  runtime: 20,
+  runtime: 24,
 });
 

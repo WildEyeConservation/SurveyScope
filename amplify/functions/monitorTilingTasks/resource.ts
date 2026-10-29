@@ -5,6 +5,6 @@ export const monitorTilingTasks = defineFunction({
   schedule: 'every 15m',
   timeoutSeconds: 900,
   entry: './handler.ts',
-  runtime: 20,
+  runtime: 24,
 });
 

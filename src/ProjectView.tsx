@@ -5,11 +5,13 @@ import { UserContext, GlobalContext } from './Context';
 import { useContext, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchAllPaginatedResults } from './utils';
+import { useCognitoGroups } from './cognitoGroups';
 
 export default function ProjectView() {
   const { user } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
   const { surveyId } = useParams();
+  const cognitoGroups = useCognitoGroups();
   const [currentPM, setCurrentPM] = useState<
     Schema['UserProjectMembership']['type'] | null
   >(null);
@@ -31,7 +33,8 @@ export default function ProjectView() {
       setCurrentPM(currentPM);
     };
     fetchCurrentPM();
-  }, [user.userId, surveyId]);
+    // Groups can change after load (e.g. the organisation group sync), revealing the survey.
+  }, [user.userId, surveyId, cognitoGroups]);
 
   return currentPM ? (
     <Project currentPM={currentPM}>

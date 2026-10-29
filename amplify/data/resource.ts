@@ -40,7 +40,7 @@ import { removeUserFromOrganization } from '../functions/removeUserFromOrganizat
 import { updateOrganizationMemberAdmin } from '../functions/updateOrganizationMemberAdmin/resource';
 import { deleteQueue } from '../functions/deleteQueue/resource';
 import { cancelIndividualIdJob } from '../functions/cancelIndividualIdJob/resource';
-import { updateActiveOrganizations } from '../functions/updateActiveOrganizations/resource';
+import { syncOrganizationGroups } from '../functions/syncOrganizationGroups/resource';
 import { launchQCReview } from '../functions/launchQCReview/resource';
 import { launchInfoTags } from '../functions/launchInfoTags/resource';
 import { launchHomography } from '../functions/launchHomography/resource';
@@ -61,6 +61,7 @@ import { releaseIndividualIdTransects } from '../functions/releaseIndividualIdTr
 import { createChainShare } from '../functions/createChainShare/resource';
 import { revokeChainShare } from '../functions/revokeChainShare/resource';
 import { reportClientError } from '../functions/reportClientError/resource';
+import { getAdminStats } from '../functions/getAdminStats/resource';
 import { generateTile } from '../storage/generateTile/resource';
 
 const schema = a
@@ -303,10 +304,15 @@ const schema = a
         infoTaggedBy: a.string(),
         infoTagRevision: a.integer(),
         group: a.string(),
+        // Declared so it can sort an index; still filled in automatically.
+        createdAt: a.datetime().required(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.owner(), allow.groupDefinedIn('group')])
       .secondaryIndexes((index) => [
         index('setId').queryField('annotationsByAnnotationSetId'),
+        index('projectId')
+          .sortKeys(['createdAt'])
+          .queryField('annotationsByProjectIdAndCreatedAt'),
         index('imageId')
           .sortKeys(['setId'])
           .queryField('annotationsByImageIdAndSetId'),
@@ -624,6 +630,8 @@ const schema = a
         organizationId: a.id().required(),
         organization: a.belongsTo('Organization', 'organizationId'),
         name: a.string().required(),
+        // Set on the pool a survey creates for itself; shared pools have none.
+        ownerProjectId: a.id(),
         locations: a.hasMany('TestPresetLocation', 'testPresetId'),
         projects: a.hasMany('TestPresetProject', 'testPresetId'),
         testResults: a.hasMany('TestResult', 'testPresetId'),
@@ -633,6 +641,7 @@ const schema = a
       .secondaryIndexes((index) => [
         index('organizationId').queryField('testPresetsByOrganizationId'),
         index('name').queryField('testPresetsByName'),
+        index('ownerProjectId').queryField('testPresetsByOwnerProjectId'),
       ]),
     TestPresetLocation: a
       .model({
@@ -1191,10 +1200,14 @@ const schema = a
         connectionType: a.string(),
         downlink: a.float(),
         rtt: a.float(),
+        createdAt: a.datetime().required(),
       })
       .authorization((allow) => [allow.owner().to(['create', 'read']), allow.group("sysadmin")])
       .secondaryIndexes((index) => [
         index('userId').queryField('clientLogsByUserId'),
+        index('userId')
+          .sortKeys(['createdAt'])
+          .queryField('clientLogsByUserIdAndCreatedAt'),
       ]),
     AdminActionLog: a
       .model({
@@ -1380,6 +1393,11 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(queryWorkflowStats)),
+    getAdminStats: a
+      .query()
+      .returns(a.json())
+      .authorization((allow) => [allow.group('sysadmin')])
+      .handler(a.handler.function(getAdminStats)),
     getRowChunk: a
       .query()
       .arguments({
@@ -1387,6 +1405,8 @@ const schema = a
         scopeId: a.string().required(),
         fields: a.string().array().required(),
         beginsWith: a.string(),
+        between: a.float().array(),
+        betweenText: a.string().array(),
         cursor: a.string(),
       })
       .returns(a.json())
@@ -1596,14 +1616,11 @@ const schema = a
       .returns(a.string())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(getJwtSecret)),
-    updateActiveOrganizations: a
+    syncOrganizationGroups: a
       .mutation()
-      .arguments({
-        activatedOrganizationIds: a.string().array().required(),
-      })
-      .returns(a.json())
+      .returns(a.boolean())
       .authorization((allow) => [allow.authenticated()])
-      .handler(a.handler.function(updateActiveOrganizations)),
+      .handler(a.handler.function(syncOrganizationGroups)),
     // Image storage: originals and tiles are only reachable via imageAccess.
     signImageTiles: a
       .query()
@@ -1805,7 +1822,7 @@ const schema = a
     allow.resource(updateOrganizationMemberAdmin),
     allow.resource(deleteQueue),
     allow.resource(cancelIndividualIdJob),
-    allow.resource(updateActiveOrganizations),
+    allow.resource(syncOrganizationGroups),
     allow.resource(launchIndividualId),
     allow.resource(updateImageTransect),
     allow.resource(claimIndividualIdTransect),
@@ -1821,7 +1838,6 @@ export type ServerSchema = typeof schema;
 
 interface LambdaContext {
   awsRequestId?: string;
-  callbackWaitsForEmptyEventLoop: boolean;
   getRemainingTimeInMillis: () => number;
 }
 
@@ -1889,7 +1905,7 @@ export type RemoveUserFromOrganizationHandler = MutationHandler<{ organizationId
 export type UpdateOrganizationMemberAdminHandler = MutationHandler<{ organizationId: string; userId: string; isAdmin: boolean }>;
 export type DeleteQueueHandler = MutationHandler<{ queueId: string }>;
 export type CancelIndividualIdJobHandler = MutationHandler<{ jobId: string }>;
-export type UpdateActiveOrganizationsHandler = MutationHandler<{ activatedOrganizationIds: string[] }>;
+export type SyncOrganizationGroupsHandler = MutationHandler<Record<string, never>>;
 export type LaunchIndividualIdHandler = MutationHandler<{ request: string }>;
 export type RecomputeBoundaryStatusHandler = MutationHandler<{ projectId: string }>;
 export type GetRowChunkHandler = MutationHandler<
@@ -1898,6 +1914,8 @@ export type GetRowChunkHandler = MutationHandler<
     scopeId: string;
     fields: (string | null)[];
     beginsWith?: string | null;
+    between?: (number | null)[] | null;
+    betweenText?: (string | null)[] | null;
     cursor?: string | null;
   },
   { data: string; count: number; cursor: string | null }

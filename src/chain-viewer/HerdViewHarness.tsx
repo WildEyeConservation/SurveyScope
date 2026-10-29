@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Combobox } from '@/components/ui/combobox';
 import { GlobalContext, ProjectContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
+import { loadRows } from '../rowChunks';
+import { loadProjectImages } from '../projectImages';
 import type { Lane } from '../individual-id/utils/lanes';
 import { buildHerdRuns } from './utils/herdRuns';
 import { buildHerdDisplayPairs } from './utils/herdPairs';
@@ -31,7 +32,6 @@ type ChainAnnotationRow = {
   categoryId: string;
   obscured?: boolean | null;
   oov?: boolean | null;
-  image?: { timestamp?: number | null } | null;
 };
 
 type GraphQLResponse = {
@@ -84,26 +84,22 @@ export function HerdViewHarness({ annotationSetId }: Props) {
 
     (async () => {
       try {
-        const data = await fetchAllPaginatedResults(
-          client.models.Annotation.annotationsByAnnotationSetId,
-          {
-            setId: annotationSetId,
-            selectionSet: [
-              'id',
-              'x',
-              'y',
-              'imageId',
-              'objectId',
-              'categoryId',
-              'obscured',
-              'oov',
-              'image.timestamp',
-            ] as const,
-            limit: 10000,
-          },
-          (steps) => {
-            if (!cancelled) setFetchCount(steps);
-          }
+        const [data, images] = await Promise.all([
+          loadRows(
+            client,
+            'annotationsByAnnotationSetId',
+            annotationSetId,
+            ['x', 'y', 'imageId', 'objectId', 'categoryId', 'obscured', 'oov'],
+            {
+              onProgress: (count) => {
+                if (!cancelled) setFetchCount(count);
+              },
+            }
+          ),
+          loadProjectImages(client, project.id, ['timestamp']),
+        ]);
+        const timestamps = new Map(
+          images.map((image) => [image.id, image.timestamp])
         );
         if (cancelled) return;
         const infoTagData = await fetchInfoTagDataForSet(
@@ -122,8 +118,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
             categoryId: a.categoryId,
             obscured: !!a.obscured,
             oov: !!a.oov,
-            imageTimestamp:
-              typeof a.image?.timestamp === 'number' ? a.image.timestamp : null,
+            imageTimestamp: timestamps.get(a.imageId) ?? null,
             infoTags: tagsDefined
               ? infoTagNamesFor(infoTagData, a.id)
               : undefined,
@@ -141,7 +136,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [client, annotationSetId]);
+  }, [client, annotationSetId, project.id]);
 
   // ---- Category filter ----
   const [selectedCategory, setSelectedCategory] = useState<{

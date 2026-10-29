@@ -3,6 +3,7 @@ import { useContext, useEffect, useState } from 'react';
 import { GlobalContext, UserContext } from './Context';
 import type { UserStatsType } from './schemaTypes';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../shared/csv';
 import { useUsers } from './apiInterface';
 import { Combobox } from '@/components/ui/combobox';
 import { XIcon } from 'lucide-react';
@@ -22,6 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Spinner } from '@/components/ui/spinner';
 import SnapshotStatsModal from './SnapshotStatsModal';
 import { fetchAllPaginatedResults } from './utils';
+import { loadRows } from './rowChunks';
 
 export default function UserStats() {
   const { myOrganizationHook, myMembershipHook } =
@@ -339,26 +341,29 @@ export default function UserStats() {
   ): Promise<any[]> {
     const lower = lowerLimitOverride ?? `${startString}T00:00:00Z`;
     const upper = upperLimitOverride ?? `${endString}T23:59:59Z`;
-    const allObs = await fetchAllPaginatedResults(
-      client.models.Observation.observationsByAnnotationSetId,
-      {
-        annotationSetId,
-        createdAt: { between: [lower, upper] },
-        limit: 10000,
-        selectionSet: [
-          'createdAt', 'annotationCount', 'timeTaken', 'waitingTime', 'owner', 'locationId',
-          'location.id', 'location.confidence',
-        ] as const,
-      }
+    const allObs = await loadRows(
+      client,
+      'observationsByAnnotationSetId',
+      annotationSetId,
+      [
+        'createdAt',
+        'annotationCount',
+        'timeTaken',
+        'waitingTime',
+        'owner',
+        'locationId',
+        'location.confidence',
+      ],
+      { between: [lower, upper] }
     );
-    return allObs.map(o => ({
+    return allObs.map((o) => ({
       createdAt: o.createdAt,
       annotationCount: o.annotationCount,
       timeTaken: o.timeTaken,
       waitingTime: o.waitingTime,
       owner: o.owner,
       locationId: o.locationId,
-      confidence: (o as any).location?.confidence ?? null,
+      confidence: o['location.confidence'] ?? null,
     }));
   }
 
@@ -411,7 +416,11 @@ export default function UserStats() {
         / /g,
         '_'
       );
-    exportFromJSON({ data: rows, fileName, exportType: exportFromJSON.types.csv });
+    exportFromJSON({
+      data: neutraliseCsvRows(rows),
+      fileName,
+      exportType: exportFromJSON.types.csv
+    });
   };
 
   const handleExportData = async () => {
@@ -432,7 +441,7 @@ export default function UserStats() {
           );
         const exportType = exportFromJSON.types.csv;
         exportFromJSON({
-          data: observations.map((o) => {
+          data: neutraliseCsvRows(observations.map((o) => {
             const { confidence, ...rest } = o;
             return {
               ...rest,
@@ -440,7 +449,7 @@ export default function UserStats() {
               owner: userLookup.get(o.owner),
               locationConfidence: confidence,
             };
-          }),
+          })),
           fileName,
           exportType,
         });

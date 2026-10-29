@@ -8,7 +8,7 @@ import React, {
 import { Button, buttonVariants } from '@/components/ui/button';
 import { FormText, Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';

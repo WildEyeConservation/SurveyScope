@@ -5,5 +5,5 @@ export const releaseIndividualIdTransects = defineFunction({
   entry: './handler.ts',
   schedule: 'every 10m',
   timeoutSeconds: 120,
-  runtime: 20,
+  runtime: 24,
 });

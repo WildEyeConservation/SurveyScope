@@ -4,5 +4,5 @@ export const updateProjectMemberships = defineFunction({
   name: 'updateProjectMemberships',
   entry: './handler.ts',
   timeoutSeconds: 60,
-  runtime: 20,
+  runtime: 24,
 });

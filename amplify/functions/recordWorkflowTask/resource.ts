@@ -5,7 +5,7 @@ import { defineFunction } from '@aws-amplify/backend';
 // reference to the DetwebWorkflowStats stack.
 export const recordWorkflowTask = defineFunction({
   name: 'recordWorkflowTask',
-  runtime: 20,
+  runtime: 24,
   timeoutSeconds: 15,
   memoryMB: 512,
 });

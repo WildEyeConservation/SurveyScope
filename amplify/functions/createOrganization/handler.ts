@@ -8,7 +8,6 @@ import {
   ListUsersCommand,
   CreateGroupCommand,
   AdminAddUserToGroupCommand,
-  AdminListGroupsForUserCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
 
@@ -114,26 +113,14 @@ export const handler: CreateOrganizationHandler = async (event) => {
       })
     );
 
-    // 4. Check user's current group count before adding to cognito group
-    const groupsResult = await cognitoClient.send(
-      new AdminListGroupsForUserCommand({
+    // 4. Add admin user to Cognito group
+    await cognitoClient.send(
+      new AdminAddUserToGroupCommand({
         Username: userId,
+        GroupName: orgId,
         UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
       })
     );
-    const currentGroupCount = groupsResult.Groups?.length ?? 0;
-
-    if (currentGroupCount < 5) {
-      await cognitoClient.send(
-        new AdminAddUserToGroupCommand({
-          Username: userId,
-          GroupName: orgId,
-          UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
-        })
-      );
-    } else {
-      console.log(`User ${userId} already in ${currentGroupCount} groups, skipping cognito group assignment. They can activate it via Settings.`);
-    }
 
     // 5. Create OrganizationMembership
     await executeGraphql(createOrganizationMembershipMutation, {

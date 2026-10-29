@@ -1,5 +1,6 @@
 import { defineAuth } from "@aws-amplify/backend";
 import { handleNewUser } from "../functions/handleNewUser/resource";
+import { customMessage } from "../functions/customMessage/resource";
 import { addUserToGroup } from "../functions/add-user-to-group/resource";
 import { createGroup } from "../data/create-group/resource";
 import { listUsers } from "../data/list-users/resource";
@@ -9,7 +10,7 @@ import { createOrganization } from "../functions/createOrganization/resource";
 import { inviteUserToOrganization } from "../functions/inviteUserToOrganization/resource";
 import { respondToInvite } from "../functions/respondToInvite/resource";
 import { removeUserFromOrganization } from "../functions/removeUserFromOrganization/resource";
-import { updateActiveOrganizations } from "../functions/updateActiveOrganizations/resource";
+import { syncOrganizationGroups } from "../functions/syncOrganizationGroups/resource";
 import { reportClientError } from "../functions/reportClientError/resource";
 /**
  * Define and configure your auth resource
@@ -36,8 +37,16 @@ export const auth = defineAuth({
       required: true,
     },
   },
+  senders: {
+    email: {
+      fromEmail: "no-reply@surveyscope.org",
+      fromName: "SurveyScope",
+      // Set AUTH_REPLY_TO_EMAIL in the Amplify branch environment.
+      replyTo: process.env.AUTH_REPLY_TO_EMAIL || undefined,
+    },
+  },
   groups: ["sysadmin", "orgadmin"],
-  triggers: { postConfirmation: handleNewUser },
+  triggers: { postConfirmation: handleNewUser, customMessage },
   access: (allow) => [
     allow.resource(handleNewUser).to(["addUserToGroup", "listUsers"]),
     allow.resource(createGroup).to(["createGroup"]),
@@ -45,11 +54,11 @@ export const auth = defineAuth({
     allow.resource(listGroupsForUser).to(["listGroupsForUser"]),
     allow.resource(removeUserFromGroup).to(["removeUserFromGroup"]),
     allow.resource(addUserToGroup).to(["addUserToGroup"]),
-    allow.resource(createOrganization).to(["listUsers", "createGroup", "addUserToGroup", "listGroupsForUser"]),
+    allow.resource(createOrganization).to(["listUsers", "createGroup", "addUserToGroup"]),
     allow.resource(inviteUserToOrganization).to(["listUsers"]),
-    allow.resource(respondToInvite).to(["addUserToGroup", "listGroupsForUser"]),
+    allow.resource(respondToInvite).to(["addUserToGroup"]),
     allow.resource(removeUserFromOrganization).to(["removeUserFromGroup"]),
-    allow.resource(updateActiveOrganizations).to(["addUserToGroup", "removeUserFromGroup", "listGroupsForUser"]),
+    allow.resource(syncOrganizationGroups).to(["addUserToGroup", "listGroupsForUser"]),
     allow.resource(reportClientError).to(["getUser"]),
   ],
 });

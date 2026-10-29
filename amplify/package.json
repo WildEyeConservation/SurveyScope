@@ -6,7 +6,7 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "jstat": "^1.9.6",
-    "mysql2": "^3.11.2"
+    "mysql2": "^3.24.6"
   },
   "devDependencies": {
     "@types/node": "^22.5.4"

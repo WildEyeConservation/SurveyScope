@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/tooltip';
 import DensityMap from './DensityMap.tsx';
 import exportFromJSON from 'export-from-json';
+import { neutraliseCsvRows } from '../shared/csv';
 import { useUsers } from './apiInterface';
 import { X } from 'lucide-react';
 import { createToken, verifyToken } from './utils/jwt';
@@ -241,7 +242,7 @@ export default function JollyResults() {
       : resultsWithFalseNegatives;
 
     exportFromJSON({
-      data: filteredResults.map((r) => ({
+      data: neutraliseCsvRows(filteredResults.map((r) => ({
         stratumName: r.stratumName,
         label: categoryOptions.find((c) => c.value === r.categoryId)?.label,
         animals: r.animals,
@@ -254,7 +255,7 @@ export default function JollyResults() {
         lowerBound95: r.lowerBound95,
         upperBound95: r.upperBound95,
         falseNegatives: r.falseNegatives,
-      })),
+      }))),
       fileName: `${surveyName} - ${annotationSetName} - Jolly Results`,
       exportType: exportFromJSON.types.csv,
     });

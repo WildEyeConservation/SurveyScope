@@ -2,10 +2,13 @@ import type { Handler } from 'aws-lambda';
 import { env } from '$amplify/env/monitorModelProgress';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
+import { listProjects } from './graphql/queries';
 import {
-  listProjects,
-  imagesByProjectId,
-} from './graphql/queries';
+  OutOfTimeError,
+  findImageIdsInPages,
+  shuffle,
+  timeBudget,
+} from './core';
 // Return key fields + `group` to avoid nested-resolver auth failures while
 // keeping subscription delivery via groupDefinedIn('group') working.
 const updateProject = /* GraphQL */ `
@@ -74,8 +77,6 @@ interface Project {
 
 interface Image {
   id: string;
-  projectId: string;
-  originalPath: string;
 }
 
 interface ImageProcessedByRow {
@@ -93,6 +94,40 @@ const processedByProjectIdAndSource = /* GraphQL */ `query ProcessedByProjectIdA
   $nextToken: String
 ) {
   processedByProjectIdAndSource(
+    projectId: $projectId
+    source: $source
+    limit: $limit
+    nextToken: $nextToken
+  ) {
+    items {
+      imageId
+    }
+    nextToken
+  }
+}
+`;
+
+const imageIdsByProjectId = /* GraphQL */ `query ImagesByProjectId(
+  $projectId: ID!
+  $limit: Int
+  $nextToken: String
+) {
+  imagesByProjectId(projectId: $projectId, limit: $limit, nextToken: $nextToken) {
+    items {
+      id
+    }
+    nextToken
+  }
+}
+`;
+
+const locationImageIdsByProjectIdAndSource = /* GraphQL */ `query LocationsByProjectIdAndSource(
+  $projectId: ID!
+  $source: ModelStringKeyConditionInput
+  $limit: Int
+  $nextToken: String
+) {
+  locationsByProjectIdAndSource(
     projectId: $projectId
     source: $source
     limit: $limit
@@ -233,6 +268,10 @@ async function lightglueQueueDepth(): Promise<number | null> {
   }
 }
 
+// Leaves time for registration cleanup and avoids Lambda retrying a timeout.
+const TIME_RESERVE_MS = 90 * 1000;
+let ensureTime = timeBudget(Infinity);
+
 // Helper function to handle pagination for GraphQL queries
 async function fetchAllPages<T, K extends string>(
   queryFn: (
@@ -245,6 +284,7 @@ async function fetchAllPages<T, K extends string>(
   let nextToken: string | undefined;
 
   do {
+    ensureTime();
     const response = await queryFn(nextToken);
     const items = response.data?.[queryName]?.items ?? [];
     allItems.push(...(items as T[]));
@@ -263,6 +303,94 @@ async function fetchAllPages<T, K extends string>(
 
 const LOCATION_PAGE_SIZE = 50;
 const LOCATION_LOOKUP_CONCURRENCY = 25;
+// Above this many unmarked images, one project-wide scan beats per-image lookups.
+const BULK_LOCATION_LOOKUP_THRESHOLD = 1000;
+const PROCESSED_BY_WRITE_CONCURRENCY = 50;
+
+async function findImagesByImageLocations(
+  source: string,
+  images: Image[],
+  onFound: (images: Image[]) => Promise<void>
+) {
+  for (let i = 0; i < images.length; i += LOCATION_LOOKUP_CONCURRENCY) {
+    ensureTime();
+    const batch = images.slice(i, i + LOCATION_LOOKUP_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map((image) => hasLocationForSource(image.id, source))
+    );
+    const found = batch.filter((_, index) => results[index]);
+    if (found.length > 0) await onFound(found);
+  }
+}
+
+async function findImagesByProjectLocations(
+  projectId: string,
+  source: string,
+  images: Image[],
+  onFound: (images: Image[]) => Promise<void>
+) {
+  const imagesById = new Map(images.map((image) => [image.id, image]));
+  const { scanned } = await findImageIdsInPages(
+    imagesById.keys(),
+    async (nextToken) => {
+      const response = (await client.graphql({
+        query: locationImageIdsByProjectIdAndSource,
+        variables: {
+          projectId,
+          source: { eq: source },
+          limit: 10000,
+          nextToken,
+        },
+      })) as GraphQLResult<{
+        locationsByProjectIdAndSource: PagedList<{ imageId: string }>;
+      }>;
+      const page = response.data?.locationsByProjectIdAndSource;
+      return {
+        imageIds: (page?.items ?? []).map((item) => item.imageId),
+        nextToken: page?.nextToken,
+      };
+    },
+    (imageIds) => onFound(imageIds.map((id) => imagesById.get(id)!)),
+    ensureTime
+  );
+  console.log(`Scanned ${scanned} ${source} locations for project ${projectId}`);
+}
+
+async function createProcessedByRecords(
+  project: Project,
+  source: string,
+  images: Image[]
+): Promise<number> {
+  let created = 0;
+  for (let i = 0; i < images.length; i += PROCESSED_BY_WRITE_CONCURRENCY) {
+    ensureTime();
+    const batch = images.slice(i, i + PROCESSED_BY_WRITE_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (image) => {
+        try {
+          await client.graphql({
+            query: createImageProcessedBy,
+            variables: {
+              input: {
+                imageId: image.id,
+                source: source,
+                projectId: project.id,
+                group: project.organizationId,
+              },
+            },
+          });
+          return true;
+        } catch (error) {
+          // Ignore duplicate key errors (record already exists)
+          console.warn(`Could not create processedBy record for image ${image.id}:`, error);
+          return false;
+        }
+      })
+    );
+    created += results.filter(Boolean).length;
+  }
+  return created;
+}
 
 async function hasLocationForSource(
   imageId: string,
@@ -330,79 +458,43 @@ async function updateProgress(
   const imagesMissingProcessedBy = projectImages.filter(
     (image) => !processedImageIds.has(image.id)
   );
-  const imagesToUpdateProcessedBy: Image[] = [];
 
   console.log(
     `Checking locations for ${imagesMissingProcessedBy.length} images missing ` +
       `a ${source} processedBy record`
   );
 
-  for (
-    let i = 0;
-    i < imagesMissingProcessedBy.length;
-    i += LOCATION_LOOKUP_CONCURRENCY
-  ) {
-    const batch = imagesMissingProcessedBy.slice(
-      i,
-      i + LOCATION_LOOKUP_CONCURRENCY
-    );
-    const results = await Promise.all(
-      batch.map(async (image) => ({
-        image,
-        hasLocation: await hasLocationForSource(image.id, source),
-      }))
-    );
-
-    for (const result of results) {
-      if (result.hasLocation) {
-        processedImageIds.add(result.image.id);
-        imagesToUpdateProcessedBy.push(result.image);
-      }
+  let found = 0;
+  let created = 0;
+  const markProcessed = async (images: Image[]) => {
+    found += images.length;
+    created += await createProcessedByRecords(project, source, images);
+    for (const image of images) processedImageIds.add(image.id);
+  };
+  try {
+    if (imagesMissingProcessedBy.length > BULK_LOCATION_LOOKUP_THRESHOLD) {
+      await findImagesByProjectLocations(
+        project.id,
+        source,
+        imagesMissingProcessedBy,
+        markProcessed
+      );
+    } else {
+      await findImagesByImageLocations(
+        source,
+        imagesMissingProcessedBy,
+        markProcessed
+      );
     }
-
+  } finally {
     console.log(
-      `Checked locations for ${Math.min(
-        i + batch.length,
-        imagesMissingProcessedBy.length
-      )}/${imagesMissingProcessedBy.length} unmarked images`
+      `Found ${found} images with ${source} locations; created ${created} processedBy records`
     );
   }
 
   console.log(
     `Processed images: ${processedImageIds.size}/${projectImages.length}`
   );
-  console.log(
-    `Images needing processedBy record update: ${imagesToUpdateProcessedBy.length}`
-  );
-
-  if (imagesToUpdateProcessedBy.length > 0) {
-    const BATCH_SIZE = 50;
-    for (let i = 0; i < imagesToUpdateProcessedBy.length; i += BATCH_SIZE) {
-      const batch = imagesToUpdateProcessedBy.slice(i, i + BATCH_SIZE);
-
-      const createPromises = batch.map(async (image) => {
-        try {
-          await client.graphql({
-            query: createImageProcessedBy,
-            variables: {
-              input: {
-                imageId: image.id,
-                source: source,
-                projectId: project.id,
-                group: project.organizationId,
-              },
-            },
-          });
-          console.log(`Created processedBy record for image ${image.id}`);
-        } catch (error) {
-          // Ignore duplicate key errors (record already exists)
-          console.warn(`Could not create processedBy record for image ${image.id}:`, error);
-        }
-      });
-
-      await Promise.all(createPromises);
-    }
-  }
 
   const allImagesProcessed =
     projectImages.length > 0 &&
@@ -461,8 +553,71 @@ async function finalizeProjectActive(project: Project): Promise<void> {
   console.log(`Successfully updated project ${project.id} status to "active"`);
 }
 
+async function monitorProject(project: Project) {
+  console.log(`Processing project ${project.name} (${project.id})`);
+
+  console.log(`Fetching images for project ${project.id}`);
+  const projectImages = await fetchAllPages<Image, 'imagesByProjectId'>(
+    (nextToken) =>
+      client.graphql({
+        query: imageIdsByProjectId,
+        variables: {
+          projectId: project.id,
+          limit: 10000,
+          nextToken,
+        },
+      }) as Promise<GraphQLResult<{ imagesByProjectId: PagedList<Image> }>>,
+    'imagesByProjectId'
+  );
+
+  console.log(
+    `Found ${projectImages.length} images for project ${project.id}`
+  );
+
+  if (project.status?.includes('scoutbot')) {
+    console.log(`Project ${project.id} is running scoutbot`);
+    await updateProgress(project, projectImages, 'scoutbotv3');
+  }
+
+  if (project.status?.includes('mad')) {
+    console.log(`Project ${project.id} is running MAD`);
+    await updateProgress(project, projectImages, 'mad-v2');
+  }
+
+  if (project.status?.includes('stormfly-testing')) {
+    console.log(`Project ${project.id} is running Stormfly (testing model)`);
+    await updateProgress(project, projectImages, 'stormfly-testing');
+  }
+
+  if (project.status?.includes('owl-d')) {
+    console.log(`Project ${project.id} is running OWL-D`);
+    await updateProgress(project, projectImages, 'owl-d');
+  }
+
+  // Finalize elephant detector results reported as pointFinder progress.
+  if (project.status?.includes('pointFinder')) {
+    console.log(`Project ${project.id} is running pointFinder`);
+    await updateProgress(project, projectImages, 'heatmap');
+  }
+
+  // Final gate before flipping the project to 'active'. Runs whether the
+  // primary model was scoutbot/MAD/Stormfly/heatmap or 'manual' (no model).
+  if (project.status?.includes('registration')) {
+    if (await isRegistrationDone(project.id)) {
+      await finalizeProjectActive(project);
+    } else {
+      console.log(
+        `Project ${project.id} still awaiting registration completion`
+      );
+    }
+  }
+}
+
 export const handler: Handler = async (event, context) => {
   console.log('Starting monitorModelProgress function execution');
+  ensureTime = timeBudget(
+    Date.now() + context.getRemainingTimeInMillis() - TIME_RESERVE_MS
+  );
   try {
     console.log('Fetching projects with status "processing"');
     const processingProjects = await fetchAllPages<Project, 'listProjects'>(
@@ -486,65 +641,20 @@ export const handler: Handler = async (event, context) => {
       `Found ${processingProjects.length} projects in processing state`
     );
 
-    for (const project of processingProjects) {
-      console.log(`Processing project ${project.name} (${project.id})`);
-
-      console.log(`Fetching images for project ${project.id}`);
-      const projectImages = await fetchAllPages<Image, 'imagesByProjectId'>(
-        (nextToken) =>
-          client.graphql({
-            query: imagesByProjectId,
-            variables: {
-              projectId: project.id,
-              limit: 10000,
-              nextToken,
-            },
-          }) as Promise<GraphQLResult<{ imagesByProjectId: PagedList<Image> }>>,
-        'imagesByProjectId'
-      );
-
-      console.log(
-        `Found ${projectImages.length} images for project ${project.id}`
-      );
-
-      if (project.status?.includes('scoutbot')) {
-        console.log(`Project ${project.id} is running scoutbot`);
-        await updateProgress(project, projectImages, 'scoutbotv3');
-      }
-
-      if (project.status?.includes('mad')) {
-        console.log(`Project ${project.id} is running MAD`);
-        await updateProgress(project, projectImages, 'mad-v2');
-      }
-
-      if (project.status?.includes('stormfly-testing')) {
-        console.log(`Project ${project.id} is running Stormfly (testing model)`);
-        await updateProgress(project, projectImages, 'stormfly-testing');
-      }
-
-      if (project.status?.includes('owl-d')) {
-        console.log(`Project ${project.id} is running OWL-D`);
-        await updateProgress(project, projectImages, 'owl-d');
-      }
-
-      // Finalize elephant detector results reported as pointFinder progress.
-      if (project.status?.includes('pointFinder')) {
-        console.log(`Project ${project.id} is running pointFinder`);
-        await updateProgress(project, projectImages, 'heatmap');
-      }
-
-      // Final gate before flipping the project to 'active'. Runs whether the
-      // primary model was scoutbot/MAD/Stormfly/heatmap or 'manual' (no model).
-      if (project.status?.includes('registration')) {
-        if (await isRegistrationDone(project.id)) {
-          await finalizeProjectActive(project);
-        } else {
-          console.log(
-            `Project ${project.id} still awaiting registration completion`
-          );
-        }
+    // Random order so one oversized project can't starve the rest every run.
+    for (const project of shuffle(processingProjects)) {
+      try {
+        await monitorProject(project);
+      } catch (error) {
+        if (!(error instanceof OutOfTimeError)) throw error;
+        console.warn(
+          `Out of time while checking project ${project.id}; ` +
+            'remaining projects continue next run'
+        );
+        break;
       }
     }
+    ensureTime = timeBudget(Infinity);
 
     // Decoupled from project.status: registration runs alongside whatever
     // other model the user picked at upload time.

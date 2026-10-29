@@ -1,135 +1,120 @@
 import { UserIcon } from 'lucide-react';
-import { useContext, useState, useEffect, useCallback } from 'react';
-import { fetchUserAttributes } from 'aws-amplify/auth';
-import { UserContext, GlobalContext } from '../Context';
-import { useUsers } from '../apiInterface';
-import { Alert } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  confirmUserAttribute,
+  fetchUserAttributes,
+  updateUserAttribute,
+} from 'aws-amplify/auth';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { FormText, Label } from '@/components/ui/label';
 import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { Tabs, Tab } from '../Tabs';
+import { isValidEmail, normalizeEmail } from '../../shared/email';
 
-interface MembershipInfo {
-  organizationId: string;
-  organizationName: string;
-  isAdmin: boolean;
-  isActive: boolean;
+type Status = { variant: 'success' | 'danger'; text: string } | null;
+
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export default function Settings({ signOut }: { signOut: () => void }) {
   const [show, setShow] = useState(false);
-  const { user, cognitoGroups } = useContext(UserContext)!;
-  const { client } = useContext(GlobalContext);
-  const { users } = useUsers();
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [usernameDraft, setUsernameDraft] = useState('');
+  const [emailDraft, setEmailDraft] = useState('');
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<Status>(null);
 
-  const [userAttributes, setUserAttributes] = useState<{ name?: string; email?: string }>({});
-
-  useEffect(() => {
-    fetchUserAttributes().then((attrs) => {
-      setUserAttributes({ name: attrs.name, email: attrs.email });
-    });
+  const loadAttributes = useCallback(async () => {
+    const attrs = await fetchUserAttributes();
+    setUsername(attrs.preferred_username ?? '');
+    setEmail(attrs.email ?? '');
+    setUsernameDraft(attrs.preferred_username ?? '');
+    setEmailDraft(attrs.email ?? '');
   }, []);
 
-  const username = users?.find((u) => u.id === user.username)?.name ?? userAttributes.name;
-  const email = users?.find((u) => u.id === user.username)?.email ?? userAttributes.email;
+  useEffect(() => {
+    if (!show) return;
+    setStatus(null);
+    loadAttributes().catch((error) =>
+      setStatus({ variant: 'danger', text: errorText(error) })
+    );
+  }, [show, loadAttributes]);
 
-  // Active Organisations tab state
-  const [memberships, setMemberships] = useState<MembershipInfo[]>([]);
-  const [selectedOrgIds, setSelectedOrgIds] = useState<Set<string>>(new Set());
-  const [maxActive, setMaxActive] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
-
-  const currentCognitoGroupOrgIds = cognitoGroups.filter(
-    (g) => g !== 'sysadmin' && g !== 'orgadmin'
-  );
-
-  const fetchMemberships = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setStatus(null);
     try {
-      const result = await client.mutations.updateActiveOrganizations({
-        activatedOrganizationIds: currentCognitoGroupOrgIds,
-      });
-      if (result.data) {
-        let parsed = result.data;
-        while (typeof parsed === 'string') parsed = JSON.parse(parsed);
-        if (parsed.success && parsed.memberships) {
-          setMemberships(parsed.memberships);
-          setSelectedOrgIds(new Set(parsed.activeOrganizationIds));
-          setMaxActive(parsed.maxActive);
-          setHasChanges(false);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch memberships:', err);
-      setError('Failed to load organisation memberships');
+      await action();
+    } catch (error) {
+      setStatus({ variant: 'danger', text: errorText(error) });
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }, []);
-
-  useEffect(() => {
-    if (show) {
-      fetchMemberships();
-    }
-  }, [show]);
-
-  const allAutoActivated = memberships.length <= maxActive;
-
-  const handleToggle = (orgId: string) => {
-    if (allAutoActivated) return;
-    setSelectedOrgIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(orgId)) {
-        next.delete(orgId);
-      } else {
-        if (next.size >= maxActive) return prev;
-        next.add(orgId);
-      }
-      setHasChanges(true);
-      return next;
-    });
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await client.mutations.updateActiveOrganizations({
-        activatedOrganizationIds: Array.from(selectedOrgIds),
+  const trimmedUsername = usernameDraft.trim();
+  const newEmail = normalizeEmail(emailDraft);
+  const usernameChanged =
+    trimmedUsername !== '' && trimmedUsername !== username;
+  const emailChanged = newEmail !== '' && newEmail !== normalizeEmail(email);
+
+  const saveUsername = () =>
+    run(async () => {
+      await updateUserAttribute({
+        userAttribute: {
+          attributeKey: 'preferred_username',
+          value: trimmedUsername,
+        },
       });
-      if (result.data) {
-        let parsed = result.data;
-        while (typeof parsed === 'string') parsed = JSON.parse(parsed);
-        if (parsed.success) {
-          // Clear all cached data and sign out to refresh cognito tokens
-          localStorage.clear();
-          sessionStorage.clear();
-          if (window.indexedDB && 'databases' in indexedDB) {
-            indexedDB.databases().then((databases) => {
-              databases.forEach((db) => {
-                if (db.name) indexedDB.deleteDatabase(db.name);
-              });
-            });
-          }
-          if ('caches' in window) {
-            caches.keys().then((names) => {
-              names.forEach((name) => caches.delete(name));
-            });
-          }
-          window.location.reload();
-        }
+      await loadAttributes();
+      setStatus({ variant: 'success', text: 'Username updated.' });
+    });
+
+  const sendEmailCode = (address: string) =>
+    run(async () => {
+      if (!isValidEmail(address)) {
+        throw new Error('Enter a valid email address');
       }
-    } catch (err) {
-      console.error('Failed to update active organisations:', err);
-      setError('Failed to update active organisations');
-      setSaving(false);
-    }
+      const { nextStep } = await updateUserAttribute({
+        userAttribute: { attributeKey: 'email', value: address },
+      });
+      if (nextStep.updateAttributeStep === 'CONFIRM_ATTRIBUTE_WITH_CODE') {
+        setPendingEmail(address);
+        setCode('');
+        setStatus({
+          variant: 'success',
+          text: `We sent a verification code to ${address}. Your current email stays active until you confirm it.`,
+        });
+      } else {
+        await loadAttributes();
+        setStatus({ variant: 'success', text: 'Email updated.' });
+      }
+    });
+
+  const confirmEmail = () =>
+    run(async () => {
+      await confirmUserAttribute({
+        userAttributeKey: 'email',
+        confirmationCode: code.trim(),
+      });
+      setPendingEmail(null);
+      setCode('');
+      await loadAttributes();
+      setStatus({
+        variant: 'success',
+        text: 'Email updated. Use your new email the next time you sign in.',
+      });
+    });
+
+  const cancelEmailChange = () => {
+    setPendingEmail(null);
+    setCode('');
+    setEmailDraft(email);
+    setStatus(null);
   };
 
   const clearSiteData = () => {
@@ -198,109 +183,144 @@ export default function Settings({ signOut }: { signOut: () => void }) {
           <Title>Settings</Title>
         </Header>
         <Body className='p-0'>
-          <Tabs>
-            <Tab label='Account'>
-              <div className='p-4'>
-                <div className='flex flex-col gap-2'>
-                  <p className='mb-0'>Username: {username}</p>
-                  <p className='mb-0'>Email: {email}</p>
+          <div className='p-4'>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (usernameChanged) saveUsername();
+              }}
+            >
+              <div className='mb-4'>
+                <Label htmlFor='settings-username'>Username</Label>
+                <div className='flex gap-2'>
+                  <Input
+                    id='settings-username'
+                    value={usernameDraft}
+                    onChange={(e) => setUsernameDraft(e.target.value)}
+                    disabled={busy}
+                    maxLength={128}
+                  />
+                  <Button
+                    type='submit'
+                    variant='primary'
+                    disabled={busy || !usernameChanged}
+                  >
+                    Save
+                  </Button>
                 </div>
-                <Button
-                  className='w-full mt-4'
-                  variant='outline-danger'
-                  onClick={signOut}
-                >
-                  Sign Out
-                </Button>
-                <Button
-                  className='w-full mt-2'
-                  variant='outline-warning'
-                  onClick={clearSiteData}
-                >
-                  Clear Cache
-                </Button>
               </div>
-            </Tab>
-            <Tab label='Active Organisations'>
-              <div className='p-4'>
-                {loading ? (
-                  <div className='flex justify-center py-6'>
-                    <Spinner animation='border' />
+            </form>
+            {pendingEmail ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (code.trim()) confirmEmail();
+                }}
+              >
+                <div className='mb-4'>
+                  <Label htmlFor='settings-email-code'>
+                    Verification code sent to {pendingEmail}
+                  </Label>
+                  <div className='flex gap-2'>
+                    <Input
+                      id='settings-email-code'
+                      value={code}
+                      onChange={(e) => setCode(e.target.value)}
+                      disabled={busy}
+                      autoComplete='one-time-code'
+                      inputMode='numeric'
+                    />
+                    <Button
+                      type='submit'
+                      variant='primary'
+                      disabled={busy || !code.trim()}
+                    >
+                      Confirm
+                    </Button>
+                    <Button
+                      type='button'
+                      variant='outline-secondary'
+                      onClick={cancelEmailChange}
+                      disabled={busy}
+                    >
+                      Cancel
+                    </Button>
                   </div>
-                ) : error ? (
-                  <Alert variant='danger'>{error}</Alert>
-                ) : (
-                  <>
-                    <div className='flex justify-between items-center mb-4'>
-                      <span className='text-muted-foreground'>
-                        {selectedOrgIds.size} / {maxActive} active
-                      </span>
-                      {allAutoActivated && (
-                        <Badge variant='info'>
-                          All organisations active ({memberships.length} or fewer)
-                        </Badge>
-                      )}
-                    </div>
-                    {memberships.length === 0 ? (
-                      <p className='text-muted-foreground'>No organisation memberships found.</p>
-                    ) : (
-                      <div className='flex flex-col gap-2'>
-                        {memberships.map((m) => (
-                          <div
-                            key={m.organizationId}
-                            className='flex items-center justify-between p-2 '
-                            style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
-                          >
-                            <div className='flex items-center gap-2'>
-                              <Switch
-                                checked={
-                                  allAutoActivated || selectedOrgIds.has(m.organizationId)
-                                }
-                                disabled={
-                                  allAutoActivated ||
-                                  saving ||
-                                  (!selectedOrgIds.has(m.organizationId) &&
-                                    selectedOrgIds.size >= maxActive)
-                                }
-                                onCheckedChange={() => handleToggle(m.organizationId)}
-                              />
-                              <span>{m.organizationName}</span>
-                              {m.isAdmin && (
-                                <Badge variant='warning' className='text-black'>
-                                  Admin
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </Tab>
-          </Tabs>
+                  <FormText>
+                    Didn&apos;t get it?{' '}
+                    <Button
+                      type='button'
+                      variant='link'
+                      className='p-0 align-baseline'
+                      onClick={() => sendEmailCode(pendingEmail)}
+                      disabled={busy}
+                    >
+                      Send a new code
+                    </Button>
+                  </FormText>
+                </div>
+              </form>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (emailChanged) sendEmailCode(newEmail);
+                }}
+              >
+                <div className='mb-4'>
+                  <Label htmlFor='settings-email'>Email</Label>
+                  <div className='flex gap-2'>
+                    <Input
+                      id='settings-email'
+                      type='email'
+                      value={emailDraft}
+                      onChange={(e) => setEmailDraft(e.target.value)}
+                      disabled={busy}
+                    />
+                    <Button
+                      type='submit'
+                      variant='primary'
+                      disabled={busy || !emailChanged}
+                    >
+                      Change
+                    </Button>
+                  </div>
+                  <FormText>
+                    You sign in with this email. We&apos;ll send a code to the
+                    new address to confirm it.
+                  </FormText>
+                </div>
+              </form>
+            )}
+            {status && (
+              <p
+                className={`mb-0 ${
+                  status.variant === 'success' ? 'text-success' : 'text-danger'
+                }`}
+              >
+                {status.text}
+              </p>
+            )}
+            <Button
+              className='w-full mt-4'
+              variant='outline-danger'
+              onClick={signOut}
+            >
+              Sign Out
+            </Button>
+            <Button
+              className='w-full mt-2'
+              variant='outline-warning'
+              onClick={clearSiteData}
+            >
+              Clear Cache
+            </Button>
+          </div>
         </Body>
         <Footer>
           <Button variant='dark' onClick={() => setShow(false)}>
             Close
           </Button>
-          {hasChanges && !allAutoActivated && (
-            <Button
-              variant='primary'
-              onClick={handleSave}
-              disabled={saving || selectedOrgIds.size === 0}
-            >
-              {saving ? (
-                <>
-                  <Spinner size='sm' />
-                  Saving...
-                </>
-              ) : (
-                'Save & Sign Out'
-              )}
-            </Button>
-          )}
         </Footer>
       </Modal>
     </>

@@ -364,7 +364,7 @@ def main():
     # Fail fast if CUDA is unavailable, so ECS replaces the task rather than the
     # worker silently running heatmap inference on CPU.
     import tensorflow as tf
-    if not tf.test.is_gpu_available():
+    if not tf.config.list_physical_devices('GPU'):
         print('No GPU available to TensorFlow. Exiting.', flush=True)
         raise SystemExit(1)
 

@@ -140,6 +140,12 @@ export class AutoProcessor extends Construct {
       targetCapacityPercent: 100,
     });
     cluster.addAsgCapacityProvider(capacityProvider);
+    // aws-cdk-lib no longer emits this; keep containers off the instance role via IMDS.
+    this.asg.addUserData(
+      'sudo iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP',
+      'sudo service iptables save',
+      'echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config',
+    );
 
     // Create ECS Task Definition
     const taskDefinition = new ecs.Ec2TaskDefinition(this, 'ProcessorTaskDef',{ taskRole: ecsTaskRole });

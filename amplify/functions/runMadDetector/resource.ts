@@ -3,7 +3,7 @@ import { defineFunction } from '@aws-amplify/backend';
 export const runMadDetector = defineFunction({
   name: 'runMadDetector',
   timeoutSeconds: 900,
-  runtime: 20,
+  runtime: 24,
 });
 
 

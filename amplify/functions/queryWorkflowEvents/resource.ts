@@ -5,7 +5,7 @@ import { defineFunction } from '@aws-amplify/backend';
 // DetwebWorkflowStats stack.
 export const queryWorkflowEvents = defineFunction({
   name: 'queryWorkflowEvents',
-  runtime: 20,
+  runtime: 24,
   timeoutSeconds: 30,
   memoryMB: 512,
 });

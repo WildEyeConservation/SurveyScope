@@ -29,6 +29,7 @@ import {
   annotationsByAnnotationSetId,
   imagesByProjectId,
 } from './graphql/queries';
+import { isCentreObserved } from '../../../shared/locationGeometry';
 
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
@@ -561,9 +562,7 @@ async function handleLaunch(
       const candidates = tiles.filter((tile) => {
         const observations = observationMap.get(tile.imageId) || [];
         const annotations = annotationMap.get(tile.imageId) || [];
-        const hasObservation = observations.some((obs) =>
-          tilesOverlap(tile, obs)
-        );
+        const hasObservation = isCentreObserved(tile, observations);
         const hasAnnotation = annotations.some((point) =>
           isInsideTile(point.x, point.y, tile)
         );
@@ -862,10 +861,7 @@ async function handleDistributedFalseNegativesLaunch(
   const candidates = allTiles.filter((tile) => {
     const observations = observationMap.get(tile.imageId) || [];
     const annotations = annotationMap.get(tile.imageId) || [];
-    // Check if any observed location overlaps with this tile
-    const hasObservation = observations.some((obs) =>
-      tilesOverlap(tile, obs)
-    );
+    const hasObservation = isCentreObserved(tile, observations);
     const hasAnnotation = annotations.some((point) =>
       isInsideTile(point.x, point.y, tile)
     );
@@ -1972,30 +1968,6 @@ function isInsideTile(px: number, py: number, tile: MinimalTile): boolean {
   const minY = tile.y - halfH;
   const maxY = tile.y + halfH;
   return px >= minX && px <= maxX && py >= minY && py <= maxY;
-}
-
-// Check if two tiles overlap (both have center x,y and width,height)
-function tilesOverlap(
-  tile1: MinimalTile,
-  tile2: { x: number; y: number; width: number; height: number }
-): boolean {
-  const halfW1 = tile1.width / 2;
-  const halfH1 = tile1.height / 2;
-  const halfW2 = tile2.width / 2;
-  const halfH2 = tile2.height / 2;
-
-  const minX1 = tile1.x - halfW1;
-  const maxX1 = tile1.x + halfW1;
-  const minY1 = tile1.y - halfH1;
-  const maxY1 = tile1.y + halfH1;
-
-  const minX2 = tile2.x - halfW2;
-  const maxX2 = tile2.x + halfW2;
-  const minY2 = tile2.y - halfH2;
-  const maxY2 = tile2.y + halfH2;
-
-  // Check if rectangles overlap
-  return minX1 < maxX2 && maxX1 > minX2 && minY1 < maxY2 && maxY1 > minY2;
 }
 
 // Fisher–Yates sampling helper for deterministic subset sizing.
