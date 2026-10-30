@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 import { Progress } from '@/components/ui/progress';
 import {
+  CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   FileTextIcon,
@@ -95,10 +96,11 @@ import {
   type CameraMasks,
 } from './types/CameraMask';
 import { Combobox } from '@/components/ui/combobox';
+import UploadChecklist, {
+  type ChecklistItem,
+  type ChecklistLine,
+} from './survey/new-survey/UploadChecklist';
 import localforage from 'localforage';
-import CameraOverlap from './CameraOverlap';
-import CameraSpecification from './CameraSpecification';
-import LabeledToggleSwitch from './LabeledToggleSwitch.tsx';
 import { Schema } from './amplify/client-schema.ts';
 import UTM from 'utm-latlng';
 import {
@@ -110,9 +112,11 @@ import {
   nextMapRemovedKeys,
   type GpsRow,
 } from './survey/new-survey/gpsIndex';
-import OrientationReview, {
-  OrientationCameraGroup,
+import {
+  SampleViewerArea,
+  type OrientationCameraGroup,
 } from './survey/new-survey/OrientationReview';
+import CameraCard from './survey/new-survey/CameraCard';
 import StepIndicator from './survey/new-survey/StepIndicator';
 import SurveyAreaEditor, { type AreaPoint } from './survey/SurveyAreaEditor';
 import {
@@ -158,6 +162,7 @@ export type UploadWizardStep =
   | 'filter'
   | 'cameras'
   | 'masks'
+  | 'model'
   | 'review'
   | 'none';
 
@@ -189,7 +194,11 @@ interface FilesUploadBaseProps {
   /** Signals when the images step is complete (files picked and scanned). */
   setImagesReady?: React.Dispatch<React.SetStateAction<boolean>>;
   /** Values captured by a parent-owned wizard step, shown in the review summary. */
-  summaryDetails?: { label: string; value: string }[];
+  summaryDetails?: ChecklistLine[];
+  /** Opens a wizard step from its checklist card; 'none' is the parent's own step. */
+  onEditStep?: (step: UploadWizardStep) => void;
+  /** Signals when every checklist card is ticked. */
+  setChecklistComplete?: (complete: boolean) => void;
 }
 
 // Props for form-compatible version
@@ -275,6 +284,19 @@ const MODEL_OPTIONS: ModelOption[] = [
   { label: 'Manual (images may be processed later)', value: 'manual' },
 ];
 
+// Display order and wording for the model step.
+const MODEL_CHOICES: { value: string; name: string; description?: string }[] = [
+  { value: 'owl-d', name: 'OWL-D', description: 'Overhead Wildlife Locator' },
+  { value: 'scoutbot', name: 'ScoutBot' },
+  { value: 'elephant-detection-nadir', name: 'Elephant Detection Nadir' },
+  { value: 'mad', name: 'MAD AI', description: 'Marine Animal Detector' },
+  {
+    value: 'manual',
+    name: 'Manual',
+    description: 'No model now; images may be processed later',
+  },
+];
+
 const MODEL_SAMPLE_SIZE = 40;
 
 const isFiniteWithinRange = (
@@ -304,6 +326,8 @@ export function FileUploadCore({
   currentStep,
   setImagesReady,
   summaryDetails,
+  onEditStep,
+  setChecklistComplete,
 }: FilesUploadBaseProps) {
   const [name, setName] = useState('');
   const { client, backend } = useContext(GlobalContext)!;
@@ -1352,6 +1376,11 @@ export function FileUploadCore({
     setAssociateByTimestamp(false);
     setMappingConfirmed(true);
   };
+
+  // Overlaps name folders at the chosen level, so a new level clears them.
+  useEffect(() => {
+    setOverlaps([]);
+  }, [cameraSelection]);
 
   useEffect(() => {
     if (!multipleCameras) {
@@ -3180,6 +3209,45 @@ export function FileUploadCore({
     return bounds;
   }, [fullCsvData, csvData]);
 
+  const [timeFilterOpen, setTimeFilterOpen] = useState(false);
+  const timeNarrowed = Array.from(dayTimeBounds.entries()).some(
+    ([day, range]) =>
+      (timeRanges[day]?.start ?? minutesToTime(range.min)) !==
+        minutesToTime(range.min) ||
+      (timeRanges[day]?.end ?? minutesToTime(range.max)) !==
+        minutesToTime(range.max)
+  );
+  const timeFilterOn = timeFilterOpen || timeNarrowed;
+  const resetTimeRanges = () =>
+    setTimeRanges(
+      Object.fromEntries(
+        Array.from(dayTimeBounds.entries()).map(([day, range]) => [
+          day,
+          { start: minutesToTime(range.min), end: minutesToTime(range.max) },
+        ])
+      )
+    );
+
+  const dayLabels = useMemo(() => {
+    const labels = new Map<number, string>();
+    for (const row of fullCsvData || csvData?.data || []) {
+      if (row.timestamp === undefined) continue;
+      const date = new Date(row.timestamp);
+      if (labels.has(date.getUTCDate())) continue;
+      labels.set(
+        date.getUTCDate(),
+        date.toLocaleDateString(undefined, {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          timeZone: 'UTC',
+        })
+      );
+    }
+    return labels;
+  }, [fullCsvData, csvData]);
+
   const applyRowFilters = () => {
     if (!fullCsvData) return;
     const filterByTime =
@@ -3222,41 +3290,265 @@ export function FileUploadCore({
     areaOutsideKeys,
   ]);
 
-  // The model selector lives on the review step in wizard mode.
+  const modelLocked = modelFromSurvey || modelSampling;
   const modelSelector = (
-      <div>
-        <Label className='mb-0'>Model</Label>
-        <FormText
-          className='block text-muted-foreground mt-0 mb-1'
-          style={{ fontSize: 12 }}
-        >
-          Select the model you wish to use to guide annotation.
+    <div className='flex flex-col gap-2'>
+      {MODEL_CHOICES.map((choice) => {
+        const option = MODEL_OPTIONS.find((o) => o.value === choice.value)!;
+        const selected = model.value === choice.value;
+        return (
+          <button
+            key={choice.value}
+            type='button'
+            aria-pressed={selected}
+            disabled={modelLocked && !selected}
+            onClick={() => {
+              if (modelLocked || selected) return;
+              modelTouchedRef.current = true;
+              setModelFromSurvey(false);
+              setModel(option);
+            }}
+            className={cn(
+              'flex items-center gap-3 border px-4 py-3 text-left transition-colors',
+              selected
+                ? 'border-primary bg-primary/15'
+                : 'border-white/15 bg-white/[0.07] enabled:hover:border-white/40',
+              modelLocked && !selected && 'opacity-50'
+            )}
+          >
+            <div className='flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3'>
+              <span className='font-semibold'>{choice.name}</span>
+              {choice.description && (
+                <span className='text-sm text-muted-foreground'>
+                  {choice.description}
+                </span>
+              )}
+            </div>
+            {selected && <CheckIcon className='size-5 shrink-0 text-primary' />}
+          </button>
+        );
+      })}
+      {modelSampling && (
+        <FormText className='mt-0 text-xs'>
+          Checking which model this survey's images were processed with...
         </FormText>
-        <Combobox
-          value={model}
-          options={MODEL_OPTIONS}
-          onChange={(option) => {
-            if (!option) return;
-            modelTouchedRef.current = true;
-            setModelFromSurvey(false);
-            setModel(option);
-          }}
-          placeholder='Select a model'
-          disabled={modelFromSurvey || modelSampling}
-          name='Model'
-        />
-        {modelSampling && (
-          <FormText className='block text-muted-foreground' style={{ fontSize: 12 }}>
-            Checking which model this survey's images were processed with...
-          </FormText>
-        )}
-        {modelFromSurvey && (
-          <FormText className='block text-muted-foreground' style={{ fontSize: 12 }}>
-            This survey's images were all processed with this model.
-          </FormText>
-        )}
-      </div>
+      )}
+      {modelFromSurvey && (
+        <FormText className='mt-0 text-xs'>
+          This survey's images were all processed with this model.
+        </FormText>
+      )}
+    </div>
   );
+
+  const rotatedGroups = orientationCameraGroups.filter(
+    (group) =>
+      orientationCorrectionFor(
+        cameraRotations,
+        group.cameraName,
+        group.orientationGroup
+      ) !== 0
+  );
+  const edit = (step: UploadWizardStep) =>
+    onEditStep ? () => onEditStep(step) : undefined;
+  const plural = (count: number, word: string) =>
+    `${count.toLocaleString()} ${word}${count === 1 ? '' : 's'}`;
+  const folderNames = cameraSelection?.[1] ?? [];
+  const specFor = (camera: string) => {
+    const spec = cameraSpecs[camera];
+    return spec && formatCameraSpec(spec) !== 'no specifications' ? spec : null;
+  };
+  const camerasWithLens = folderNames.filter((camera) => specFor(camera));
+  const checklistItems: ChecklistItem[] = [
+    ...(summaryDetails?.length
+      ? [
+          {
+            key: 'details',
+            title: 'Survey details',
+            lines: summaryDetails,
+            onEdit: edit('none'),
+          },
+        ]
+      : []),
+    {
+      key: 'images',
+      title: 'Images',
+      lines: [
+        {
+          text: name
+            ? `Selected the ${name} folder (${plural(imageFiles.length, 'image')})`
+            : `Selected ${plural(imageFiles.length, 'image')}`,
+          done: imageFiles.length > 0,
+        },
+        ...(failedFiles.length > 0
+          ? [
+              {
+                text: `${plural(failedFiles.length, 'file')} couldn't be read and will be skipped`,
+              },
+            ]
+          : []),
+      ],
+      onEdit: edit('images'),
+    },
+    {
+      key: 'location',
+      title: 'Location data',
+      lines: file
+        ? [
+            { text: `Uploaded ${file.name}`, done: true },
+            {
+              text: `Matched to images by ${
+                associateByTimestamp ? 'timestamp' : 'file path'
+              }`,
+              done: true,
+            },
+            columnMapping.alt
+              ? { text: `Altitude from the ${columnMapping.alt} column`, done: true }
+              : { text: 'No altitude column chosen', done: false },
+          ]
+        : [
+            {
+              text: associateByTimestamp
+                ? "Used the images' own GPS"
+                : 'No location file uploaded',
+              done: associateByTimestamp,
+            },
+          ],
+      onEdit: edit('georeference'),
+    },
+    {
+      key: 'area',
+      title: 'Survey area',
+      lines: surveyArea.boundary
+        ? [
+            {
+              text: `Boundary added (${ringAreaKm2(surveyArea.boundary).toFixed(
+                1
+              )} km\u00B2)`,
+              done: true,
+            },
+            surveyArea.exclusions.length > 0
+              ? {
+                  text: `${plural(surveyArea.exclusions.length, 'exclusion zone')} added`,
+                  done: true,
+                }
+              : { text: 'No exclusion zones', done: false },
+            trimToBoundary
+              ? {
+                  text: `Skipping ${plural(areaOutsideKeys.size, 'image')} outside the boundary`,
+                  done: true,
+                }
+              : { text: 'Keeping images outside the boundary', done: false },
+          ]
+        : [{ text: 'No boundary added', done: false }],
+      onEdit: edit('surveyArea'),
+    },
+    {
+      key: 'filter',
+      title: 'Filter images',
+      lines: [
+        mapRemovedKeys.size > 0
+          ? {
+              text: `Removed ${plural(mapRemovedKeys.size, 'image')} on the map`,
+              done: true,
+            }
+          : { text: 'No images removed on the map', done: false },
+        timeNarrowed
+          ? { text: 'Limited to a time of day', done: true }
+          : { text: 'No time-of-day filter', done: false },
+        altitudeBand
+          ? {
+              text: `Kept heights ${formatFilterAltitude(
+                altitudeBand.min
+              )} to ${formatFilterAltitude(altitudeBand.max)} above ground`,
+              done: true,
+            }
+          : { text: 'No height filter', done: false },
+        {
+          text: `${plural(toUploadFiles.length, 'image')} (${formatFileSize(
+            toUploadSize
+          )}) will be uploaded`,
+        },
+      ],
+      problem:
+        toUploadFiles.length === 0 ? 'No images are left to upload.' : undefined,
+      onEdit: edit('filter'),
+    },
+    {
+      key: 'cameras',
+      title: multipleCameras ? 'Cameras' : 'Camera',
+      lines: [
+        {
+          text: multipleCameras
+            ? `One camera per folder: ${folderNames.join(', ') || 'none found'}`
+            : 'One camera for all images',
+        },
+        ...(useFolderCameraMapping
+          ? Object.entries(folderCameraMapping).map(([folder, camera]) => ({
+              text: `${folder} joins the existing ${camera} camera`,
+              done: true,
+            }))
+          : []),
+        rotatedGroups.length > 0
+          ? {
+              text: `Rotated ${rotatedGroups
+                .map(
+                  (group) =>
+                    `${multipleCameras ? `${group.cameraName} ` : ''}${
+                      group.orientationGroup
+                    } images ${orientationCorrectionFor(
+                      cameraRotations,
+                      group.cameraName,
+                      group.orientationGroup
+                    )}\u00B0`
+                )
+                .join(', ')}`,
+              done: true,
+            }
+          : { text: 'No images rotated', done: false },
+        camerasWithLens.length > 0
+          ? {
+              text: multipleCameras
+                ? `Lens details entered for ${camerasWithLens.join(', ')}`
+                : `Lens details entered (${formatCameraSpec(
+                    specFor(camerasWithLens[0])!
+                  )})`,
+              done: true,
+            }
+          : { text: 'No lens details entered', done: false },
+        ...(multipleCameras && folderNames.length > 1
+          ? [
+              overlaps.length > 0
+                ? {
+                    text: `Overlaps set: ${overlaps
+                      .map(({ cameraA, cameraB }) => `${cameraA} and ${cameraB}`)
+                      .join(', ')}`,
+                    done: true,
+                  }
+                : { text: 'No overlaps set', done: false },
+            ]
+          : []),
+        ...(maskRegionCount > 0
+          ? [{ text: `${plural(maskRegionCount, 'mask region')} drawn`, done: true }]
+          : []),
+      ],
+      onEdit: edit('cameras'),
+    },
+    {
+      key: 'model',
+      title: 'Model',
+      lines: [
+        {
+          text:
+            model.value === 'manual'
+              ? 'No model; images may be processed later'
+              : `Images will be processed with ${model.label}`,
+          done: model.value !== 'manual',
+        },
+      ],
+      onEdit: edit('model'),
+    },
+  ];
 
   // Common UI elements shared between modal and form versions, grouped into
   // wizard sections. Hidden sections stay mounted so their state survives
@@ -3887,14 +4179,12 @@ export function FileUploadCore({
       </div>
       <div className={sectionClass('filter')}>
       {csvData && (
-        <>
-          {areaOutsideKeys.size > 0 && (
-            <div className={cn(alertVariants({ variant: 'info' }), 'mb-0')}>
-              {areaOutsideKeys.size} image
-              {areaOutsideKeys.size === 1 ? '' : 's'} outside the survey area{' '}
-              {areaOutsideKeys.size === 1 ? 'is' : 'are'} already skipped.
-              Change this in the Survey Area step.
-            </div>
+        <div className='flex flex-col gap-2'>
+          {imageTally.kept === 0 && (
+            <Alert variant='danger' className='mb-0 p-2'>
+              No images are left to upload. Relax the filters or the survey
+              area.
+            </Alert>
           )}
           {stepVisited('filter') && (
             <GPSSubset
@@ -3909,58 +4199,29 @@ export function FileUploadCore({
               allPoints={fullCsvData}
               outsideAreaKeys={areaOutsideKeys}
               area={surveyArea}
-            />
-          )}
-          <div className='border border-dark p-2 mt-2 mb-2'>
-            <div className='flex justify-between'>
-              <span>Images with a position</span>
-              <span>{imageTally.total}</span>
-            </div>
-            <div className='flex justify-between'>
-              <span>Outside the survey area</span>
-              <span>{imageTally.outside}</span>
-            </div>
-            <div className='flex justify-between'>
-              <span>Removed by filters</span>
-              <span>{imageTally.filtered}</span>
-            </div>
-            <div className='flex justify-between font-bold'>
-              <span>Images to upload</span>
-              <span>{imageTally.kept}</span>
-            </div>
-          </div>
-          {imageTally.kept === 0 && (
-            <div className={cn(alertVariants({ variant: 'danger' }), 'mb-0')}>
-              No images are left to upload. Relax the filters or the survey
-              area to continue.
-            </div>
-          )}
-          {(associateByTimestamp ||
-            (csvData &&
-              fullCsvData &&
-              fullCsvData.some((row) => row.timestamp))) && (
-              <div>
-                <Label className='mb-0'>
-                  Filter Data by Time Range (Optional)
-                </Label>
-                <FormText
-                  className='block mb-1 mt-0'
-                  style={{ fontSize: '12px' }}
-                >
-                  Select the effective time range for each day. The default range
-                  is the earliest and latest timestamp recorded for that day.
-                </FormText>
-                <FormText
-                  className='block mb-1'
-                  style={{ fontSize: '12px', fontStyle: 'italic' }}
-                >
-                  All times shown in UTC.
-                </FormText>
-                <div className='flex flex-col gap-2'>
-                  {Array.from(dayTimeBounds.keys())
+            >
+              {(associateByTimestamp ||
+                (fullCsvData && fullCsvData.some((row) => row.timestamp))) && (
+                <div className='flex flex-col gap-2 border-t border-black/10 p-3'>
+                  <div className='flex items-center justify-between gap-2'>
+                    <Label
+                      htmlFor='time-filter-enabled'
+                      className='mb-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground'
+                    >
+                      Time of day (UTC)
+                    </Label>
+                    <Switch
+                      id='time-filter-enabled'
+                      checked={timeFilterOn}
+                      onCheckedChange={(checked) => {
+                        setTimeFilterOpen(checked);
+                        if (!checked) resetTimeRanges();
+                      }}
+                    />
+                  </div>
+                  {timeFilterOn && Array.from(dayTimeBounds.keys())
                     .sort((a: number, b: number) => a - b)
                     .map((day: number) => {
-                      const data = fullCsvData || csvData.data;
                       const dayRange = dayTimeBounds.get(day) ?? {
                         min: 0,
                         max: 1439,
@@ -3971,388 +4232,346 @@ export function FileUploadCore({
                       const endMinutes = timeToMinutes(
                         timeRanges[day]?.end || minutesToTime(dayRange.max)
                       );
-
-                      const handleStartTimeChange = (timeStr: string) => {
-                        const newStartMinutes = timeToMinutes(timeStr);
-                        if (newStartMinutes <= endMinutes) {
-                          updateTimeRange(
-                            day,
-                            timeStr,
-                            timeRanges[day]?.end || minutesToTime(dayRange.max)
-                          );
-                        }
-                      };
-
-                      const handleEndTimeChange = (timeStr: string) => {
-                        const newEndMinutes = timeToMinutes(timeStr);
-                        if (newEndMinutes >= startMinutes) {
-                          updateTimeRange(
-                            day,
-                            timeRanges[day]?.start || minutesToTime(dayRange.min),
-                            timeStr
-                          );
-                        }
-                      };
+                      const dayLabel = dayLabels.get(day) ?? `Day ${day}`;
 
                       return (
-                        <div
-                          key={`day-${day}`}
-                          className='flex flex-col gap-2 mt-2'
-                        >
-                          <span className='font-bold'>
-                            {new Date(data[0].timestamp!).toLocaleDateString()}
-                          </span>
-                          <div className='flex items-center gap-2'>
-                            <label className='mb-0'>Start:</label>
+                        <div key={`day-${day}`} className='flex flex-col gap-2'>
+                          <span className='text-xs'>{dayLabel}</span>
+                          <Slider
+                            min={dayRange.min}
+                            max={dayRange.max}
+                            value={[startMinutes, endMinutes]}
+                            onValueChange={([start, end]) => {
+                              updateTimeRange(
+                                day,
+                                minutesToTime(start),
+                                minutesToTime(end)
+                              );
+                            }}
+                          />
+                          <div className='flex items-center justify-between gap-2'>
                             <Input
                               type='time'
-                              style={{ width: '120px' }}
+                              size='sm'
+                              aria-label={`Start time on ${dayLabel}`}
+                              className='w-32'
                               value={minutesToTime(startMinutes)}
-                              onChange={(e) =>
-                                handleStartTimeChange(e.target.value)
-                              }
-                            />
-                            <label className='mb-0'>End:</label>
-                            <Input
-                              type='time'
-                              style={{ width: '120px' }}
-                              value={minutesToTime(endMinutes)}
-                              onChange={(e) =>
-                                handleEndTimeChange(e.target.value)
-                              }
-                            />
-                            <div className='grow'>
-                              <Slider
-                                min={dayRange.min}
-                                max={dayRange.max}
-                                value={[startMinutes, endMinutes]}
-                                onValueChange={([s, e]) => {
+                              onChange={(e) => {
+                                if (timeToMinutes(e.target.value) <= endMinutes) {
                                   updateTimeRange(
                                     day,
-                                    minutesToTime(s),
-                                    minutesToTime(e)
+                                    e.target.value,
+                                    minutesToTime(endMinutes)
                                   );
-                                }}
-                              />
-                            </div>
+                                }
+                              }}
+                            />
+                            <Input
+                              type='time'
+                              size='sm'
+                              aria-label={`End time on ${dayLabel}`}
+                              className='w-32'
+                              value={minutesToTime(endMinutes)}
+                              onChange={(e) => {
+                                if (timeToMinutes(e.target.value) >= startMinutes) {
+                                  updateTimeRange(
+                                    day,
+                                    minutesToTime(startMinutes),
+                                    e.target.value
+                                  );
+                                }
+                              }}
+                            />
                           </div>
                         </div>
                       );
                     })}
                 </div>
-              </div>
-            )}
-          <div className='mt-4'>
-            <Label className='mb-0'>
-              Filter Data by Altitude (Optional)
-            </Label>
-            <FormText
-              className='block mb-1 mt-0'
-              style={{ fontSize: '12px' }}
-            >
-              Set the target height above ground and the allowed deviation.
-              Images taken outside that range are dropped from the upload.
-            </FormText>
-            <div className='mb-0.5 flex items-center gap-2'>
-              <Switch
-                id='altitude-filter-enabled'
-                checked={altitudeFilterEnabled}
-                onCheckedChange={(checked) => {
-                  settingEditsRef.current = true;
-                  setAltitudeFilterEnabled(checked);
-                }}
-              />
-              <Label htmlFor='altitude-filter-enabled' className='mb-0'>
-                Filter images by height above ground
-              </Label>
-            </div>
-            {altitudeFilterEnabled && (
-              <>
-                <div className='flex items-center gap-2 mt-2'>
-                  <label className='mb-0' htmlFor='altitude-filter-target'>
-                    Target:
-                  </label>
-                  <Input
-                    type='number'
-                    id='altitude-filter-target'
-                    style={{ width: '120px' }}
-                    min={0}
-                    value={targetAltitude}
-                    onChange={(e) => {
-                      settingEditsRef.current = true;
-                      setTargetAltitude(e.target.value);
-                    }}
-                  />
-                  <label className='mb-0' htmlFor='altitude-filter-deviation'>
-                    Deviation (±):
-                  </label>
-                  <Input
-                    type='number'
-                    id='altitude-filter-deviation'
-                    style={{ width: '120px' }}
-                    min={0}
-                    value={altitudeDeviation}
-                    onChange={(e) => {
-                      settingEditsRef.current = true;
-                      setAltitudeDeviation(e.target.value);
-                    }}
-                  />
-                  <NativeSelect
-                    aria-label='Altitude filter unit'
-                    style={{ width: '80px' }}
-                    value={altitudeFilterUnit}
-                    onChange={(e) => {
-                      settingEditsRef.current = true;
-                      setAltitudeFilterUnit(e.target.value as AltitudeUnit);
-                    }}
+              )}
+              <div className='flex flex-col gap-2 border-t border-black/10 p-3'>
+                <div className='flex items-center justify-between gap-2'>
+                  <Label
+                    htmlFor='altitude-filter-enabled'
+                    className='mb-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground'
                   >
-                    <option value='m'>m</option>
-                    <option value='ft'>ft</option>
-                  </NativeSelect>
+                    Height above ground
+                  </Label>
+                  <Switch
+                    id='altitude-filter-enabled'
+                    checked={altitudeFilterEnabled}
+                    onCheckedChange={(checked) => {
+                      settingEditsRef.current = true;
+                      setAltitudeFilterEnabled(checked);
+                    }}
+                  />
                 </div>
-                {altitudeLookupPending ? (
-                  <div className={cn(alertVariants({ variant: 'info' }), 'mt-2 mb-0')}>
-                    Looking up ground elevation...
-                  </div>
-                ) : (
-                  altitudeStats && (
-                    <Alert
-                      variant={
-                        altitudeBand && altitudeStats.range ? 'info' : 'warning'
-                      }
-                      className='mt-2 mb-0'
-                    >
-                      {altitudeStats.range ? (
-                        <div>
-                          Heights above ground in this data:{' '}
-                          {formatFilterAltitude(altitudeStats.range.min)} to{' '}
-                          {formatFilterAltitude(altitudeStats.range.max)}.
-                        </div>
+                {altitudeFilterEnabled && (
+                  <>
+                    <div className='flex items-center gap-2 text-sm'>
+                      <Input
+                        type='number'
+                        size='sm'
+                        id='altitude-filter-target'
+                        aria-label='Target height'
+                        placeholder='Target'
+                        className='w-20'
+                        min={0}
+                        value={targetAltitude}
+                        onChange={(e) => {
+                          settingEditsRef.current = true;
+                          setTargetAltitude(e.target.value);
+                        }}
+                      />
+                      <span>±</span>
+                      <Input
+                        type='number'
+                        size='sm'
+                        id='altitude-filter-deviation'
+                        aria-label='Allowed deviation'
+                        placeholder='Range'
+                        className='w-20'
+                        min={0}
+                        value={altitudeDeviation}
+                        onChange={(e) => {
+                          settingEditsRef.current = true;
+                          setAltitudeDeviation(e.target.value);
+                        }}
+                      />
+                      <NativeSelect
+                        size='sm'
+                        aria-label='Altitude filter unit'
+                        style={{ width: 64 }}
+                        value={altitudeFilterUnit}
+                        onChange={(e) => {
+                          settingEditsRef.current = true;
+                          setAltitudeFilterUnit(e.target.value as AltitudeUnit);
+                        }}
+                      >
+                        <option value='m'>m</option>
+                        <option value='ft'>ft</option>
+                      </NativeSelect>
+                    </div>
+                    <div className='text-xs text-muted-foreground'>
+                      {altitudeLookupPending ? (
+                        <span className='flex items-center gap-1.5'>
+                          <Spinner animation='border' size='sm' />
+                          Looking up ground elevation...
+                        </span>
+                      ) : !altitudeStats ? null : !altitudeStats.range ? (
+                        <span className='text-[#856404]'>
+                          No image has a usable height above ground, so this
+                          has no effect.
+                        </span>
                       ) : (
-                        <div>
-                          No image has a usable height above ground, so the
-                          filter has no effect.
-                        </div>
+                        <>
+                          Images are {formatFilterAltitude(altitudeStats.range.min)}{' '}
+                          to {formatFilterAltitude(altitudeStats.range.max)} up.{' '}
+                          {altitudeBand ? (
+                            <>
+                              {altitudeStats.outside.toLocaleString()} outside{' '}
+                              {formatFilterAltitude(altitudeBand.min)} to{' '}
+                              {formatFilterAltitude(altitudeBand.max)} will be
+                              removed.
+                            </>
+                          ) : (
+                            <span className='text-[#856404]'>
+                              Enter a target and range to continue.
+                            </span>
+                          )}
+                          {altitudeStats.unknown > 0 &&
+                            ` ${altitudeStats.unknown.toLocaleString()} without a usable height are kept.`}
+                        </>
                       )}
-                      {altitudeBand ? (
-                        <div>
-                          Keeping {formatFilterAltitude(altitudeBand.min)} to{' '}
-                          {formatFilterAltitude(altitudeBand.max)}:{' '}
-                          {altitudeStats.outside} image
-                          {altitudeStats.outside === 1 ? '' : 's'} outside this
-                          range will be dropped.
-                        </div>
-                      ) : (
-                        <div>
-                          Enter a target above 0 and a deviation to continue, or
-                          switch the filter off.
-                        </div>
-                      )}
-                      {altitudeStats.unknown > 0 && altitudeStats.range && (
-                        <div>
-                          {altitudeStats.unknown} image
-                          {altitudeStats.unknown === 1 ? '' : 's'} without a
-                          usable altitude or ground elevation will be kept.
-                        </div>
-                      )}
-                    </Alert>
-                  )
+                    </div>
+                  </>
                 )}
-              </>
-            )}
-          </div>
-        </>
+              </div>
+            </GPSSubset>
+          )}
+        </div>
       )}
       </div>
       <div className={sectionClass('cameras')}>
-      {csvData && (
-        <>
-          <div className='mt-4'>
-            <Label className='mb-0'>Camera Definition</Label>
-            <span
-              className='text-muted-foreground block mb-1'
-              style={{ fontSize: '12px' }}
-            >
-              Does your survey have only one camera or multiple cameras?
-            </span>
-            <LabeledToggleSwitch
-              leftLabel='Single Camera'
-              rightLabel='Multiple Cameras'
-              checked={multipleCameras}
-              onChange={(e) => {
-                camerasTouchedRef.current = true;
-                setCamerasFromSurvey(false);
-                setMultipleCameras(e);
-              }}
-            />
-            {camerasFromSurvey && (
-              <FormText
-                className='block text-muted-foreground'
-                style={{ fontSize: 12 }}
-              >
-                This survey already has {existingCameras.length} cameras.
+      {csvData && (() => {
+        const folderNames = cameraSelection?.[1] ?? [];
+        const existingSet = new Set(existingCameraNames);
+        const canLink =
+          multipleCameras &&
+          existingCameraNames.length > 0 &&
+          !loadingExistingCameras;
+        const pairKey = (a: string, b: string) => [a, b].sort().join('\u0000');
+        const rowLabel = 'mb-0 text-sm';
+        return (
+          <SampleViewerArea>
+          <div className='flex flex-col gap-3'>
+            <div className='grid grid-cols-[8rem_1fr] items-center gap-x-4 gap-y-2.5'>
+              <Label className={rowLabel}>Cameras</Label>
+              <Segmented
+                value={multipleCameras ? 'multiple' : 'single'}
+                options={[
+                  { value: 'single', label: 'One camera' },
+                  { value: 'multiple', label: 'One per folder' },
+                ]}
+                onChange={(mode) => {
+                  camerasTouchedRef.current = true;
+                  setCamerasFromSurvey(false);
+                  setMultipleCameras(mode === 'multiple');
+                }}
+              />
+              {multipleCameras && (
+                <>
+                  <Label className={rowLabel}>Camera folders</Label>
+                  <div className='flex flex-wrap items-center gap-3'>
+                    <FolderStructure
+                      files={finalUploadFiles}
+                      onCameraLevelChange={setCameraSelection}
+                    />
+                    <span className='text-xs text-muted-foreground'>
+                      {folderNames.length} camera
+                      {folderNames.length === 1 ? '' : 's'} found
+                      {camerasFromSurvey &&
+                        `, ${existingCameras.length} already on this survey`}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+            {folderNames.length > 0 && (
+              <FormText className='mt-0 text-xs'>
+                Rotate each sample until it is upright; click it to see it full
+                size.
               </FormText>
             )}
-            {multipleCameras && (
-              <>
-                <FolderStructure
-                  files={finalUploadFiles}
-                  onCameraLevelChange={setCameraSelection}
+            {folderNames.map((folder) => {
+              const mapped = useFolderCameraMapping
+                ? folderCameraMapping[folder]
+                : undefined;
+              const effective = mapped || folder;
+              const linkedTo = mapped || existingSet.has(folder) ? effective : null;
+              const groups = orientationCameraGroups.filter(
+                (group) => group.cameraName === effective
+              );
+              const paired = new Set(
+                overlaps.map(({ cameraA, cameraB }) => pairKey(cameraA, cameraB))
+              );
+              const savedPairs = new Set(
+                existingOverlaps.map(({ cameraA, cameraB }) =>
+                  pairKey(cameraA, cameraB)
+                )
+              );
+              return (
+                <CameraCard
+                  key={folder}
+                  name={folder}
+                  groups={groups}
+                  rotationFor={(group) =>
+                    orientationCorrectionFor(
+                      cameraRotations,
+                      group.cameraName,
+                      group.orientationGroup
+                    )
+                  }
+                  onRotate={(group) => {
+                    cameraEditsRef.current = true;
+                    setCameraRotations((prev) => {
+                      const next = { ...prev };
+                      const camera = { ...(prev[group.cameraName] ?? {}) };
+                      const rotation =
+                        ((camera[group.orientationGroup] ?? 0) + 90) % 360;
+                      if (rotation === 0) delete camera[group.orientationGroup];
+                      else camera[group.orientationGroup] = rotation;
+                      if (Object.keys(camera).length === 0) {
+                        delete next[group.cameraName];
+                      } else {
+                        next[group.cameraName] = camera;
+                      }
+                      return next;
+                    });
+                  }}
+                  linkedTo={linkedTo}
+                  link={
+                    canLink && !existingSet.has(folder)
+                      ? {
+                          value: mapped ?? '',
+                          options: existingCameraNames,
+                          onChange: (camera) => {
+                            cameraEditsRef.current = true;
+                            setUseFolderCameraMapping(true);
+                            setFolderCameraMapping((m) => {
+                              const next = { ...m };
+                              if (camera) next[folder] = camera;
+                              else delete next[folder];
+                              return next;
+                            });
+                          },
+                        }
+                      : undefined
+                  }
+                  spec={
+                    linkedTo
+                      ? existingCameraSpecs[linkedTo]
+                      : cameraSpecs[folder]
+                  }
+                  onSpecChange={
+                    linkedTo
+                      ? undefined
+                      : (key, value) =>
+                          setCameraSpecs((specs) => ({
+                            ...specs,
+                            [folder]: { ...specs[folder], [key]: value },
+                          }))
+                  }
+                  overlaps={
+                    multipleCameras && folderNames.length > 1
+                      ? {
+                          cameras: [
+                            ...folderNames
+                              .filter((other) => other !== folder)
+                              .map((other) => {
+                                const otherEffective =
+                                  (useFolderCameraMapping &&
+                                    folderCameraMapping[other]) ||
+                                  other;
+                                const locked = savedPairs.has(
+                                  pairKey(effective, otherEffective)
+                                );
+                                return {
+                                  name: other,
+                                  locked,
+                                  on: locked || paired.has(pairKey(folder, other)),
+                                };
+                              }),
+                          ],
+                          onToggle: (other) =>
+                            setOverlaps((ov) =>
+                              ov.some(
+                                ({ cameraA, cameraB }) =>
+                                  pairKey(cameraA, cameraB) ===
+                                  pairKey(folder, other)
+                              )
+                                ? ov.filter(
+                                    ({ cameraA, cameraB }) =>
+                                      pairKey(cameraA, cameraB) !==
+                                      pairKey(folder, other)
+                                  )
+                                : [...ov, { cameraA: folder, cameraB: other }]
+                            ),
+                        }
+                      : undefined
+                  }
                 />
-                {cameraSelection && (
-                  <CameraOverlap
-                    cameraSelection={cameraSelection}
-                    overlaps={overlaps}
-                    setOverlaps={setOverlaps}
-                    lockedOverlaps={existingOverlaps}
-                  />
-                )}
-              </>
+              );
+            })}
+            {multipleCameras && folderNames.length === 0 && (
+              <Alert variant='warning' className='mb-0 p-2'>
+                No camera folders found. Pick another folder level or switch to
+                one camera.
+              </Alert>
             )}
-            {/* Folder -> existing camera mapping (only when existing cameras
-                are available and folder names don't already match them) */}
-            {multipleCameras &&
-              cameraSelection &&
-              cameraSelection[1].length > 0 &&
-              existingCameraNames.length > 0 &&
-              !loadingExistingCameras && (
-                <div className='mt-4'>
-                  <div className='mb-0.5 flex items-center gap-2'>
-                    <Checkbox
-                      id='use-folder-camera-mapping'
-                      checked={useFolderCameraMapping}
-                      onCheckedChange={(c) => {
-                        const checked = c === true;
-                        cameraEditsRef.current = true;
-                        setUseFolderCameraMapping(checked);
-                        if (!checked) setFolderCameraMapping({});
-                      }}
-                    />
-                    <Label htmlFor='use-folder-camera-mapping' className='mb-0'>
-                      Manually map folder names
-                    </Label>
-                  </div>
-                  <span
-                    className='text-muted-foreground block mb-2'
-                    style={{ fontSize: '12px' }}
-                  >
-                    Enable when the uploaded folder names differ from the
-                    camera names already on this survey.
-                  </span>
-                  {useFolderCameraMapping && (
-                    <div className='mt-1'>
-                      {cameraSelection[1].map((folderName) => (
-                        <div
-                          className='flex items-center mb-2'
-                          key={folderName}
-                        >
-                          <div
-                            className='truncate'
-                            style={{ minWidth: 180 }}
-                            title={folderName}
-                          >
-                            {folderName}
-                          </div>
-                          <span className='mx-2'>→</span>
-                          <NativeSelect
-                            aria-label={`Camera for folder ${folderName}`}
-                            value={folderCameraMapping[folderName] || ''}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              cameraEditsRef.current = true;
-                              setFolderCameraMapping((m) => {
-                                const next = { ...m };
-                                if (val) next[folderName] = val;
-                                else delete next[folderName];
-                                return next;
-                              });
-                            }}
-                          >
-                            <option value=''>Select camera…</option>
-                            {existingCameraNames.map((n) => (
-                              <option key={n} value={n}>
-                                {n}
-                              </option>
-                            ))}
-                          </NativeSelect>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            {/* Existing vs New camera notice */}
-            {(() => {
-              if (!cameraSelection) return null;
-              const currentNames = cameraSelection[1];
-              const resolve = (n: string) =>
-                (useFolderCameraMapping && folderCameraMapping[n]) || n;
-              const existingSet = new Set(existingCameraNames);
-              const matched = currentNames
-                .map(resolve)
-                .filter((n) => existingSet.has(n));
-              const newOnes = currentNames
-                .filter((n) => !folderCameraMapping[n])
-                .filter((n) => !existingSet.has(n));
-              const hasAny = currentNames.length > 0;
-              if (!hasAny || loadingExistingCameras) return null;
-              return (
-                <div className='mt-2'>
-                  {matched.length > 0 && (
-                    <div className={cn(alertVariants({ variant: 'info' }), 'mb-2')}>
-                      These cameras already exist and will be linked by name:{' '}
-                      {Array.from(new Set(matched)).join(', ')}
-                    </div>
-                  )}
-                  {matched.length === 0 && newOnes.length === 0 && (
-                    <div className={cn(alertVariants({ variant: 'warning' }), 'mb-2')}>
-                      No cameras detected from folder structure.
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-            {(() => {
-              if (!cameraSelection) return null;
-              const names = (cameraSelection || [
-                'Survey Level',
-                ['Survey Camera'],
-              ])[1];
-              const existingSet = new Set(existingCameraNames);
-              // Folders mapped to existing cameras don't need spec input.
-              const onlyNew = names.filter(
-                (n) =>
-                  !(useFolderCameraMapping && folderCameraMapping[n]) &&
-                  !existingSet.has(n)
-              );
-              if (onlyNew.length === 0 && existingCameras.length === 0) {
-                return null;
-              }
-              return (
-                <CameraSpecification
-                  cameraSelection={[
-                    (cameraSelection || ['Survey Level', ['Survey Camera']])[0],
-                    onlyNew,
-                  ]}
-                  cameraSpecs={cameraSpecs}
-                  setCameraSpecs={setCameraSpecs}
-                  lockedSpecs={existingCameraSpecs}
-                />
-              );
-            })()}
           </div>
-        </>
-      )}
-      {filteredImageFiles.length > 0 && csvData && (
-        <OrientationReview
-          cameraGroups={orientationCameraGroups}
-          rotations={cameraRotations}
-          setRotations={(rotations) => {
-            cameraEditsRef.current = true;
-            setCameraRotations(rotations);
-          }}
-        />
-      )}
+          </SampleViewerArea>
+        );
+      })()}
       </div>
       <div className={sectionClass('masks')}>
         <div>
@@ -4398,165 +4617,14 @@ export function FileUploadCore({
           )}
         </div>
       </div>
+      <div className={sectionClass('model')}>{modelSelector}</div>
       <div className={sectionClass('review')}>
-      {modelSelector}
-      {csvData && (
-        <div className='border border-dark p-2 mt-2'>
-          <strong>Summary</strong>
-          <ul className='mb-0 mt-1' style={{ fontSize: 14 }}>
-            {(summaryDetails ?? []).map(({ label, value }) => (
-              <li key={label}>
-                <strong>{label}:</strong> {value}
-              </li>
-            ))}
-            {name && (
-              <li>
-                <strong>Source folder:</strong> {name}
-              </li>
-            )}
-            <li>
-              <strong>Images to upload:</strong> {toUploadFiles.length} (
-              {formatFileSize(toUploadSize)})
-            </li>
-            <li>
-              <strong>Model:</strong> {model.label}
-              {modelFromSurvey ? ' (matches this survey)' : ''}
-            </li>
-            <li>
-              <strong>Location data:</strong>{' '}
-              {file
-                ? `${file.name} (${associateByTimestamp ? 'matched by timestamp' : 'matched by file path'})`
-                : associateByTimestamp
-                  ? 'Image EXIF metadata'
-                  : 'No external location file'}
-            </li>
-            {file && mappingConfirmed && headerFields && (
-              <li>
-                <strong>Coordinate fields:</strong>{' '}
-                {useUtm
-                  ? `UTM (${utmColumn})`
-                  : `${columnMapping.lat}, ${columnMapping.lng}`}
-                {columnMapping.alt
-                  ? `; altitude ${columnMapping.alt} (${altitudeInMeters ? 'm' : 'ft'}, ${altitudeType.label})`
-                  : ''}
-              </li>
-            )}
-            <li>
-              <strong>Survey area:</strong>{' '}
-              {surveyArea.boundary
-                ? `${ringAreaKm2(surveyArea.boundary).toFixed(1)} km\u00B2 boundary`
-                : 'No boundary'}
-              {surveyArea.exclusions.length > 0
-                ? `, ${surveyArea.exclusions.length} exclusion zone${
-                    surveyArea.exclusions.length === 1 ? '' : 's'
-                  }`
-                : ''}
-              {surveyArea.boundary
-                ? trimToBoundary
-                  ? `; ${areaOutsideKeys.size} image${
-                      areaOutsideKeys.size === 1 ? '' : 's'
-                    } outside it skipped${
-                      trimMarginM > 0 ? ` (${trimMarginM} m margin)` : ''
-                    }`
-                  : '; images outside it kept'
-                : ''}
-            </li>
-            <li>
-              <strong>Altitude filter:</strong>{' '}
-              {altitudeBand
-                ? `${formatFilterAltitude(
-                    altitudeBand.min
-                  )} to ${formatFilterAltitude(
-                    altitudeBand.max
-                  )} above ground`
-                : 'Not applied'}
-            </li>
-            <li>
-              <strong>Camera setup:</strong>{' '}
-              {multipleCameras ? 'Multiple cameras' : 'Single camera'}
-            </li>
-            <li>
-              <strong>Cameras:</strong>{' '}
-              {orientationCameraGroups.length > 0
-                ? Array.from(
-                    new Set(
-                      orientationCameraGroups.map((group) => group.cameraName)
-                    )
-                  ).join(', ')
-                : 'None detected'}
-            </li>
-            <li>
-              <strong>Camera orientations:</strong>{' '}
-              {orientationCameraGroups.length > 0
-                ? orientationCameraGroups
-                    .map((group) => {
-                      const rotation = orientationCorrectionFor(
-                        cameraRotations,
-                        group.cameraName,
-                        group.orientationGroup
-                      );
-                      const shape =
-                        group.orientationGroup === 'portrait'
-                          ? 'portrait'
-                          : 'landscape';
-                      return `${group.cameraName} ${shape} - ${rotation === 0 ? '0\u00B0 (original)' : `${rotation}\u00B0 CCW`}`;
-                    })
-                    .join('; ')
-                : 'None detected'}
-            </li>
-            {Object.keys(cameraSpecs).length > 0 && (
-              <li>
-                <strong>Camera specifications:</strong>{' '}
-                {Object.entries(cameraSpecs)
-                  .map(
-                    ([cameraName, spec]) =>
-                      `${cameraName} - ${formatCameraSpec(spec)}`
-                  )
-                  .join('; ')}
-              </li>
-            )}
-            {existingCameras.length > 0 && (
-              <li>
-                <strong>Saved cameras:</strong>{' '}
-                {existingCameras
-                  .map(
-                    (camera) => `${camera.name} - ${formatCameraSpec(camera)}`
-                  )
-                  .join('; ')}
-              </li>
-            )}
-            {existingOverlaps.length > 0 && (
-              <li>
-                <strong>Saved camera overlaps:</strong>{' '}
-                {existingOverlaps
-                  .map(({ cameraA, cameraB }) => `${cameraA} / ${cameraB}`)
-                  .join('; ')}
-              </li>
-            )}
-            {overlaps.length > 0 && (
-              <li>
-                <strong>Camera overlaps:</strong>{' '}
-                {overlaps
-                  .map(({ cameraA, cameraB }) => `${cameraA} / ${cameraB}`)
-                  .join('; ')}
-              </li>
-            )}
-            {maskRegionCount > 0 && (
-              <li>
-                <strong>Mask regions:</strong> {maskRegionCount}
-              </li>
-            )}
-            {untouchedSavedMasks.length > 0 && (
-              <li>
-                <strong>Saved masks kept:</strong>{' '}
-                {untouchedSavedMasks
-                  .map(({ label, count }) => `${label} - ${regionCount(count)}`)
-                  .join('; ')}
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
+        {csvData && (
+          <UploadChecklist
+            items={checklistItems}
+            onCompleteChange={setChecklistComplete}
+          />
+        )}
       </div>
     </>
   );
@@ -4587,7 +4655,8 @@ const MODAL_WIZARD_STEPS = [
   'Survey Area',
   'Filter Images',
   'Cameras',
-  'Review & Submit',
+  'Model',
+  'Checklist',
 ];
 const MODAL_LOCATION_STEP = MODAL_WIZARD_STEPS.indexOf('Location Data');
 const MODAL_CORE_STEPS: UploadWizardStep[] = [
@@ -4596,6 +4665,7 @@ const MODAL_CORE_STEPS: UploadWizardStep[] = [
   'surveyArea',
   'filter',
   'cameras',
+  'model',
   'review',
 ];
 
@@ -4793,6 +4863,7 @@ export default function FilesUploadComponent({
   const [imagesReady, setImagesReady] = useState(false);
   const [gpsReady, setGpsReady] = useState(false);
   const [locationReady, setLocationReady] = useState(false);
+  const [checklistComplete, setChecklistComplete] = useState(false);
   const [confirmLocation, setConfirmLocation] = useState<(() => void) | null>(
     null
   );
@@ -4881,6 +4952,11 @@ export default function FilesUploadComponent({
                 if (stepIndex === MODAL_LOCATION_STEP) advance();
               }}
               setImagesReady={setImagesReady}
+              setChecklistComplete={setChecklistComplete}
+              onEditStep={(step) => {
+                const index = MODAL_CORE_STEPS.indexOf(step);
+                if (index >= 0) setStepIndex(index);
+              }}
               currentStep={MODAL_CORE_STEPS[stepIndex]}
               newProject={false}
               resumingUpload={fromStaleUpload}
@@ -4925,7 +5001,9 @@ export default function FilesUploadComponent({
           ) : (
             <Button
               variant='primary'
-              disabled={!readyToSubmit || isSubmitting || isClosing}
+              disabled={
+                !readyToSubmit || !checklistComplete || isSubmitting || isClosing
+              }
               onClick={handleModalSubmit}
             >
               Upload files

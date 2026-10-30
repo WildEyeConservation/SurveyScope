@@ -4,10 +4,24 @@ import React, {
   useRef,
   useEffect,
   useMemo,
+  type ReactNode,
 } from 'react';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { FormText, Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import {
+  EyeIcon,
+  EyeOffIcon,
+  LayersIcon,
+  Maximize2Icon,
+  Minimize2Icon,
+  MinusIcon,
+  MousePointer2Icon,
+  PentagonIcon,
+  PlusIcon,
+  ScanIcon,
+  Undo2Icon,
+  XIcon,
+} from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
@@ -17,10 +31,11 @@ import GPSSubsetImageViewerModal from './GPSSubsetImageViewerModal';
 import {
   BASE_STYLE,
   EMPTY_FC,
-  escapeHtml,
   type FeatureCollection,
 } from './survey/surveyMapStyle';
 import './survey/surveyMap.css';
+import { Kbd, MapButton } from './survey/mapControls';
+import { LIGHT_THEME, MAP_CONTROLS, MAP_DIVIDER } from './survey/mapTheme';
 import { gpsRowKey } from './survey/new-survey/gpsIndex';
 import {
   ringToPolygon,
@@ -48,6 +63,8 @@ export interface GPSSubsetProps {
   outsideAreaKeys?: Set<string>;
   /** Survey boundary and exclusions, drawn as outlines. */
   area?: SurveyArea;
+  /** Extra filters, shown in the map panel below the legend. */
+  children?: ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,15 +83,28 @@ const LYR_AREA = 'survey-area-line';
 
 const NO_KEYS = new Set<string>();
 
+const INCLUDED_COLOR = '#ffa500';
+const REMOVED_COLOR = '#ff0000';
+const OUTSIDE_COLOR = '#8a8a8a';
+const EXISTING_COLOR = '#00ffff';
+
 const POINT_COLOR = [
   'match',
   ['get', 'state'],
   'included',
-  '#ffa500',
+  INCLUDED_COLOR,
   'outside',
-  '#8a8a8a',
-  '#ff0000',
+  OUTSIDE_COLOR,
+  REMOVED_COLOR,
 ] as any;
+
+type DrawTool = 'keep' | 'remove';
+type Shape = Parameters<typeof booleanPointInPolygon>[1];
+
+const SHAPE_COLOR: Record<DrawTool, string> = {
+  keep: INCLUDED_COLOR,
+  remove: REMOVED_COLOR,
+};
 
 type PopupProps = {
   key: string;
@@ -95,11 +125,14 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   allPoints,
   outsideAreaKeys = NO_KEYS,
   area,
+  children,
 }) => {
   const [showExistingImages, setShowExistingImages] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [polygonCount, setPolygonCount] = useState(0);
+  const [drawTool, setDrawTool] = useState<DrawTool | null>(null);
 
   // Image modal state
   const [showImageModal, setShowImageModal] = useState(false);
@@ -109,7 +142,8 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const drawRef = useRef<TerraDraw | null>(null);
-  const drawingRef = useRef(false);
+  const drawingRef = useRef<DrawTool | null>(null);
+  const applyShapeRef = useRef<(shape: Shape) => void>(() => {});
   const didFitRef = useRef(false);
   const popupRef = useRef<maplibregl.Popup | null>(null);
 
@@ -346,80 +380,78 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     popupRef.current?.remove();
 
     const container = document.createElement('div');
-    container.style.maxWidth = '260px';
-    container.style.color = '#000';
+    container.style.cssText = 'width:220px;color:#212529;font-size:13px';
 
-    let html = '';
-    if (props.timestamp) {
-      html += `<div><strong>Timestamp:</strong> ${new Date(
-        props.timestamp
-      ).toISOString()}</div>`;
+    const url = props.filepath
+      ? actionsRef.current?.getObjectUrl(props.filepath)
+      : null;
+    if (url) {
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = props.filepath ?? '';
+      img.style.cssText =
+        'width:100%;height:140px;object-fit:contain;display:block;background:#f1f3f5;margin-bottom:8px';
+      container.appendChild(img);
     }
-    if (props.filepath) {
-      html += `<div style="word-break:break-all"><strong>Filepath:</strong> ${escapeHtml(
-        props.filepath
-      )}</div>`;
-    }
-    html += `<div><strong>Lng:</strong> ${props.lng}</div>`;
-    html += `<div><strong>Lat:</strong> ${props.lat}</div>`;
-    html += `<div><strong>Alt:</strong> ${props.alt}</div>`;
-    container.innerHTML = html;
 
-    if (props.filepath) {
-      const url = actionsRef.current?.getObjectUrl(props.filepath);
-      if (url) {
-        const imgWrap = document.createElement('div');
-        imgWrap.style.cssText = 'text-align:center;margin:8px 0';
-        const img = document.createElement('img');
-        img.src = url;
-        img.alt = props.filepath;
-        img.style.cssText =
-          'max-width:150px;max-height:150px;object-fit:contain;display:block;margin:auto';
-        imgWrap.appendChild(img);
-        container.appendChild(imgWrap);
+    const name = document.createElement('div');
+    name.style.cssText =
+      'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    name.textContent = props.filepath
+      ? props.filepath.split('/').pop() ?? props.filepath
+      : `${props.lat.toFixed(5)}, ${props.lng.toFixed(5)}`;
+    if (props.filepath) name.title = props.filepath;
+    container.appendChild(name);
 
-        if (props.state === 'included') {
-          const viewBtn = document.createElement('button');
-          viewBtn.type = 'button';
-          viewBtn.className = buttonVariants({
-            variant: 'primary',
-            size: 'sm',
-            className: 'w-full mt-2',
-          });
-          viewBtn.textContent = 'View Image';
-          viewBtn.onclick = () => actionsRef.current?.viewByKey(props.key);
-          container.appendChild(viewBtn);
-        }
-      }
-    }
+    const details = document.createElement('div');
+    details.style.cssText = 'color:#6c757d;font-size:12px';
+    details.textContent = [
+      props.timestamp
+        ? new Date(props.timestamp).toISOString().slice(0, 19).replace('T', ' ') +
+          ' UTC'
+        : null,
+      Number.isFinite(props.alt) ? `Alt ${props.alt}` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    container.appendChild(details);
 
     if (props.state === 'outside') {
       const note = document.createElement('div');
-      note.className = 'mt-2';
+      note.style.cssText = 'margin-top:8px;color:#6c757d;font-size:12px';
       note.textContent =
-        'Outside the survey area. Change the boundary in the Survey Area step to include it.';
+        'Outside the survey area. Change the boundary to include it.';
       container.appendChild(note);
     } else {
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;gap:6px;margin-top:8px';
+      if (url && props.state === 'included') {
+        const viewBtn = document.createElement('button');
+        viewBtn.type = 'button';
+        viewBtn.className = buttonVariants({
+          variant: 'outline-secondary',
+          size: 'sm',
+          className: 'flex-1',
+        });
+        viewBtn.textContent = 'View';
+        viewBtn.onclick = () => actionsRef.current?.viewByKey(props.key);
+        actions.appendChild(viewBtn);
+      }
       const actionBtn = document.createElement('button');
       actionBtn.type = 'button';
-      if (props.state === 'included') {
-        actionBtn.className = buttonVariants({
-          variant: 'danger',
-          size: 'sm',
-          className: 'w-full mt-2',
-        });
-        actionBtn.textContent = 'Remove';
-        actionBtn.onclick = () => actionsRef.current?.removeByKey(props.key);
-      } else {
-        actionBtn.className = buttonVariants({
-          variant: 'success',
-          size: 'sm',
-          className: 'w-full mt-2',
-        });
-        actionBtn.textContent = 'Add Back';
-        actionBtn.onclick = () => actionsRef.current?.restoreByKey(props.key);
-      }
-      container.appendChild(actionBtn);
+      const included = props.state === 'included';
+      actionBtn.className = buttonVariants({
+        variant: included ? 'danger' : 'success',
+        size: 'sm',
+        className: 'flex-1',
+      });
+      actionBtn.textContent = included ? 'Remove' : 'Add back';
+      actionBtn.onclick = () =>
+        included
+          ? actionsRef.current?.removeByKey(props.key)
+          : actionsRef.current?.restoreByKey(props.key);
+      actions.appendChild(actionBtn);
+      container.appendChild(actions);
     }
 
     popupRef.current = new maplibregl.Popup({
@@ -508,10 +540,6 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     mapRef.current = map;
 
     map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right'
-    );
-    map.addControl(
       new maplibregl.ScaleControl({ unit: 'metric' }),
       'bottom-left'
     );
@@ -544,9 +572,9 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         source: SRC_EXISTING,
         paint: {
           'circle-radius': 4,
-          'circle-color': '#00ffff',
+          'circle-color': EXISTING_COLOR,
           'circle-opacity': 0.15,
-          'circle-stroke-color': '#00ffff',
+          'circle-stroke-color': EXISTING_COLOR,
           'circle-stroke-opacity': 0.3,
           'circle-stroke-width': 1,
         },
@@ -580,22 +608,25 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         if (!drawingRef.current) map.getCanvas().style.cursor = '';
       });
 
-      // Polygon lasso. Terra Draw renders its own layers via the adapter; the
-      // finished polygons stay on the map until "Include"/"Remove"/cancel so
-      // users can draw several before applying.
+      // A finished shape applies straight away: keep or remove what's inside.
       const draw = new TerraDraw({
         adapter: new TerraDrawMapLibreGLAdapter({ map }),
-        modes: [new TerraDrawPolygonMode()],
+        modes: (['keep', 'remove'] as DrawTool[]).map(
+          (tool) =>
+            new TerraDrawPolygonMode({
+              modeName: tool,
+              styles: {
+                fillColor: SHAPE_COLOR[tool] as `#${string}`,
+                fillOpacity: 0.15,
+                outlineColor: SHAPE_COLOR[tool] as `#${string}`,
+                outlineWidth: 2,
+              },
+            })
+        ),
       });
-      draw.on('finish', () => {
-        try {
-          const snapshot = draw.getSnapshot();
-          setPolygonCount(
-            snapshot.filter((f: any) => f.geometry?.type === 'Polygon').length
-          );
-        } catch {
-          /* ignore */
-        }
+      draw.on('finish', (id) => {
+        const feature = draw.getSnapshot().find((f) => f.id === id);
+        if (feature) applyShapeRef.current(feature as Shape);
       });
       drawRef.current = draw;
 
@@ -700,70 +731,53 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     } catch {
       /* ignore */
     }
-    drawingRef.current = false;
-    setIsDrawing(false);
-    setPolygonCount(0);
+    drawingRef.current = null;
+    setDrawTool(null);
     if (map) map.getCanvas().style.cursor = '';
   }, []);
 
-  const toggleDrawing = useCallback(() => {
-    const map = mapRef.current;
-    const draw = drawRef.current;
-    if (!map || !draw) return;
-    if (drawingRef.current) {
-      stopDrawing();
-    } else {
+  const startDrawing = useCallback(
+    (tool: DrawTool) => {
+      const map = mapRef.current;
+      const draw = drawRef.current;
+      if (!map || !draw) return;
+      if (drawingRef.current === tool) {
+        stopDrawing();
+        return;
+      }
       try {
         popupRef.current?.remove();
-        draw.start();
-        draw.setMode('polygon');
-        drawingRef.current = true;
-        setIsDrawing(true);
+        if (draw.enabled) draw.clear();
+        else draw.start();
+        draw.setMode(tool);
+        drawingRef.current = tool;
+        setDrawTool(tool);
         map.getCanvas().style.cursor = 'crosshair';
       } catch (err) {
         console.error('Failed to start drawing:', err);
       }
-    }
-  }, [stopDrawing]);
+    },
+    [stopDrawing]
+  );
 
-  // Filter points using the drawn polygons. exclude=true keeps only points
-  // inside a polygon ("Include Images"); exclude=false removes the points
-  // inside ("Remove Images").
-  const handleFilterPoints = useCallback(
-    (exclude: boolean) => {
-      const draw = drawRef.current;
-      if (!draw) return;
-      let polygons: any[] = [];
-      try {
-        polygons = draw
-          .getSnapshot()
-          .filter((f: any) => f.geometry?.type === 'Polygon');
-      } catch {
-        polygons = [];
-      }
-      if (polygons.length === 0) {
-        return;
-      }
-      const newVisiblePoints: GPSData[] = [];
-      const removedPoints: GPSData[] = [];
-      currentFilteredPoints.forEach((point) => {
-        const inside = polygons.some((polygon) =>
-          booleanPointInPolygon([point.lng, point.lat], polygon)
-        );
-        if ((!exclude && inside) || (exclude && !inside)) {
-          removedPoints.push(point);
-        } else {
-          newVisiblePoints.push(point);
-        }
-      });
+  applyShapeRef.current = (polygon) => {
+    const keep = drawingRef.current === 'keep';
+    const newVisiblePoints: GPSData[] = [];
+    const removedPoints: GPSData[] = [];
+    for (const point of currentPointsRef.current) {
+      const inside = booleanPointInPolygon([point.lng, point.lat], polygon);
+      if (inside === keep) newVisiblePoints.push(point);
+      else removedPoints.push(point);
+    }
+    if (removedPoints.length > 0) {
       // Record the removed points (for undo) and update current visible points
       setDeletedPointsStack((prev) => [...prev, removedPoints]);
       setCurrentFilteredPoints(newVisiblePoints);
       onFilter(newVisiblePoints);
-      stopDrawing();
-    },
-    [currentFilteredPoints, onFilter, stopDrawing]
-  );
+    }
+    // Leave terra-draw's finish handler before tearing the drawing down.
+    setTimeout(stopDrawing);
+  };
 
   // ---------------------------------------------------------------------
   // Image modal handlers
@@ -797,111 +811,268 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     setImageRotation((prev) => (prev + 90) % 360);
   }, []);
 
+  const fitAll = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const bounds = new maplibregl.LngLatBounds();
+    for (const p of allPointsByKeyRef.current.values()) bounds.extend([p.lng, p.lat]);
+    if (bounds.isEmpty()) return;
+    map.fitBounds(bounds, { padding: 40, maxZoom: 16, duration: 0 });
+  }, []);
+
+  const toggleFullscreen = () => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void frame.requestFullscreen?.();
+  };
+
+  useEffect(() => {
+    const onChange = () =>
+      setFullscreen(document.fullscreenElement === frameRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  // Shortcuts only while this map is on screen; wizard steps stay mounted.
+  const shortcutsRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  shortcutsRef.current = (e: KeyboardEvent) => {
+    const frame = frameRef.current;
+    if (!frame || !frame.offsetParent || !mapLoaded) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) {
+      return;
+    }
+    const key = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      handleUndo();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (key === 'f') fitAll();
+    else if (key === 'l') setPanelOpen((open) => !open);
+    else if (key === 'k') startDrawing('keep');
+    else if (key === 'r') startDrawing('remove');
+    else if ((key === 'v' || key === 'escape') && drawingRef.current) {
+      stopDrawing();
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => shortcutsRef.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const counts = useMemo(() => {
+    const tally = { included: 0, removed: 0, outside: 0 };
+    for (const feature of pointsFC.features) {
+      tally[(feature.properties as PopupProps).state]++;
+    }
+    return tally;
+  }, [pointsFC]);
+
+  const legend = [
+    { label: 'To upload', color: INCLUDED_COLOR, count: counts.included },
+    { label: 'Removed', color: REMOVED_COLOR, count: counts.removed },
+    ...(counts.outside > 0
+      ? [{ label: 'Outside survey area', color: OUTSIDE_COLOR, count: counts.outside }]
+      : []),
+  ];
+
+  const hint =
+    drawTool === 'keep'
+      ? 'Draw around the images to keep · double-click to finish'
+      : drawTool === 'remove'
+      ? 'Draw around the images to remove · double-click to finish'
+      : deletedPointsStack.length === 0
+      ? 'Click an image to inspect it, or draw a shape to keep or remove images'
+      : null;
+
   return (
     <>
-      <div className='mt-4 flex flex-col gap-2'>
-        <div>
-          <Label className='block mb-0'>
-            Filter Data by Polygon (Optional)
-          </Label>
-          <FormText className='block' style={{ fontSize: '12px' }}>
-            <b>These points represent your georeferenced images.</b>
-          </FormText>
-          <FormText style={{ fontSize: '12px' }}>
-            Use this tool to filter out images based on a polygon.
-            <ul>
-              <li>
-                Click "Draw polygon", then click on the map to place vertices;
-                click the first vertex (or double-click) to finish. You can
-                draw multiple polygons.
-              </li>
-              <li>
-                Click "Include Images" to keep only the images within the
-                polygons.
-              </li>
-              <li>Click "Remove Images" to remove the images within them.</li>
-              <li>Click "Undo" to reverse the last action.</li>
-              <li>Click a point to see its details and preview.</li>
-              <li>
-                <span style={{ color: 'orange' }}>Orange points</span> represent
-                images that are included.
-              </li>
-              <li>
-                <span style={{ color: 'red' }}>Red points</span> represent
-                images that are removed.
-              </li>
-              {outsideAreaKeys.size > 0 && (
-                <li>
-                  <span style={{ color: '#8a8a8a' }}>Grey points</span> are
-                  outside the survey area and are skipped.
-                </li>
-              )}
-            </ul>
-          </FormText>
+      <div
+        ref={frameRef}
+        className={cn('survey-map', fullscreen && 'h-full rounded-none border-0')}
+      >
+        {/* Inline: maplibre's unlayered CSS overrides layered utilities here. */}
+        <div
+          ref={mapContainerRef}
+          style={{ position: 'absolute', inset: 0 }}
+        />
+
+        <div
+          className={cn(
+            'absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2',
+            MAP_CONTROLS
+          )}
+        >
+          <MapButton
+            tipSide='top'
+            label='Inspect images'
+            shortcut='V'
+            active={!drawTool}
+            disabled={!mapLoaded}
+            onClick={() => drawTool && stopDrawing()}
+          >
+            <MousePointer2Icon className='size-4' />
+          </MapButton>
+          <div className={MAP_DIVIDER} />
+          <MapButton
+            tipSide='top'
+            label='Draw a shape to keep only the images inside'
+            shortcut='K'
+            active={drawTool === 'keep'}
+            disabled={!mapLoaded}
+            onClick={() => startDrawing('keep')}
+          >
+            <PentagonIcon className='size-4' style={{ color: SHAPE_COLOR.keep }} />
+          </MapButton>
+          <MapButton
+            tipSide='top'
+            label='Draw a shape to remove the images inside'
+            shortcut='R'
+            active={drawTool === 'remove'}
+            disabled={!mapLoaded}
+            onClick={() => startDrawing('remove')}
+          >
+            <PentagonIcon className='size-4' style={{ color: SHAPE_COLOR.remove }} />
+          </MapButton>
+          <div className={MAP_DIVIDER} />
+          <MapButton
+            tipSide='top'
+            label='Undo'
+            shortcut='Ctrl Z'
+            disabled={deletedPointsStack.length === 0}
+            onClick={handleUndo}
+          >
+            <Undo2Icon className='size-4' />
+          </MapButton>
         </div>
-        {validExistingImages.length > 0 && (
-          <div className='mb-1 flex items-center gap-2'>
-            <Switch
-              id='toggle-existing-images'
-              checked={showExistingImages}
-              onCheckedChange={setShowExistingImages}
-            />
-            <Label htmlFor='toggle-existing-images' className='mb-0'>
-              <span>
-                Show existing survey images (
-                <span style={{ color: 'cyan' }}>cyan</span>):{' '}
-                {validExistingImages.length}
-              </span>
-            </Label>
+
+        <div className='absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] items-start'>
+          {panelOpen ? (
+            <div
+              className='flex max-h-full w-80 flex-col overflow-hidden bg-white text-foreground shadow-lg'
+              style={LIGHT_THEME}
+            >
+              <div className='flex items-center gap-2 border-b border-black/10 px-3 py-2 text-sm'>
+                <LayersIcon className='size-4' />
+                <span className='flex-1 font-semibold'>Images</span>
+                <Kbd>L</Kbd>
+                <button
+                  type='button'
+                  aria-label='Hide panel'
+                  onClick={() => setPanelOpen(false)}
+                  className='p-0.5 hover:text-primary'
+                >
+                  <XIcon className='size-4' />
+                </button>
+              </div>
+              <div className='flex flex-col overflow-y-auto'>
+                <div className='py-1'>
+                  {legend.map(({ label, color, count }) => (
+                    <div
+                      key={label}
+                      className='flex items-center gap-2 px-3 py-1.5 text-sm'
+                    >
+                      <span
+                        className='inline-block size-2.5 shrink-0 rounded-full'
+                        style={{ background: color }}
+                      />
+                      <span className='flex-1'>{label}</span>
+                      <span className='tabular-nums text-muted-foreground'>
+                        {count.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  {validExistingImages.length > 0 && (
+                    <div className='flex items-center gap-2 px-3 py-1.5 text-sm'>
+                      <span
+                        className='inline-block size-2.5 shrink-0 rounded-full border'
+                        style={{
+                          background: `${EXISTING_COLOR}40`,
+                          borderColor: EXISTING_COLOR,
+                        }}
+                      />
+                      <span className='flex-1'>Already in the survey</span>
+                      <span className='tabular-nums text-muted-foreground'>
+                        {validExistingImages.length.toLocaleString()}
+                      </span>
+                      <button
+                        type='button'
+                        title={showExistingImages ? 'Hide' : 'Show'}
+                        aria-label={
+                          showExistingImages
+                            ? 'Hide images already in the survey'
+                            : 'Show images already in the survey'
+                        }
+                        aria-pressed={showExistingImages}
+                        className='p-1 opacity-60 hover:text-primary hover:opacity-100'
+                        onClick={() => setShowExistingImages((show) => !show)}
+                      >
+                        {showExistingImages ? (
+                          <EyeIcon className='size-3.5' />
+                        ) : (
+                          <EyeOffIcon className='size-3.5' />
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {children}
+              </div>
+            </div>
+          ) : (
+            <MapButton
+              label='Show panel'
+              shortcut='L'
+              tipSide='left'
+              className={MAP_CONTROLS}
+              onClick={() => setPanelOpen(true)}
+            >
+              <LayersIcon className='size-4' />
+            </MapButton>
+          )}
+        </div>
+
+        <div className={cn('absolute left-3 top-3 z-10 flex flex-col', MAP_CONTROLS)}>
+          <MapButton
+            label={fullscreen ? 'Exit full screen' : 'Full screen'}
+            shortcut={fullscreen ? 'Esc' : undefined}
+            onClick={toggleFullscreen}
+          >
+            {fullscreen ? (
+              <Minimize2Icon className='size-4' />
+            ) : (
+              <Maximize2Icon className='size-4' />
+            )}
+          </MapButton>
+          <div className='mx-2 h-px bg-black/15' />
+          <MapButton label='Zoom in' onClick={() => mapRef.current?.zoomIn()}>
+            <PlusIcon className='size-4' />
+          </MapButton>
+          <MapButton label='Zoom out' onClick={() => mapRef.current?.zoomOut()}>
+            <MinusIcon className='size-4' />
+          </MapButton>
+          <MapButton label='Fit to images' shortcut='F' onClick={fitAll}>
+            <ScanIcon className='size-4' />
+          </MapButton>
+        </div>
+
+        {hint && (
+          <div className='pointer-events-none absolute bottom-[5.5rem] left-1/2 z-10 -translate-x-1/2'>
+            <div
+              className={cn(
+                'flex items-center gap-2 whitespace-nowrap border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
+                MAP_CONTROLS
+              )}
+            >
+              {hint}
+              {drawTool && <Kbd>Esc cancel</Kbd>}
+            </div>
           </div>
         )}
-        <div className='survey-map'>
-          <div
-            ref={mapContainerRef}
-            style={{ position: 'absolute', inset: 0 }}
-          />
-          <div
-            className='flex flex-row gap-2 p-2'
-            style={{
-              position: 'absolute',
-              bottom: '10px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 10,
-              backgroundColor: 'rgba(255,255,255,0.8)',
-              border: '2px solid rgba(0, 0, 0, 0.28)',
-              borderRadius: '4px',
-            }}
-          >
-            <Button
-              variant={isDrawing ? 'warning' : 'secondary'}
-              onClick={toggleDrawing}
-            >
-              {isDrawing ? 'Cancel drawing' : 'Draw polygon'}
-            </Button>
-            <Button
-              variant='info'
-              disabled={polygonCount === 0}
-              onClick={() => handleFilterPoints(true)}
-            >
-              Include Images
-            </Button>
-            <Button
-              variant='danger'
-              disabled={polygonCount === 0}
-              onClick={() => handleFilterPoints(false)}
-            >
-              Remove Images
-            </Button>
-            <Button
-              disabled={deletedPointsStack.length === 0}
-              variant='outline-primary'
-              onClick={handleUndo}
-            >
-              Undo
-            </Button>
-          </div>
-        </div>
       </div>
 
       <GPSSubsetImageViewerModal

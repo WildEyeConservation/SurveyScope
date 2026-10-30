@@ -1,4 +1,4 @@
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormText, Label } from '@/components/ui/label';
@@ -21,7 +21,8 @@ const WIZARD_STEPS = [
   'Survey Area',
   'Filter Images',
   'Cameras',
-  'Review & Create',
+  'Model',
+  'Checklist',
 ];
 const ALL_MEMBERS_ANNOTATE = { value: 'Yes', label: 'Yes' };
 
@@ -36,6 +37,7 @@ const CORE_STEPS: UploadWizardStep[] = [
   'surveyArea',
   'filter',
   'cameras',
+  'model',
   'review',
 ];
 
@@ -96,10 +98,13 @@ export default function NewSurveyModal({
   );
   const [stepIndex, setStepIndex] = useState(0);
   const membersCanAnnotate = globalAnnotationAccess?.value === 'Yes';
+  const savedExceptions = permissionExceptions.filter((pe) => !pe.temp);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [furthestIndex, setFurthestIndex] = useState(0);
+  const [checklistComplete, setChecklistComplete] = useState(false);
 
-  const canSubmit = !loading && filesReady && name && organization && gpsReady;
+  const canSubmit =
+    !loading && filesReady && name && organization && gpsReady && checklistComplete;
 
   const stepReady = (index: number): boolean => {
     switch (index) {
@@ -434,26 +439,21 @@ export default function NewSurveyModal({
                       setPermissionExceptions([]);
                     }}
                     className={cn(
-                      'flex gap-2.5 border p-3 text-left transition-colors',
+                      'flex items-center gap-3 border px-4 py-3 text-left transition-colors',
                       selected
-                        ? 'border-primary bg-primary/10'
-                        : 'border-white/25 hover:bg-white/5'
+                        ? 'border-primary bg-primary/15'
+                        : 'border-white/15 bg-white/[0.07] hover:border-white/40'
                     )}
                   >
-                    <span
-                      className={cn(
-                        'mt-0.5 size-3.5 shrink-0 rounded-full border-2',
-                        selected
-                          ? 'border-primary bg-[radial-gradient(var(--primary)_45%,transparent_50%)]'
-                          : 'border-light'
-                      )}
-                    />
-                    <span>
-                      <span className='block'>{choice.title}</span>
-                      <span className='block text-xs text-muted-foreground'>
+                    <span className='flex min-w-0 flex-1 flex-col'>
+                      <span className='font-semibold'>{choice.title}</span>
+                      <span className='text-sm text-muted-foreground'>
                         {choice.detail}
                       </span>
                     </span>
+                    {selected && (
+                      <CheckIcon className='size-5 shrink-0 text-primary' />
+                    )}
                   </button>
                 );
               })}
@@ -498,6 +498,11 @@ export default function NewSurveyModal({
             setReadyToSubmit={setFilesReady}
             setGpsDataReady={setGpsReady}
             setImagesReady={setImagesReady}
+            setChecklistComplete={setChecklistComplete}
+            onEditStep={(step) => {
+              const index = CORE_STEPS.indexOf(step);
+              if (index >= 0) setStepIndex(index);
+            }}
             currentStep={CORE_STEPS[stepIndex]}
             setLocationReady={setLocationReady}
             setConfirmLocation={setConfirmLocation}
@@ -505,23 +510,24 @@ export default function NewSurveyModal({
               if (stepIndex === LOCATION_STEP) goNext();
             }}
             summaryDetails={[
-              { label: 'Survey name', value: name.trim() || 'Not entered' },
+              { text: `Named the survey ${name.trim()}`, done: !!name.trim() },
               {
-                label: 'Organisation',
-                value: organization?.label || 'Not selected',
-              },
-              { label: 'GPS', value: gpsReady ? 'Exists' : 'Missing' },
-              {
-                label: 'Default annotation access',
-                value: globalAnnotationAccess?.label || 'No',
+                text: `Organisation: ${organization?.label ?? 'not selected'}`,
+                done: !!organization,
               },
               {
-                label: 'Permission exceptions',
-                value: String(
-                  permissionExceptions.filter((exception) => !exception.temp)
-                    .length
-                ),
+                text: membersCanAnnotate
+                  ? 'All members can annotate'
+                  : 'Only admins can annotate',
               },
+              savedExceptions.length > 0
+                ? {
+                    text: `${
+                      membersCanAnnotate ? "Can't annotate" : 'Can annotate anyway'
+                    }: ${savedExceptions.map((pe) => pe.user.name).join(', ')}`,
+                    done: true,
+                  }
+                : { text: 'No member exceptions', done: false },
             ]}
           />
         </form>

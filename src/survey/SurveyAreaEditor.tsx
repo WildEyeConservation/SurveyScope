@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { Button } from '@/components/ui/button';
@@ -45,6 +44,8 @@ import * as turf from '@turf/turf';
 import FileInput from '../FileInput';
 import { BASE_STYLE, EMPTY_FC, type FeatureCollection } from './surveyMapStyle';
 import './surveyMap.css';
+import { Kbd, MapButton } from './mapControls';
+import { LIGHT_THEME, MAP_CONTROLS, MAP_DIVIDER } from './mapTheme';
 import {
   applyImport,
   ringAreaKm2,
@@ -1185,8 +1186,8 @@ export default function SurveyAreaEditor({
       ? 'Del delete'
       : null;
 
-  const controls = 'bg-white shadow-lg';
-  const divider = 'my-2 w-px bg-black/15';
+  const controls = MAP_CONTROLS;
+  const divider = MAP_DIVIDER;
   const canTrace = !locked && (points?.length ?? 0) > 0;
 
   const railTools: {
@@ -1600,71 +1601,5 @@ export default function SurveyAreaEditor({
         )}
       </div>
     </div>
-  );
-}
-
-// Light-theme tokens for white panels inside the dark app.
-const LIGHT_THEME = {
-  '--foreground': '#212529',
-  '--muted-foreground': '#6c757d',
-  '--border': '#dee2e6',
-  '--input': '#ced4da',
-  '--accent': 'rgba(0, 0, 0, 0.075)',
-  '--accent-foreground': '#212529',
-} as CSSProperties;
-
-function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className='rounded-sm border border-black/20 bg-black/5 px-1 font-mono text-[10px] leading-4 text-[#495057]'>
-      {children}
-    </kbd>
-  );
-}
-
-function MapButton({
-  label,
-  shortcut,
-  active,
-  disabled,
-  onClick,
-  children,
-  className,
-  tipSide = 'right',
-}: {
-  label: string;
-  shortcut?: string;
-  active?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-  className?: string;
-  tipSide?: 'right' | 'left' | 'top';
-}) {
-  return (
-    <button
-      type='button'
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        'group relative flex size-9 items-center justify-center text-[#212529] transition-colors disabled:cursor-not-allowed disabled:[&>svg]:opacity-35',
-        active ? 'bg-primary text-white [&_svg]:!text-white' : 'enabled:hover:bg-black/10',
-        className
-      )}
-    >
-      {children}
-      <span
-        className={cn(
-          'pointer-events-none absolute z-20 hidden items-center gap-1.5 whitespace-nowrap border border-black/10 bg-white px-2 py-1 text-xs text-[#212529] shadow-md group-hover:flex group-focus-visible:flex',
-          tipSide === 'right' && 'left-full ml-2',
-          tipSide === 'left' && 'right-full mr-2',
-          tipSide === 'top' && 'bottom-full mb-2'
-        )}
-      >
-        {label}
-        {shortcut && <Kbd>{shortcut}</Kbd>}
-      </span>
-    </button>
   );
 }

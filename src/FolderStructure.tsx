@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 
 interface FolderStructureProps {
   files: File[];
@@ -64,33 +63,27 @@ export default function FolderStructure({
   if (segments.length === 0) return null;
 
   return (
-    <div className='mt-2'>
-      <Label className='mb-0'>Folder Structure</Label>
-      <span className='text-muted-foreground block mb-2' style={{ fontSize: '12px' }}>
-        Select the camera folder level.
-      </span>
-      <div>
-        {segments.map((seg, idx) => (
-          <React.Fragment key={idx}>
-            <Button
-              variant='outline-primary'
-              type='button'
-              size='sm'
-              onClick={() => handleClick(idx)}
-              style={{
-                borderRadius: '5px',
-                color: idx === selectedLevel ? '#fff' : '',
-                backgroundColor:
-                  idx === selectedLevel ? 'var(--primary)' : '',
-                padding: '2px 8px',
-              }}
-            >
-              {seg}
-            </Button>
-            {idx < segments.length - 1 && <span className='mx-1'>/</span>}
-          </React.Fragment>
-        ))}
-      </div>
+    <div className='flex flex-wrap items-center gap-1 text-sm'>
+      {segments.map((seg, idx) => (
+        <React.Fragment key={idx}>
+          <button
+            type='button'
+            aria-pressed={idx === selectedLevel}
+            onClick={() => handleClick(idx)}
+            className={cn(
+              'border px-2 py-0.5 transition-colors',
+              idx === selectedLevel
+                ? 'border-primary bg-primary text-white'
+                : 'border-white/30 text-muted-foreground hover:bg-white/10'
+            )}
+          >
+            {seg}
+          </button>
+          {idx < segments.length - 1 && (
+            <span className='text-muted-foreground'>/</span>
+          )}
+        </React.Fragment>
+      ))}
     </div>
   );
 }
