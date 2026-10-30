@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { createExclusive } from './exclusive';
 
 function setup() {
@@ -40,7 +40,7 @@ test('createExclusive clears after a task that throws', async () => {
     run('a', async () => {
       throw new Error('read failed');
     }),
-    /read failed/
+    /read failed/,
   );
   assert.deepEqual(busy, ['a', null]);
   assert.equal(await run('a', async () => true), true);

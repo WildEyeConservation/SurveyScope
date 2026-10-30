@@ -6,23 +6,23 @@ import {
 
 export async function requestInfoTagWork(
   client: unknown,
-  request: InfoTagRequest
+  request: InfoTagRequest,
 ): Promise<InfoTagResponse> {
   const mutation = (client as { mutations?: Record<string, unknown> }).mutations
     ?.infoTagWork;
   if (typeof mutation !== 'function')
     throw new Error(
-      'Info Tags needs the updated backend. Reload after deployment.'
+      'Info Tags needs the updated backend. Reload after deployment.',
     );
   const response = await mutation(
     { request: JSON.stringify(request) },
-    { retry: false }
+    { retry: false },
   );
   if (response.errors?.length)
     throw new Error(
       response.errors
         .map((error: { message: string }) => error.message)
-        .join('; ')
+        .join('; '),
     );
   const data =
     typeof response.data === 'string'
@@ -46,7 +46,7 @@ export class InfoTagSession {
   constructor(
     private call: (request: InfoTagRequest) => Promise<InfoTagResponse>,
     private base: Pick<InfoTagRequest, 'queueId' | 'imageId' | 'sessionId'>,
-    private onLost: (message: string) => void = () => {}
+    private onLost: (message: string) => void = () => {},
   ) {}
 
   async claim(edit: boolean) {
@@ -65,7 +65,7 @@ export class InfoTagSession {
     // and a saved operation's receipt remains retryable after the lease expires.
     if (this.closed || this.paused || !this.lease) {
       throw new Error(
-        'CLAIM_LOST: Image reservation unavailable. Reload before editing.'
+        'CLAIM_LOST: Image reservation unavailable. Reload before editing.',
       );
     }
     return { ...this.base, generation: this.lease.generation };
@@ -89,7 +89,7 @@ export class InfoTagSession {
     input: Pick<
       InfoTagRequest,
       'annotationId' | 'expectedRevision' | 'operationId' | 'tagIds' | 'x' | 'y'
-    >
+    >,
   ) {
     try {
       const response = await this.call({

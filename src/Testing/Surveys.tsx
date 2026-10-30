@@ -1,12 +1,12 @@
-import MyTable from '../Table';
-import { useState, useContext, useEffect, useRef } from 'react';
-import { Combobox } from '@/components/ui/combobox';
-import { TestingContext, GlobalContext } from '../Context';
 import { Button } from '@/components/ui/button';
-import { Plus, Settings2, Eye } from 'lucide-react';
+import { Combobox } from '@/components/ui/combobox';
+import { Eye, Plus, Settings2 } from 'lucide-react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { GlobalContext, TestingContext } from '../Context';
+import MyTable from '../Table';
+import AddLocationsModal from './AddLocationsModal';
 import ConfigModal from './ConfigModal';
 import EditLocationsModal from './EditLocationsModal';
-import AddLocationsModal from './AddLocationsModal';
 
 interface Option {
   label: string;
@@ -42,21 +42,21 @@ export default function Surveys() {
           client.models.TestPresetProject.delete({
             testPresetId: pool.value,
             projectId: surveyId,
-          })
+          }),
         ),
       ...pools
         .filter(
           (pool) =>
             !originalSelectedLocationPools.current[surveyId].some(
-              (p) => p.value === pool.value
-            )
+              (p) => p.value === pool.value,
+            ),
         )
         .map((pool) =>
           client.models.TestPresetProject.create({
             testPresetId: pool.value,
             projectId: surveyId,
             group: organizationId,
-          })
+          }),
         ),
     ]);
 
@@ -83,7 +83,7 @@ export default function Surveys() {
               ...prev,
               [survey.id]: selectedLocationPools.flatMap((pool) => {
                 const preset = locationPools.find(
-                  (p) => p.id === pool.testPresetId
+                  (p) => p.id === pool.testPresetId,
                 );
                 return preset
                   ? [{ label: preset.name, value: pool.testPresetId }]
@@ -92,7 +92,7 @@ export default function Surveys() {
             };
             return originalSelectedLocationPools.current;
           });
-        })
+        }),
       );
     }
 
@@ -184,7 +184,7 @@ export default function Surveys() {
   }, [modalToShow]);
 
   return (
-    <div className='flex flex-col gap-2 mt-4 w-full'>
+    <div className='mt-4 flex w-full flex-col gap-2'>
       <h5 className='mb-0'>Surveys</h5>
       <MyTable
         tableHeadings={[

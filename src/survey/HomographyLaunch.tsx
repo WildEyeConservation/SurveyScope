@@ -1,22 +1,22 @@
-import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Combobox } from '@/components/ui/combobox';
-import { LoadingProgressCard } from './LoadingProgressCard';
-import { uploadWorkflowFile } from '../storage/workflowFiles';
+import pLimit from 'p-limit';
+import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
-import { logAdminAction } from '../utils/adminActionLogger';
-import { fetchAllPaginatedResults } from '../utils';
 import { loadRows } from '../rowChunks';
-import type { DataClient } from '../../amplify/shared/data-schema.generated';
-import pLimit from 'p-limit';
+import { uploadWorkflowFile } from '../storage/workflowFiles';
+import { fetchAllPaginatedResults } from '../utils';
+import { logAdminAction } from '../utils/adminActionLogger';
+import { LoadingProgressCard } from './LoadingProgressCard';
 
 type LaunchHandler = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 };
 
@@ -81,7 +81,7 @@ const INITIAL_LOAD_STATUS: LoadStatus = {
 function calculatePairs(
   annotations: AnnotationItem[],
   neighbourCache: Map<string, NeighbourItem[]>,
-  includeSkipped: boolean
+  includeSkipped: boolean,
 ): { pairs: Map<string, PairInfo>; annotatedImageIds: Set<string> } {
   const annotatedImageIds = new Set<string>();
   for (const a of annotations) annotatedImageIds.add(a.imageId);
@@ -100,7 +100,8 @@ function calculatePairs(
       const noHomography = !nb.homography || nb.homography.length !== 9;
       if (!noHomography || (nb.skipped && !includeSkipped)) continue;
 
-      if (!annotatedImageIds.has(imageId) && !annotatedImageIds.has(otherId)) continue;
+      if (!annotatedImageIds.has(imageId) && !annotatedImageIds.has(otherId))
+        continue;
 
       const primaryId = annotatedImageIds.has(imageId) ? imageId : otherId;
       const secondaryId = primaryId === imageId ? otherId : imageId;
@@ -132,9 +133,7 @@ export default function HomographyLaunch({
 
   // ── Up-front data loading state ──
   const [loading, setLoading] = useState(true);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>(
-    INITIAL_LOAD_STATUS
-  );
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>(INITIAL_LOAD_STATUS);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // ── Cached data (populated once on mount) ──
@@ -143,12 +142,16 @@ export default function HomographyLaunch({
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
 
   // ── User options ──
-  const [selectedCategories, setSelectedCategories] = useState<CategoryOption[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<
+    CategoryOption[]
+  >([]);
   const [batchSize, setBatchSize] = useState<number>(50);
   const [hidden, setHidden] = useState(false);
   const [includeSkipped, setIncludeSkipped] = useState(false);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
-  const [queueName, setQueueName] = useState<string>(`Homography - ${annotationSet.name}`);
+  const [queueName, setQueueName] = useState<string>(
+    `Homography - ${annotationSet.name}`,
+  );
 
   // ── Up-front fetch: categories + all annotations + neighbours ──
   useEffect(() => {
@@ -196,10 +199,10 @@ export default function HomographyLaunch({
               if (!cancelled)
                 setLoadStatus((s) => ({ ...s, annotations: count }));
             },
-          }
+          },
         );
         const annotations = rows.filter(
-          (row): row is AnnotationItem => !!row.imageId && !!row.categoryId
+          (row): row is AnnotationItem => !!row.imageId && !!row.categoryId,
         );
         if (cancelled) return;
         setAllAnnotations(annotations);
@@ -216,7 +219,9 @@ export default function HomographyLaunch({
         // 4. Fetch neighbours for all annotated images
         const totalImages = annotatedImageIds.size;
         const neighbourCache = neighbourCacheRef.current;
-        const uncachedImageIds = [...annotatedImageIds].filter((id) => !neighbourCache.has(id));
+        const uncachedImageIds = [...annotatedImageIds].filter(
+          (id) => !neighbourCache.has(id),
+        );
         const cachedCount = totalImages - uncachedImageIds.length;
         setLoadStatus((s) => ({ ...s, neighbours: cachedCount }));
 
@@ -229,17 +234,30 @@ export default function HomographyLaunch({
               limit(async () => {
                 const [n1, n2] = await Promise.all([
                   fetchAllPaginatedResults<NeighbourItem>(
-                    (client.models.ImageNeighbour as any).imageNeighboursByImage1key,
-                    { image1Id: imageId, limit: 10000, selectionSet: NEIGHBOUR_SELECTION }
+                    (client.models.ImageNeighbour as any)
+                      .imageNeighboursByImage1key,
+                    {
+                      image1Id: imageId,
+                      limit: 10000,
+                      selectionSet: NEIGHBOUR_SELECTION,
+                    },
                   ),
                   fetchAllPaginatedResults<NeighbourItem>(
-                    (client.models.ImageNeighbour as any).imageNeighboursByImage2key,
-                    { image2Id: imageId, limit: 10000, selectionSet: NEIGHBOUR_SELECTION }
+                    (client.models.ImageNeighbour as any)
+                      .imageNeighboursByImage2key,
+                    {
+                      image2Id: imageId,
+                      limit: 10000,
+                      selectionSet: NEIGHBOUR_SELECTION,
+                    },
                   ),
                 ]);
                 neighbourCache.set(imageId, [...n1, ...n2]);
                 completed++;
-                if (completed % 50 === 0 || completed === uncachedImageIds.length) {
+                if (
+                  completed % 50 === 0 ||
+                  completed === uncachedImageIds.length
+                ) {
                   if (!cancelled) {
                     setLoadStatus((s) => ({
                       ...s,
@@ -247,8 +265,8 @@ export default function HomographyLaunch({
                     }));
                   }
                 }
-              })
-            )
+              }),
+            ),
           );
         }
 
@@ -269,7 +287,9 @@ export default function HomographyLaunch({
     }
 
     loadAll();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [client, project.id, annotationSet.id]);
 
   // ── Enrich category options with completion status ──
@@ -278,8 +298,14 @@ export default function HomographyLaunch({
     return categoryOptions
       .filter((opt) => allAnnotations.some((a) => a.categoryId === opt.value))
       .map((opt) => {
-        const catAnnotations = allAnnotations.filter((a) => a.categoryId === opt.value);
-        const { pairs } = calculatePairs(catAnnotations, neighbourCacheRef.current, false);
+        const catAnnotations = allAnnotations.filter(
+          (a) => a.categoryId === opt.value,
+        );
+        const { pairs } = calculatePairs(
+          catAnnotations,
+          neighbourCacheRef.current,
+          false,
+        );
         const complete = pairs.size === 0;
         return {
           ...opt,
@@ -298,13 +324,19 @@ export default function HomographyLaunch({
   // ── Calculate pairs from cache (instant, no network) ──
   const pairCount = useMemo(() => {
     if (loading) return null;
-    const { pairs } = calculatePairs(effectiveAnnotations, neighbourCacheRef.current, includeSkipped);
+    const { pairs } = calculatePairs(
+      effectiveAnnotations,
+      neighbourCacheRef.current,
+      includeSkipped,
+    );
     return pairs.size;
   }, [loading, effectiveAnnotations, includeSkipped]);
 
   // ── Enable/disable Launch button ──
   useEffect(() => {
-    setLaunchDisabled(loading || launching || pairCount === 0 || pairCount === null);
+    setLaunchDisabled(
+      loading || launching || pairCount === 0 || pairCount === null,
+    );
   }, [loading, launching, pairCount, setLaunchDisabled]);
 
   // ── Refs for stable launch handler ──
@@ -314,24 +346,36 @@ export default function HomographyLaunch({
   const includeSkippedRef = useRef(includeSkipped);
   const effectiveAnnotationsRef = useRef(effectiveAnnotations);
 
-  useEffect(() => { batchSizeRef.current = batchSize; }, [batchSize]);
-  useEffect(() => { hiddenRef.current = hidden; }, [hidden]);
-  useEffect(() => { queueNameRef.current = queueName; }, [queueName]);
-  useEffect(() => { includeSkippedRef.current = includeSkipped; }, [includeSkipped]);
-  useEffect(() => { effectiveAnnotationsRef.current = effectiveAnnotations; }, [effectiveAnnotations]);
+  useEffect(() => {
+    batchSizeRef.current = batchSize;
+  }, [batchSize]);
+  useEffect(() => {
+    hiddenRef.current = hidden;
+  }, [hidden]);
+  useEffect(() => {
+    queueNameRef.current = queueName;
+  }, [queueName]);
+  useEffect(() => {
+    includeSkippedRef.current = includeSkipped;
+  }, [includeSkipped]);
+  useEffect(() => {
+    effectiveAnnotationsRef.current = effectiveAnnotations;
+  }, [effectiveAnnotations]);
 
   // ── Expose launch handler to parent ──
   useEffect(() => {
     setHomographyLaunchHandler({
       execute: async (
         onProgress: (msg: string) => void,
-        onLaunchConfirmed: () => void
+        onLaunchConfirmed: () => void,
       ) => {
         const neighbourCache = neighbourCacheRef.current;
         const annotations = effectiveAnnotationsRef.current;
 
         const { pairs } = calculatePairs(
-          annotations, neighbourCache, includeSkippedRef.current
+          annotations,
+          neighbourCache,
+          includeSkippedRef.current,
         );
 
         if (pairs.size === 0) {
@@ -347,11 +391,15 @@ export default function HomographyLaunch({
         }
 
         onLaunchConfirmed();
-        onProgress(`Fetching metadata for ${allInvolvedImageIds.size} images...`);
+        onProgress(
+          `Fetching metadata for ${allInvolvedImageIds.size} images...`,
+        );
 
         // Fetch image metadata (not cached during preview — only needed at launch)
         const imageMetaMap = await fetchImageMetadata(
-          client, [...allInvolvedImageIds], onProgress
+          client,
+          [...allInvolvedImageIds],
+          onProgress,
         );
 
         // Build manifest items
@@ -380,7 +428,7 @@ export default function HomographyLaunch({
         const manifestKey = await uploadWorkflowFile(
           'queue-manifest',
           project.id,
-          JSON.stringify({ items: manifestItems })
+          JSON.stringify({ items: manifestItems }),
         );
 
         // Call lambda with manifest reference
@@ -403,7 +451,7 @@ export default function HomographyLaunch({
           user.userId,
           `Launched Homography task for ${labelCount} categories, ${manifestItems.length} pairs in annotation set "${annotationSet.name}"`,
           project.id,
-          (project as any).organizationId
+          (project as any).organizationId,
         ).catch(console.error);
       },
     });
@@ -425,7 +473,7 @@ export default function HomographyLaunch({
 
   if (loadError) {
     return (
-      <div className='px-4 pb-4 pt-1'>
+      <div className='px-4 pt-1 pb-4'>
         <span className='text-danger'>Failed to load: {loadError}</span>
       </div>
     );
@@ -460,14 +508,18 @@ export default function HomographyLaunch({
           <div className='flex items-center gap-2'>
             <span style={{ fontSize: '14px' }}>
               {pairCount === 0 ? (
-                <span className='text-warning'>No pairs requiring homography found.</span>
+                <span className='text-warning'>
+                  No pairs requiring homography found.
+                </span>
               ) : (
                 <>
-                  <strong>{pairCount.toLocaleString()}</strong>{' '}
-                  pair{pairCount !== 1 ? 's' : ''} to launch
+                  <strong>{pairCount.toLocaleString()}</strong> pair
+                  {pairCount !== 1 ? 's' : ''} to launch
                   {selectedCategories.length > 0 && (
                     <span className='text-muted-foreground'>
-                      {' '}(filtered to {selectedCategories.length} label{selectedCategories.length !== 1 ? 's' : ''})
+                      {' '}
+                      (filtered to {selectedCategories.length} label
+                      {selectedCategories.length !== 1 ? 's' : ''})
                     </span>
                   )}
                 </>
@@ -482,7 +534,7 @@ export default function HomographyLaunch({
             <div>
               <Label className='mb-0'>Filter by Labels</Label>
               <span
-                className='text-muted-foreground block mb-1'
+                className='mb-1 block text-muted-foreground'
                 style={{ fontSize: '12px' }}
               >
                 By default all labels are included. Select specific labels to
@@ -499,11 +551,12 @@ export default function HomographyLaunch({
               />
               {selectedCategories.length > 0 && (
                 <span
-                  className='text-warning block mt-1'
+                  className='mt-1 block text-warning'
                   style={{ fontSize: '12px' }}
                 >
-                  Note: After homographies are created, all labels affected by the
-                  new homographies will be updated, not just the ones in this filter.
+                  Note: After homographies are created, all labels affected by
+                  the new homographies will be updated, not just the ones in
+                  this filter.
                 </span>
               )}
             </div>
@@ -513,7 +566,9 @@ export default function HomographyLaunch({
                 <Switch
                   id={`${switchId}-advanced`}
                   checked={showAdvancedOptions}
-                  onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  onCheckedChange={() =>
+                    setShowAdvancedOptions(!showAdvancedOptions)
+                  }
                   disabled={launching}
                 />
                 <Label htmlFor={`${switchId}-advanced`} className='mb-0'>
@@ -524,13 +579,13 @@ export default function HomographyLaunch({
 
             {showAdvancedOptions && (
               <div
-                className='flex flex-col gap-4 border border-dark shadow-sm p-2'
+                className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
                 style={{ backgroundColor: '#697582' }}
               >
                 <div>
                   <Label className='mb-0'>Job Name</Label>
                   <span
-                    className='text-muted-foreground block mb-1'
+                    className='mb-1 block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
                     The name shown on the Jobs page.
@@ -546,7 +601,7 @@ export default function HomographyLaunch({
                 <div>
                   <Label className='mb-0'>Batch Size</Label>
                   <span
-                    className='text-muted-foreground block mb-1'
+                    className='mb-1 block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
                     The number of pairs a user can pick up at a time.
@@ -555,9 +610,7 @@ export default function HomographyLaunch({
                     type='number'
                     value={batchSize}
                     onChange={(e) =>
-                      setBatchSize(
-                        Number((e.target as HTMLInputElement).value)
-                      )
+                      setBatchSize(Number((e.target as HTMLInputElement).value))
                     }
                     disabled={launching}
                   />
@@ -576,7 +629,7 @@ export default function HomographyLaunch({
                     </Label>
                   </div>
                   <span
-                    className='text-muted-foreground block'
+                    className='block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
                     When enabled, only organisation admins and admins of this
@@ -597,7 +650,7 @@ export default function HomographyLaunch({
                     </Label>
                   </div>
                   <span
-                    className='text-muted-foreground block'
+                    className='block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
                     When enabled, pairs that were previously skipped will be
@@ -615,17 +668,31 @@ export default function HomographyLaunch({
 
 // ── Data fetching helpers ──
 
-const NEIGHBOUR_SELECTION = ['image1Id', 'image2Id', 'homography', 'skipped'] as const;
+const NEIGHBOUR_SELECTION = [
+  'image1Id',
+  'image2Id',
+  'homography',
+  'skipped',
+] as const;
 
 const IMAGE_SELECTION = [
-  'id', 'width', 'height', 'timestamp', 'originalPath', 'projectId',
-  'latitude', 'longitude', 'altitude_wgs84', 'cameraSerial', 'group',
+  'id',
+  'width',
+  'height',
+  'timestamp',
+  'originalPath',
+  'projectId',
+  'latitude',
+  'longitude',
+  'altitude_wgs84',
+  'cameraSerial',
+  'group',
 ] as const;
 
 async function fetchImageMetadata(
   client: DataClient,
   imageIds: string[],
-  onProgress: (msg: string) => void
+  onProgress: (msg: string) => void,
 ): Promise<Map<string, HomographyImageMeta>> {
   const result = new Map<string, HomographyImageMeta>();
   const limit = pLimit(15);
@@ -637,7 +704,7 @@ async function fetchImageMetadata(
         try {
           const { data } = await client.models.Image.get(
             { id },
-            { selectionSet: IMAGE_SELECTION }
+            { selectionSet: IMAGE_SELECTION },
           );
           if (data) result.set(id, data as unknown as HomographyImageMeta);
         } catch (err) {
@@ -645,10 +712,12 @@ async function fetchImageMetadata(
         }
         completed++;
         if (completed % 100 === 0 || completed === imageIds.length) {
-          onProgress(`Fetched metadata for ${completed}/${imageIds.length} images...`);
+          onProgress(
+            `Fetched metadata for ${completed}/${imageIds.length} images...`,
+          );
         }
-      })
-    )
+      }),
+    ),
   );
 
   return result;
@@ -658,11 +727,14 @@ async function fetchImageMetadata(
 
 async function sendLaunchRequest(
   client: DataClient,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ) {
   const requestPayload = JSON.stringify(payload);
   try {
-    await (client as any).mutations.launchHomography({ request: requestPayload }, { retry: false });
+    await (client as any).mutations.launchHomography(
+      { request: requestPayload },
+      { retry: false },
+    );
   } catch (error: any) {
     if (shouldIgnoreLaunchError(error)) {
       console.warn('Ignoring launch lambda timeout response', error);
@@ -681,6 +753,6 @@ function shouldIgnoreLaunchError(error: any): boolean {
     }
   }
   return messages.some((msg) =>
-    /timed out|timeout|Task timed out|socket hang up/i.test(msg)
+    /timed out|timeout|Task timed out|socket hang up/i.test(msg),
   );
 }

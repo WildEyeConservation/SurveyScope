@@ -53,7 +53,7 @@ export function AnnotationLegendOverlay({
   const [expanded, setExpanded] = useState(false);
   const sortedCategories = useMemo(
     () => [...categories].sort((a, b) => a.name.localeCompare(b.name)),
-    [categories]
+    [categories],
   );
   if (sortedCategories.length === 0) return null;
 

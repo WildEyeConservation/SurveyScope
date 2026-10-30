@@ -1,13 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label as FormLabel } from '@/components/ui/label';
-import { useRecordHotkeys } from 'react-hotkeys-hook';
-import MyTable from '../Table';
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useContext } from 'react';
-import { GlobalContext } from '../Context';
 import { useQueryClient } from '@tanstack/react-query';
 import pLimit from 'p-limit';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useRecordHotkeys } from 'react-hotkeys-hook';
+import { GlobalContext } from '../Context';
+import MyTable from '../Table';
 import { fetchAllPaginatedResults } from '../utils';
 import { formatShortcutKey } from '../utils/hotkeys';
 
@@ -50,7 +49,12 @@ export default function LabelEditor({
   importLabels?: Label[];
   setHandleSave: React.Dispatch<
     React.SetStateAction<
-      ((annotationSetId: string, projectId: string, group: string) => Promise<void>) | null
+      | ((
+          annotationSetId: string,
+          projectId: string,
+          group: string,
+        ) => Promise<void>)
+      | null
     >
   >;
   isEditing?: boolean;
@@ -65,7 +69,9 @@ export default function LabelEditor({
   const { client } = useContext(GlobalContext)!;
   const defaultLabelsRef = useRef<Label[]>(defaultLabels);
   const onStatusChangeRef = useRef(onStatusChange);
-  useEffect(() => { onStatusChangeRef.current = onStatusChange; }, [onStatusChange]);
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange;
+  }, [onStatusChange]);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -75,20 +81,26 @@ export default function LabelEditor({
   const handleSave = useCallback(
     async (annotationSetId: string, projectId: string, group: string) => {
       const filteredLabels = labels.filter(
-        (l) => l.name !== '' && l.shortcutKey !== ''
+        (l) => l.name !== '' && l.shortcutKey !== '',
       );
 
       onStatusChangeRef.current?.(
-        modelName === 'Category' ? 'Updating labels...' : 'Updating info tags...'
+        modelName === 'Category'
+          ? 'Updating labels...'
+          : 'Updating info tags...',
       );
       const model = client.models[modelName] as EditableLabelModel;
 
       if (isEditing) {
         const currentDefaultLabels: Label[] = defaultLabelsRef.current;
-        const filteredLabelIds = new Set<string>(filteredLabels.map((l: Label) => l.id));
-        const defaultLabelIds = new Set<string>(currentDefaultLabels.map((l: Label) => l.id));
+        const filteredLabelIds = new Set<string>(
+          filteredLabels.map((l: Label) => l.id),
+        );
+        const defaultLabelIds = new Set<string>(
+          currentDefaultLabels.map((l: Label) => l.id),
+        );
         const labelsToDelete = currentDefaultLabels.filter(
-          (l) => !filteredLabelIds.has(l.id)
+          (l) => !filteredLabelIds.has(l.id),
         );
 
         // Remove dependent links before their tag.
@@ -96,13 +108,12 @@ export default function LabelEditor({
           await Promise.all(
             labelsToDelete.map(async (l) => {
               const links = await fetchAllPaginatedResults(
-                client.models.AnnotationInfoTag
-                  .annotationInfoTagsByInfoTagId,
+                client.models.AnnotationInfoTag.annotationInfoTagsByInfoTagId,
                 {
                   infoTagId: l.id,
                   selectionSet: ['annotationId', 'infoTagId'] as const,
                   limit: 1000,
-                }
+                },
               );
               const limit = pLimit(10);
               await Promise.all(
@@ -111,11 +122,11 @@ export default function LabelEditor({
                     client.models.AnnotationInfoTag.delete({
                       annotationId: link.annotationId,
                       infoTagId: link.infoTagId,
-                    })
-                  )
-                )
+                    }),
+                  ),
+                ),
               );
-            })
+            }),
           );
         }
 
@@ -125,34 +136,40 @@ export default function LabelEditor({
           // labels to create
           ...filteredLabels
             .filter((l) => !defaultLabelIds.has(l.id))
-            .map((l) => model.create({
-              projectId,
+            .map((l) =>
+              model.create({
+                projectId,
+                name: l.name,
+                shortcutKey: l.shortcutKey,
+                color: l.color,
+                annotationSetId,
+                group,
+              }),
+            ),
+          // labels to update
+          ...filteredLabels
+            .filter((l) => defaultLabelIds.has(l.id))
+            .map((l) =>
+              model.update({
+                id: l.id,
+                name: l.name,
+                shortcutKey: l.shortcutKey,
+                color: l.color,
+              }),
+            ),
+        ]);
+      } else {
+        await Promise.all(
+          filteredLabels.map((l) =>
+            model.create({
               name: l.name,
               shortcutKey: l.shortcutKey,
               color: l.color,
               annotationSetId,
+              projectId,
               group,
-            })),
-          // labels to update
-          ...filteredLabels
-            .filter((l) => defaultLabelIds.has(l.id))
-            .map((l) => model.update({
-              id: l.id,
-              name: l.name,
-              shortcutKey: l.shortcutKey,
-              color: l.color,
-            })),
-        ]);
-      } else {
-        await Promise.all(
-          filteredLabels.map((l) => model.create({
-            name: l.name,
-            shortcutKey: l.shortcutKey,
-            color: l.color,
-            annotationSetId,
-            projectId,
-            group,
-          }))
+            }),
+          ),
         );
       }
 
@@ -177,7 +194,7 @@ export default function LabelEditor({
         }),
       ]);
     },
-    [client, labels, isEditing, modelName, queryClient]
+    [client, labels, isEditing, modelName, queryClient],
   );
 
   useEffect(() => {
@@ -194,7 +211,7 @@ export default function LabelEditor({
     <div>
       <FormLabel className='mb-0'>{title}</FormLabel>
       <span
-        className='text-muted-foreground block mb-1'
+        className='mb-1 block text-muted-foreground'
         style={{ fontSize: 12, lineHeight: 1.2 }}
       >
         {description}
@@ -219,8 +236,8 @@ export default function LabelEditor({
               onChange={(e) =>
                 setLabels(
                   labels.map((l) =>
-                    l.id === label.id ? { ...l, name: e.target.value } : l
-                  )
+                    l.id === label.id ? { ...l, name: e.target.value } : l,
+                  ),
                 )
               }
             />,
@@ -236,25 +253,33 @@ export default function LabelEditor({
               onBlur={() => {
                 stop();
                 const newShortcutKey = Array.from(keys).join('+');
-                if (newShortcutKey === ' ' || newShortcutKey.toLowerCase() === 'space') {
+                if (
+                  newShortcutKey === ' ' ||
+                  newShortcutKey.toLowerCase() === 'space'
+                ) {
                   alert(
-                    `Spacebar is reserved and cannot be used as a ${title.toLowerCase()} shortcut.`
+                    `Spacebar is reserved and cannot be used as a ${title.toLowerCase()} shortcut.`,
                   );
                   return;
                 }
-                if (newShortcutKey === 'equal' || newShortcutKey === 'shift+equal' || newShortcutKey === 'add') {
+                if (
+                  newShortcutKey === 'equal' ||
+                  newShortcutKey === 'shift+equal' ||
+                  newShortcutKey === 'add'
+                ) {
                   alert(
-                    `"+" and "=" are reserved and cannot be used as a ${title.toLowerCase()} shortcut.`
+                    `"+" and "=" are reserved and cannot be used as a ${title.toLowerCase()} shortcut.`,
                   );
                   return;
                 }
                 if (
                   labels.some(
-                    (l) => l.id !== label.id && l.shortcutKey === newShortcutKey
+                    (l) =>
+                      l.id !== label.id && l.shortcutKey === newShortcutKey,
                   )
                 ) {
                   alert(
-                    `This shortcut key is already in use by another ${modelName === 'Category' ? 'label' : 'info tag'}.`
+                    `This shortcut key is already in use by another ${modelName === 'Category' ? 'label' : 'info tag'}.`,
                   );
                   return;
                 }
@@ -262,11 +287,11 @@ export default function LabelEditor({
                   labels.map((l) =>
                     l.id === label.id
                       ? {
-                        ...l,
-                        shortcutKey: newShortcutKey,
-                      }
-                      : l
-                  )
+                          ...l,
+                          shortcutKey: newShortcutKey,
+                        }
+                      : l,
+                  ),
                 );
               }}
               onFocusCapture={() => setActiveRowId(label.id)}
@@ -275,7 +300,7 @@ export default function LabelEditor({
                   setActiveRowId(null);
                 }
               }}
-              onChange={() => { }}
+              onChange={() => {}}
             />,
             <Input
               type='color'
@@ -286,8 +311,8 @@ export default function LabelEditor({
               onChange={(event) => {
                 setLabels(
                   labels.map((l) =>
-                    l.id === label.id ? { ...l, color: event.target.value } : l
-                  )
+                    l.id === label.id ? { ...l, color: event.target.value } : l,
+                  ),
                 );
               }}
             />,
@@ -309,7 +334,7 @@ export default function LabelEditor({
         onClick={() => {
           if (labels.some((l) => l.name === '' || l.shortcutKey === '')) {
             alert(
-              `Please complete the current ${modelName === 'Category' ? 'label' : 'info tag'} before adding another`
+              `Please complete the current ${modelName === 'Category' ? 'label' : 'info tag'} before adding another`,
             );
             return;
           }

@@ -26,7 +26,7 @@ test('untagged sets strip API relationship loaders before annotations reach map 
   const result = await attachInfoTagsToAnnotations(
     client,
     annotations,
-    'set-1'
+    'set-1',
   );
   assert.deepEqual(result, [
     { id: 'a', infoTags: undefined },
@@ -64,7 +64,7 @@ test('tagged sets resolve sorted names and retain empty arrays for untagged anno
       { id: 'tagged', infoTags: async () => ({ data: [] }) },
       { id: 'untagged' },
     ],
-    'set-1'
+    'set-1',
   );
   assert.deepEqual(result, [
     { id: 'tagged', infoTags: ['Adult', 'Zebra'] },

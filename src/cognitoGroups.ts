@@ -1,6 +1,6 @@
-import { useSyncExternalStore } from 'react';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { Hub } from 'aws-amplify/utils';
+import { useSyncExternalStore } from 'react';
 
 let groups: string[] = [];
 const listeners = new Set<() => void>();

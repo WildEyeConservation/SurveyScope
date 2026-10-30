@@ -1,14 +1,14 @@
-import React, { useContext, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { Modal, Body, Header, Footer, Title } from './Modal';
+import { useQuery } from '@tanstack/react-query';
+import React, { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from './Context';
+import { Body, Footer, Header, Modal, Title } from './Modal';
 import { Tab, Tabs } from './Tabs';
 import { Schema } from './amplify/client-schema';
 import LabelEditor from './survey/LabelEditor';
-import { useQuery } from '@tanstack/react-query';
 
 interface EditAnnotationSetModalProps {
   show: boolean;
@@ -35,18 +35,20 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveLabels, setSaveLabels] = useState<
-    ((
-      annotationSetId: string,
-      projectId: string,
-      group: string
-    ) => Promise<void>) | null
+    | ((
+        annotationSetId: string,
+        projectId: string,
+        group: string,
+      ) => Promise<void>)
+    | null
   >(null);
   const [saveInfoTags, setSaveInfoTags] = useState<
-    ((
-      annotationSetId: string,
-      projectId: string,
-      group: string
-    ) => Promise<void>) | null
+    | ((
+        annotationSetId: string,
+        projectId: string,
+        group: string,
+      ) => Promise<void>)
+    | null
   >(null);
 
   const { data: fetchedCategories, isFetching: categoriesLoading } = useQuery({
@@ -55,7 +57,7 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
     staleTime: 0,
     queryFn: async () => {
       const { data } = await client.models.Category.categoriesByAnnotationSetId(
-        { annotationSetId: annotationSet.id }
+        { annotationSetId: annotationSet.id },
       );
       return data ?? [];
     },
@@ -65,10 +67,9 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
     enabled: show,
     staleTime: 0,
     queryFn: async () => {
-      const { data } =
-        await client.models.InfoTag.infoTagsByAnnotationSetId({
-          annotationSetId: annotationSet.id,
-        });
+      const { data } = await client.models.InfoTag.infoTagsByAnnotationSetId({
+        annotationSetId: annotationSet.id,
+      });
       return data ?? [];
     },
   });
@@ -90,14 +91,14 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
         await saveLabels(
           annotationSet.id,
           project.id,
-          project.group || project.organizationId
+          project.group || project.organizationId,
         );
       }
       if (saveInfoTags) {
         await saveInfoTags(
           annotationSet.id,
           project.id,
-          project.group || project.organizationId
+          project.group || project.organizationId,
         );
       }
       setStatusMessage('');
@@ -106,7 +107,7 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
     } catch (err) {
       console.error('Failed to save annotation set edits', err);
       setErrorMessage(
-        err instanceof Error ? err.message : 'Failed to save changes'
+        err instanceof Error ? err.message : 'Failed to save changes',
       );
     } finally {
       setIsSaving(false);
@@ -186,11 +187,14 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
         </Tabs>
         <Footer>
           {errorMessage ? (
-            <span className='text-danger me-auto' style={{ fontSize: 12 }}>
+            <span className='me-auto text-danger' style={{ fontSize: 12 }}>
               {errorMessage}
             </span>
           ) : statusMessage ? (
-            <span className='text-muted-foreground me-auto flex items-center gap-2' style={{ fontSize: 12 }}>
+            <span
+              className='me-auto flex items-center gap-2 text-muted-foreground'
+              style={{ fontSize: 12 }}
+            >
               <Spinner size='sm' />
               {statusMessage}
             </span>

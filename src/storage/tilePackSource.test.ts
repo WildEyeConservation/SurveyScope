@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { encodeHeader, pyramid } from '../../shared/tilePack';
 import { TilePackRequestFailed, type TilePack } from './tilePackReader';
 import {
@@ -68,7 +68,7 @@ test('pack tiles are authorized before the cache and cached with their type', as
       authorize: async () => {
         order.push('authorize');
       },
-    })
+    }),
   );
   ops.readCache = async () => {
     order.push('cache');
@@ -87,7 +87,7 @@ test('revoked access is not hidden by cached bytes', async () => {
       authorize: async () => {
         throw new Error('Unauthorized');
       },
-    })
+    }),
   );
   ops.readCache = async () => new Blob(['cached']);
   await assert.rejects(loadPackTile(ops), /Unauthorized/);
@@ -104,7 +104,7 @@ test('a pack that has gone falls back to legacy and is forgotten', async () => {
         tile: async () => {
           throw error;
         },
-      })
+      }),
     );
     assert.equal(await (await loadPackTile(ops)).text(), 'legacy');
     assert.deepEqual(events, ['open', 'cache', 'forget', 'legacy']);
@@ -117,7 +117,7 @@ test('transient pack failures propagate instead of falling back', async () => {
       tile: async () => {
         throw new TilePackRequestFailed(503);
       },
-    })
+    }),
   );
   await assert.rejects(loadPackTile(ops), TilePackRequestFailed);
   assert.deepEqual(events, ['open', 'cache']);
@@ -147,7 +147,7 @@ test('registry retries transient failures without marking the pack missing', asy
     registry.get('a', async () => {
       opens++;
       throw new TilePackRequestFailed(503);
-    })
+    }),
   );
   const open = fakePack();
   assert.equal(
@@ -155,7 +155,7 @@ test('registry retries transient failures without marking the pack missing', asy
       opens++;
       return open;
     }),
-    open
+    open,
   );
   assert.equal(opens, 2);
 });
@@ -166,7 +166,7 @@ test('registry treats a pack that has gone as missing and evicts the oldest', as
     await registry.get('gone', async () => {
       throw new TilePackRequestFailed(404);
     }),
-    null
+    null,
   );
   let opens = 0;
   const open = async () => {
@@ -197,12 +197,12 @@ test('a pack cut from other dimensions is not used', async () => {
   const sign = async () => ({ url: 'u', expiresAt: Date.now() + 3_600_000 });
   assert.equal(
     await openSignedTilePack(sign, { width: 601, height: 300 }, { fetch }),
-    null
+    null,
   );
   const open = await openSignedTilePack(
     sign,
     { width: 600, height: 300 },
-    { fetch }
+    { fetch },
   );
   assert.equal(open?.format, 'image/webp');
   assert.equal(await openSignedTilePack(async () => null, meta), null);

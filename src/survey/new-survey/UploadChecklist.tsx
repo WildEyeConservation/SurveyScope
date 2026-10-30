@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { PencilIcon } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { PencilIcon } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 /** done: false greys out a step that was skipped. */
 export interface ChecklistLine {
@@ -44,9 +44,7 @@ export default function UploadChecklist({
   return (
     <div className='flex flex-col gap-3'>
       <div className='flex items-center gap-3'>
-        <span className='text-sm'>
-          Check each step before you continue.
-        </span>
+        <span className='text-sm'>Check each step before you continue.</span>
         <span className='ml-auto text-xs text-muted-foreground'>
           {done} of {items.length} checked
         </span>
@@ -54,7 +52,9 @@ export default function UploadChecklist({
       <div className='h-1 bg-white/15'>
         <div
           className='h-full bg-success transition-[width]'
-          style={{ width: `${items.length ? (done / items.length) * 100 : 0}%` }}
+          style={{
+            width: `${items.length ? (done / items.length) * 100 : 0}%`,
+          }}
         />
       </div>
       <div className='grid gap-3 md:grid-cols-2'>
@@ -68,7 +68,7 @@ export default function UploadChecklist({
                 'flex gap-3 border p-3 transition-colors',
                 isChecked
                   ? 'border-success/70 bg-success/10'
-                  : 'border-white/15 bg-white/[0.07]'
+                  : 'border-white/15 bg-white/[0.07]',
               )}
             >
               <Checkbox
@@ -100,7 +100,9 @@ export default function UploadChecklist({
                   {item.lines.map((line, index) => (
                     <li
                       key={index}
-                      className={cn(line.done === false && 'text-muted-foreground')}
+                      className={cn(
+                        line.done === false && 'text-muted-foreground',
+                      )}
                     >
                       {line.text}
                     </li>

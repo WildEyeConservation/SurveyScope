@@ -4,7 +4,7 @@ export function completionNavigationTarget(
   views: readonly { completion: PairCompletionState }[],
   lanes: readonly { entries: readonly number[] }[],
   activeLane: number,
-  currentIndex: number
+  currentIndex: number,
 ): { target: number; lane: number; earlier?: number } | undefined {
   const incomplete = (index: number) =>
     index !== currentIndex && views[index]?.completion.status === 'incomplete';
@@ -34,7 +34,7 @@ export function completionNavigationTarget(
     if (incomplete(index)) return target(index, laneFor(index));
   }
   const later = views.findIndex(
-    (_, index) => index > currentIndex && incomplete(index)
+    (_, index) => index > currentIndex && incomplete(index),
   );
   if (later !== -1) return { target: later, lane: laneFor(later) };
   const any = views.findIndex((_, index) => incomplete(index));

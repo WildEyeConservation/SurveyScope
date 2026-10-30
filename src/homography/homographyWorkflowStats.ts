@@ -3,9 +3,14 @@ import type { RecordWorkflowTaskInput } from '../recordWorkflowTask';
 type PointIdentity = { id: string };
 export const SUGGESTED_POINT_ID_PREFIX = 'suggested-';
 
-export function countSuggestedPointsKept(points: { p1: PointIdentity[]; p2: PointIdentity[] }): number {
-  return points.p1.filter((point, index) =>
-    point.id.startsWith(SUGGESTED_POINT_ID_PREFIX) && point.id === points.p2[index]?.id
+export function countSuggestedPointsKept(points: {
+  p1: PointIdentity[];
+  p2: PointIdentity[];
+}): number {
+  return points.p1.filter(
+    (point, index) =>
+      point.id.startsWith(SUGGESTED_POINT_ID_PREFIX) &&
+      point.id === points.p2[index]?.id,
   ).length;
 }
 
@@ -28,8 +33,12 @@ export function homographyWorkflowTask(input: {
     waitingTimeMs: input.waitingTimeMs,
     metrics: {
       saved: input.skipped ? 0 : 1,
-      controlPointPairs: input.skipped ? 0 : Math.min(input.points.p1.length, input.points.p2.length),
-      suggestedPointsRetained: input.skipped ? 0 : countSuggestedPointsKept(input.points),
+      controlPointPairs: input.skipped
+        ? 0
+        : Math.min(input.points.p1.length, input.points.p2.length),
+      suggestedPointsRetained: input.skipped
+        ? 0
+        : countSuggestedPointsKept(input.points),
     },
   };
 }
@@ -38,17 +47,23 @@ export function homographyWorkflowTask(input: {
 export async function finalizeHomographyTask(options: {
   persist: () => Promise<{ data?: unknown; errors?: { message?: string }[] }>;
   progress: { counted: boolean };
-  incrementCount: () => Promise<{ errors?: { message?: string }[] } | undefined>;
+  incrementCount: () => Promise<
+    { errors?: { message?: string }[] } | undefined
+  >;
   recordStatistics: () => Promise<void>;
   acknowledge: () => Promise<void>;
 }) {
   const saved = await options.persist();
   if (!saved.data || saved.errors?.length) {
-    throw new Error(saved.errors?.map((error) => error.message).join('; ') || 'Failed to save homography decision');
+    throw new Error(
+      saved.errors?.map((error) => error.message).join('; ') ||
+        'Failed to save homography decision',
+    );
   }
   if (!options.progress.counted) {
     const counted = await options.incrementCount();
-    if (counted?.errors?.length) throw new Error(counted.errors.map((error) => error.message).join('; '));
+    if (counted?.errors?.length)
+      throw new Error(counted.errors.map((error) => error.message).join('; '));
     options.progress.counted = true;
   }
   await options.recordStatistics();

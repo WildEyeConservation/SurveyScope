@@ -10,7 +10,7 @@ export interface Tile {
 export function getPyramidInfo(image: { width: number; height: number }) {
   const maxZ = Math.max(
     0,
-    Math.ceil(Math.log2(Math.max(image.width, image.height) / TILE_SIZE))
+    Math.ceil(Math.log2(Math.max(image.width, image.height) / TILE_SIZE)),
   );
   return { maxZ, pyramidSize: TILE_SIZE * 2 ** maxZ };
 }
@@ -57,7 +57,7 @@ export function ringZoom(
   ring: number,
   maxZ: number,
   baseZ: number,
-  { drops = RING_ZOOM_DROPS }: RingOptions = {}
+  { drops = RING_ZOOM_DROPS }: RingOptions = {},
 ): number | undefined {
   if (ring === 0) return maxZ;
   if (ring > drops.length) return undefined;
@@ -73,7 +73,7 @@ export function annotationTiles(
   width: number,
   height: number,
   points: ReadonlyArray<TilePoint>,
-  { drops = ZOOM_RING_ENABLED ? RING_ZOOM_DROPS : [] }: RingOptions = {}
+  { drops = ZOOM_RING_ENABLED ? RING_ZOOM_DROPS : [] }: RingOptions = {},
 ): Tile[] {
   const { maxZ } = getPyramidInfo({ width, height });
   const cores = new Map<string, { row: number; col: number }>();
@@ -119,7 +119,7 @@ export function annotationTiles(
   const tiles = new Map<string, Tile>();
   // Sorted so mask keys are independent of annotation order.
   for (const cell of [...cells.values()].sort(
-    (a, b) => b.z - a.z || a.row - b.row || a.col - b.col
+    (a, b) => b.z - a.z || a.row - b.row || a.col - b.col,
   )) {
     const factor = 2 ** (maxZ - cell.z);
     const row = Math.floor(cell.row / factor);
@@ -156,7 +156,7 @@ export function pairTilePoints(
   candidates: ReadonlyArray<{ posA: TilePoint | null; posB: TilePoint | null }>,
   side: 'A' | 'B',
   imageId: string,
-  foreignAnnotations: ReadonlyArray<TilePoint & { imageId: string }>
+  foreignAnnotations: ReadonlyArray<TilePoint & { imageId: string }>,
 ): TilePoint[] {
   const points: TilePoint[] = [];
   for (const candidate of candidates) {
@@ -173,11 +173,11 @@ export function pairTilePoints(
 /** Next then previous entry. */
 export function adjacentPairIndices(
   entries: readonly number[],
-  currentIndex: number
+  currentIndex: number,
 ): number[] {
   const pos = entries.indexOf(currentIndex);
   if (pos < 0) return [];
   return [entries[pos + 1], entries[pos - 1]].filter(
-    (index) => index !== undefined
+    (index) => index !== undefined,
   );
 }

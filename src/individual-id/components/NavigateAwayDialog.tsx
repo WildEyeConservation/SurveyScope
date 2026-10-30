@@ -32,8 +32,8 @@ export function NavigateAwayDialog({
     destination === 'prev'
       ? 'previous image pair'
       : destination === 'next'
-      ? 'next image pair'
-      : 'another image pair';
+        ? 'next image pair'
+        : 'another image pair';
   return (
     <Dialog open={show} onOpenChange={(o) => !o && onCancel()}>
       <DialogContent centered>
@@ -42,7 +42,8 @@ export function NavigateAwayDialog({
         </DialogHeader>
         <DialogBody>
           You have un-accepted matches on this image pair. Your marker positions
-          will be remembered, but no links will be saved. Continue to the {verb}?
+          will be remembered, but no links will be saved. Continue to the {verb}
+          ?
         </DialogBody>
         <DialogFooter>
           <Button variant='secondary' onClick={onCancel}>

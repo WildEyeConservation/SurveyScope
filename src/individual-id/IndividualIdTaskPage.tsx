@@ -46,7 +46,7 @@ export function IndividualIdTaskPage() {
       if (state?.transectRowId) {
         await (client as any).mutations.completeIndividualIdTransect(
           { transectRowId: state.transectRowId },
-          { retry: false }
+          { retry: false },
         );
       }
     } catch (e) {

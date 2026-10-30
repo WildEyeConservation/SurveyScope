@@ -101,7 +101,7 @@ export interface TilePack {
     zoom: number,
     row: number,
     column: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ) => Promise<ArrayBuffer>;
 }
 
@@ -132,7 +132,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
     first: number,
     last: number,
     signal?: AbortSignal,
-    reload = false
+    reload = false,
   ): Promise<{ bytes: Uint8Array; etag: string | null }> => {
     for (let attempt = 0; ; attempt++) {
       if (access.expiresAt - now() < EXPIRY_MARGIN_MS) await renew(access);
@@ -195,7 +195,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
 
   const download = async (
     index: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<ArrayBuffer> => {
     let short = 0;
     for (let attempt = 0; ; attempt++) {
@@ -208,7 +208,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
         entry.offset,
         entry.offset + entry.length - 1,
         signal,
-        short > 0
+        short > 0,
       ).catch((error: unknown) => {
         if (
           error instanceof TilePackRequestFailed &&
@@ -232,7 +232,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
           const { bytes } = read;
           return bytes.buffer.slice(
             bytes.byteOffset,
-            bytes.byteOffset + bytes.byteLength
+            bytes.byteOffset + bytes.byteLength,
           ) as ArrayBuffer;
         }
         if (attempt > 0) throw new Error('Tile pack keeps changing');

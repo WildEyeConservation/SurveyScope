@@ -1,7 +1,7 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import {
@@ -25,17 +25,17 @@ import {
   type StrataClient,
 } from './strataStore';
 import {
+  runSurveySave,
+  surveySaveSettled,
+  useSurveySaving,
+} from './surveySaves';
+import {
   carryStrata,
   clearJollyResults,
   loadStrata,
   type NamedStratum,
   type SavedStratum,
 } from './transectStrata';
-import {
-  runSurveySave,
-  surveySaveSettled,
-  useSurveySaving,
-} from './surveySaves';
 
 type DefineStrataProps = { projectId: string; organizationId: string };
 
@@ -85,7 +85,7 @@ export default function DefineStrata({
         if (signal.aborted) return;
         const network = initialNetwork(
           parseNetwork(project.strataNetwork),
-          strata
+          strata,
         );
         const next = { ...loadedArea, network };
         const carried = carryStrata(layoutOf(next, strata).sections, strata);
@@ -116,7 +116,7 @@ export default function DefineStrata({
         const project = await loadProjectStrata(
           strataClient,
           projectId,
-          controller.signal
+          controller.signal,
         );
         if (!controller.signal.aborted && !boundaryRecomputePending(project))
           setPending(false);
@@ -149,7 +149,7 @@ export default function DefineStrata({
 
   const trimmed = named.map((st) => st.name.trim());
   const invalid = trimmed.map(
-    (name, i) => !name || trimmed.indexOf(name) !== i
+    (name, i) => !name || trimmed.indexOf(name) !== i,
   );
 
   const areaChanged =
@@ -182,7 +182,7 @@ export default function DefineStrata({
           projectId,
           organizationId,
           named,
-          saved.strata
+          saved.strata,
         );
         if (networkChanged && area.network) {
           await saveNetwork(strataClient, projectId, area.network);
@@ -207,7 +207,7 @@ export default function DefineStrata({
       const strata = await loadStrata(client, projectId).catch(() => null);
       if (strata) setSaved((prev) => prev && { ...prev, strata });
       setSaveError(
-        'The survey area and strata could not be saved. Please try again.'
+        'The survey area and strata could not be saved. Please try again.',
       );
     } finally {
       setSaving(false);
@@ -218,7 +218,7 @@ export default function DefineStrata({
     <>
       {pending && (
         <span
-          className='text-muted-foreground flex items-center gap-2'
+          className='flex items-center gap-2 text-muted-foreground'
           style={{ fontSize: 12 }}
         >
           <Spinner animation='border' size='sm' />
@@ -244,7 +244,7 @@ export default function DefineStrata({
           stratum areas when computing results.
         </span>
         {loading ? (
-          <div className='flex justify-center items-center'>
+          <div className='flex items-center justify-center'>
             <Spinner animation='border' />
             <span className='ms-2'>
               {surveySaving
@@ -267,7 +267,7 @@ export default function DefineStrata({
               names: named.map((st) => st.name),
               onNameChange: (index, name) =>
                 setNamed((prev) =>
-                  prev.map((st, i) => (i === index ? { ...st, name } : st))
+                  prev.map((st, i) => (i === index ? { ...st, name } : st)),
                 ),
               invalid,
               dangling: layout.dangling,
@@ -276,10 +276,12 @@ export default function DefineStrata({
           />
         )}
         {saveError && (
-          <Alert variant='danger' className='mb-0 p-2'>{saveError}</Alert>
+          <Alert variant='danger' className='mb-0 p-2'>
+            {saveError}
+          </Alert>
         )}
         {saving && (
-          <div className='flex justify-center items-center'>
+          <div className='flex items-center justify-center'>
             <Spinner animation='border' size='sm' />
             <span className='ms-2'>
               Saving, please do not close this window

@@ -1,12 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
-import {
-  makeProjection,
-  createImageMap,
-  addImageTiles,
-  fitPxBounds,
-} from './imageTiles';
+
 import { NavButtons } from '../NavButtons';
 import type { AnnotationFeatureProperties } from './annotationFeatures';
 import {
@@ -14,6 +10,12 @@ import {
   ANNOTATION_MARKER_LAYERS,
   registerAnnotationMarkerImages,
 } from './annotationMarkerLayers';
+import {
+  addImageTiles,
+  createImageMap,
+  fitPxBounds,
+  makeProjection,
+} from './imageTiles';
 
 /*
 Read-only MapLibre image viewer: tiles + coloured annotation dots with a
@@ -78,7 +80,7 @@ export default function MapLibreLightViewer({
 
   const projection = useMemo(
     () => makeProjection(image.width, image.height),
-    [image.width, image.height]
+    [image.width, image.height],
   );
   const { px2lngLat, lngLat2px } = projection;
 
@@ -124,7 +126,7 @@ export default function MapLibreLightViewer({
         })[0];
         if (!feature) return;
         const annotation = annotationsRef.current.find(
-          (a) => a.id === (feature.properties as any).id
+          (a) => a.id === (feature.properties as any).id,
         );
         if (!annotation) return;
         popupRef.current?.remove();
@@ -175,7 +177,7 @@ export default function MapLibreLightViewer({
         fitRect.x - fitRect.width * fitScale,
         fitRect.y - fitRect.height * fitScale,
         fitRect.x + fitRect.width * fitScale,
-        fitRect.y + fitRect.height * fitScale
+        fitRect.y + fitRect.height * fitScale,
       );
     } else {
       fitPxBounds(map, projection, 0, 0, image.width, image.height);
@@ -243,7 +245,7 @@ export default function MapLibreLightViewer({
   }, [visible]);
 
   return (
-    <div className='flex flex-col items-stretch w-full h-full gap-4'>
+    <div className='flex h-full w-full flex-col items-stretch gap-4'>
       <div
         ref={containerRef}
         style={{ width: '100%', height: '100%', borderRadius: 10 }}

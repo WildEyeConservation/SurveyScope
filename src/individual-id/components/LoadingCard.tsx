@@ -16,7 +16,7 @@ const PHASE_LABEL: Record<LoadProgress['phase'], string> = {
  */
 export function LoadingCard({ progress }: { progress: LoadProgress }) {
   return (
-    <div className='w-full h-full flex items-center justify-center'>
+    <div className='flex h-full w-full items-center justify-center'>
       <div
         style={{
           background: '#4E5D6C',
@@ -27,7 +27,7 @@ export function LoadingCard({ progress }: { progress: LoadProgress }) {
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.35)',
         }}
       >
-        <div className='flex items-center gap-4 mb-4'>
+        <div className='mb-4 flex items-center gap-4'>
           <Spinner animation='border' size='sm' />
           <span style={{ fontSize: 16, fontWeight: 600 }}>
             Loading transect…

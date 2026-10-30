@@ -1,8 +1,8 @@
-import MyTable from '../Table';
-import { TestingContext } from '../Context';
 import { useContext } from 'react';
 import { useUsers } from '../apiInterface';
+import { TestingContext } from '../Context';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
+import MyTable from '../Table';
 
 export default function Users() {
   const { organizationMembershipsHook: hook, organizationId } =
@@ -33,7 +33,7 @@ export default function Users() {
   });
 
   return (
-    <div className='flex flex-col gap-2 mt-4 w-full'>
+    <div className='mt-4 flex w-full flex-col gap-2'>
       <h5 className='mb-0'>Organisation Users</h5>
       <MyTable
         tableHeadings={[

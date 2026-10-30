@@ -1,10 +1,10 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { DateTime } from 'luxon';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { AdminStatsPayload, StatCounts } from '../shared/adminStats';
+import type { Schema } from './amplify/client-schema';
+import { useUsers } from './apiInterface';
 import { GlobalContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
-import { useUsers } from './apiInterface';
-import type { Schema } from './amplify/client-schema';
-import type { AdminStatsPayload, StatCounts } from '../shared/adminStats';
 
 export type MonthKey = string; // yyyy-LL
 

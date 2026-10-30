@@ -5,8 +5,7 @@ import {
 import { Matrix, multiply } from 'mathjs';
 
 export type UnknownGraphQLResponse =
-  | GraphQLResult<any>
-  | GraphqlSubscriptionResult<any>;
+  GraphQLResult<any> | GraphqlSubscriptionResult<any>;
 
 type PaginatedQueryResult<T> = {
   data: T[];
@@ -39,7 +38,7 @@ export async function fetchAllPaginatedResults<T>(
     | ((options?: any) => Promise<PaginatedQueryResult<T>>)
     | ((input: any, options?: any) => Promise<PaginatedQueryResult<T>>),
   params?: any,
-  setStepsCompleted?: (steps: number) => void
+  setStepsCompleted?: (steps: number) => void,
 ): Promise<T[]> {
   let allResults: T[] = [];
   let nextToken: string | null | undefined = undefined;
@@ -47,7 +46,7 @@ export async function fetchAllPaginatedResults<T>(
 
   const { signal, ...queryParams } = params ?? {};
   const { input, options: baseOptions } = splitInputAndOptions(
-    params ? queryParams : undefined
+    params ? queryParams : undefined,
   );
   const callOptions = signal ? [{ signal }] : [];
 
@@ -102,7 +101,7 @@ export function isWithinLocationBounds(
     y: number;
     width?: number | null;
     height?: number | null;
-  }
+  },
 ): boolean {
   return (
     Math.abs(point.x - location.x) <= (location.width ?? 0) / 2 &&
@@ -126,17 +125,17 @@ export function resolveCategoryIdForSet(
     name: string;
     annotationSetId?: string | null;
   }>,
-  targetSetId: string
+  targetSetId: string,
 ): string {
   if (currentCategory.annotationSetId === targetSetId)
     return currentCategory.id;
   const sameName = categories.find(
-    (c) => c.annotationSetId === targetSetId && c.name === currentCategory.name
+    (c) => c.annotationSetId === targetSetId && c.name === currentCategory.name,
   );
   if (sameName) return sameName.id;
   const unknown = categories.find(
     (c) =>
-      c.annotationSetId === targetSetId && c.name.toLowerCase() === 'unknown'
+      c.annotationSetId === targetSetId && c.name.toLowerCase() === 'unknown',
   );
   return unknown?.id ?? currentCategory.id;
 }

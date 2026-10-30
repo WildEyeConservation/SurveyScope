@@ -1,9 +1,8 @@
 .registrationMap {
   width: 900px;
   height: 900px;
-    top: 0px;
+  top: 0px;
   border-radius: 10px;
   margin: 0;
-  display: inline-block
+  display: inline-block;
 }
-

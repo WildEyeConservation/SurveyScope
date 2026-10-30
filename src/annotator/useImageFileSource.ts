@@ -32,7 +32,7 @@ export default function useImageFileSource(imageId: string) {
 
   const sourceKey = useMemo(
     () => imageFiles.find((file) => file.type === 'image/jpeg')?.key,
-    [imageFiles]
+    [imageFiles],
   );
 
   return { imageFiles, loading, sourceKey };

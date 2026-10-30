@@ -28,8 +28,8 @@ export function TransectCompleteDialog({ show, onConfirm }: Props) {
           <DialogTitle>Transect complete</DialogTitle>
         </DialogHeader>
         <DialogBody>
-          Every image pair is finished and no reunions need review. Closing
-          this dialog will finalise the transect and return you to Jobs.
+          Every image pair is finished and no reunions need review. Closing this
+          dialog will finalise the transect and return you to Jobs.
         </DialogBody>
         <DialogFooter>
           <Button variant='primary' onClick={onConfirm}>

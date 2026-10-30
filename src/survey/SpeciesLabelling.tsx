@@ -1,3 +1,10 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import type { Dispatch, SetStateAction } from 'react';
 import {
   useCallback,
   useContext,
@@ -7,17 +14,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
-import { Alert } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Combobox } from '@/components/ui/combobox';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
-import { useLaunchTask } from '../useLaunchTask';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
+import { useLaunchTask } from '../useLaunchTask';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { loadLocationCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
@@ -40,7 +40,7 @@ export default function SpeciesLabelling({
     SetStateAction<{
       execute: (
         onProgress: (msg: string) => void,
-        onLaunchConfirmed: () => void
+        onLaunchConfirmed: () => void,
       ) => Promise<void>;
     } | null>
   >;
@@ -82,11 +82,9 @@ export default function SpeciesLabelling({
   // JSON image ID filter for tiled annotation
   const [launchImageIds, setLaunchImageIds] = useState<string[] | null>(null);
 
-
   // Get the tiled location set ID from project
   const tiledLocationSetId = (project as any).tiledLocationSetId as
-    | string
-    | undefined;
+    string | undefined;
 
   const launchTask = useLaunchTask({
     allowOutside: allowAnnotationsOutsideLocationBoundaries,
@@ -100,7 +98,6 @@ export default function SpeciesLabelling({
     batchSize,
     zoom: zoom as number | undefined,
   });
-
 
   // Load global tile count when switching to tiled mode
   useEffect(() => {
@@ -117,7 +114,7 @@ export default function SpeciesLabelling({
       try {
         const { data } = await client.models.LocationSet.get(
           { id: locationSetIdToFetch as string },
-          { selectionSet: ['locationCount'] }
+          { selectionSet: ['locationCount'] },
         );
         if (mounted) {
           setGlobalTileCount(data?.locationCount ?? 0);
@@ -206,7 +203,7 @@ export default function SpeciesLabelling({
       .filter((ls) =>
         String(ls.name || '')
           .toLowerCase()
-          .includes(model.value)
+          .includes(model.value),
       )
       .map((ls) => ls.id);
   }, [modelGuided, tiledLocationSetId, model, locationSets]);
@@ -247,12 +244,14 @@ export default function SpeciesLabelling({
   const modelOptionsLengthRef = useRef(modelOptions.length);
   const locationSetsRef = useRef(locationSets);
   const launchTaskRef = useRef(launchTask);
-  const hiddenRef = useRef(hidden)
+  const hiddenRef = useRef(hidden);
   const lowerLimitRef = useRef(lowerLimit);
   const upperLimitRef = useRef(upperLimit);
   const batchSizeRef = useRef(batchSize);
   const skipLocationsWithAnnotationsRef = useRef(skipLocationsWithAnnotations);
-  const allowAnnotationsOutsideLocationBoundariesRef = useRef(allowAnnotationsOutsideLocationBoundaries);
+  const allowAnnotationsOutsideLocationBoundariesRef = useRef(
+    allowAnnotationsOutsideLocationBoundaries,
+  );
   const viewUnobservedLocationsOnlyRef = useRef(viewUnobservedLocationsOnly);
   const zoomRef = useRef(zoom);
   const taskTagRef = useRef(taskTag);
@@ -290,7 +289,8 @@ export default function SpeciesLabelling({
     skipLocationsWithAnnotationsRef.current = skipLocationsWithAnnotations;
   }, [skipLocationsWithAnnotations]);
   useEffect(() => {
-    allowAnnotationsOutsideLocationBoundariesRef.current = allowAnnotationsOutsideLocationBoundaries;
+    allowAnnotationsOutsideLocationBoundariesRef.current =
+      allowAnnotationsOutsideLocationBoundaries;
   }, [allowAnnotationsOutsideLocationBoundaries]);
   useEffect(() => {
     viewUnobservedLocationsOnlyRef.current = viewUnobservedLocationsOnly;
@@ -308,12 +308,11 @@ export default function SpeciesLabelling({
     launchImageIdsRef.current = launchImageIds;
   }, [launchImageIds]);
 
-
   // The actual launch logic
   const performLaunch = useCallback(
     async (
       onProgress: (msg: string) => void,
-      onLaunchConfirmed: () => void
+      onLaunchConfirmed: () => void,
     ) => {
       if (modelGuidedRef.current) {
         // Model guided launch
@@ -322,7 +321,7 @@ export default function SpeciesLabelling({
         const sets = (locationSetsRef.current || []).filter((ls: any) =>
           String(ls.name || '')
             .toLowerCase()
-            .includes(currentModelValue)
+            .includes(currentModelValue),
         );
         if (sets.length === 0) return;
         onProgress('Initializing launch...');
@@ -337,7 +336,9 @@ export default function SpeciesLabelling({
           onLaunchConfirmed,
         });
         // Log the launch action with settings
-        const modelName = modelOptions.find((m) => m.value === currentModelValue)?.label || currentModelValue;
+        const modelName =
+          modelOptions.find((m) => m.value === currentModelValue)?.label ||
+          currentModelValue;
         const settings = [
           `Confidence: ${lowerLimitRef.current}-${upperLimitRef.current}`,
           `Batch size: ${batchSizeRef.current}`,
@@ -345,15 +346,19 @@ export default function SpeciesLabelling({
           `Allow annotations outside boundaries: ${allowAnnotationsOutsideLocationBoundariesRef.current ? 'Yes' : 'No'}`,
           `View unobserved only: ${viewUnobservedLocationsOnlyRef.current ? 'Yes' : 'No'}`,
           zoomRef.current !== undefined ? `Zoom: ${zoomRef.current}` : null,
-          taskTagRef.current !== annotationSet.name ? `Job name: "${taskTagRef.current}"` : null,
-        ].filter(Boolean).join(', ');
+          taskTagRef.current !== annotationSet.name
+            ? `Job name: "${taskTagRef.current}"`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(', ');
 
         await logAdminAction(
           client,
           user.userId,
           `Launched Model Guided queue for annotation set "${annotationSet.name}" in project "${project.name}" (Model: ${modelName}, ${settings})`,
           project.id,
-          project.organizationId
+          project.organizationId,
         ).catch(console.error);
       } else {
         // Tiled annotation launch - use global tiled location set
@@ -380,7 +385,7 @@ export default function SpeciesLabelling({
           user.userId,
           `Launched Tiled Annotation queue for annotation set "${annotationSet.name}" in project "${project.name}"`,
           project.id,
-          project.organizationId
+          project.organizationId,
         ).catch(console.error);
       }
     },
@@ -391,7 +396,7 @@ export default function SpeciesLabelling({
       project.name,
       project.id,
       modelOptions,
-    ]
+    ],
   );
 
   const performLaunchRef = useRef(performLaunch);
@@ -401,7 +406,10 @@ export default function SpeciesLabelling({
 
   useEffect(() => {
     setSpeciesLaunchHandler({
-      execute: async (onProgress: (msg: string) => void, onLaunchConfirmed: () => void) => {
+      execute: async (
+        onProgress: (msg: string) => void,
+        onLaunchConfirmed: () => void,
+      ) => {
         await performLaunchRef.current(onProgress, onLaunchConfirmed);
         const launchedZoom = zoomRef.current ?? null;
         if (launchedZoom !== (savedZoom ?? null)) {
@@ -410,17 +418,26 @@ export default function SpeciesLabelling({
             defaultZoom: launchedZoom,
           }).catch(console.error);
         }
-      }
+      },
     });
-  }, [setSpeciesLaunchHandler, client, user.userId, annotationSet.name, project.name, project.id, modelOptions, savedZoom]);
+  }, [
+    setSpeciesLaunchHandler,
+    client,
+    user.userId,
+    annotationSet.name,
+    project.name,
+    project.id,
+    modelOptions,
+    savedZoom,
+  ]);
 
   return (
-    <div className='px-4 pb-4 pt-1'>
-      <div className='flex flex-col gap-4 mt-2'>
+    <div className='px-4 pt-1 pb-4'>
+      <div className='mt-2 flex flex-col gap-4'>
         <div>
           <Label className='mb-0'>Batch Size</Label>
           <span
-            className='text-muted-foreground block mb-1'
+            className='mb-1 block text-muted-foreground'
             style={{ fontSize: '12px' }}
           >
             The number of annotation jobs a user can pick up at a time.
@@ -439,20 +456,24 @@ export default function SpeciesLabelling({
             loadLocationCandidates(
               client,
               previewLocationSetIds,
-              modelGuided ? { lower: lowerLimit, upper: upperLimit } : undefined
+              modelGuided
+                ? { lower: lowerLimit, upper: upperLimit }
+                : undefined,
             )
           }
           disabled={previewLocationSetIds.length === 0}
         />
       </div>
 
-      <div className='flex flex-col mt-2'>
+      <div className='mt-2 flex flex-col'>
         <div>
           <div className='mb-0.5 flex items-center gap-2'>
             <Switch
               id={`${switchId}-advanced`}
               checked={showAdvancedOptions}
-              onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+              onCheckedChange={() =>
+                setShowAdvancedOptions(!showAdvancedOptions)
+              }
             />
             <Label htmlFor={`${switchId}-advanced`} className='mb-0'>
               Show Advanced Options
@@ -463,13 +484,13 @@ export default function SpeciesLabelling({
 
       {showAdvancedOptions && (
         <div
-          className='flex flex-col gap-4 border border-dark shadow-sm p-2'
+          className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
           style={{ backgroundColor: '#697582' }}
         >
           <div>
             <Label className='mb-0'>Job Name</Label>
             <span
-              className='text-muted-foreground block mb-1'
+              className='mb-1 block text-muted-foreground'
               style={{ fontSize: '12px' }}
             >
               Modify this to display a different name for the job in the jobs
@@ -481,13 +502,11 @@ export default function SpeciesLabelling({
               onChange={(e) => setTaskTag(e.target.value)}
             />
           </div>
-          {modelGuided &&
+          {modelGuided && (
             <div>
-              <Label className='mb-0'>
-                Filter by confidence value:
-              </Label>
+              <Label className='mb-0'>Filter by confidence value:</Label>
               <span
-                className='text-muted-foreground block mb-1'
+                className='mb-1 block text-muted-foreground'
                 style={{ fontSize: '12px' }}
               >
                 Filter images by confidence value.
@@ -514,13 +533,15 @@ export default function SpeciesLabelling({
                 />
               </div>
             </div>
-          }
+          )}
           <div>
             <div className='mb-0.5 flex items-center gap-2'>
               <Switch
                 id={`${switchId}-skip`}
                 checked={skipLocationsWithAnnotations}
-                onCheckedChange={() => setSkipLocationsWithAnnotations(!skipLocationsWithAnnotations)}
+                onCheckedChange={() =>
+                  setSkipLocationsWithAnnotations(!skipLocationsWithAnnotations)
+                }
               />
               <Label htmlFor={`${switchId}-skip`} className='mb-0'>
                 Skip Locations With Annotations
@@ -532,7 +553,11 @@ export default function SpeciesLabelling({
               <Switch
                 id={`${switchId}-outside`}
                 checked={allowAnnotationsOutsideLocationBoundaries}
-                onCheckedChange={() => setAllowAnnotationsOutsideLocationBoundaries(!allowAnnotationsOutsideLocationBoundaries)}
+                onCheckedChange={() =>
+                  setAllowAnnotationsOutsideLocationBoundaries(
+                    !allowAnnotationsOutsideLocationBoundaries,
+                  )
+                }
               />
               <Label htmlFor={`${switchId}-outside`} className='mb-0'>
                 Allow Annotations Outside Location Boundaries
@@ -544,7 +569,9 @@ export default function SpeciesLabelling({
               <Switch
                 id={`${switchId}-unobserved`}
                 checked={viewUnobservedLocationsOnly}
-                onCheckedChange={() => setViewUnobservedLocationsOnly(!viewUnobservedLocationsOnly)}
+                onCheckedChange={() =>
+                  setViewUnobservedLocationsOnly(!viewUnobservedLocationsOnly)
+                }
               />
               <Label htmlFor={`${switchId}-unobserved`} className='mb-0'>
                 View Unobserved Locations Only
@@ -567,7 +594,7 @@ export default function SpeciesLabelling({
       )}
 
       <LabeledToggleSwitch
-        className='m-0 border-t pt-2 mt-2 border-dark'
+        className='m-0 mt-2 border-t border-dark pt-2'
         leftLabel='Model Guided'
         rightLabel='Tiled Annotation'
         checked={!modelGuided}
@@ -579,7 +606,7 @@ export default function SpeciesLabelling({
       {modelGuided ? (
         loadingLocationSets ? (
           <p
-            className='text-muted-foreground mb-0 mt-2 text-center'
+            className='mt-2 mb-0 text-center text-muted-foreground'
             style={{ fontSize: '12px' }}
           >
             Loading models...
@@ -602,7 +629,7 @@ export default function SpeciesLabelling({
         ) : (
           modelOptions.length === 0 && (
             <p
-              className='text-muted-foreground mb-0 mt-2 text-center'
+              className='mt-2 mb-0 text-center text-muted-foreground'
               style={{ fontSize: '12px' }}
             >
               You must first process your images before launching a model guided
@@ -614,7 +641,7 @@ export default function SpeciesLabelling({
         <div className='mt-2'>
           {loadingTileCount ? (
             <p
-              className='text-muted-foreground mb-0 text-center'
+              className='mb-0 text-center text-muted-foreground'
               style={{ fontSize: '12px' }}
             >
               Loading tile information...
@@ -622,7 +649,7 @@ export default function SpeciesLabelling({
           ) : !tiledLocationSetId || globalTileCount === 0 ? (
             <Alert variant='warning' className='mb-0'>
               <strong>No tiles configured.</strong>
-              <p className='mb-0 mt-1' style={{ fontSize: '14px' }}>
+              <p className='mt-1 mb-0' style={{ fontSize: '14px' }}>
                 Please go to <strong>Edit Survey &gt; Manage Tiles</strong> to
                 create tiles for this survey before launching a tiled annotation
                 task.
@@ -630,23 +657,29 @@ export default function SpeciesLabelling({
             </Alert>
           ) : (
             <div
-              className='border border-dark shadow-sm p-2'
+              className='border border-dark p-2 shadow-sm'
               style={{ backgroundColor: '#697582' }}
             >
               <p className='mb-0 text-white'>
                 <strong>{globalTileCount}</strong> tiles available for
                 annotation.
               </p>
-              <p className='mb-0 mt-1 text-muted-foreground' style={{ fontSize: '12px' }}>
+              <p
+                className='mt-1 mb-0 text-muted-foreground'
+                style={{ fontSize: '12px' }}
+              >
                 To modify tiles, go to Edit Survey &gt; Manage Tiles.
               </p>
               {process.env.NODE_ENV === 'development' && (
                 <div className='mt-2'>
-                  <Label className='mb-0 text-white' style={{ fontSize: '13px' }}>
+                  <Label
+                    className='mb-0 text-white'
+                    style={{ fontSize: '13px' }}
+                  >
                     Filter by Image IDs (optional)
                   </Label>
                   <span
-                    className='text-muted-foreground block mb-1'
+                    className='mb-1 block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
                     Upload a JSON file containing an array of image IDs to only
@@ -658,7 +691,9 @@ export default function SpeciesLabelling({
                       accept='.json'
                       size='sm'
                       disabled={launching}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                      onChange={(
+                        event: React.ChangeEvent<HTMLInputElement>,
+                      ) => {
                         const file = event.target.files?.[0];
                         if (!file) return;
                         const reader = new FileReader();
@@ -673,7 +708,7 @@ export default function SpeciesLabelling({
                               setLaunchImageIds(parsed);
                             } else {
                               alert(
-                                'Invalid JSON format. Expected an array of image ID strings.'
+                                'Invalid JSON format. Expected an array of image ID strings.',
                               );
                             }
                           } catch {
@@ -696,7 +731,7 @@ export default function SpeciesLabelling({
                   </div>
                   {launchImageIds && (
                     <p
-                      className='mb-0 mt-1 text-white'
+                      className='mt-1 mb-0 text-white'
                       style={{ fontSize: '12px' }}
                     >
                       <strong>{launchImageIds.length}</strong> image IDs loaded
@@ -709,7 +744,6 @@ export default function SpeciesLabelling({
           )}
         </div>
       )}
-
     </div>
   );
 }

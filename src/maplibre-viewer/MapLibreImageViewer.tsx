@@ -1,18 +1,36 @@
-import { useRef, useEffect, useCallback, useMemo, useState, type ReactNode } from 'react';
 import * as maplibregl from 'maplibre-gl';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+import { Check, Copy, MoreVertical, RotateCw } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { RotateCw, MoreVertical, Copy, Check } from 'lucide-react';
 import { getTileBlob, imageTileContext } from '../StorageLayer';
-import type { ImageType } from '../schemaTypes';
 import type { Point } from '../homography/ManualHomographyEditor';
+import type { ImageType } from '../schemaTypes';
 
 // MapLibre doesn't require an access token for local or open-source tiles.
 
 export const POINT_COLORS = [
-  '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
-  '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabed4',
-  '#469990', '#dcbeff',
+  '#e6194b',
+  '#3cb44b',
+  '#ffe119',
+  '#4363d8',
+  '#f58231',
+  '#911eb4',
+  '#42d4f4',
+  '#f032e6',
+  '#bfef45',
+  '#fabed4',
+  '#469990',
+  '#dcbeff',
 ];
 
 const TILE_SIZE = 256;
@@ -28,7 +46,7 @@ class RotateControl implements maplibregl.IControl {
     this._map = map;
     this._container = document.createElement('div');
     this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
-    
+
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'maplibregl-ctrl-icon';
@@ -36,15 +54,17 @@ class RotateControl implements maplibregl.IControl {
     button.style.display = 'flex';
     button.style.alignItems = 'center';
     button.style.justifyContent = 'center';
-    
-    button.innerHTML = renderToStaticMarkup(<RotateCw size={16} color="#333" strokeWidth={2.5} />);
-    
+
+    button.innerHTML = renderToStaticMarkup(
+      <RotateCw size={16} color='#333' strokeWidth={2.5} />,
+    );
+
     button.onclick = () => {
       const currentBearing = map.getBearing();
-      const nextBearing = (Math.round(currentBearing / 90) * 90) - 90;
+      const nextBearing = Math.round(currentBearing / 90) * 90 - 90;
       map.easeTo({
         bearing: nextBearing,
-        duration: 300
+        duration: 300,
       });
     };
 
@@ -85,7 +105,10 @@ type Props = {
   setPoints: (updater: Point[] | ((prev: Point[]) => Point[])) => void;
   highlightedIndex: number | null;
   onHoverPoint: (index: number | null) => void;
-  onContextMenu?: (pointIndex: number, screenPos: { x: number; y: number }) => void;
+  onContextMenu?: (
+    pointIndex: number,
+    screenPos: { x: number; y: number },
+  ) => void;
   onAction?: () => void;
   previewTransform?: (c: [number, number]) => [number, number];
   /**
@@ -95,7 +118,11 @@ type Props = {
    */
   savedTransform?: (c: [number, number]) => [number, number];
   otherImage?: ImageType;
-  onMapInstance?: (map: maplibregl.Map | null, px2lngLat: (x: number, y: number) => [number, number], lngLat2px: (lng: number, lat: number) => { x: number; y: number }) => void;
+  onMapInstance?: (
+    map: maplibregl.Map | null,
+    px2lngLat: (x: number, y: number) => [number, number],
+    lngLat2px: (lng: number, lat: number) => { x: number; y: number },
+  ) => void;
   onInitialTilesReady?: () => void;
   menuItems?: MapLibreMenuItem[];
 };
@@ -136,97 +163,110 @@ export function MapLibreImageViewer({
   const readyMapRef = useRef<maplibregl.Map | null>(null);
   const initialTilesReadyRef = useRef(false);
 
-  const scale = useMemo(() => getScale(image.width, image.height), [image.width, image.height]);
+  const scale = useMemo(
+    () => getScale(image.width, image.height),
+    [image.width, image.height],
+  );
 
   const px2lngLat = useCallback(
     (x: number, y: number): [number, number] => [x * scale, -y * scale],
-    [scale]
+    [scale],
   );
   const lngLat2px = useCallback(
     (lng: number, lat: number): { x: number; y: number } => ({
       x: lng / scale,
       y: -lat / scale,
     }),
-    [scale]
+    [scale],
   );
 
   // Load only visible tiles at a suitable zoom level
-  const updateVisibleTiles = useCallback(async (m: maplibregl.Map | null) => {
-    if (!m || !sourceKey || cancelledRef.current) return;
+  const updateVisibleTiles = useCallback(
+    async (m: maplibregl.Map | null) => {
+      if (!m || !sourceKey || cancelledRef.current) return;
 
-    const { maxZ, pyramidSize } = getPyramidInfo(image);
+      const { maxZ, pyramidSize } = getPyramidInfo(image);
 
-    // Choose tile zoom z based on current map zoom.
-    // We want the tiles to be sharp but not excessively high-res.
-    const mapZoom = m.getZoom();
-    const degPerPxAtZoom0 = 360 / 256;
-    const currentDegPerPx = degPerPxAtZoom0 / Math.pow(2, mapZoom);
-    const targetTilePxPerDeg = 1 / (currentDegPerPx * 0.75); // slight oversampling for sharpness
+      // Choose tile zoom z based on current map zoom.
+      // We want the tiles to be sharp but not excessively high-res.
+      const mapZoom = m.getZoom();
+      const degPerPxAtZoom0 = 360 / 256;
+      const currentDegPerPx = degPerPxAtZoom0 / Math.pow(2, mapZoom);
+      const targetTilePxPerDeg = 1 / (currentDegPerPx * 0.75); // slight oversampling for sharpness
 
-    // Tile resolution at tileZ z: (TILE_SIZE * 2^z) / (pyramidSize * scale) px/deg
-    const target2z = (targetTilePxPerDeg * pyramidSize * scale) / TILE_SIZE;
-    const z = Math.max(0, Math.min(maxZ, Math.round(Math.log2(target2z))));
+      // Tile resolution at tileZ z: (TILE_SIZE * 2^z) / (pyramidSize * scale) px/deg
+      const target2z = (targetTilePxPerDeg * pyramidSize * scale) / TILE_SIZE;
+      const z = Math.max(0, Math.min(maxZ, Math.round(Math.log2(target2z))));
 
-    const tileCoverage = pyramidSize / Math.pow(2, z);
-    const cols = Math.ceil(image.width / tileCoverage);
-    const rows = Math.ceil(image.height / tileCoverage);
+      const tileCoverage = pyramidSize / Math.pow(2, z);
+      const cols = Math.ceil(image.width / tileCoverage);
+      const rows = Math.ceil(image.height / tileCoverage);
 
-    const bounds = m.getBounds();
-    const pendingTiles: Promise<void>[] = [];
-    let addedTiles = 0;
+      const bounds = m.getBounds();
+      const pendingTiles: Promise<void>[] = [];
+      let addedTiles = 0;
 
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const sourceId = `tile-${z}-${row}-${col}`;
-        if (loadedTilesRef.current.has(sourceId)) continue;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const sourceId = `tile-${z}-${row}-${col}`;
+          if (loadedTilesRef.current.has(sourceId)) continue;
 
-        const x0 = col * tileCoverage;
-        const y0 = row * tileCoverage;
-        const x1 = (col + 1) * tileCoverage;
-        const y1 = (row + 1) * tileCoverage;
+          const x0 = col * tileCoverage;
+          const y0 = row * tileCoverage;
+          const x1 = (col + 1) * tileCoverage;
+          const y1 = (row + 1) * tileCoverage;
 
-        const c1 = px2lngLat(x0, y0);
-        const c2 = px2lngLat(x1, y1);
-        const tileBounds = new maplibregl.LngLatBounds(
-          [Math.min(c1[0], c2[0]), Math.min(c1[1], c2[1])],
-          [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])]
-        );
+          const c1 = px2lngLat(x0, y0);
+          const c2 = px2lngLat(x1, y1);
+          const tileBounds = new maplibregl.LngLatBounds(
+            [Math.min(c1[0], c2[0]), Math.min(c1[1], c2[1])],
+            [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])],
+          );
 
-        const isVisible = bounds && (
-          bounds.getWest() <= tileBounds.getEast() &&
-          bounds.getEast() >= tileBounds.getWest() &&
-          bounds.getSouth() <= tileBounds.getNorth() &&
-          bounds.getNorth() >= tileBounds.getSouth()
-        );
+          const isVisible =
+            bounds &&
+            bounds.getWest() <= tileBounds.getEast() &&
+            bounds.getEast() >= tileBounds.getWest() &&
+            bounds.getSouth() <= tileBounds.getNorth() &&
+            bounds.getNorth() >= tileBounds.getSouth();
 
-        if (isVisible && !isCoveredByHigherRes(z, row, col, maxZ, loadedTilesRef.current)) {
-          loadedTilesRef.current.add(sourceId);
-          const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
-          pendingTiles.push(getTileBlob(path, imageTileContext(image)).then((blob) => {
-            if (cancelledRef.current) return;
-            const url = URL.createObjectURL(blob);
-            blobUrlsRef.current.push(url);
-            addTileToMap(m, url, z, row, col, tileCoverage, px2lngLat);
-            addedTiles += 1;
-          }).catch(() => {
-            // Silently fail, tile will remain in 'visible' check for later
-            loadedTilesRef.current.delete(sourceId);
-          }));
+          if (
+            isVisible &&
+            !isCoveredByHigherRes(z, row, col, maxZ, loadedTilesRef.current)
+          ) {
+            loadedTilesRef.current.add(sourceId);
+            const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
+            pendingTiles.push(
+              getTileBlob(path, imageTileContext(image))
+                .then((blob) => {
+                  if (cancelledRef.current) return;
+                  const url = URL.createObjectURL(blob);
+                  blobUrlsRef.current.push(url);
+                  addTileToMap(m, url, z, row, col, tileCoverage, px2lngLat);
+                  addedTiles += 1;
+                })
+                .catch(() => {
+                  // Silently fail, tile will remain in 'visible' check for later
+                  loadedTilesRef.current.delete(sourceId);
+                }),
+            );
+          }
         }
       }
-    }
-    if (pendingTiles.length && !initialTilesReadyRef.current) {
-      await Promise.all(pendingTiles);
-      if (addedTiles > 0 && readyMapRef.current === m) {
-        m.once('idle', () => {
-          if (readyMapRef.current === m && !initialTilesReadyRef.current) {
-            initialTilesReadyRef.current = true;
-            readyCallbackRef.current?.();
-          }
-        });
+      if (pendingTiles.length && !initialTilesReadyRef.current) {
+        await Promise.all(pendingTiles);
+        if (addedTiles > 0 && readyMapRef.current === m) {
+          m.once('idle', () => {
+            if (readyMapRef.current === m && !initialTilesReadyRef.current) {
+              initialTilesReadyRef.current = true;
+              readyCallbackRef.current?.();
+            }
+          });
+        }
       }
-    }
-  }, [sourceKey, image, px2lngLat, scale]);
+    },
+    [sourceKey, image, px2lngLat, scale],
+  );
 
   // Initialize map
   useEffect(() => {
@@ -255,11 +295,14 @@ export function MapLibreImageViewer({
       touchZoomRotate: true,
     });
 
-    m.addControl(new maplibregl.NavigationControl({
-      showCompass: false,
-      showZoom: true,
-      visualizePitch: false,
-    }), 'top-left');
+    m.addControl(
+      new maplibregl.NavigationControl({
+        showCompass: false,
+        showZoom: true,
+        visualizePitch: false,
+      }),
+      'top-left',
+    );
 
     m.addControl(new RotateControl(), 'top-left');
 
@@ -279,7 +322,8 @@ export function MapLibreImageViewer({
           'circle-radius': [
             'case',
             ['boolean', ['get', 'highlighted'], false],
-            10, 7,
+            10,
+            7,
           ],
           'circle-color': ['get', 'color'],
           'circle-stroke-width': 2,
@@ -369,10 +413,10 @@ export function MapLibreImageViewer({
         },
       });
 
-      m.fitBounds(
-        [px2lngLat(0, image.height), px2lngLat(image.width, 0)],
-        { padding: 20, animate: false }
-      );
+      m.fitBounds([px2lngLat(0, image.height), px2lngLat(image.width, 0)], {
+        padding: 20,
+        animate: false,
+      });
 
       updateVisibleTiles(m);
       setMap(m);
@@ -389,7 +433,14 @@ export function MapLibreImageViewer({
       setMap(null);
       blobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [image.id, sourceKey, px2lngLat, updateVisibleTiles, image.width, image.height]);
+  }, [
+    image.id,
+    sourceKey,
+    px2lngLat,
+    updateVisibleTiles,
+    image.width,
+    image.height,
+  ]);
 
   useEffect(() => {
     onMapInstance?.(map, px2lngLat, lngLat2px);
@@ -398,7 +449,8 @@ export function MapLibreImageViewer({
   // Update points GeoJSON
   useEffect(() => {
     if (!map) return;
-    const source = map.getSource(SOURCE_POINTS) as maplibregl.GeoJSONSource | undefined;
+    const source = map.getSource(SOURCE_POINTS) as
+      maplibregl.GeoJSONSource | undefined;
     if (!source) return;
 
     const features = points.map((p, i) => ({
@@ -421,7 +473,8 @@ export function MapLibreImageViewer({
   // Update homography preview GeoJSON
   useEffect(() => {
     if (!map) return;
-    const source = map.getSource(SOURCE_PREVIEW) as maplibregl.GeoJSONSource | undefined;
+    const source = map.getSource(SOURCE_PREVIEW) as
+      maplibregl.GeoJSONSource | undefined;
     if (!source) return;
 
     if (!previewTransform || !otherImage) {
@@ -437,7 +490,13 @@ export function MapLibreImageViewer({
     const features: any[] = [];
 
     // Outline
-    const corners: [number, number][] = [[0, 0], [w, 0], [w, h], [0, h], [0, 0]];
+    const corners: [number, number][] = [
+      [0, 0],
+      [w, 0],
+      [w, h],
+      [0, h],
+      [0, 0],
+    ];
     features.push({
       type: 'Feature',
       properties: { type: 'outline' },
@@ -488,8 +547,7 @@ export function MapLibreImageViewer({
   useEffect(() => {
     if (!map) return;
     const source = map.getSource(SOURCE_SAVED) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!source) return;
 
     if (!savedTransform || !otherImage) {
@@ -577,7 +635,9 @@ export function MapLibreImageViewer({
     };
 
     map.on('click', handleClick);
-    return () => { map.off('click', handleClick); };
+    return () => {
+      map.off('click', handleClick);
+    };
   }, [map, points, lngLat2px, setPoints, image.width, image.height]);
 
   // Hover highlights
@@ -631,9 +691,7 @@ export function MapLibreImageViewer({
       if (!dragPointRef.current) return;
       const { x, y } = lngLat2px(e.lngLat.lng, e.lngLat.lat);
       const idx = dragPointRef.current.index;
-      setPoints((prev) =>
-        prev.map((p, i) => (i === idx ? { ...p, x, y } : p))
-      );
+      setPoints((prev) => prev.map((p, i) => (i === idx ? { ...p, x, y } : p)));
     };
 
     const handleMouseUp = () => {
@@ -671,14 +729,19 @@ export function MapLibreImageViewer({
     };
 
     map.on('contextmenu', handleContextMenu);
-    return () => { map.off('contextmenu', handleContextMenu); };
+    return () => {
+      map.off('contextmenu', handleContextMenu);
+    };
   }, [map, onContextMenu]);
 
   // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return;
     const handleClick = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(e.target as Node)
+      ) {
         setMenuOpen(false);
       }
     };
@@ -703,7 +766,10 @@ export function MapLibreImageViewer({
   }, [imageName]);
 
   return (
-    <div ref={wrapperRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
+    <div
+      ref={wrapperRef}
+      style={{ width: '100%', height: '100%', position: 'relative' }}
+    >
       <div
         ref={containerRef}
         style={{
@@ -724,10 +790,10 @@ export function MapLibreImageViewer({
           zIndex: 10,
           width: 200,
         }}
-        className="maplibregl-ctrl maplibregl-ctrl-group"
+        className='maplibregl-ctrl maplibregl-ctrl-group'
       >
         <button
-          className="maplibregl-ctrl-icon"
+          className='maplibregl-ctrl-icon'
           title={copied ? 'Copied!' : `Click to copy: ${imageName}`}
           onClick={handleCopyName}
           style={{
@@ -744,19 +810,29 @@ export function MapLibreImageViewer({
             transition: 'color 0.2s',
           }}
         >
-          {copied
-            ? <Check size={12} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-            : <Copy size={12} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-          }
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {copied ? (
+            <Check size={12} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+          ) : (
+            <Copy size={12} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+          )}
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {copied ? 'Copied!' : imageName}
           </span>
         </button>
       </div>
       {menuItems && menuItems.length > 0 && (
-        <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 10 }} className="maplibregl-ctrl maplibregl-ctrl-group">
+        <div
+          style={{ position: 'absolute', top: 10, right: 10, zIndex: 10 }}
+          className='maplibregl-ctrl maplibregl-ctrl-group'
+        >
           <button
-            className="maplibregl-ctrl-icon"
+            className='maplibregl-ctrl-icon'
             onClick={() => setMenuOpen((v) => !v)}
             style={{
               display: 'flex',
@@ -765,7 +841,7 @@ export function MapLibreImageViewer({
             }}
             title='Options'
           >
-            <MoreVertical size={16} color="#333" strokeWidth={2.5} />
+            <MoreVertical size={16} color='#333' strokeWidth={2.5} />
           </button>
           {menuOpen && (
             <div
@@ -804,7 +880,8 @@ export function MapLibreImageViewer({
                     fontSize: 'inherit',
                   }}
                   onMouseEnter={(e) => {
-                    if (!item.disabled) (e.currentTarget.style.background = '#f5f5f5');
+                    if (!item.disabled)
+                      e.currentTarget.style.background = '#f5f5f5';
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.background = 'transparent';
@@ -831,8 +908,11 @@ function getPyramidInfo(image: ImageType) {
 
 /** Check if a tile's area is fully covered by already-loaded higher-res tiles. */
 function isCoveredByHigherRes(
-  z: number, row: number, col: number,
-  maxZ: number, loadedTiles: Set<string>,
+  z: number,
+  row: number,
+  col: number,
+  maxZ: number,
+  loadedTiles: Set<string>,
 ): boolean {
   if (z >= maxZ) return false;
   const childZ = z + 1;
@@ -840,8 +920,10 @@ function isCoveredByHigherRes(
     for (let dc = 0; dc < 2; dc++) {
       const cr = row * 2 + dr;
       const cc = col * 2 + dc;
-      if (!loadedTiles.has(`tile-${childZ}-${cr}-${cc}`) &&
-        !isCoveredByHigherRes(childZ, cr, cc, maxZ, loadedTiles)) {
+      if (
+        !loadedTiles.has(`tile-${childZ}-${cr}-${cc}`) &&
+        !isCoveredByHigherRes(childZ, cr, cc, maxZ, loadedTiles)
+      ) {
         return false;
       }
     }
@@ -852,7 +934,9 @@ function isCoveredByHigherRes(
 function addTileToMap(
   map: maplibregl.Map,
   blobUrl: string,
-  z: number, row: number, col: number,
+  z: number,
+  row: number,
+  col: number,
   tileCoverage: number,
   px2lngLat: (x: number, y: number) => [number, number],
 ) {
@@ -895,7 +979,6 @@ function addTileToMap(
       source: sourceId,
       paint: { 'raster-fade-duration': 0 },
     },
-    beforeId
+    beforeId,
   );
 }
-

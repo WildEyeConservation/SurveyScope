@@ -1,5 +1,3 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Matrix, matrix, multiply, transpose, inv } from 'mathjs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,17 +8,19 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  Trash2,
+  ChevronDown,
+  ChevronUp,
+  Circle,
   Info,
   Save,
   SkipForward,
-  Target,
-  Circle,
-  ChevronDown,
-  ChevronUp,
-  X,
   SquareDashed,
+  Target,
+  Trash2,
+  X,
 } from 'lucide-react';
+import { inv, Matrix, matrix, multiply, transpose } from 'mathjs';
+import { useCallback, useMemo, useState } from 'react';
 import { POINT_COLORS } from '../maplibre-viewer/MapLibreImageViewer';
 
 export type Point = { id: string; x: number; y: number };
@@ -42,8 +42,15 @@ function buildDesignMatrix(points1: Point[], points2: Point[]) {
 
 export const MIN_HOMOGRAPHY_POINTS = 4;
 
-export function solveHomography(points1: Point[], points2: Point[]): Matrix | null {
-  if (points1.length < MIN_HOMOGRAPHY_POINTS || points2.length < MIN_HOMOGRAPHY_POINTS) return null;
+export function solveHomography(
+  points1: Point[],
+  points2: Point[],
+): Matrix | null {
+  if (
+    points1.length < MIN_HOMOGRAPHY_POINTS ||
+    points2.length < MIN_HOMOGRAPHY_POINTS
+  )
+    return null;
   const { A, b } = buildDesignMatrix(points1, points2);
   // Normal equations: (A^T A) u = A^T b
   const At = transpose(A) as Matrix;
@@ -75,14 +82,11 @@ export function solveHomography(points1: Point[], points2: Point[]): Matrix | nu
  */
 export function computeReprojectionErrors(
   points1: Point[],
-  points2: Point[]
+  points2: Point[],
 ): number[] | null {
   const n = Math.min(points1.length, points2.length);
   if (n < MIN_HOMOGRAPHY_POINTS) return null;
-  const H = solveHomography(
-    points1.slice(0, n),
-    points2.slice(0, n)
-  );
+  const H = solveHomography(points1.slice(0, n), points2.slice(0, n));
   if (!H) return null;
 
   let Hinv: Matrix;
@@ -145,7 +149,7 @@ export function ManualHomographyEditor({
       setPoints1((prev) => prev.filter((_, i) => i !== index));
       setPoints2((prev) => prev.filter((_, i) => i !== index));
     },
-    [setPoints1, setPoints2, onAction]
+    [setPoints1, setPoints2, onAction],
   );
 
   const handleSave = useCallback(() => {
@@ -169,7 +173,7 @@ export function ManualHomographyEditor({
         return [...prev.filter((_, i) => i !== index), orphan];
       });
     },
-    [setPoints1, setPoints2, onAction]
+    [setPoints1, setPoints2, onAction],
   );
 
   const handleRemovePoint2 = useCallback(
@@ -183,12 +187,12 @@ export function ManualHomographyEditor({
         return [...prev.filter((_, i) => i !== index), orphan];
       });
     },
-    [setPoints1, setPoints2, onAction]
+    [setPoints1, setPoints2, onAction],
   );
 
   const reprojErrors = useMemo(
     () => computeReprojectionErrors(points1, points2),
-    [points1, points2]
+    [points1, points2],
   );
 
   const tableRows = useMemo(() => {
@@ -202,7 +206,7 @@ export function ManualHomographyEditor({
   }, [points1, points2, reprojErrors]);
 
   return (
-    <Card className='w-full h-full border-0 shadow-sm'>
+    <Card className='h-full w-full border-0 shadow-sm'>
       <CardHeader className='border-b border-secondary py-4'>
         <div className='flex items-center justify-between'>
           <CardTitle className='mb-0 flex items-center gap-2'>
@@ -211,39 +215,100 @@ export function ManualHomographyEditor({
           </CardTitle>
           <Button
             variant='link'
-            className='p-0 text-info no-underline flex items-center gap-1 text-sm'
+            className='flex items-center gap-1 p-0 text-sm text-info no-underline'
             onClick={() => setMoreInformation(!moreInformation)}
           >
-            {moreInformation ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {moreInformation ? (
+              <ChevronUp size={14} />
+            ) : (
+              <ChevronDown size={14} />
+            )}
             {moreInformation ? 'Hide' : 'Help'}
           </Button>
         </div>
         {moreInformation && (
-          <div className='mt-4 pt-4 border-t border-secondary'>
-            <div className='flex items-center gap-2 mb-2 text-info'>
+          <div className='mt-4 border-t border-secondary pt-4'>
+            <div className='mb-2 flex items-center gap-2 text-info'>
               <Info size={16} />
-              <span className='font-bold text-sm'>Instructions</span>
+              <span className='text-sm font-bold'>Instructions</span>
             </div>
-            <ul className='text-sm ps-4' style={{ opacity: 0.9, lineHeight: '1.6' }}>
-              <li>Select at least {MIN_HOMOGRAPHY_POINTS} corresponding points on both images. More points typically yield a better fit.</li>
+            <ul
+              className='ps-4 text-sm'
+              style={{ opacity: 0.9, lineHeight: '1.6' }}
+            >
+              <li>
+                Select at least {MIN_HOMOGRAPHY_POINTS} corresponding points on
+                both images. More points typically yield a better fit.
+              </li>
               <li>Aim to cover as much area as possible.</li>
               <li>Avoid placing points in straight lines.</li>
-              <li>Right-click a marker to remove/swap it or press <b>Esc</b> to close the popup.</li>
-              <li>Preview will be available after 4 pairs have been created.</li>
+              <li>
+                Right-click a marker to remove/swap it or press <b>Esc</b> to
+                close the popup.
+              </li>
+              <li>
+                Preview will be available after 4 pairs have been created.
+              </li>
             </ul>
-            <div className='flex items-center gap-2 mb-2 mt-4 text-info'>
+            <div className='mt-4 mb-2 flex items-center gap-2 text-info'>
               <Target size={14} />
-              <span className='font-bold text-sm'>Shortcuts</span>
+              <span className='text-sm font-bold'>Shortcuts</span>
             </div>
-            <ul className='text-sm mb-0 list-none ps-4' style={{ lineHeight: '1.6' }}>
-              <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl + Z</kbd> Undo</li>
-              <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl + Y</kbd> / <kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Ctrl+Shift+Z</kbd> Redo</li>
-              <li><kbd style={{ padding: '2px 4px', borderRadius: '4px', fontSize: '10px' }}>Esc</kbd> Close context menu</li>
+            <ul
+              className='mb-0 list-none ps-4 text-sm'
+              style={{ lineHeight: '1.6' }}
+            >
+              <li>
+                <kbd
+                  style={{
+                    padding: '2px 4px',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                  }}
+                >
+                  Ctrl + Z
+                </kbd>{' '}
+                Undo
+              </li>
+              <li>
+                <kbd
+                  style={{
+                    padding: '2px 4px',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                  }}
+                >
+                  Ctrl + Y
+                </kbd>{' '}
+                /{' '}
+                <kbd
+                  style={{
+                    padding: '2px 4px',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                  }}
+                >
+                  Ctrl+Shift+Z
+                </kbd>{' '}
+                Redo
+              </li>
+              <li>
+                <kbd
+                  style={{
+                    padding: '2px 4px',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                  }}
+                >
+                  Esc
+                </kbd>{' '}
+                Close context menu
+              </li>
             </ul>
           </div>
         )}
       </CardHeader>
-      <CardContent className='p-0 flex flex-col overflow-hidden'>
+      <CardContent className='flex flex-col overflow-hidden p-0'>
         <div className='grow overflow-auto p-4'>
           <div className='flex flex-col gap-2'>
             {tableRows.map(({ i, p1, p2 }) => {
@@ -275,12 +340,18 @@ export function ManualHomographyEditor({
                   >
                     {i + 1}
                   </div>
-                  <div className='flex items-center gap-2 grow' style={{ padding: '8px' }}>
+                  <div
+                    className='flex grow items-center gap-2'
+                    style={{ padding: '8px' }}
+                  >
                     {/* Image 1 Point */}
-                    <div className='grow p-2' style={{ background: '#4E5D6C', borderRadius: '4px' }}>
+                    <div
+                      className='grow p-2'
+                      style={{ background: '#4E5D6C', borderRadius: '4px' }}
+                    >
                       {p1 ? (
                         <div className='flex items-center justify-between'>
-                          <span className='text-sm mono'>
+                          <span className='mono text-sm'>
                             {Math.round(p1.x)}, {Math.round(p1.y)}
                           </span>
                           <Button
@@ -293,15 +364,20 @@ export function ManualHomographyEditor({
                           </Button>
                         </div>
                       ) : (
-                        <span className='opacity-50 text-sm italic'>Pending...</span>
+                        <span className='text-sm italic opacity-50'>
+                          Pending...
+                        </span>
                       )}
                     </div>
 
                     {/* Image 2 Point */}
-                    <div className='grow p-2' style={{ background: '#4E5D6C', borderRadius: '4px' }}>
+                    <div
+                      className='grow p-2'
+                      style={{ background: '#4E5D6C', borderRadius: '4px' }}
+                    >
                       {p2 ? (
                         <div className='flex items-center justify-between'>
-                          <span className='text-sm mono'>
+                          <span className='mono text-sm'>
                             {Math.round(p2.x)}, {Math.round(p2.y)}
                           </span>
                           <Button
@@ -314,7 +390,9 @@ export function ManualHomographyEditor({
                           </Button>
                         </div>
                       ) : (
-                        <span className='opacity-50 text-sm italic'>Pending...</span>
+                        <span className='text-sm italic opacity-50'>
+                          Pending...
+                        </span>
                       )}
                     </div>
 
@@ -335,9 +413,13 @@ export function ManualHomographyEditor({
             })}
 
             {tableRows.length === 0 && (
-              <div className='text-center py-6 opacity-50 text-sm'>
+              <div className='py-6 text-center text-sm opacity-50'>
                 <Circle size={24} className='mb-2 opacity-25' />
-                <p className='mb-0'>No points yet. Click on both<br />images to begin matching.</p>
+                <p className='mb-0'>
+                  No points yet. Click on both
+                  <br />
+                  images to begin matching.
+                </p>
               </div>
             )}
           </div>
@@ -381,23 +463,27 @@ export function ManualHomographyEditor({
             size='sm'
             onClick={handleSave}
             disabled={!canCompute || isSaving}
-            className='w-full flex items-center justify-center gap-2 py-2 mt-2'
-            variant={canCompute ? (isSaved ? 'warning' : 'primary') : 'secondary'}
+            className='mt-2 flex w-full items-center justify-center gap-2 py-2'
+            variant={
+              canCompute ? (isSaved ? 'warning' : 'primary') : 'secondary'
+            }
           >
             <Save size={16} />
             {isSaving
               ? 'Saving...'
               : isSaved
-              ? 'Overwrite Homography'
-              : 'Save Homography'}
+                ? 'Overwrite Homography'
+                : 'Save Homography'}
           </Button>
 
           {!isSaved && (
-            <div className='pt-4 border-t border-secondary'>
-              <p className='text-sm opacity-50 mb-2'>No overlap? Skip this pair.</p>
+            <div className='border-t border-secondary pt-4'>
+              <p className='mb-2 text-sm opacity-50'>
+                No overlap? Skip this pair.
+              </p>
               <Button
                 size='sm'
-                className='w-full flex items-center justify-center gap-2 mb-2'
+                className='mb-2 flex w-full items-center justify-center gap-2'
                 variant='outline-warning'
                 onClick={() => handleSkip()}
                 disabled={isSkipping}

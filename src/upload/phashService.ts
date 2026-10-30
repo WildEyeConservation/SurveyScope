@@ -16,8 +16,7 @@ interface QueueEntry {
 const MAX_CONSECUTIVE_CRASHES = 3;
 
 type WorkerMessage =
-  | { id: number; phash: string }
-  | { id: number; error: string };
+  { id: number; phash: string } | { id: number; error: string };
 
 export class PhashService {
   private workers: Worker[] = [];

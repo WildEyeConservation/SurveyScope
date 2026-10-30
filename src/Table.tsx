@@ -1,14 +1,14 @@
-import type { CSSProperties } from 'react';
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { Table } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Table } from '@/components/ui/table';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { MoveUp, MoveDown } from 'lucide-react';
+import { MoveDown, MoveUp } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface TableObject {
   tableData: { id: any; rowData: React.ReactNode[] }[];
@@ -45,7 +45,7 @@ export default function MyTable(input: TableObject) {
     direction: SortDirection;
   } | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
-  
+
   // Initialize itemsPerPage from localStorage or use default
   const getInitialItemsPerPage = () => {
     if (typeof window !== 'undefined') {
@@ -59,7 +59,7 @@ export default function MyTable(input: TableObject) {
     }
     return initialItemsPerPage;
   };
-  
+
   const [itemsPerPage, setItemsPerPage] = useState(getInitialItemsPerPage);
   const prevDataRef = useRef<{ id: any }[]>([]);
 
@@ -119,23 +119,28 @@ export default function MyTable(input: TableObject) {
   const paginatedData = pagination
     ? sortedData.slice(
         currentPage * itemsPerPage,
-        (currentPage + 1) * itemsPerPage
+        (currentPage + 1) * itemsPerPage,
       )
     : sortedData;
 
   useEffect(() => {
     // Only reset page if the data actually changed (length or IDs changed)
     // This prevents resetting when tableData is recreated with the same content
-    const prevIds = prevDataRef.current.map((item) => item.id).sort().join(',');
-    const currentIds = tableData.map((item) => item.id).sort().join(',');
-    const dataChanged = 
-      prevDataRef.current.length !== tableData.length || 
-      prevIds !== currentIds;
+    const prevIds = prevDataRef.current
+      .map((item) => item.id)
+      .sort()
+      .join(',');
+    const currentIds = tableData
+      .map((item) => item.id)
+      .sort()
+      .join(',');
+    const dataChanged =
+      prevDataRef.current.length !== tableData.length || prevIds !== currentIds;
 
     if (dataChanged) {
       setCurrentPage(0); // reset to first page when data actually changes (e.g., search/filter)
     }
-    
+
     prevDataRef.current = tableData;
   }, [tableData]);
 
@@ -169,7 +174,11 @@ export default function MyTable(input: TableObject) {
                       className='bg-dark'
                       onClick={sort ? () => handleSort(index) : undefined}
                       style={{
-                        cursor: sort ? 'pointer' : description ? 'help' : 'default',
+                        cursor: sort
+                          ? 'pointer'
+                          : description
+                            ? 'help'
+                            : 'default',
                         ...style,
                       }}
                     >
@@ -186,7 +195,7 @@ export default function MyTable(input: TableObject) {
                       <TooltipContent side='top'>{description}</TooltipContent>
                     </Tooltip>
                   );
-                }
+                },
               )}
             </tr>
           </thead>
@@ -216,7 +225,7 @@ export default function MyTable(input: TableObject) {
         </tbody>
       </Table>
       {pagination && (
-        <div className='text-right flex justify-between items-center'>
+        <div className='flex items-center justify-between text-right'>
           <div className='flex items-center gap-2'>
             <label htmlFor='rowsPerPage' className='mb-0'>
               Rows per page:
@@ -238,7 +247,7 @@ export default function MyTable(input: TableObject) {
             </NativeSelect>
           </div>
           <div className='flex items-center gap-2'>
-            <p className='inline mb-0'>
+            <p className='mb-0 inline'>
               Page {currentPage + 1} of {totalPages}
             </p>
             <div className='flex gap-1'>
@@ -255,7 +264,8 @@ export default function MyTable(input: TableObject) {
                 variant='info'
                 onClick={() => setCurrentPage(currentPage + 1)}
                 disabled={
-                  currentPage === Math.ceil(sortedData.length / itemsPerPage) - 1
+                  currentPage ===
+                  Math.ceil(sortedData.length / itemsPerPage) - 1
                 }
               >
                 &gt;

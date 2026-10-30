@@ -1,12 +1,12 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import type { LatLng } from './strataNetwork';
 import {
   sameShape,
   saveStrataRows,
   strataReshaped,
   type StrataClient,
 } from './strataStore';
-import type { LatLng } from './strataNetwork';
 
 const west: LatLng[] = [
   [0, 0],
@@ -65,7 +65,7 @@ test('retrying after a partial save leaves one row per stratum', async () => {
   assert.equal(rows.size, 2);
   assert.deepEqual(
     strata.map((st) => st.name),
-    ['West', 'East']
+    ['West', 'East'],
   );
 });
 
@@ -73,9 +73,9 @@ test('a renamed stratum with the same shape is not reshaped', () => {
   assert.equal(
     strataReshaped(
       [{ id: 'w', name: 'Renamed', coords: [...west].reverse() }],
-      [{ id: 'w', name: 'West', coords: west }]
+      [{ id: 'w', name: 'West', coords: west }],
     ),
-    false
+    false,
   );
 });
 

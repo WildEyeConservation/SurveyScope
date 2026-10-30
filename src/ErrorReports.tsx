@@ -1,5 +1,3 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { generateClient } from 'aws-amplify/api';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,6 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { generateClient } from 'aws-amplify/api';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import MyTable from './Table';
 import { useUsers } from './apiInterface';
 import { graphqlErrorMessage } from './reportClientErrorCore';
@@ -56,7 +56,7 @@ type ErrorReport = {
 
 async function runGraphql<T>(
   query: string,
-  variables: Record<string, unknown>
+  variables: Record<string, unknown>,
 ): Promise<T> {
   try {
     const result = (await client.graphql({ query, variables })) as {
@@ -124,9 +124,9 @@ export default function ErrorReports() {
     () =>
       [...reports].sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       ),
-    [reports]
+    [reports],
   );
 
   const userLabel = (report: ErrorReport) => {
@@ -177,7 +177,7 @@ export default function ErrorReports() {
 
   return (
     <div className='mt-2'>
-      <div className='flex justify-between items-center mb-4'>
+      <div className='mb-4 flex items-center justify-between'>
         <h5 className='mb-0'>Error Reports</h5>
         <Button
           variant='outline-primary'
@@ -203,58 +203,60 @@ export default function ErrorReports() {
         onOpenChange={(o) => !o && setSelected(null)}
       >
         <DialogContent size='xl'>
-        <DialogHeader closeButton>
-          <DialogTitle>Error Report</DialogTitle>
-        </DialogHeader>
-        {selected && (
-          <DialogBody>
-            <dl className='mb-4'>
-              <dt>Timestamp</dt>
-              <dd>{new Date(selected.createdAt).toLocaleString()}</dd>
-              <dt>User</dt>
-              <dd>
-                {userLabel(selected)}
-                <div className='text-sm text-muted-foreground'>{selected.userId}</div>
-              </dd>
-              <dt>URL</dt>
-              <dd style={{ wordBreak: 'break-all' }}>
-                {selected.url || 'N/A'}
-              </dd>
-              <dt>Status</dt>
-              <dd>{selected.status || 'N/A'}</dd>
-              <dt>User Agent</dt>
-              <dd>{selected.userAgent || 'N/A'}</dd>
-              <dt>Message</dt>
-              <dd style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {selected.message}
-              </dd>
-            </dl>
-            <h6>Stack Trace</h6>
-            <pre
-              className='mb-4 border p-2 text-sm'
-              style={{
-                maxHeight: '40vh',
-                overflow: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
+          <DialogHeader closeButton>
+            <DialogTitle>Error Report</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <DialogBody>
+              <dl className='mb-4'>
+                <dt>Timestamp</dt>
+                <dd>{new Date(selected.createdAt).toLocaleString()}</dd>
+                <dt>User</dt>
+                <dd>
+                  {userLabel(selected)}
+                  <div className='text-sm text-muted-foreground'>
+                    {selected.userId}
+                  </div>
+                </dd>
+                <dt>URL</dt>
+                <dd style={{ wordBreak: 'break-all' }}>
+                  {selected.url || 'N/A'}
+                </dd>
+                <dt>Status</dt>
+                <dd>{selected.status || 'N/A'}</dd>
+                <dt>User Agent</dt>
+                <dd>{selected.userAgent || 'N/A'}</dd>
+                <dt>Message</dt>
+                <dd style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {selected.message}
+                </dd>
+              </dl>
+              <h6>Stack Trace</h6>
+              <pre
+                className='mb-4 border p-2 text-sm'
+                style={{
+                  maxHeight: '40vh',
+                  overflow: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {selected.stack || 'No stack trace available'}
+              </pre>
+            </DialogBody>
+          )}
+          <DialogFooter>
+            <Button
+              variant='danger'
+              disabled={deleting}
+              onClick={() => selected && void deleteReport(selected)}
             >
-              {selected.stack || 'No stack trace available'}
-            </pre>
-          </DialogBody>
-        )}
-        <DialogFooter>
-          <Button
-            variant='danger'
-            disabled={deleting}
-            onClick={() => selected && void deleteReport(selected)}
-          >
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
-          <Button variant='dark' onClick={() => setSelected(null)}>
-            Close
-          </Button>
-        </DialogFooter>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+            <Button variant='dark' onClick={() => setSelected(null)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

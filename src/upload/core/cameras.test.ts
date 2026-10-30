@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { planCameraWrite } from './cameras';
 
 test('planCameraWrite leaves an existing camera alone without entered specs', () => {

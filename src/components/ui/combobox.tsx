@@ -1,12 +1,3 @@
-import * as React from 'react';
-import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { fieldBase, type FieldSize } from '@/components/ui/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import {
   Command,
   CommandEmpty,
@@ -15,6 +6,15 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
+import { fieldBase, type FieldSize } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import { CheckIcon, ChevronDownIcon, XIcon } from 'lucide-react';
+import * as React from 'react';
 
 export type ComboboxOption = {
   label: string;
@@ -103,7 +103,7 @@ export function Combobox(props: ComboboxProps) {
       props.onChange(
         isSelected(option)
           ? props.value.filter((selected) => selected.value !== option.value)
-          : [...props.value, option]
+          : [...props.value, option],
       );
       return;
     }
@@ -149,7 +149,7 @@ export function Combobox(props: ComboboxProps) {
             open && 'border-[#efb48c] ring-[0.25rem] ring-primary/25',
             disabled &&
               'cursor-not-allowed bg-[#ebebeb] text-secondary hover:bg-[#ebebeb]',
-            className
+            className,
           )}
           onClick={(event) => {
             if (disabled) event.preventDefault();
@@ -232,7 +232,7 @@ export function Combobox(props: ComboboxProps) {
               aria-hidden='true'
               className={cn(
                 'size-4 shrink-0 text-[#6c757d] transition-transform',
-                open && 'rotate-180'
+                open && 'rotate-180',
               )}
             />
           </span>
@@ -243,12 +243,12 @@ export function Combobox(props: ComboboxProps) {
         sideOffset={2}
         className={cn(
           'w-(--radix-popover-trigger-width) min-w-[10rem] border-black/15 bg-white p-0 text-[#212529] shadow-lg',
-          contentClassName
+          contentClassName,
         )}
         onOpenAutoFocus={(event) => {
           // Let the search field take focus so typing filters immediately.
           const input = (event.currentTarget as HTMLElement).querySelector(
-            '[data-slot=command-input]'
+            '[data-slot=command-input]',
           );
           if (input instanceof HTMLElement) {
             event.preventDefault();
@@ -279,17 +279,17 @@ export function Combobox(props: ComboboxProps) {
                   className={cn(
                     'text-base text-[#212529] data-[selected=true]:bg-[#deebff] data-[selected=true]:text-[#212529]',
                     isSelected(option) &&
-                      'bg-[#2684ff] text-white data-[selected=true]:bg-[#2684ff] data-[selected=true]:text-white'
+                      'bg-[#2684ff] text-white data-[selected=true]:bg-[#2684ff] data-[selected=true]:text-white',
                   )}
                 >
                   <CheckIcon
                     aria-hidden='true'
                     className={cn(
                       'size-4 shrink-0 text-current',
-                      isSelected(option) ? 'opacity-100' : 'opacity-0'
+                      isSelected(option) ? 'opacity-100' : 'opacity-0',
                     )}
                   />
-                  <span className='min-w-0 whitespace-normal break-words leading-snug'>
+                  <span className='min-w-0 leading-snug break-words whitespace-normal'>
                     {option.label}
                   </span>
                 </CommandItem>

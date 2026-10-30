@@ -1,6 +1,6 @@
-import { useContext, useEffect, useState } from 'react';
-import * as maplibregl from 'maplibre-gl';
 import type { Feature, Point, Polygon } from 'geojson';
+import * as maplibregl from 'maplibre-gl';
+import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
 
@@ -133,7 +133,7 @@ export function MapLocationOverlay({
 
   // Only offer sources that actually have boxes on this image.
   const availableSources = sources.filter(
-    (c) => (boxesBySource[c.source]?.length ?? 0) > 0
+    (c) => (boxesBySource[c.source]?.length ?? 0) > 0,
   );
 
   // Add the GeoJSON source + fill/line layers once the map is ready.

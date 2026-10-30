@@ -1,4 +1,4 @@
-import { matrix, multiply, inv, type Matrix } from 'mathjs';
+import { inv, matrix, multiply, type Matrix } from 'mathjs';
 import type { ImageNeighbourType } from '../../schemaTypes';
 import type { PixelTransform } from '../types';
 
@@ -21,7 +21,9 @@ export interface BuiltTransforms {
 }
 
 // Returns identity transforms with noHomography:true when the homography is missing/malformed.
-export function buildNeighbourTransforms(n: ImageNeighbourType): BuiltTransforms {
+export function buildNeighbourTransforms(
+  n: ImageNeighbourType,
+): BuiltTransforms {
   const arr = array2Matrix(n.homography ?? null);
   if (!arr) {
     const identity: PixelTransform = (c) => [c[0], c[1]];
@@ -41,7 +43,7 @@ export function projectsInside(
   y: number,
   tf: PixelTransform,
   w: number,
-  h: number
+  h: number,
 ): boolean {
   const [tx, ty] = tf([x, y]);
   return tx >= 0 && ty >= 0 && tx < w && ty < h;
@@ -50,15 +52,14 @@ export function projectsInside(
 function pointInPolygon(
   px: number,
   py: number,
-  poly: [number, number][]
+  poly: [number, number][],
 ): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const [xi, yi] = poly[i];
     const [xj, yj] = poly[j];
     const intersect =
-      yi > py !== yj > py &&
-      px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
+      yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
@@ -70,7 +71,7 @@ export function isInOverlap(
   py: number,
   otherToThis: PixelTransform,
   otherW: number,
-  otherH: number
+  otherH: number,
 ): boolean {
   const quad: [number, number][] = [
     otherToThis([0, 0]),

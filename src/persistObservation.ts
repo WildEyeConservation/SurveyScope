@@ -52,6 +52,6 @@ export async function persistObservation({
   throw new Error(
     `Failed to persist observation: ${
       describeErrors(errors) || 'no row returned'
-    }`
+    }`,
   );
 }

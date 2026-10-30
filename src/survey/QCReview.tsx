@@ -1,25 +1,25 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
-import { LoadingProgressCard } from './LoadingProgressCard';
-import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
-import { loadRows } from '../rowChunks';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
-import { logAdminAction } from '../utils/adminActionLogger';
+import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
+import { GlobalContext, UserContext } from '../Context';
+import { loadRows } from '../rowChunks';
+import { fetchAllPaginatedResults } from '../utils';
+import { logAdminAction } from '../utils/adminActionLogger';
+import { LoadingProgressCard } from './LoadingProgressCard';
 import { pickZoomPreviewCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
 
 type LaunchHandler = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 };
 
@@ -66,12 +66,15 @@ export default function QCReview({
   // Data loading
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [allAnnotations, setAllAnnotations] = useState<
-    Array<{ id: string; categoryId: string; reviewCatId: string | null; owner: string | null }>
+    Array<{
+      id: string;
+      categoryId: string;
+      reviewCatId: string | null;
+      owner: string | null;
+    }>
   >([]);
   const [loading, setLoading] = useState(true);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>(
-    INITIAL_LOAD_STATUS
-  );
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>(INITIAL_LOAD_STATUS);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
 
   // Launch settings
@@ -82,14 +85,19 @@ export default function QCReview({
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   // Annotator filter
-  const [selectedAnnotatorIds, setSelectedAnnotatorIds] = useState<string[]>([]);
+  const [selectedAnnotatorIds, setSelectedAnnotatorIds] = useState<string[]>(
+    [],
+  );
 
   const { users } = useUsers();
   const userMap = useMemo(() => {
-    return users.reduce((acc, user) => {
-      acc[user.id] = user.name ?? user.email ?? user.id;
-      return acc;
-    }, {} as Record<string, string>);
+    return users.reduce(
+      (acc, user) => {
+        acc[user.id] = user.name ?? user.email ?? user.id;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
   }, [users]);
 
   // Categories that have annotations, with completion status
@@ -121,7 +129,9 @@ export default function QCReview({
   }, [allAnnotations, selectedCategoryId]);
 
   const totalCount = categoryAnnotations.length;
-  const unreviewedCount = categoryAnnotations.filter((a) => !a.reviewCatId).length;
+  const unreviewedCount = categoryAnnotations.filter(
+    (a) => !a.reviewCatId,
+  ).length;
 
   // Distinct annotators who have annotations in the selected category
   const annotatorOptions = useMemo(() => {
@@ -130,7 +140,7 @@ export default function QCReview({
       if (a.owner) ownerIds.add(a.owner);
     }
     return Array.from(ownerIds).sort((a, b) =>
-      (userMap[a] ?? a).localeCompare(userMap[b] ?? b)
+      (userMap[a] ?? a).localeCompare(userMap[b] ?? b),
     );
   }, [categoryAnnotations, userMap]);
 
@@ -165,7 +175,7 @@ export default function QCReview({
           },
           (count) => {
             if (mounted) setLoadStatus((s) => ({ ...s, categories: count }));
-          }
+          },
         ).then((r) => {
           if (mounted)
             setLoadStatus((s) => ({
@@ -181,7 +191,7 @@ export default function QCReview({
           annotationSet.id,
           (count) => {
             if (mounted) setLoadStatus((s) => ({ ...s, annotations: count }));
-          }
+          },
         ).then((r) => {
           if (mounted)
             setLoadStatus((s) => ({
@@ -202,7 +212,7 @@ export default function QCReview({
             id: c.id,
             name: c.name,
             shortcutKey: (c as any).shortcutKey ?? null,
-          }))
+          })),
         );
         setAllAnnotations(annotations);
       } catch (err) {
@@ -268,7 +278,7 @@ export default function QCReview({
     setQCLaunchHandler({
       execute: async (
         onProgress: (msg: string) => void,
-        onLaunchConfirmed: () => void
+        onLaunchConfirmed: () => void,
       ) => {
         const categoryId = selectedCategoryIdRef.current;
         if (!categoryId) {
@@ -304,7 +314,7 @@ export default function QCReview({
           user.userId,
           `Launched QC Review for category "${categoryName ?? categoryId}" in annotation set "${annotationSet.name}" (${samplePercentRef.current}% sample)`,
           project.id,
-          (project as any).organizationId
+          (project as any).organizationId,
         ).catch(console.error);
       },
     });
@@ -322,11 +332,13 @@ export default function QCReview({
     user.userId,
   ]);
 
-  const selectedCategory = availableCategories.find((c) => c.id === selectedCategoryId);
+  const selectedCategory = availableCategories.find(
+    (c) => c.id === selectedCategoryId,
+  );
 
   return (
-    <div className='px-4 pb-4 pt-1'>
-      <div className='flex flex-col gap-4 mt-2'>
+    <div className='px-4 pt-1 pb-4'>
+      <div className='mt-2 flex flex-col gap-4'>
         {loading ? (
           <LoadingProgressCard
             title='Loading QC Review data…'
@@ -353,7 +365,7 @@ export default function QCReview({
             <div>
               <Label className='mb-0'>Label to review</Label>
               <span
-                className='text-muted-foreground block mb-1'
+                className='mb-1 block text-muted-foreground'
                 style={{ fontSize: '12px' }}
               >
                 Select the label whose annotations should be reviewed.
@@ -366,7 +378,8 @@ export default function QCReview({
                 <option value=''>Select a label...</option>
                 {availableCategories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
-                    {cat.name}{cat.complete ? ' (complete)' : ''}
+                    {cat.name}
+                    {cat.complete ? ' (complete)' : ''}
                   </option>
                 ))}
               </NativeSelect>
@@ -375,7 +388,7 @@ export default function QCReview({
             {/* Annotation count stats */}
             {selectedCategoryId && (
               <div
-                className='border border-dark shadow-sm p-2'
+                className='border border-dark p-2 shadow-sm'
                 style={{ backgroundColor: '#697582' }}
               >
                 <div className='text-white' style={{ fontSize: '12px' }}>
@@ -385,8 +398,7 @@ export default function QCReview({
                     <strong>{totalCount}</strong>
                   </div>
                   <div>
-                    Not yet reviewed:{' '}
-                    <strong>{unreviewedCount}</strong>
+                    Not yet reviewed: <strong>{unreviewedCount}</strong>
                     {selectedAnnotatorIds.length > 0 &&
                       filteredUnreviewedCount !== unreviewedCount && (
                         <span>
@@ -395,12 +407,14 @@ export default function QCReview({
                         </span>
                       )}
                   </div>
-                  {sampleCount !== null && filteredUnreviewedCount !== null && filteredUnreviewedCount > 0 && (
-                    <div>
-                      Sample size ({samplePercent}%):{' '}
-                      <strong>{sampleCount}</strong>
-                    </div>
-                  )}
+                  {sampleCount !== null &&
+                    filteredUnreviewedCount !== null &&
+                    filteredUnreviewedCount > 0 && (
+                      <div>
+                        Sample size ({samplePercent}%):{' '}
+                        <strong>{sampleCount}</strong>
+                      </div>
+                    )}
                   {filteredUnreviewedCount === 0 && (
                     <div className='mt-1 text-warning'>
                       {selectedAnnotatorIds.length > 0
@@ -420,7 +434,7 @@ export default function QCReview({
                   <div>
                     <Label className='mb-0'>Sample size (%)</Label>
                     <span
-                      className='text-muted-foreground block mb-1'
+                      className='mb-1 block text-muted-foreground'
                       style={{ fontSize: '12px' }}
                     >
                       Percentage of unreviewed annotations to sample for review.
@@ -433,7 +447,7 @@ export default function QCReview({
                       value={samplePercent}
                       onChange={(e) =>
                         setSamplePercent(
-                          Number((e.target as HTMLInputElement).value)
+                          Number((e.target as HTMLInputElement).value),
                         )
                       }
                       disabled={launching}
@@ -466,13 +480,13 @@ export default function QCReview({
 
                   {showAdvancedOptions && (
                     <div
-                      className='flex flex-col gap-4 border border-dark shadow-sm p-2'
+                      className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
                       style={{ backgroundColor: '#697582' }}
                     >
                       <div>
                         <Label className='mb-0'>Batch Size</Label>
                         <span
-                          className='text-muted-foreground block mb-1'
+                          className='mb-1 block text-muted-foreground'
                           style={{ fontSize: '12px' }}
                         >
                           The number of reviews a user can pick up at a time.
@@ -482,7 +496,7 @@ export default function QCReview({
                           value={batchSize}
                           onChange={(e) =>
                             setBatchSize(
-                              Number((e.target as HTMLInputElement).value)
+                              Number((e.target as HTMLInputElement).value),
                             )
                           }
                           disabled={launching}
@@ -499,7 +513,7 @@ export default function QCReview({
                           Hide Job From Non-Admin Workers
                         </label>
                         <span
-                          className='text-muted-foreground block'
+                          className='block text-muted-foreground'
                           style={{ fontSize: '12px' }}
                         >
                           When enabled, only organisation admins and admins of
@@ -509,11 +523,9 @@ export default function QCReview({
 
                       {annotatorOptions.length > 1 && (
                         <div>
-                          <Label className='mb-0'>
-                            Filter by Annotator
-                          </Label>
+                          <Label className='mb-0'>Filter by Annotator</Label>
                           <span
-                            className='text-muted-foreground block mb-1'
+                            className='mb-1 block text-muted-foreground'
                             style={{ fontSize: '12px' }}
                           >
                             Only review annotations made by the selected
@@ -535,7 +547,9 @@ export default function QCReview({
                                 style={{ fontSize: '13px' }}
                               >
                                 <Checkbox
-                                  checked={selectedAnnotatorIds.includes(ownerId)}
+                                  checked={selectedAnnotatorIds.includes(
+                                    ownerId,
+                                  )}
                                   disabled={launching}
                                   onCheckedChange={(c) => {
                                     if (c === true) {
@@ -545,7 +559,7 @@ export default function QCReview({
                                       ]);
                                     } else {
                                       setSelectedAnnotatorIds((prev) =>
-                                        prev.filter((id) => id !== ownerId)
+                                        prev.filter((id) => id !== ownerId),
                                       );
                                     }
                                   }}
@@ -572,14 +586,21 @@ export default function QCReview({
 async function fetchAnnotationsByAnnotationSet(
   client: DataClient,
   annotationSetId: string,
-  onProgress?: (count: number) => void
-): Promise<Array<{ id: string; categoryId: string; reviewCatId: string | null; owner: string | null }>> {
+  onProgress?: (count: number) => void,
+): Promise<
+  Array<{
+    id: string;
+    categoryId: string;
+    reviewCatId: string | null;
+    owner: string | null;
+  }>
+> {
   const rows = await loadRows(
     client,
     'annotationsByAnnotationSetId',
     annotationSetId,
     ['categoryId', 'reviewCatId', 'owner'],
-    { onProgress }
+    { onProgress },
   );
   return rows.flatMap((row) =>
     row.categoryId
@@ -591,21 +612,24 @@ async function fetchAnnotationsByAnnotationSet(
             owner: row.owner,
           },
         ]
-      : []
+      : [],
   );
 }
 
 // Send the QC review launch request to the Lambda.
 async function sendLaunchQCReviewRequest(
   client: DataClient,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ) {
   const requestPayload = JSON.stringify(payload);
 
   try {
-    await (client as any).mutations.launchQCReview({
-      request: requestPayload,
-    }, { retry: false });
+    await (client as any).mutations.launchQCReview(
+      {
+        request: requestPayload,
+      },
+      { retry: false },
+    );
   } catch (error: any) {
     // Ignore timeout errors - the Lambda may still be processing.
     if (shouldIgnoreLaunchError(error)) {
@@ -625,6 +649,6 @@ export function shouldIgnoreLaunchError(error: any): boolean {
     }
   }
   return messages.some((msg) =>
-    /timed out|timeout|Task timed out|socket hang up/i.test(msg)
+    /timed out|timeout|Task timed out|socket hang up/i.test(msg),
   );
 }

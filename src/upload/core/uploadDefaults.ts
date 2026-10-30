@@ -1,10 +1,10 @@
-import type { AltitudeUnit } from '../altitudeFilter';
-import { unwrap } from './retry';
-import type { UploadClient } from './types';
 import {
   normalizeQuarterTurn,
   type CameraOrientationRotations,
 } from '../../types/Orientation';
+import type { AltitudeUnit } from '../altitudeFilter';
+import { unwrap } from './retry';
+import type { UploadClient } from './types';
 
 export interface ColumnMapping {
   timestamp?: string;
@@ -86,8 +86,8 @@ export function parseUploadDefaults(raw: unknown): UploadDefaults | null {
     result.folderCameraMapping = Object.fromEntries(
       Object.entries(value.folderCameraMapping).filter(
         (entry): entry is [string, string] =>
-          typeof entry[1] === 'string' && entry[1] !== ''
-      )
+          typeof entry[1] === 'string' && entry[1] !== '',
+      ),
     );
   }
   if (isRecord(value.rotations)) {
@@ -98,12 +98,12 @@ export function parseUploadDefaults(raw: unknown): UploadDefaults | null {
           (['landscape', 'portrait'] as const).flatMap((group) => {
             const rotation = normalizeQuarterTurn(Number(groups[group]));
             return rotation ? [[group, rotation]] : [];
-          })
+          }),
         );
         return Object.keys(corrections).length > 0
           ? [[camera, corrections]]
           : [];
-      })
+      }),
     );
   }
   if (isRecord(value.columnMapping)) {
@@ -112,8 +112,8 @@ export function parseUploadDefaults(raw: unknown): UploadDefaults | null {
       COLUMN_KEYS.flatMap((key) =>
         typeof mapping[key] === 'string' && mapping[key] !== ''
           ? [[key, mapping[key]]]
-          : []
-      )
+          : [],
+      ),
     );
   }
   return result;
@@ -121,7 +121,7 @@ export function parseUploadDefaults(raw: unknown): UploadDefaults | null {
 
 export function columnMappingForHeaders(
   mapping: ColumnMapping | undefined,
-  headers: string[]
+  headers: string[],
 ): ColumnMapping | null {
   if (!mapping) return null;
   const columns = Object.values(mapping);
@@ -134,7 +134,7 @@ export function mergeUploadDefaults(
   saved: UploadDefaults | null,
   next: UploadDefaults,
   uploadedCameras: string[],
-  uploadedFolders: string[]
+  uploadedFolders: string[],
 ): UploadDefaults {
   const rotations = { ...saved?.rotations };
   for (const camera of uploadedCameras) delete rotations[camera];
@@ -151,27 +151,27 @@ export function mergeUploadDefaults(
 
 export function mappingForFolders(
   mapping: Record<string, string> | undefined,
-  folders: string[]
+  folders: string[],
 ): Record<string, string> {
   return Object.fromEntries(
     folders.flatMap((folder) =>
       mapping && Object.prototype.hasOwnProperty.call(mapping, folder)
         ? [[folder, mapping[folder]]]
-        : []
-    )
+        : [],
+    ),
   );
 }
 
 // Throws when the read fails, so callers never mistake it for no defaults.
 export async function fetchUploadDefaults(
   client: Pick<UploadClient, 'models'>,
-  projectId: string
+  projectId: string,
 ): Promise<UploadDefaults | null> {
   const project = unwrap<{ uploadDefaults?: string | null }>(
     await client.models.Project.get(
       { id: projectId },
-      { selectionSet: ['uploadDefaults'] as const }
-    )
+      { selectionSet: ['uploadDefaults'] as const },
+    ),
   );
   return parseUploadDefaults(project.uploadDefaults);
 }

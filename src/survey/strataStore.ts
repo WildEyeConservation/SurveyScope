@@ -41,7 +41,7 @@ export type StrataClient = {
       get(
         key: { id: string },
         options: { selectionSet: string[] },
-        request?: { signal?: AbortSignal }
+        request?: { signal?: AbortSignal },
       ): Promise<Result<ProjectStrataFields>>;
       update(input: {
         id: string;
@@ -67,7 +67,7 @@ export function sameShape(a: LatLng[], b: LatLng[]): boolean {
     ring.some(
       (q) =>
         Math.abs(p[0] - q[0]) <= SAME_POINT_DEG &&
-        Math.abs(p[1] - q[1]) <= SAME_POINT_DEG
+        Math.abs(p[1] - q[1]) <= SAME_POINT_DEG,
     );
   const open = (ring: LatLng[]) =>
     ring.length > 1 &&
@@ -90,7 +90,7 @@ export function sameStrata(a: NamedStratum[], b: NamedStratum[]): boolean {
       (st, i) =>
         st.id === b[i].id &&
         st.name.trim() === b[i].name.trim() &&
-        sameShape(st.coords, b[i].coords)
+        sameShape(st.coords, b[i].coords),
     )
   );
 }
@@ -110,7 +110,7 @@ export function parseNetwork(value: unknown): StrataNetwork | null {
 // Without a stored network, one saved stratum is the whole boundary.
 export function initialNetwork(
   stored: StrataNetwork | null,
-  strata: SavedStratum[]
+  strata: SavedStratum[],
 ): StrataNetwork | null {
   return stored ?? (strata.length > 1 ? null : EMPTY_NETWORK);
 }
@@ -118,7 +118,7 @@ export function initialNetwork(
 // A null network shows strata saved before networks were stored.
 export function layoutOf(
   area: SurveyArea,
-  legacy: SavedStratum[]
+  legacy: SavedStratum[],
 ): StrataLayout {
   if (area.network === null) {
     return { sections: legacy.map((st) => st.coords), dangling: false };
@@ -129,7 +129,7 @@ export function layoutOf(
 export async function loadProjectStrata(
   client: StrataClient,
   projectId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<ProjectStrataFields> {
   return (
     unwrap(
@@ -142,8 +142,8 @@ export async function loadProjectStrata(
             'boundaryRecomputeLeaseUntil',
           ],
         },
-        { signal }
-      )
+        { signal },
+      ),
     ) ?? {}
   );
 }
@@ -151,19 +151,19 @@ export async function loadProjectStrata(
 export async function saveNetwork(
   client: StrataClient,
   projectId: string,
-  network: StrataNetwork
+  network: StrataNetwork,
 ) {
   unwrap(
     await client.models.Project.update({
       id: projectId,
       strataNetwork: JSON.stringify(network),
-    })
+    }),
   );
 }
 
 export function strataReshaped(
   named: NamedStratum[],
-  previous: SavedStratum[]
+  previous: SavedStratum[],
 ): boolean {
   const before = new Map(previous.map((st) => [st.id, st]));
   const kept = new Set(named.map((st) => st.id));
@@ -181,7 +181,7 @@ export async function saveStrataRows(
   projectId: string,
   group: string | undefined,
   named: NamedStratum[],
-  previous: SavedStratum[]
+  previous: SavedStratum[],
 ): Promise<SavedStratum[]> {
   const before = new Map(previous.map((st) => [st.id, st]));
   const strata: SavedStratum[] = [];
@@ -196,7 +196,7 @@ export async function saveStrataRows(
             id: old.id,
             name,
             ...(moved && { coordinates: st.coords.flat() }),
-          })
+          }),
         );
       }
       strata.push({ id: old.id, name, coords: moved ? st.coords : old.coords });
@@ -207,7 +207,7 @@ export async function saveStrataRows(
           name,
           coordinates: st.coords.flat(),
           group,
-        })
+        }),
       );
       if (!data) throw new Error('The stratum was not created');
       strata.push({ id: data.id, name, coords: st.coords });
@@ -217,7 +217,7 @@ export async function saveStrataRows(
   for (const result of await Promise.all(
     previous
       .filter((st) => !kept.has(st.id))
-      .map((st) => client.models.Stratum.delete({ id: st.id }))
+      .map((st) => client.models.Stratum.delete({ id: st.id })),
   )) {
     unwrap(result);
   }
@@ -228,7 +228,7 @@ export async function resplitStrata(
   client: StrataClient,
   projectId: string,
   area: SurveyArea,
-  group: string | undefined
+  group: string | undefined,
 ) {
   const [strata, project] = await Promise.all([
     loadStrata(client as never, projectId),
@@ -244,6 +244,6 @@ export async function resplitStrata(
     projectId,
     group,
     carryStrata(sections, strata),
-    strata
+    strata,
   );
 }

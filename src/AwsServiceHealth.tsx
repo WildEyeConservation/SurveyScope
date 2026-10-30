@@ -1,16 +1,6 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Check, Copy, RefreshCw } from 'lucide-react';
-import {
-  DeleteMessageBatchCommand,
-  GetQueueAttributesCommand,
-  GetQueueUrlCommand,
-  ReceiveMessageCommand,
-  SendMessageBatchCommand,
-  type SQSClient,
-} from '@aws-sdk/client-sqs';
 import {
   DescribeClustersCommand,
   DescribeServicesCommand,
@@ -20,9 +10,20 @@ import {
   ListServicesCommand,
   type Cluster,
 } from '@aws-sdk/client-ecs';
+import {
+  DeleteMessageBatchCommand,
+  GetQueueAttributesCommand,
+  GetQueueUrlCommand,
+  ReceiveMessageCommand,
+  SendMessageBatchCommand,
+  type SQSClient,
+} from '@aws-sdk/client-sqs';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import { Check, Copy, RefreshCw } from 'lucide-react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext, UserContext } from './Context';
 import type { Schema } from './amplify/client-schema';
+
 import './AwsServiceHealth.css';
 
 type MaybeNumber = number | null;
@@ -109,7 +110,6 @@ const shortName = (full?: string | null): string => {
   return full;
 };
 
-
 const formatSystemQueueLabel = (key: string): string => {
   const withoutSuffix = key.replace(/QueueUrl$/i, '');
   const spaced = withoutSuffix
@@ -164,16 +164,16 @@ export default function AwsServiceHealth() {
             ([key, value]) =>
               /queueurl$/i.test(key) &&
               typeof value === 'string' &&
-              value.length > 0
+              value.length > 0,
           )
-          .map(([, value]) => value as string)
+          .map(([, value]) => value as string),
       );
 
       const listClustersResp = await ecsClient.send(
-        new ListClustersCommand({})
+        new ListClustersCommand({}),
       );
       const clusterArns = (listClustersResp.clusterArns ?? []).filter(
-        (arn): arn is string => Boolean(arn)
+        (arn): arn is string => Boolean(arn),
       );
       if (!clusterArns.length) {
         setEcsState({ clusters: [], isLoading: false, error: null });
@@ -181,7 +181,7 @@ export default function AwsServiceHealth() {
       }
 
       const describeClustersResp = await ecsClient.send(
-        new DescribeClustersCommand({ clusters: clusterArns })
+        new DescribeClustersCommand({ clusters: clusterArns }),
       );
       const clusters = describeClustersResp.clusters ?? [];
 
@@ -191,7 +191,7 @@ export default function AwsServiceHealth() {
           const services = await fetchClusterServices(
             ecsClient,
             cluster,
-            ourQueueUrls
+            ourQueueUrls,
           );
           if (!services.length) return null;
           return {
@@ -203,10 +203,10 @@ export default function AwsServiceHealth() {
             activeServicesCount: services.length,
             services,
           };
-        })
+        }),
       );
       const summaries = summaryResults.filter(
-        (s): s is EcsClusterSummary => s !== null
+        (s): s is EcsClusterSummary => s !== null,
       );
 
       setEcsState({ clusters: summaries, isLoading: false, error: null });
@@ -228,7 +228,7 @@ export default function AwsServiceHealth() {
     return Object.entries(custom)
       .filter(
         ([key, value]) =>
-          /queueurl$/i.test(key) && typeof value === 'string' && value.length
+          /queueurl$/i.test(key) && typeof value === 'string' && value.length,
       )
       .map(([key, value]) => ({
         id: `system-${key}`,
@@ -252,14 +252,7 @@ export default function AwsServiceHealth() {
       const response = await client.models.Queue.list({
         limit: 200,
         nextToken,
-        selectionSet: [
-          'id',
-          'name',
-          'tag',
-          'url',
-          'projectId',
-          'project.name',
-        ],
+        selectionSet: ['id', 'name', 'tag', 'url', 'projectId', 'project.name'],
       });
       if (response?.data) {
         allQueues.push(...(response.data as QueueWithProject[]));
@@ -275,7 +268,7 @@ export default function AwsServiceHealth() {
       let url: string | undefined;
       try {
         const urlResult = await sqsClient.send(
-          new GetQueueUrlCommand({ QueueName: queueName })
+          new GetQueueUrlCommand({ QueueName: queueName }),
         );
         url = urlResult.QueueUrl;
       } catch (error) {
@@ -297,20 +290,20 @@ export default function AwsServiceHealth() {
           new GetQueueAttributesCommand({
             QueueUrl: url,
             AttributeNames: [...NUMBER_ATTRIBUTES, 'QueueArn'],
-          })
+          }),
         );
         return {
           arn: attributes.Attributes?.QueueArn ?? arn,
           name: queueName,
           url,
           available: parseNumberAttr(
-            attributes.Attributes?.ApproximateNumberOfMessages
+            attributes.Attributes?.ApproximateNumberOfMessages,
           ),
           inflight: parseNumberAttr(
-            attributes.Attributes?.ApproximateNumberOfMessagesNotVisible
+            attributes.Attributes?.ApproximateNumberOfMessagesNotVisible,
           ),
           delayed: parseNumberAttr(
-            attributes.Attributes?.ApproximateNumberOfMessagesDelayed
+            attributes.Attributes?.ApproximateNumberOfMessagesDelayed,
           ),
         };
       } catch (error) {
@@ -325,7 +318,7 @@ export default function AwsServiceHealth() {
         };
       }
     },
-    []
+    [],
   );
 
   const fetchQueueHealth = useCallback(async () => {
@@ -356,7 +349,7 @@ export default function AwsServiceHealth() {
 
       const uniqueDescriptors = descriptors.filter(
         (descriptor, idx, arr) =>
-          arr.findIndex((d) => d.id === descriptor.id) === idx
+          arr.findIndex((d) => d.id === descriptor.id) === idx,
       );
 
       if (!uniqueDescriptors.length) {
@@ -390,7 +383,7 @@ export default function AwsServiceHealth() {
                   'RedrivePolicy',
                   'QueueArn',
                 ],
-              })
+              }),
             );
 
             let dlqSummary: DlqSummary | undefined;
@@ -401,7 +394,7 @@ export default function AwsServiceHealth() {
                 if (parsed.deadLetterTargetArn) {
                   dlqSummary = await buildDlqSummary(
                     parsed.deadLetterTargetArn,
-                    sqsClient
+                    sqsClient,
                   );
                 }
               } catch (error) {
@@ -419,13 +412,13 @@ export default function AwsServiceHealth() {
               url: descriptor.url,
               arn: attributes.Attributes?.QueueArn ?? undefined,
               available: parseNumberAttr(
-                attributes.Attributes?.ApproximateNumberOfMessages
+                attributes.Attributes?.ApproximateNumberOfMessages,
               ),
               inflight: parseNumberAttr(
-                attributes.Attributes?.ApproximateNumberOfMessagesNotVisible
+                attributes.Attributes?.ApproximateNumberOfMessagesNotVisible,
               ),
               delayed: parseNumberAttr(
-                attributes.Attributes?.ApproximateNumberOfMessagesDelayed
+                attributes.Attributes?.ApproximateNumberOfMessagesDelayed,
               ),
               dlq: dlqSummary,
               scope: descriptor.scope,
@@ -452,7 +445,7 @@ export default function AwsServiceHealth() {
               projectName: descriptor.projectName,
             };
           }
-        })
+        }),
       );
 
       setRows(queueRows.sort((a, b) => a.label.localeCompare(b.label)));
@@ -524,8 +517,9 @@ export default function AwsServiceHealth() {
           variant: 'success',
           message:
             moved > 0
-              ? `Moved ${moved} message${moved === 1 ? '' : 's'} from ${row.label
-              } to ${row.dlq.name}.`
+              ? `Moved ${moved} message${moved === 1 ? '' : 's'} from ${
+                  row.label
+                } to ${row.dlq.name}.`
               : `No messages found in ${row.label}.`,
         });
         await fetchQueueHealth();
@@ -538,7 +532,7 @@ export default function AwsServiceHealth() {
         setActionState((prev) => ({ ...prev, [queueId]: undefined }));
       }
     },
-    [fetchQueueHealth, getSqsClient, rowsById]
+    [fetchQueueHealth, getSqsClient, rowsById],
   );
 
   const handleReplayFromDlq = useCallback(
@@ -566,8 +560,9 @@ export default function AwsServiceHealth() {
           variant: 'success',
           message:
             moved > 0
-              ? `Moved ${moved} message${moved === 1 ? '' : 's'} from ${row.dlq.name
-              } back to ${row.label}.`
+              ? `Moved ${moved} message${moved === 1 ? '' : 's'} from ${
+                  row.dlq.name
+                } back to ${row.label}.`
               : `No messages found in ${row.dlq.name}.`,
         });
         await fetchQueueHealth();
@@ -580,7 +575,7 @@ export default function AwsServiceHealth() {
         setActionState((prev) => ({ ...prev, [queueId]: undefined }));
       }
     },
-    [fetchQueueHealth, getSqsClient, rowsById]
+    [fetchQueueHealth, getSqsClient, rowsById],
   );
 
   if (!contextsReady) {
@@ -593,7 +588,15 @@ export default function AwsServiceHealth() {
   }
 
   return (
-    <div className='aws-service-health' style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div
+      className='aws-service-health'
+      style={{
+        paddingTop: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 24,
+      }}
+    >
       <section>
         <SectionHeader
           title='Queue Health'
@@ -682,7 +685,12 @@ export default function AwsServiceHealth() {
                 <tbody>
                   {ecsState.clusters.flatMap((cluster) =>
                     cluster.services.map((service) => (
-                      <tr key={service.serviceArn ?? `${cluster.clusterArn}-${service.name}`}>
+                      <tr
+                        key={
+                          service.serviceArn ??
+                          `${cluster.clusterArn}-${service.name}`
+                        }
+                      >
                         <td>
                           <div
                             style={{
@@ -711,7 +719,7 @@ export default function AwsServiceHealth() {
                           {service.pendingCount ?? '—'}
                         </td>
                       </tr>
-                    ))
+                    )),
                   )}
                 </tbody>
               </table>
@@ -1023,7 +1031,7 @@ async function moveMessages({
         MessageAttributeNames: ['All'],
         AttributeNames: ['All'],
         VisibilityTimeout: 30,
-      })
+      }),
     );
 
     const messages = receive.Messages ?? [];
@@ -1041,10 +1049,10 @@ async function moveMessages({
         MessageAttributes: message.MessageAttributes,
         ...(fifo
           ? {
-            MessageGroupId: direction === 'drain' ? 'drain' : 'replay',
-            MessageDeduplicationId:
-              `${baseId}-${direction}-${Date.now()}`.slice(0, 128),
-          }
+              MessageGroupId: direction === 'drain' ? 'drain' : 'replay',
+              MessageDeduplicationId:
+                `${baseId}-${direction}-${Date.now()}`.slice(0, 128),
+            }
           : {}),
       };
     });
@@ -1053,11 +1061,11 @@ async function moveMessages({
       new SendMessageBatchCommand({
         QueueUrl: destinationUrl,
         Entries: entries,
-      })
+      }),
     );
 
     const successIds = new Set(
-      (sendResponse.Successful ?? []).map((s) => s.Id)
+      (sendResponse.Successful ?? []).map((s) => s.Id),
     );
     const deleteEntries = messages
       .map((message, index) => ({
@@ -1071,14 +1079,14 @@ async function moveMessages({
         new DeleteMessageBatchCommand({
           QueueUrl: sourceUrl,
           Entries: deleteEntries,
-        })
+        }),
       );
       moved += deleteEntries.length;
     }
 
     if ((sendResponse.Failed?.length ?? 0) > 0) {
       console.warn(
-        `Encountered ${sendResponse.Failed?.length} failures while moving messages from ${sourceUrl} to ${destinationUrl}`
+        `Encountered ${sendResponse.Failed?.length} failures while moving messages from ${sourceUrl} to ${destinationUrl}`,
       );
     }
   }
@@ -1089,7 +1097,7 @@ async function moveMessages({
 async function fetchClusterServices(
   ecsClient: ECSClient,
   cluster: Cluster,
-  ourQueueUrls: Set<string>
+  ourQueueUrls: Set<string>,
 ): Promise<EcsClusterSummary['services']> {
   if (!cluster.clusterArn) {
     return [];
@@ -1097,7 +1105,7 @@ async function fetchClusterServices(
   const listServicesResp = await ecsClient.send(
     new ListServicesCommand({
       cluster: cluster.clusterArn,
-    })
+    }),
   );
   const serviceArns = listServicesResp.serviceArns ?? [];
   if (!serviceArns.length) {
@@ -1107,7 +1115,7 @@ async function fetchClusterServices(
     new DescribeServicesCommand({
       cluster: cluster.clusterArn,
       services: serviceArns,
-    })
+    }),
   );
   const services = describeServicesResp.services ?? [];
 
@@ -1118,13 +1126,13 @@ async function fetchClusterServices(
         const td = await ecsClient.send(
           new DescribeTaskDefinitionCommand({
             taskDefinition: service.taskDefinition,
-          })
+          }),
         );
         const containers = td.taskDefinition?.containerDefinitions ?? [];
         const usesOurQueue = containers.some((container) =>
           (container.environment ?? []).some(
-            (envVar) => envVar.value && ourQueueUrls.has(envVar.value)
-          )
+            (envVar) => envVar.value && ourQueueUrls.has(envVar.value),
+          ),
         );
         if (!usesOurQueue) return null;
       } catch (err) {
@@ -1142,11 +1150,11 @@ async function fetchClusterServices(
         runningCount: service.runningCount,
         pendingCount: service.pendingCount,
       };
-    })
+    }),
   );
 
   return matches.filter(
-    (s): s is NonNullable<(typeof matches)[number]> => s !== null
+    (s): s is NonNullable<(typeof matches)[number]> => s !== null,
   );
 }
 

@@ -1,15 +1,9 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useContext, useEffect, useMemo, useState } from 'react';
-import { Footer } from '../Modal';
 import { GlobalContext } from '../Context';
+import { Footer } from '../Modal';
 import { loadProjectImages } from '../projectImages';
-import CameraMaskEditor, { type MaskTarget } from './masks/CameraMaskEditor';
-import {
-  MASK_HELP,
-  loadStoredSample,
-  strideSamples,
-} from './masks/samplePreview';
 import {
   parseCameraMasks,
   serializeCameraMasks,
@@ -19,6 +13,12 @@ import {
   orientationGroupForDimensions,
   type ImageOrientationGroup,
 } from '../types/Orientation';
+import CameraMaskEditor, { type MaskTarget } from './masks/CameraMaskEditor';
+import {
+  MASK_HELP,
+  loadStoredSample,
+  strideSamples,
+} from './masks/samplePreview';
 
 const SAMPLES_KEPT_PER_GROUP = 200;
 
@@ -48,7 +48,7 @@ export default function EditMasks({ projectId }: { projectId: string }) {
         (
           await client.models.Camera.camerasByProjectId(
             { projectId },
-            { signal }
+            { signal },
           )
         ).data ?? [];
       const grouped: Record<string, SampleImage[]> = {};
@@ -56,7 +56,7 @@ export default function EditMasks({ projectId }: { projectId: string }) {
         client,
         projectId,
         ['cameraId', 'width', 'height', 'originalPath'],
-        { signal }
+        { signal },
       );
       for (const image of images) {
         if (!image.cameraId || image.width === null || image.height === null)
@@ -75,16 +75,16 @@ export default function EditMasks({ projectId }: { projectId: string }) {
       setCameras(cameraRows.map((c) => ({ id: c.id, name: c.name })));
       setMasks(
         Object.fromEntries(
-          cameraRows.map((c) => [c.name, parseCameraMasks(c.masks)])
-        )
+          cameraRows.map((c) => [c.name, parseCameraMasks(c.masks)]),
+        ),
       );
       setSaved(
         Object.fromEntries(
           cameraRows.map((c) => [
             c.name,
             serializeCameraMasks(parseCameraMasks(c.masks)),
-          ])
-        )
+          ]),
+        ),
       );
       setSamples(grouped);
     }
@@ -120,15 +120,15 @@ export default function EditMasks({ projectId }: { projectId: string }) {
                   if (!key) throw new Error('Image file not found');
                   return loadStoredSample(image, key);
                 },
-              })
+              }),
             ),
-          }))
+          })),
       ),
-    [cameras, samples, client]
+    [cameras, samples, client],
   );
 
   const changed = cameras.filter(
-    (camera) => serializeCameraMasks(masks[camera.name]) !== saved[camera.name]
+    (camera) => serializeCameraMasks(masks[camera.name]) !== saved[camera.name],
   );
 
   const handleSave = async () => {

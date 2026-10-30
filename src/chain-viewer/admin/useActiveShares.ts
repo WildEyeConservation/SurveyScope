@@ -1,5 +1,5 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useContext } from 'react';
 import { GlobalContext } from '../../Context';
 import { fetchAllPaginatedResults } from '../../utils';
 
@@ -17,16 +17,19 @@ export function useActiveShares() {
     queryKey: ['active-chain-shares'],
     staleTime: 60_000,
     queryFn: async () => {
-      const rows = (await fetchAllPaginatedResults(client.models.ChainShare.list, {
-        selectionSet: [
-          'shareId',
-          'surveyName',
-          'annotationSetName',
-          'annotationSetId',
-          'status',
-        ] as const,
-        limit: 10000,
-      })) as Array<{
+      const rows = (await fetchAllPaginatedResults(
+        client.models.ChainShare.list,
+        {
+          selectionSet: [
+            'shareId',
+            'surveyName',
+            'annotationSetName',
+            'annotationSetId',
+            'status',
+          ] as const,
+          limit: 10000,
+        },
+      )) as Array<{
         shareId: string;
         surveyName?: string | null;
         annotationSetName?: string | null;

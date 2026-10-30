@@ -1,25 +1,25 @@
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { useContext, useState, useEffect } from 'react';
-import { GlobalContext, TestingContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
-import MyTable from '../Table';
-import { Bar, BarChart, Cell, XAxis, YAxis } from 'recharts';
-import { Tab, Tabs } from '../Tabs';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox } from '@/components/ui/combobox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import exportFromJSON from 'export-from-json';
+import { useContext, useEffect, useState } from 'react';
+import { Bar, BarChart, Cell, XAxis, YAxis } from 'recharts';
 import { neutraliseCsvRows } from '../../shared/csv';
-import { useUpdateProgress } from '../useUpdateProgress';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
-import { Combobox } from '@/components/ui/combobox';
+import { GlobalContext, TestingContext } from '../Context';
+import MyTable from '../Table';
+import { Tab, Tabs } from '../Tabs';
+import { useUpdateProgress } from '../useUpdateProgress';
+import { fetchAllPaginatedResults } from '../utils';
 // removed modal; pass/fail rules are now inline
 
 const chartConfig = {
@@ -76,7 +76,7 @@ export default function Results() {
             'annotationSetId',
             'locationId',
           ],
-        }
+        },
       );
 
       setResults(
@@ -85,8 +85,8 @@ export default function Results() {
           .sort(
             (a, b) =>
               new Date(b.createdAt!).getTime() -
-              new Date(a.createdAt!).getTime()
-          )
+              new Date(a.createdAt!).getTime(),
+          ),
       );
 
       setIsLoading(false);
@@ -152,20 +152,20 @@ export default function Results() {
   const failed = results.length - passed;
   const totalAnimals = results.reduce(
     (acc, result) => acc + result.testAnimals,
-    0
+    0,
   );
 
   // Calculate Undercounted and Overcounted Animals
   const undercountedAnimals = results.reduce(
     (acc, result) =>
       acc + (result.totalMissedAnimals > 0 ? result.totalMissedAnimals : 0),
-    0
+    0,
   );
   const overcountedAnimals = results.reduce(
     (acc, result) =>
       acc +
       (result.totalMissedAnimals < 0 ? Math.abs(result.totalMissedAnimals) : 0),
-    0
+    0,
   );
 
   const countsByCategory = results
@@ -176,7 +176,7 @@ export default function Results() {
           string,
           { userCount: number; testCount: number; name: string }
         >,
-        category
+        category,
       ) => {
         const key = category.categoryName.toLowerCase();
         if (!acc[key]) {
@@ -193,7 +193,7 @@ export default function Results() {
       {} as Record<
         string,
         { userCount: number; testCount: number; name: string }
-      >
+      >,
     );
 
   const accuracyByCategory = Object.entries(countsByCategory)
@@ -220,12 +220,12 @@ export default function Results() {
     })
     .filter(
       (
-        entry
+        entry,
       ): entry is {
         categoryId: string;
         name: string;
         countPercentage: number;
-      } => entry !== null
+      } => entry !== null,
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -261,13 +261,15 @@ export default function Results() {
     setTotalFilesCompiled(2);
 
     exportFromJSON({
-      data: neutraliseCsvRows(results.map((result) => ({
-        date: result.createdAt,
-        preset: result.testPreset.name,
-        testAnimals: result.testAnimals,
-        missedAnimals: result.totalMissedAnimals,
-        passed: passedForResult(result),
-      }))),
+      data: neutraliseCsvRows(
+        results.map((result) => ({
+          date: result.createdAt,
+          preset: result.testPreset.name,
+          testAnimals: result.testAnimals,
+          missedAnimals: result.totalMissedAnimals,
+          passed: passedForResult(result),
+        })),
+      ),
       fileName: `${selectedUser?.label}-test-results`,
       exportType: 'csv',
     });
@@ -275,10 +277,12 @@ export default function Results() {
     setCompilingFiles(1);
 
     exportFromJSON({
-      data: neutraliseCsvRows(accuracyByCategory.map((category) => ({
-        label: category.name,
-        overUnderPercentage: category.countPercentage.toFixed(4),
-      }))),
+      data: neutraliseCsvRows(
+        accuracyByCategory.map((category) => ({
+          label: category.name,
+          overUnderPercentage: category.countPercentage.toFixed(4),
+        })),
+      ),
       fileName: `${selectedUser?.label}-label-accuracy`,
       exportType: 'csv',
     });
@@ -298,11 +302,11 @@ export default function Results() {
       {
         userId: selectedUser!.value,
         selectionSet: ['id', 'projectId', 'categoryCounts.categoryName'],
-      }
+      },
     );
 
     const filteredResults = results.filter(
-      (result) => result.projectId === selectedProject?.value
+      (result) => result.projectId === selectedProject?.value,
     );
 
     const deletePromises = filteredResults.flatMap((result) => [
@@ -312,7 +316,7 @@ export default function Results() {
           client.models.TestResultCategoryCount.delete({
             testResultId: result.id,
             categoryName: category.categoryName,
-          })
+          }),
       ),
     ]);
 
@@ -322,7 +326,7 @@ export default function Results() {
   }
 
   return (
-    <div className='flex flex-col gap-2 mt-4 w-full'>
+    <div className='mt-4 flex w-full flex-col gap-2'>
       <div>
         <label className='mb-2'>Select Survey</label>
         <Combobox
@@ -370,7 +374,7 @@ export default function Results() {
             ) : (
               <Tabs defaultTab={0}>
                 <Tab label='All Results'>
-                  <div className='flex flex-col mb-1'>
+                  <div className='mb-1 flex flex-col'>
                     <p className='mt-2 mb-1'>Rules</p>
                     <div>
                       <label className='mb-1'>Pass rate (%)</label>
@@ -406,7 +410,7 @@ export default function Results() {
                     </div>
                   </div>
                   <p className='my-2'>Summary</p>
-                  <div className='flex gap-4 mb-4'>
+                  <div className='mb-4 flex gap-4'>
                     {summaryCards.map((card, index) => (
                       <SummaryCard key={index} content={card.content} />
                     ))}
@@ -421,7 +425,7 @@ export default function Results() {
                 </Tab>
                 <Tab label='Label Accuracy'>
                   <p
-                    className='text-center mb-0 mt-4'
+                    className='mt-4 mb-0 text-center'
                     style={{ fontSize: '1.5rem' }}
                   >
                     Over/Under Count Percentage By Label
@@ -462,7 +466,7 @@ export default function Results() {
             )}
           </div>
           {results.length > 0 && (
-            <div className='flex gap-2 justify-end mt-2'>
+            <div className='mt-2 flex justify-end gap-2'>
               <Button
                 variant='danger'
                 onClick={purgeResults}
@@ -483,7 +487,7 @@ export default function Results() {
 
 function SummaryCard({ content }: { content: (string | JSX.Element)[] }) {
   return (
-    <div className=' p-4 bg-dark text-white flex flex-col gap-1'>
+    <div className='flex flex-col gap-1 bg-dark p-4 text-white'>
       {content.map((item, index) => (
         <p key={index} className='mb-0'>
           {item}

@@ -1,10 +1,10 @@
-import { useContext } from 'react';
-import { ProgressContext } from './Context';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useContext } from 'react';
+import { ProgressContext } from './Context';
 
 const SIZE = 50;
 const THICKNESS = 8;

@@ -1,14 +1,3 @@
-import MyTable from './Table';
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext, UserContext } from './Context';
-import type { UserStatsType } from './schemaTypes';
-import exportFromJSON from 'export-from-json';
-import { neutraliseCsvRows } from '../shared/csv';
-import { useUsers } from './apiInterface';
-import { Combobox } from '@/components/ui/combobox';
-import { XIcon } from 'lucide-react';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -18,18 +7,31 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Combobox } from '@/components/ui/combobox';
 import { fieldBase, fieldSizes } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Spinner } from '@/components/ui/spinner';
-import SnapshotStatsModal from './SnapshotStatsModal';
-import { fetchAllPaginatedResults } from './utils';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import exportFromJSON from 'export-from-json';
+import { XIcon } from 'lucide-react';
+import { useContext, useEffect, useState } from 'react';
+import { neutraliseCsvRows } from '../shared/csv';
+import { useUsers } from './apiInterface';
+import { GlobalContext, UserContext } from './Context';
 import { loadRows } from './rowChunks';
+import type { UserStatsType } from './schemaTypes';
+import SnapshotStatsModal from './SnapshotStatsModal';
+import MyTable from './Table';
+import { fetchAllPaginatedResults } from './utils';
 
 export default function UserStats() {
-  const { myOrganizationHook, myMembershipHook } =
-    useContext(UserContext)!;
-  const { client, modalToShow, showModal } =
-    useContext(GlobalContext)!;
+  const { myOrganizationHook, myMembershipHook } = useContext(UserContext)!;
+  const { client, modalToShow, showModal } = useContext(GlobalContext)!;
   const { users: allUsers } = useUsers();
   const [projects, setProjects] = useState<
     {
@@ -46,7 +48,15 @@ export default function UserStats() {
   const [stats, setStats] = useState<
     Record<
       string,
-      { observationCount: number; annotationCount: number; activeTime: number; sightingCount: number; searchTime: number; annotationTime: number; waitingTime: number }
+      {
+        observationCount: number;
+        annotationCount: number;
+        activeTime: number;
+        sightingCount: number;
+        searchTime: number;
+        annotationTime: number;
+        waitingTime: number;
+      }
     >
   >({});
   const [startDate, setStartDate] = useState<Date | null>(new Date());
@@ -55,9 +65,9 @@ export default function UserStats() {
 
   const [selectedSets, setSelectedSets] = useState<
     | {
-      label: string;
-      value: string;
-    }[]
+        label: string;
+        value: string;
+      }[]
     | undefined
   >([]);
 
@@ -69,20 +79,20 @@ export default function UserStats() {
   // Check if user is admin for the selected project
   const isProjectAdmin = project
     ? myMembershipHook.data?.find((m) => m.projectId === project.value)
-      ?.isAdmin || false
+        ?.isAdmin || false
     : false;
 
   const startString = startDate
     ? `${startDate?.getFullYear()}-${String(startDate?.getMonth() + 1).padStart(
-      2,
-      '0'
-    )}-${String(startDate?.getDate()).padStart(2, '0')}`
+        2,
+        '0',
+      )}-${String(startDate?.getDate()).padStart(2, '0')}`
     : null;
   const endString = endDate
     ? `${endDate?.getFullYear()}-${String(endDate?.getMonth() + 1).padStart(
-      2,
-      '0'
-    )}-${String(endDate?.getDate()).padStart(2, '0')}`
+        2,
+        '0',
+      )}-${String(endDate?.getDate()).padStart(2, '0')}`
     : null;
 
   useEffect(() => {
@@ -102,15 +112,15 @@ export default function UserStats() {
               'annotationSets.name',
               'organization.name',
             ] as string[],
-          }
-        )
+          },
+        ),
       );
 
       const projectResults = await Promise.all(projectPromises);
       const validProjects = projectResults
         .map((result) => result.data)
         .filter(
-          (project): project is NonNullable<typeof project> => project !== null
+          (project): project is NonNullable<typeof project> => project !== null,
         );
 
       setProjects(validProjects as typeof projects);
@@ -123,9 +133,7 @@ export default function UserStats() {
   useEffect(() => {
     let cancelled = false;
     const subs: { unsubscribe: () => void }[] = [];
-    const selectedSetIds = new Set(
-      selectedSets?.map((set) => set.value) ?? []
-    );
+    const selectedSetIds = new Set(selectedSets?.map((set) => set.value) ?? []);
     const selectedProjectId = project?.value;
 
     // Reset state when selectedSets changes
@@ -149,7 +157,7 @@ export default function UserStats() {
 
         const fetched = await fetchAllPaginatedResults<UserStatsType>(
           client.models.UserStats.list,
-          { filter, limit: 10000 }
+          { filter, limit: 10000 },
         );
         if (!cancelled) {
           setUserStats(fetched);
@@ -183,7 +191,7 @@ export default function UserStats() {
                   s.userId === updatedItem.userId &&
                   s.date === updatedItem.date &&
                   s.setId === updatedItem.setId &&
-                  s.projectId === updatedItem.projectId
+                  s.projectId === updatedItem.projectId,
               );
               if (!exists) return [...prev, updatedItem];
               return prev.map((s) =>
@@ -192,13 +200,13 @@ export default function UserStats() {
                 s.setId === updatedItem.setId &&
                 s.projectId === updatedItem.projectId
                   ? { ...s, ...updatedItem }
-                  : s
+                  : s,
               );
             });
           }
         },
         error: (error) => console.error('UserStats onUpdate error:', error),
-      })
+      }),
     );
 
     // Subscribe to real-time updates via custom pub/sub channels per annotation set
@@ -277,7 +285,7 @@ export default function UserStats() {
               newStats[s.userId].observationCount += s.observationCount;
               newStats[s.userId].annotationCount = Math.max(
                 0,
-                newStats[s.userId].annotationCount + s.annotationCount
+                newStats[s.userId].annotationCount + s.annotationCount,
               );
               newStats[s.userId].activeTime += s.activeTime;
               newStats[s.userId].sightingCount += s.sightingCount || 0;
@@ -337,7 +345,7 @@ export default function UserStats() {
   async function queryObservations(
     annotationSetId: string,
     lowerLimitOverride?: string,
-    upperLimitOverride?: string
+    upperLimitOverride?: string,
   ): Promise<any[]> {
     const lower = lowerLimitOverride ?? `${startString}T00:00:00Z`;
     const upper = upperLimitOverride ?? `${endString}T23:59:59Z`;
@@ -354,7 +362,7 @@ export default function UserStats() {
         'locationId',
         'location.confidence',
       ],
-      { between: [lower, upper] }
+      { between: [lower, upper] },
     );
     return allObs.map((o) => ({
       createdAt: o.createdAt,
@@ -408,18 +416,24 @@ export default function UserStats() {
         waitingTime_ms: s.waitingTime || 0,
       }))
       .sort((a, b) =>
-        a.date < b.date ? -1 : a.date > b.date ? 1 : a.username < b.username ? -1 : 1
+        a.date < b.date
+          ? -1
+          : a.date > b.date
+            ? 1
+            : a.username < b.username
+              ? -1
+              : 1,
       );
 
     const fileName =
       `${project.label}_DetailedStats_${startString || 'all'}_${endString || 'all'}`.replace(
         / /g,
-        '_'
+        '_',
       );
     exportFromJSON({
       data: neutraliseCsvRows(rows),
       fileName,
-      exportType: exportFromJSON.types.csv
+      exportType: exportFromJSON.types.csv,
     });
   };
 
@@ -437,19 +451,21 @@ export default function UserStats() {
         const fileName =
           `${project?.label}_Observations_${startString}_${endString}`.replace(
             / /g,
-            '_'
+            '_',
           );
         const exportType = exportFromJSON.types.csv;
         exportFromJSON({
-          data: neutraliseCsvRows(observations.map((o) => {
-            const { confidence, ...rest } = o;
-            return {
-              ...rest,
-              annotationCount: Math.max(0, o.annotationCount || 0),
-              owner: userLookup.get(o.owner),
-              locationConfidence: confidence,
-            };
-          })),
+          data: neutraliseCsvRows(
+            observations.map((o) => {
+              const { confidence, ...rest } = o;
+              return {
+                ...rest,
+                annotationCount: Math.max(0, o.annotationCount || 0),
+                owner: userLookup.get(o.owner),
+                locationConfidence: confidence,
+              };
+            }),
+          ),
           fileName,
           exportType,
         });
@@ -476,7 +492,7 @@ export default function UserStats() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className='flex justify-between items-center flex-wrap gap-2'>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
             <div className='flex items-center gap-2'>
               <label htmlFor='start-date' className='mb-0'>
                 From:
@@ -517,9 +533,13 @@ export default function UserStats() {
               }))}
               onChange={(option) => {
                 setProject(option);
-                const sets = projects
-                  .find((p) => p.id === option?.value)
-                  ?.annotationSets?.map((s) => ({ label: s.name, value: s.id })) || [];
+                const sets =
+                  projects
+                    .find((p) => p.id === option?.value)
+                    ?.annotationSets?.map((s) => ({
+                      label: s.name,
+                      value: s.id,
+                    })) || [];
                 setSelectedSets(sets);
               }}
               placeholder='Select a survey'
@@ -548,7 +568,7 @@ export default function UserStats() {
 
           <div className='mt-4 overflow-x-auto'>
             {loadingStats ? (
-              <div className='flex justify-center items-center py-12'>
+              <div className='flex items-center justify-center py-12'>
                 <Spinner animation='border' />
                 <span className='ms-4'>Loading stats...</span>
               </div>
@@ -565,34 +585,37 @@ export default function UserStats() {
             )}
           </div>
         </CardContent>
-        {isProjectAdmin && selectedSets && selectedSets.length > 0 && !loadingStats && (
-          <CardFooter className='flex justify-center gap-2'>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={() => showModal('snapshotStats')}
-              disabled={!project || !selectedSets?.length}
-            >
-              Snapshot
-            </Button>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={handleExportDetailedStats}
-              disabled={!project || !selectedSets?.length || loadingStats}
-            >
-              Export Daily Stats
-            </Button>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={handleExportData}
-              disabled={exporting}
-            >
-              {exporting ? 'Loading...' : 'Export Raw Observation Data'}
-            </Button>
-          </CardFooter>
-        )}
+        {isProjectAdmin &&
+          selectedSets &&
+          selectedSets.length > 0 &&
+          !loadingStats && (
+            <CardFooter className='flex justify-center gap-2'>
+              <Button
+                variant='primary'
+                style={{ flex: 1 }}
+                onClick={() => showModal('snapshotStats')}
+                disabled={!project || !selectedSets?.length}
+              >
+                Snapshot
+              </Button>
+              <Button
+                variant='primary'
+                style={{ flex: 1 }}
+                onClick={handleExportDetailedStats}
+                disabled={!project || !selectedSets?.length || loadingStats}
+              >
+                Export Daily Stats
+              </Button>
+              <Button
+                variant='primary'
+                style={{ flex: 1 }}
+                onClick={handleExportData}
+                disabled={exporting}
+              >
+                {exporting ? 'Loading...' : 'Export Raw Observation Data'}
+              </Button>
+            </CardFooter>
+          )}
       </Card>
       <SnapshotStatsModal
         show={modalToShow === 'snapshotStats'}
@@ -641,7 +664,7 @@ function DateField({
               fieldBase,
               fieldSizes.default,
               'text-left',
-              value ? 'pr-8' : 'text-[#6c757d]'
+              value ? 'pr-8' : 'text-[#6c757d]',
             )}
           >
             {value ? format(value, 'yyyy/MM/dd') : placeholder}
@@ -666,7 +689,7 @@ function DateField({
                   date.setHours(
                     value.getHours(),
                     value.getMinutes(),
-                    value.getSeconds()
+                    value.getSeconds(),
                   );
                 onChange(date);
               }
@@ -679,7 +702,7 @@ function DateField({
         <button
           type='button'
           aria-label='Clear'
-          className='absolute right-2 top-1/2 -translate-y-1/2 text-[#6c757d] opacity-75 hover:opacity-100'
+          className='absolute top-1/2 right-2 -translate-y-1/2 text-[#6c757d] opacity-75 hover:opacity-100'
           onClick={() => onChange(null)}
         >
           <XIcon className='size-4' />

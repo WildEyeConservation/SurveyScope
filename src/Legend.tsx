@@ -1,8 +1,8 @@
-import { useContext } from 'react';
-import { ProjectContext } from './Context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useContext } from 'react';
+import { ProjectContext } from './Context';
 import { formatShortcutKey } from './utils/hotkeys';
 
 /**
@@ -36,7 +36,10 @@ export function SideLegend({
   const cats = categoriesOverride ?? categories;
 
   return (
-    <div className='hidden md:flex flex-col ms-2' style={{ position: 'relative', height: `calc(100% - 56px)` }}>
+    <div
+      className='ms-2 hidden flex-col md:flex'
+      style={{ position: 'relative', height: `calc(100% - 56px)` }}
+    >
       {/* Toggle button */}
       <Button
         variant='secondary'
@@ -60,12 +63,15 @@ export function SideLegend({
       </Button>
 
       {!collapsed && (
-        <Card className='flex flex-col h-full overflow-hidden'>
+        <Card className='flex h-full flex-col overflow-hidden'>
           <CardHeader>
-            <CardTitle className='flex flex-row items-center gap-2 mb-2'>
+            <CardTitle className='mb-2 flex flex-row items-center gap-2'>
               <span>Legend</span>
             </CardTitle>
-            <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
+            <span
+              className='text-muted-foreground'
+              style={{ fontSize: '14px' }}
+            >
               Click on a label to annotate with or use the shortcut key
             </span>
           </CardHeader>

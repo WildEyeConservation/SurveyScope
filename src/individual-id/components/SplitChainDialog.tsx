@@ -31,7 +31,8 @@ export function SplitChainDialog({
           <DialogTitle>Split chain from here?</DialogTitle>
         </DialogHeader>
         <DialogBody>
-          This will make the selected annotation the start of a new identity. The
+          This will make the selected annotation the start of a new identity.
+          The
           {newer > 0 ? (
             <>
               {' '}

@@ -1,39 +1,38 @@
+import * as maplibregl from 'maplibre-gl';
 import {
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-  useCallback,
 } from 'react';
-import * as maplibregl from 'maplibre-gl';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useHotkeys, isHotkeyPressed } from 'react-hotkeys-hook';
-import {
-  makeProjection,
-  createImageMap,
-  addImageTiles,
-  fitPxBounds,
-  storedZoomToMapZoom,
-  mapZoomToStoredZoom,
-} from './imageTiles';
+
+import { isHotkeyPressed, useHotkeys } from 'react-hotkeys-hook';
+import type { AnnotationImage, AnnotationLocation } from '../annotationTypes';
+import ChangeCategoryModal from '../ChangeCategoryModal';
 import { ImageContext, ManagementContext, ProjectContext } from '../Context';
+import { NavButtons } from '../NavButtons';
+import type { CategoryType, ExtendedAnnotationType } from '../schemaTypes';
 import useImageMenuItems from '../useImageMenuItems';
 import { isWithinLocationBounds, resolveCategoryIdForSet } from '../utils';
 import {
   canonicalHotkeyFromParsed,
   normalizeShortcutKey,
 } from '../utils/hotkeys';
-import { NavButtons } from '../NavButtons';
-import ChangeCategoryModal from '../ChangeCategoryModal';
-import type { CategoryType, ExtendedAnnotationType } from '../schemaTypes';
-import type { AnnotationImage, AnnotationLocation } from '../annotationTypes';
 import {
   buildAnnotationFeatureCollection,
   buildAnnotationPopupLines,
   isFalseNegative,
   type AnnotationFeatureProperties,
 } from './annotationFeatures';
+import {
+  addAnnotationMarkerLayers,
+  ANNOTATION_MARKER_LAYERS,
+  registerAnnotationMarkerImages,
+} from './annotationMarkerLayers';
 import {
   buildAnnotationMenuItems,
   buildImageMenuItems,
@@ -44,13 +43,16 @@ import {
   ImageFileStatusOverlay,
   type MenuState,
 } from './AnnotatorOverlays';
-import useImageFileSource from './useImageFileSource';
-import MapRotateControl from './MapRotateControl';
 import {
-  addAnnotationMarkerLayers,
-  ANNOTATION_MARKER_LAYERS,
-  registerAnnotationMarkerImages,
-} from './annotationMarkerLayers';
+  addImageTiles,
+  createImageMap,
+  fitPxBounds,
+  makeProjection,
+  mapZoomToStoredZoom,
+  storedZoomToMapZoom,
+} from './imageTiles';
+import MapRotateControl from './MapRotateControl';
+import useImageFileSource from './useImageFileSource';
 
 /*
 MapLibre-based image viewer for the species-labelling workflow, including
@@ -164,7 +166,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
 
   const projection = useMemo(
     () => makeProjection(image.width, image.height),
-    [image.width, image.height]
+    [image.width, image.height],
   );
   const { px2lngLat, lngLat2px } = projection;
 
@@ -199,21 +201,21 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       ((annotationsHook.data ?? []) as ExtendedAnnotationType[])
         .filter((annotation) => annotation.setId === setId)
         .filter(
-          (annotation) => !(hideFnAnnotations && isFalseNegative(annotation))
+          (annotation) => !(hideFnAnnotations && isFalseNegative(annotation)),
         ),
-    [annotationsHook.data, setId, hideFnAnnotations]
+    [annotationsHook.data, setId, hideFnAnnotations],
   );
   annotationsRef.current = annotations;
 
   const categoryColor = useCallback(
     (categoryId: string) =>
       categories?.find((c) => c.id === categoryId)?.color ?? 'red',
-    [categories]
+    [categories],
   );
   const categoryName = useCallback(
     (categoryId: string) =>
       categories?.find((c) => c.id === categoryId)?.name ?? 'Unknown',
-    [categories]
+    [categories],
   );
 
   // No image files: nothing will ever load, so unblock the task lifecycle
@@ -236,8 +238,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
 
   const refreshAnnotationSource = useCallback(() => {
     const src = mapRef.current?.getSource(SOURCE_ANNOTATIONS) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     src?.setData(buildFeatureCollection());
   }, [buildFeatureCollection]);
 
@@ -253,7 +254,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         showCompass: false,
         showZoom: true,
       }),
-      'top-left'
+      'top-left',
     );
     map.addControl(new MapRotateControl(), 'top-left');
 
@@ -329,7 +330,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       map.jumpTo({
         center: px2lngLat(
           location?.x ?? image.width / 2,
-          location?.y ?? image.height / 2
+          location?.y ?? image.height / 2,
         ),
         zoom: storedZoomToMapZoom(zoom),
       });
@@ -369,7 +370,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     const annotationById = (id: string) =>
       annotationsRef.current.find((a) => a.id === id);
     const featureProperties = (
-      feature?: maplibregl.MapGeoJSONFeature
+      feature?: maplibregl.MapGeoJSONFeature,
     ): AnnotationFeatureProperties | undefined =>
       feature?.properties as AnnotationFeatureProperties | undefined;
 
@@ -401,7 +402,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             annotation,
             categoryName,
             allUsers,
-            infoTagsRef.current?.get(annotation.id)
+            infoTagsRef.current?.get(annotation.id),
           );
           lines.forEach((text) => {
             const row = document.createElement('div');
@@ -417,8 +418,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             .setLngLat(
               (feature!.geometry as GeoJSON.Point).coordinates as [
                 number,
-                number
-              ]
+                number,
+              ],
             )
             .setDOMContent(div)
             .addTo(map);
@@ -480,7 +481,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         categoryId: resolveCategoryIdForSet(
           currentCategory,
           projectCategories ?? [],
-          location.annotationSetId
+          location.annotationSetId,
         ),
         source,
         obscured: false,
@@ -507,7 +508,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       } else {
         const items = buildImageMenuItems(
           menuItemsRef.current,
-          location.confidence
+          location.confidence,
         );
         setMenu({ x: e.point.x, y: e.point.y, items });
       }
@@ -607,7 +608,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     {
       enabled: canAdvance && visible,
     },
-    [next]
+    [next],
   );
   useHotkeys('LeftArrow', prev ?? (() => {}), { enabled: visible }, [prev]);
 
@@ -617,7 +618,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       event.preventDefault();
       setMarkersHidden(isHotkeyPressed('Tab'));
     },
-    { keyup: true, keydown: true, enabled: visible }
+    { keyup: true, keydown: true, enabled: visible },
   );
 
   useHotkeys(
@@ -636,12 +637,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       annotationsHook.delete(annotation);
     },
     { enabled: visible },
-    [annotationsHook]
+    [annotationsHook],
   );
 
   const hotkeyCategories = useMemo(
     () => (categories ?? []).filter((c) => c.shortcutKey),
-    [categories]
+    [categories],
   );
   const categoryByHotkey = useMemo(() => {
     const map = new Map<string, CategoryType>();
@@ -662,7 +663,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       // event.key cannot represent a combo ('ctrl+h'), does not match recorded
       // physical key names ('period'), and diverges from them on non-US layouts.
       const category = categoryByHotkey.get(
-        canonicalHotkeyFromParsed(hotkeysEvent)
+        canonicalHotkeyFromParsed(hotkeysEvent),
       );
       if (!category) return;
       event.preventDefault();
@@ -684,13 +685,13 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       setCurrentCategory(category);
     },
     { keydown: true, keyup: false, enabled: visible && hotkeys.length > 0 },
-    [categoryByHotkey, annotationsHook, setId, image.id, source, project]
+    [categoryByHotkey, annotationsHook, setId, image.id, source, project],
   );
 
   return (
-    <div className='flex flex-col items-stretch w-full h-full gap-4'>
+    <div className='flex h-full w-full flex-col items-stretch gap-4'>
       <div
-        className='flex flex-col items-stretch w-full h-full'
+        className='flex h-full w-full flex-col items-stretch'
         style={{
           visibility: visible && fullyLoaded ? 'visible' : 'hidden',
           position: 'relative',

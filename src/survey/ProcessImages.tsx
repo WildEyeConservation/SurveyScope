@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { Footer } from '../Modal';
-import { useState, useContext, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { GlobalContext } from '../Context';
-import { Combobox } from '@/components/ui/combobox';
+import { Footer } from '../Modal';
 import { parseLaunchResponse } from './launchResponse';
 import {
   MODELS,
@@ -267,7 +267,7 @@ export default function ProcessImages({
             value={model}
             onChange={(option) =>
               setModel(
-                MODEL_OPTIONS.find((o) => o.value === option?.value) ?? null
+                MODEL_OPTIONS.find((o) => o.value === option?.value) ?? null,
               )
             }
             options={MODEL_OPTIONS}
@@ -291,20 +291,20 @@ export default function ProcessImages({
             </div>
           ) : scan ? (
             scan.images.length > 0 ? (
-              <p className='mb-0 mt-2'>
+              <p className='mt-2 mb-0'>
                 Found {scan.images.length} unprocessed images
               </p>
             ) : (
-              <p className='mb-0 mt-2'>All images have been processed</p>
+              <p className='mt-2 mb-0'>All images have been processed</p>
             )
           ) : null}
           {processing && (
-            <div className='flex flex-col items-center mt-2'>
+            <div className='mt-2 flex flex-col items-center'>
               <Spinner animation='border' role='status' />
               <p className='mb-0'>Queueing images...</p>
             </div>
           )}
-          {error && <p className='mb-0 mt-2 text-danger'>{error}</p>}
+          {error && <p className='mt-2 mb-0 text-danger'>{error}</p>}
         </div>
       </form>
       <Footer>

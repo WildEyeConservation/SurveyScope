@@ -1,8 +1,8 @@
-import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import type { CameraSpec } from '../../FilesUploadComponent';
 import {
   OrientationSample,
@@ -53,14 +53,17 @@ export default function CameraCard({
     <div
       className={cn(
         'flex flex-col gap-2',
-        overlaps ? 'w-60 shrink-0 border-l border-white/15 pl-5' : 'max-w-xs'
+        overlaps ? 'w-60 shrink-0 border-l border-white/15 pl-5' : 'max-w-xs',
       )}
     >
-      <span className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+      <span className='text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'>
         Lens
       </span>
       {SPEC_FIELDS.map(({ key, unit, label }) => (
-        <label key={key} className='mb-0 flex items-center justify-between gap-3'>
+        <label
+          key={key}
+          className='mb-0 flex items-center justify-between gap-3'
+        >
           <span className='text-sm'>{label}</span>
           {onSpecChange ? (
             <div className='relative w-28'>
@@ -90,7 +93,7 @@ export default function CameraCard({
 
   const overlapPicker = overlaps && (
     <div className='flex flex-col gap-2'>
-      <span className='text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'>
+      <span className='text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'>
         Overlaps with
       </span>
       <div className='flex flex-col gap-2'>

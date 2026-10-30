@@ -1,21 +1,21 @@
-import { useContext, useCallback } from 'react';
-import { uploadWorkflowFile } from './storage/workflowFiles';
-import { GlobalContext } from './Context';
-import type {
-  LaunchQueueOptions,
-  TiledLaunchRequest,
-} from './types/LaunchTask';
+import { useCallback, useContext } from 'react';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
-import { fetchAllPaginatedResults } from './utils';
+import { isCentreObserved, type Box } from '../shared/locationGeometry';
+import { GlobalContext } from './Context';
+import { loadProjectImages } from './projectImages';
 import { loadRows } from './rowChunks';
+import { uploadWorkflowFile } from './storage/workflowFiles';
 import {
   countMaskRegions,
   isPointMasked,
   parseCameraMasks,
   type CameraMasks,
 } from './types/CameraMask';
-import { loadProjectImages } from './projectImages';
-import { isCentreObserved, type Box } from '../shared/locationGeometry';
+import type {
+  LaunchQueueOptions,
+  TiledLaunchRequest,
+} from './types/LaunchTask';
+import { fetchAllPaginatedResults } from './utils';
 
 export const LEGACY_STORMFLY_BOX_SIZE = 64;
 
@@ -64,7 +64,7 @@ type LaunchLambdaPayload = {
 };
 
 export function useLaunchTask(
-  options: LaunchTaskOptions
+  options: LaunchTaskOptions,
 ): (args: LaunchTaskArgs) => Promise<void> {
   const { client } = useContext(GlobalContext)!;
 
@@ -100,7 +100,7 @@ export function useLaunchTask(
 
   async function filterMaskedLocations(
     locations: LocationWithConfidence[],
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
   ): Promise<LocationWithConfidence[]> {
     if (locations.length === 0) return locations;
     const cameras = await fetchAllPaginatedResults(
@@ -108,7 +108,7 @@ export function useLaunchTask(
       {
         projectId: options.projectId,
         selectionSet: ['id', 'masks'] as const,
-      }
+      },
     );
     const masksByCamera = new Map<string, CameraMasks>();
     for (const camera of cameras) {
@@ -137,7 +137,7 @@ export function useLaunchTask(
     });
     if (kept.length < locations.length) {
       onProgress?.(
-        `Discarded ${locations.length - kept.length} detections inside camera masks`
+        `Discarded ${locations.length - kept.length} detections inside camera masks`,
       );
     }
     return kept;
@@ -145,7 +145,7 @@ export function useLaunchTask(
 
   async function queryLocations(
     locationSetId: string,
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
   ): Promise<LocationQueryResult> {
     onProgress?.('Querying locations...');
     const allLocations = await loadRows(
@@ -153,7 +153,7 @@ export function useLaunchTask(
       'locationsBySetIdAndConfidence',
       locationSetId,
       ['x', 'y', 'width', 'height', 'imageId', 'source'],
-      { between: [options.lowerLimit, options.upperLimit] }
+      { between: [options.lowerLimit, options.upperLimit] },
     );
     const invalidCounts = {
       confidence: 0,
@@ -166,8 +166,7 @@ export function useLaunchTask(
 
     for (const loc of allLocations) {
       const confidence = loc.confidence ?? 0;
-      const hasCoordinates =
-        Number.isFinite(loc.x) && Number.isFinite(loc.y);
+      const hasCoordinates = Number.isFinite(loc.x) && Number.isFinite(loc.y);
       const hasImageId = !!loc.imageId;
       const isLegacyStormflyLocation =
         loc.source === 'stormfly-testing' &&
@@ -214,7 +213,9 @@ export function useLaunchTask(
         (recoveredLegacyStormflyCount > 0
           ? ` (${recoveredLegacyStormflyCount} legacy Stormfly points assigned ${LEGACY_STORMFLY_BOX_SIZE}px boxes)`
           : '') +
-        (invalidCount > 0 ? ` (${invalidCount} invalid locations ignored)` : '')
+        (invalidCount > 0
+          ? ` (${invalidCount} invalid locations ignored)`
+          : ''),
     );
     return {
       locations,
@@ -226,7 +227,7 @@ export function useLaunchTask(
 
   async function queryObservations(
     annotationSetId: string,
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
   ): Promise<ObservedLocations> {
     onProgress?.('Querying observations...');
     const allObs = await loadRows(
@@ -240,7 +241,7 @@ export function useLaunchTask(
         'location.y',
         'location.width',
         'location.height',
-      ]
+      ],
     );
     const observed: ObservedLocations = {
       ids: new Set(),
@@ -266,7 +267,7 @@ export function useLaunchTask(
 
   function isLocationObserved(
     location: LocationWithConfidence,
-    observed: ObservedLocations
+    observed: ObservedLocations,
   ): boolean {
     if (observed.ids.has(location.id)) return true;
     const boxes = observed.boxesByImage.get(location.imageId);
@@ -276,14 +277,14 @@ export function useLaunchTask(
   // Query normal (non-FN) annotations for an annotation set (for filtering locations with existing annotations)
   async function queryAnnotations(
     annotationSetId: string,
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
   ): Promise<AnnotationPoint[]> {
     onProgress?.('Querying annotations...');
     const allAnnos = await loadRows(
       client,
       'annotationsByAnnotationSetId',
       annotationSetId,
-      ['x', 'y', 'imageId', 'source']
+      ['x', 'y', 'imageId', 'source'],
     );
     const points: AnnotationPoint[] = [];
     for (const a of allAnnos) {
@@ -300,7 +301,7 @@ export function useLaunchTask(
   // minY = y - height/2, maxY = y + height/2
   function isAnnotationWithinLocation(
     annotation: AnnotationPoint,
-    location: LocationWithConfidence
+    location: LocationWithConfidence,
   ): boolean {
     const minX = location.x - location.width / 2;
     const maxX = location.x + location.width / 2;
@@ -319,9 +320,11 @@ export function useLaunchTask(
   function filterLocationsWithAnnotations(
     locations: LocationWithConfidence[],
     annotations: AnnotationPoint[],
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
   ): LocationWithConfidence[] {
-    onProgress?.(`Filtering ${locations.length} locations against ${annotations.length} annotations...`);
+    onProgress?.(
+      `Filtering ${locations.length} locations against ${annotations.length} annotations...`,
+    );
 
     // Group annotations by imageId so we only check annotations on the same image
     const annotationsByImage = new Map<string, AnnotationPoint[]>();
@@ -339,14 +342,16 @@ export function useLaunchTask(
       if (!imageAnnotations) return true; // No annotations on this image, keep location
       // Check if any annotation on the same image falls within this location's bounds
       const hasAnnotationWithin = imageAnnotations.some((annotation) =>
-        isAnnotationWithinLocation(annotation, location)
+        isAnnotationWithinLocation(annotation, location),
       );
       // Keep the location only if it has NO annotations within
       return !hasAnnotationWithin;
     });
 
     const skipped = locations.length - filtered.length;
-    onProgress?.(`Filtered out ${skipped} locations with existing annotations, ${filtered.length} remaining`);
+    onProgress?.(
+      `Filtered out ${skipped} locations with existing annotations, ${filtered.length} remaining`,
+    );
 
     return filtered;
   }
@@ -375,39 +380,36 @@ export function useLaunchTask(
           : [];
 
         const locationQueryResults = await Promise.all(
-          selectedTasks.map((task) => queryLocations(task, onProgress))
+          selectedTasks.map((task) => queryLocations(task, onProgress)),
         );
         const queriedLocationCount = locationQueryResults.reduce(
           (total, result) => total + result.queriedCount,
-          0
+          0,
         );
         const invalidLocationCounts = locationQueryResults.reduce(
           (totals, result) => ({
-            confidence:
-              totals.confidence + result.invalidCounts.confidence,
-            dimensions:
-              totals.dimensions + result.invalidCounts.dimensions,
+            confidence: totals.confidence + result.invalidCounts.confidence,
+            dimensions: totals.dimensions + result.invalidCounts.dimensions,
             imageId: totals.imageId + result.invalidCounts.imageId,
-            coordinates:
-              totals.coordinates + result.invalidCounts.coordinates,
+            coordinates: totals.coordinates + result.invalidCounts.coordinates,
           }),
-          { confidence: 0, dimensions: 0, imageId: 0, coordinates: 0 }
+          { confidence: 0, dimensions: 0, imageId: 0, coordinates: 0 },
         );
         const validLocations = locationQueryResults.flatMap(
-          (result) => result.locations
+          (result) => result.locations,
         );
 
         // Collect locations from all sets, filter observed, and sort by confidence (descending)
         let allLocationsWithConfidence = observed
           ? validLocations.filter(
-              (location) => !isLocationObserved(location, observed)
+              (location) => !isLocationObserved(location, observed),
             )
           : validLocations;
         const observedLocationCount =
           validLocations.length - allLocationsWithConfidence.length;
         if (options.filterObserved) {
           onProgress?.(
-            `Filtered out ${observedLocationCount} observed locations, ${allLocationsWithConfidence.length} remaining`
+            `Filtered out ${observedLocationCount} observed locations, ${allLocationsWithConfidence.length} remaining`,
           );
         }
 
@@ -416,18 +418,20 @@ export function useLaunchTask(
         if (launchImageIds && launchImageIds.length > 0) {
           const allowedImageIds = new Set(launchImageIds);
           const beforeImageFilter = allLocationsWithConfidence.length;
-          allLocationsWithConfidence = allLocationsWithConfidence.filter(
-            (l) => allowedImageIds.has(l.imageId)
+          allLocationsWithConfidence = allLocationsWithConfidence.filter((l) =>
+            allowedImageIds.has(l.imageId),
           );
           imageFilteredLocationCount =
             beforeImageFilter - allLocationsWithConfidence.length;
-          onProgress?.(`Filtered to ${allLocationsWithConfidence.length} locations matching ${launchImageIds.length} image IDs`);
+          onProgress?.(
+            `Filtered to ${allLocationsWithConfidence.length} locations matching ${launchImageIds.length} image IDs`,
+          );
         }
 
         const beforeMaskFilter = allLocationsWithConfidence.length;
         allLocationsWithConfidence = await filterMaskedLocations(
           allLocationsWithConfidence,
-          onProgress
+          onProgress,
         );
         const maskedLocationCount =
           beforeMaskFilter - allLocationsWithConfidence.length;
@@ -439,7 +443,7 @@ export function useLaunchTask(
           allLocationsWithConfidence = filterLocationsWithAnnotations(
             allLocationsWithConfidence,
             allAnnotations,
-            onProgress
+            onProgress,
           );
           annotatedLocationCount =
             beforeAnnotationFilter - allLocationsWithConfidence.length;
@@ -469,7 +473,7 @@ export function useLaunchTask(
         if (allLocationIds.length === 0) {
           if (queriedLocationCount === 0) {
             alert(
-              `No locations matched the confidence range ${options.lowerLimit} to ${options.upperLimit}.`
+              `No locations matched the confidence range ${options.lowerLimit} to ${options.upperLimit}.`,
             );
           } else {
             const exclusions = [
@@ -501,7 +505,7 @@ export function useLaunchTask(
             alert(
               `No locations remain to launch after filtering${
                 exclusions.length > 0 ? `: ${exclusions.join(', ')}` : '.'
-              }`
+              }`,
             );
           }
           return;
@@ -512,7 +516,9 @@ export function useLaunchTask(
         onProgress?.('Uploading location manifest...');
 
         // Map back to the full location objects for the manifest
-        const locationsMap = new Map(allLocationsWithConfidence.map((l) => [l.id, l]));
+        const locationsMap = new Map(
+          allLocationsWithConfidence.map((l) => [l.id, l]),
+        );
         const manifestItems = collectedLocations.map((id) => {
           const loc = locationsMap.get(id);
           return {
@@ -528,7 +534,7 @@ export function useLaunchTask(
         const locationManifestS3Key = await uploadWorkflowFile(
           'queue-manifest',
           options.projectId,
-          JSON.stringify({ items: manifestItems })
+          JSON.stringify({ items: manifestItems }),
         );
         const launchedCount = manifestItems.length;
 
@@ -577,7 +583,7 @@ export function useLaunchTask(
       sendLaunchLambdaRequest(client, payload);
       onProgress?.('Launch request submitted');
     },
-    [options, client]
+    [options, client],
   );
 
   return launchTask;
@@ -589,7 +595,7 @@ const PAYLOAD_SIZE_THRESHOLD = 200 * 1024; // 200KB
 
 async function sendLaunchLambdaRequest(
   client: DataClient,
-  payload: LaunchLambdaPayload
+  payload: LaunchLambdaPayload,
 ) {
   const payloadStr = JSON.stringify(payload);
   const payloadSize = new Blob([payloadStr]).size;
@@ -601,7 +607,7 @@ async function sendLaunchLambdaRequest(
     const s3Key = await uploadWorkflowFile(
       'launch-payload',
       payload.projectId,
-      payloadStr
+      payloadStr,
     );
     requestPayload = JSON.stringify({ payloadS3Key: s3Key });
   } else {
@@ -609,9 +615,12 @@ async function sendLaunchLambdaRequest(
   }
 
   try {
-    await (client as any).mutations.launchAnnotationSet({
-      request: requestPayload,
-    }, { retry: false });
+    await (client as any).mutations.launchAnnotationSet(
+      {
+        request: requestPayload,
+      },
+      { retry: false },
+    );
   } catch (error: any) {
     if (shouldIgnoreLaunchError(error)) {
       console.warn('Ignoring launch lambda timeout response', error);
@@ -634,6 +643,6 @@ function shouldIgnoreLaunchError(error: any): boolean {
     }
   }
   return messages.some((msg) =>
-    /timed out|timeout|Task timed out|socket hang up/i.test(msg)
+    /timed out|timeout|Task timed out|socket hang up/i.test(msg),
   );
 }

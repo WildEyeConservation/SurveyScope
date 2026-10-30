@@ -9,9 +9,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useContext, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { GlobalContext, UserContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
-import { useNavigate } from 'react-router-dom';
 
 /*
     todo: Notify sysadmin
@@ -40,7 +40,7 @@ export default function RegisterOrganization() {
             eq: organizationName,
           },
         },
-      }
+      },
     );
 
     if (organizations.length > 0) {
@@ -60,7 +60,7 @@ export default function RegisterOrganization() {
             eq: 'pending',
           },
         },
-      }
+      },
     );
 
     if (registrations.length > 0) {

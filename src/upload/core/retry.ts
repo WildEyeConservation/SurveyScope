@@ -17,7 +17,9 @@ export function errorMessage(err: unknown): string {
   if (typeof err === 'string') return err;
   if (Array.isArray(err)) {
     const messages = err
-      .map((e) => (e && typeof e === 'object' && 'message' in e ? String(e.message) : null))
+      .map((e) =>
+        e && typeof e === 'object' && 'message' in e ? String(e.message) : null,
+      )
       .filter(Boolean);
     if (messages.length > 0) return messages.join('; ');
   }
@@ -61,7 +63,7 @@ export function classifyError(err: unknown): ErrorClass {
 export function backoffDelayMs(
   attempt: number,
   baseMs = 1000,
-  maxMs = 300000
+  maxMs = 300000,
 ): number {
   return (
     Math.min(baseMs * Math.pow(2, attempt - 1), maxMs) + Math.random() * 1000
@@ -75,7 +77,7 @@ export function backoffDelayMs(
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  opts?: { maxAttempts?: number; baseDelayMs?: number; signal?: AbortSignal }
+  opts?: { maxAttempts?: number; baseDelayMs?: number; signal?: AbortSignal },
 ): Promise<T> {
   const maxAttempts = opts?.maxAttempts ?? 3;
   for (let attempt = 1; ; attempt++) {
@@ -91,7 +93,7 @@ export async function withRetry<T>(
       }
       await sleep(
         backoffDelayMs(attempt, opts?.baseDelayMs ?? 1000, 8000),
-        opts?.signal
+        opts?.signal,
       );
     }
   }

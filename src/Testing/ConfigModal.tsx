@@ -2,14 +2,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { useState, useEffect, useContext } from 'react';
-import { GlobalContext } from '../Context';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useContext, useEffect, useState } from 'react';
+import { GlobalContext } from '../Context';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
 
 type TestType = 'random' | 'interval';
 

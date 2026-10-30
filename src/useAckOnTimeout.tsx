@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export interface UseAckOnTimeoutProps {
@@ -50,7 +50,9 @@ export default function useAckOnTimeout({
   const [waitingMessage, setWaitingMessage] = useState('');
   const waitingTimerRef = useRef<number | undefined>(undefined);
   const countdownRef = useRef<number | undefined>(undefined);
-  const [secondsRemaining, setSecondsRemaining] = useState(QUEUE_WAIT_TIMEOUT / 1000);
+  const [secondsRemaining, setSecondsRemaining] = useState(
+    QUEUE_WAIT_TIMEOUT / 1000,
+  );
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -92,9 +94,12 @@ export default function useAckOnTimeout({
         void Promise.resolve(ack(submittedAt)).catch((error) => {
           // SQS acknowledgement follows Observation persistence, so a failed
           // completion leaves the task available for a safe retry.
-          console.error('Task completion failed; the task will be retried', error);
+          console.error(
+            'Task completion failed; the task will be retried',
+            error,
+          );
         });
-      }, 2000)
+      }, 2000),
     );
     if (next) {
       next();
@@ -133,7 +138,7 @@ export default function useAckOnTimeout({
           countdownRef.current = undefined;
         }
         alert(
-          'No new work was loaded. The job appears to be complete. Thank you for your contribution!'
+          'No new work was loaded. The job appears to be complete. Thank you for your contribution!',
         );
         navigate('/surveys');
       }, QUEUE_WAIT_TIMEOUT);

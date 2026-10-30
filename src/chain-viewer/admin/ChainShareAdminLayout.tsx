@@ -1,5 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { NavLink, Outlet } from 'react-router-dom';
 
 const LINKS = [
   { to: 'shares', label: 'Manage Shares' },
@@ -29,7 +29,7 @@ export default function ChainShareAdminLayout() {
         className='flex flex-col'
         style={{ flex: '0 0 210px', position: 'sticky', top: 16 }}
       >
-        <div className='uppercase text-muted-foreground text-sm font-bold mb-2 px-2'>
+        <div className='mb-2 px-2 text-sm font-bold text-muted-foreground uppercase'>
           Chain Shares
         </div>
         {LINKS.map((l) => (
@@ -41,7 +41,7 @@ export default function ChainShareAdminLayout() {
                 'mb-1 block px-4 py-2 no-underline',
                 isActive
                   ? 'bg-primary text-white'
-                  : 'text-primary hover:text-primary-hover'
+                  : 'text-primary hover:text-primary-hover',
               )
             }
           >

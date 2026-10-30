@@ -37,7 +37,7 @@ function image(id: string, timestamp: number | null = 0): ImageRow {
 function neighbour(
   image1Id: string,
   image2Id: string,
-  patch: Partial<NeighbourRow> = {}
+  patch: Partial<NeighbourRow> = {},
 ): NeighbourRow {
   return {
     image1Id,
@@ -58,7 +58,7 @@ function annotation(
   imageId: string,
   x: number,
   y: number,
-  patch: Partial<AnnotationRow> = {}
+  patch: Partial<AnnotationRow> = {},
 ): AnnotationRow {
   return {
     id,
@@ -95,42 +95,42 @@ function location(id: string, patch: Partial<LocationRow> = {}): LocationRow {
 test('classifies each pair into one bucket in priority order', () => {
   assert.equal(
     classifyNeighbour(
-      neighbour('a', 'b', { skipped: true, homography: IDENTITY })
+      neighbour('a', 'b', { skipped: true, homography: IDENTITY }),
     ),
-    'skipped'
+    'skipped',
   );
   assert.equal(
     classifyNeighbour(neighbour('a', 'b', { homography: IDENTITY })),
-    'homography'
+    'homography',
   );
   assert.equal(
     classifyNeighbour(neighbour('a', 'b', { homography: [1, 2, 3] })),
-    'malformed'
+    'malformed',
   );
   assert.equal(
     classifyNeighbour(
-      neighbour('a', 'b', { homography: [0, 0, 0, 0, 0, 0, 0, 0, 0] })
+      neighbour('a', 'b', { homography: [0, 0, 0, 0, 0, 0, 0, 0, 0] }),
     ),
-    'malformed'
+    'malformed',
   );
   assert.equal(
     classifyNeighbour(
-      neighbour('a', 'b', { registrationFailed: true, suggestedPointsKept: 4 })
+      neighbour('a', 'b', { registrationFailed: true, suggestedPointsKept: 4 }),
     ),
-    'failed'
+    'failed',
   );
   assert.equal(
     classifyNeighbour(
       neighbour('a', 'b', {
         suggestedPointsKept: 4,
         registrationProcessed: true,
-      })
+      }),
     ),
-    'suggestedPointsOnly'
+    'suggestedPointsOnly',
   );
   assert.equal(
     classifyNeighbour(neighbour('a', 'b', { registrationProcessed: true })),
-    'processedNoHomography'
+    'processedNoHomography',
   );
   assert.equal(classifyNeighbour(neighbour('a', 'b')), 'unprocessed');
 });
@@ -178,7 +178,7 @@ test('limits set homographies to pairs touching an annotated image', () => {
       neighbour('b', 'c'),
       neighbour('c', 'd', { homography: IDENTITY }),
     ],
-    [annotation('1', 'b', 1, 1)]
+    [annotation('1', 'b', 1, 1)],
   );
   assert.equal(summary.pairsWithAnnotations, 2);
   assert.equal(summary.counts.homography, 1);
@@ -193,7 +193,7 @@ test('counts distinct images per processed-by source', () => {
       { imageId: 'b', source: 'scoutbotv3' },
       { imageId: 'a', source: 'mad-v2' },
     ],
-    4
+    4,
   );
   assert.deepEqual(summary.sources, [
     { source: 'scoutbotv3', images: 2, share: 0.5 },
@@ -219,7 +219,7 @@ test('separates empty-image markers from detections', () => {
       location('4', { imageId: 'b', ...marker }),
       location('5', { imageId: 'a', ...marker }),
     ],
-    [image('a'), image('b'), image('c')]
+    [image('a'), image('b'), image('c')],
   );
   assert.equal(summary.sources.length, 1);
   const source = summary.sources[0];
@@ -239,7 +239,7 @@ test('summarises annotations by source, category and chain state', () => {
       annotation('2', 'b', 1, 1, { objectId: '1', source: 'individual-id' }),
       annotation('3', 'b', 1, 1, { categoryId: 'other', oov: true }),
     ],
-    [{ id: 'cat', name: 'Elephant' }]
+    [{ id: 'cat', name: 'Elephant' }],
   );
   assert.equal(summary.total, 3);
   assert.equal(summary.imagesAnnotated, 2);
@@ -265,7 +265,7 @@ test('reports observed and annotated detections per confidence band', () => {
       { locationId: 'low', owner: 'u', source: null, createdAt: null },
       { locationId: 'tile', owner: 'u', source: null, createdAt: null },
     ],
-    [annotation('1', 'a', 110, 90)]
+    [annotation('1', 'a', 110, 90)],
   );
   assert.equal(coverage.sources.length, 1);
   const source = coverage.sources[0];
@@ -289,7 +289,7 @@ test('counts an annotation on the detection box edge as inside it', () => {
   const coverage = summariseConfidenceCoverage(
     [location('edge')],
     [],
-    [annotation('1', 'a', 125, 100)]
+    [annotation('1', 'a', 125, 100)],
   );
   assert.equal(coverage.sources[0].totals.annotated, 1);
 });
@@ -305,7 +305,7 @@ test('matches nearest pairs first within a category', () => {
       { id: 't1', x: 9, y: 0, categoryId: 'cat' },
       { id: 't2', x: 300, y: 0, categoryId: 'cat' },
     ],
-    40
+    40,
   );
   assert.deepEqual([...matches], [['s2', 't1']]);
 });
@@ -317,7 +317,7 @@ test('finds unlinked duplicates in overlaps and recommends chain linking', () =>
   for (let i = 0; i < 25; i++) {
     const y = 20 + i * 35;
     annotations.push(
-      annotation(`e${i}`, 'early', 700, y, { objectId: `e${i}` })
+      annotation(`e${i}`, 'early', 700, y, { objectId: `e${i}` }),
     );
     annotations.push(annotation(`l${i}`, 'late', 205, y));
   }
@@ -345,10 +345,10 @@ test('treats linked overlap annotations as already deduplicated', () => {
   for (let i = 0; i < 25; i++) {
     const y = 20 + i * 35;
     annotations.push(
-      annotation(`e${i}`, 'early', 700, y, { objectId: `e${i}` })
+      annotation(`e${i}`, 'early', 700, y, { objectId: `e${i}` }),
     );
     annotations.push(
-      annotation(`l${i}`, 'late', 200, y, { objectId: `e${i}` })
+      annotation(`l${i}`, 'late', 200, y, { objectId: `e${i}` }),
     );
   }
 
@@ -367,7 +367,7 @@ test('does not assess pairs that cannot be ordered or lack a homography', () => 
       neighbour('c', 'd', { homography: IDENTITY, skipped: true }),
     ],
     [image('a', null), image('b', 1), image('c', 2), image('d', 3)],
-    [annotation('1', 'b', 10, 10)]
+    [annotation('1', 'b', 10, 10)],
   );
   assert.equal(summary.pairsUnordered, 1);
   assert.equal(summary.pairsNoHomography, 1);
@@ -388,13 +388,13 @@ function overlapSet(counts: {
       const id = `${kind}${i}`;
       if (kind !== 'absent') {
         annotations.push(
-          annotation(`e-${id}`, 'early', 700, y, { objectId: `e-${id}` })
+          annotation(`e-${id}`, 'early', 700, y, { objectId: `e-${id}` }),
         );
       }
       annotations.push(
         annotation(`l-${id}`, 'late', 200, y, {
           objectId: kind === 'linked' ? `e-${id}` : null,
-        })
+        }),
       );
     }
   };
@@ -405,7 +405,7 @@ function overlapSet(counts: {
     [neighbour('early', 'late', { homography: SHIFT })],
     [image('early', 1), image('late', 2)],
     annotations,
-    8
+    8,
   );
 }
 
@@ -433,17 +433,17 @@ test('keeps existing links when a nearer animal could steal the match', () => {
   for (let i = 0; i < 25; i++) {
     const y = 20 + i * 35;
     annotations.push(
-      annotation(`e${i}`, 'early', 700, y, { objectId: `e${i}` })
+      annotation(`e${i}`, 'early', 700, y, { objectId: `e${i}` }),
     );
     // 22px registration residual towards the next animal.
     annotations.push(
-      annotation(`l${i}`, 'late', 200, y + 22, { objectId: `e${i}` })
+      annotation(`l${i}`, 'late', 200, y + 22, { objectId: `e${i}` }),
     );
   }
   const summary = summariseChainLinking(
     [neighbour('early', 'late', { homography: SHIFT })],
     [image('early', 1), image('late', 2)],
-    annotations
+    annotations,
   );
   assert.equal(summary.linked, 25);
   assert.equal(summary.duplicated, 0);
@@ -462,7 +462,7 @@ test('counts an annotation once when it overlaps several earlier images', () => 
       annotation('1', 'a', 100, 100),
       annotation('2', 'b', 100, 100),
       annotation('3', 'c', 100, 100),
-    ]
+    ],
   );
   assert.equal(summary.pairsAssessed, 3);
   assert.equal(summary.overlapAnnotations, 2);

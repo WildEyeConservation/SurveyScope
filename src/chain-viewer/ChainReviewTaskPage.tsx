@@ -37,7 +37,7 @@ export function ChainReviewTaskPage() {
       try {
         const primaryResp = await (client.models.Annotation.get as any)(
           { id: primaryId },
-          { selectionSet: ['id', 'categoryId', 'setId', 'objectId'] }
+          { selectionSet: ['id', 'categoryId', 'setId', 'objectId'] },
         );
         const primary = primaryResp?.data;
         if (primary && primary.setId === annotationSetId) {
@@ -54,7 +54,7 @@ export function ChainReviewTaskPage() {
             filter: { setId: { eq: annotationSetId } },
             selectionSet: ['categoryId'],
             limit: 1,
-          }
+          },
         );
         const fallback = (chainResp?.data ?? [])[0];
         if (fallback?.categoryId) {
@@ -78,7 +78,8 @@ export function ChainReviewTaskPage() {
   if (!annotationSetId || !primaryId) {
     return (
       <div className='p-6 text-light'>
-        Missing <code>annotationSetId</code> or <code>primaryId</code> in the URL.
+        Missing <code>annotationSetId</code> or <code>primaryId</code> in the
+        URL.
       </div>
     );
   }

@@ -1,21 +1,21 @@
-import {
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  ChangeEvent,
-} from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import Papa from 'papaparse';
+import {
+  ChangeEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { GlobalContext } from './Context';
 import LabeledToggleSwitch from './LabeledToggleSwitch';
-import type { TiledLaunchRequest } from './types/LaunchTask';
-import Papa from 'papaparse';
 import { loadProjectImages } from './projectImages';
+import type { TiledLaunchRequest } from './types/LaunchTask';
 
 type Nullable<T> = T | null;
 
@@ -49,7 +49,7 @@ function vincentyDistanceKm(
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ) {
   const a = 6378137;
   const b = 6356752.314245;
@@ -74,8 +74,8 @@ function vincentyDistanceKm(
       cosλ = Math.cos(λ);
     sinSigma = Math.sqrt(
       cosU2 * sinλ * (cosU2 * sinλ) +
-      (cosU1 * sinU2 - sinU1 * cosU2 * cosλ) *
-      (cosU1 * sinU2 - sinU1 * cosU2 * cosλ)
+        (cosU1 * sinU2 - sinU1 * cosU2 * cosλ) *
+          (cosU1 * sinU2 - sinU1 * cosU2 * cosλ),
     );
 
     if (sinSigma === 0) return 0;
@@ -93,19 +93,18 @@ function vincentyDistanceKm(
     λ =
       L +
       (1 - C) *
-      f *
-      sinAlpha *
-      (sigma +
-        C *
-        sinSigma *
-        (cos2SigmaM + C * cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM)));
+        f *
+        sinAlpha *
+        (sigma +
+          C *
+            sinSigma *
+            (cos2SigmaM + C * cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM)));
   } while (Math.abs(λ - λP) > 1e-12 && --iterLimit > 0);
 
   if (iterLimit === 0) return NaN;
 
   const uSq = (cosSqAlpha * (a * a - b * b)) / (b * b);
-  const A =
-    1 + (uSq / 16384) * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)));
+  const A = 1 + (uSq / 16384) * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)));
   const B = (uSq / 1024) * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)));
 
   const deltaSigma =
@@ -113,11 +112,11 @@ function vincentyDistanceKm(
     sinSigma *
     (cos2SigmaM +
       (B / 4) *
-      (cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM) -
-        (B / 6) *
-        cos2SigmaM *
-        (-3 + 4 * sinSigma * sinSigma) *
-        (-3 + 4 * cos2SigmaM * cos2SigmaM)));
+        (cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM) -
+          (B / 6) *
+            cos2SigmaM *
+            (-3 + 4 * sinSigma * sinSigma) *
+            (-3 + 4 * cos2SigmaM * cos2SigmaM)));
 
   const s = b * A * (sigma - deltaSigma);
 
@@ -127,7 +126,7 @@ function vincentyDistanceKm(
 function calculateTileSizeAbsoluteOverlap(
   effectiveSize: number,
   tileCount: number,
-  overlap: number
+  overlap: number,
 ) {
   return Math.ceil((effectiveSize + (tileCount - 1) * overlap) / tileCount);
 }
@@ -135,17 +134,17 @@ function calculateTileSizeAbsoluteOverlap(
 function calculateTileSizePercentageOverlap(
   effectiveSize: number,
   tileCount: number,
-  overlap: number
+  overlap: number,
 ) {
   return Math.ceil(
-    effectiveSize / (tileCount - (overlap / 100) * (tileCount - 1))
+    effectiveSize / (tileCount - (overlap / 100) * (tileCount - 1)),
   );
 }
 
 function calculateTileCountAbsoluteOverlap(
   effectiveSize: number,
   tileSize: number,
-  overlap: number
+  overlap: number,
 ) {
   return Math.ceil((effectiveSize - tileSize) / (tileSize - overlap)) + 1;
 }
@@ -153,10 +152,10 @@ function calculateTileCountAbsoluteOverlap(
 function calculateTileCountPercentageOverlap(
   effectiveSize: number,
   tileSize: number,
-  overlap: number
+  overlap: number,
 ) {
   return Math.ceil(
-    (effectiveSize - tileSize) / (tileSize * (1 - overlap / 100)) + 1
+    (effectiveSize - tileSize) / (tileSize * (1 - overlap / 100)) + 1,
   );
 }
 
@@ -211,7 +210,7 @@ export default function TileConfiguration({
         img.timestamp != null &&
         img.transectId != null &&
         img.latitude != null &&
-        img.longitude != null
+        img.longitude != null,
     );
   }, [allImages]);
 
@@ -235,10 +234,10 @@ export default function TileConfiguration({
         first.latitude as number,
         first.longitude as number,
         last.latitude as number,
-        last.longitude as number
+        last.longitude as number,
       );
       const timeSeconds = Math.abs(
-        (last.timestamp as number) - (first.timestamp as number)
+        (last.timestamp as number) - (first.timestamp as number),
       );
       const speedKmh = timeSeconds > 0 ? distanceKm / (timeSeconds / 3600) : 0;
       return {
@@ -287,11 +286,11 @@ export default function TileConfiguration({
     for (const g of transectGroupStats as any[]) {
       const step = Math.max(
         1,
-        Number(transectSubsetSteps[g.transectId] ?? 1) || 1
+        Number(transectSubsetSteps[g.transectId] ?? 1) || 1,
       );
       const offset = Math.max(
         0,
-        Number(transectSubsetOffsets[g.transectId] ?? 0) || 0
+        Number(transectSubsetOffsets[g.transectId] ?? 0) || 0,
       );
       const available = Math.max(0, (g.imageCount as number) - offset);
       const count = Math.floor(available / step);
@@ -321,14 +320,14 @@ export default function TileConfiguration({
   function getSidelapPixels() {
     if (horizontalTiles <= 1) return 0;
     return Math.floor(
-      (horizontalTiles * width - effectiveImageWidth) / (horizontalTiles - 1)
+      (horizontalTiles * width - effectiveImageWidth) / (horizontalTiles - 1),
     );
   }
 
   function getOverlapPixels() {
     if (verticalTiles <= 1) return 0;
     return Math.floor(
-      (verticalTiles * height - effectiveImageHeight) / (verticalTiles - 1)
+      (verticalTiles * height - effectiveImageHeight) / (verticalTiles - 1),
     );
   }
 
@@ -349,16 +348,16 @@ export default function TileConfiguration({
           calculateTileSizeAbsoluteOverlap(
             effectiveImageWidth,
             horizontalTiles,
-            minSidelap
-          )
+            minSidelap,
+          ),
         );
       } else {
         setHorizontalTiles(
           calculateTileCountAbsoluteOverlap(
             effectiveImageWidth,
             width,
-            minSidelap
-          )
+            minSidelap,
+          ),
         );
       }
       setMinSidelapPercentage((minSidelap / width) * 100);
@@ -378,16 +377,16 @@ export default function TileConfiguration({
           calculateTileSizeAbsoluteOverlap(
             effectiveImageHeight,
             verticalTiles,
-            minOverlap
-          )
+            minOverlap,
+          ),
         );
       } else {
         setVerticalTiles(
           calculateTileCountAbsoluteOverlap(
             effectiveImageHeight,
             height,
-            minOverlap
-          )
+            minOverlap,
+          ),
         );
       }
       setMinOverlapPercentage((minOverlap / height) * 100);
@@ -407,16 +406,16 @@ export default function TileConfiguration({
           calculateTileSizePercentageOverlap(
             effectiveImageWidth,
             horizontalTiles,
-            minSidelapPercentage
-          )
+            minSidelapPercentage,
+          ),
         );
       } else {
         setHorizontalTiles(
           calculateTileCountPercentageOverlap(
             effectiveImageWidth,
             width,
-            minSidelapPercentage
-          )
+            minSidelapPercentage,
+          ),
         );
       }
       setMinSidelap(Math.ceil((minSidelapPercentage * width) / 100));
@@ -436,16 +435,16 @@ export default function TileConfiguration({
           calculateTileSizePercentageOverlap(
             effectiveImageHeight,
             verticalTiles,
-            minOverlapPercentage
-          )
+            minOverlapPercentage,
+          ),
         );
       } else {
         setVerticalTiles(
           calculateTileCountPercentageOverlap(
             effectiveImageHeight,
             height,
-            minOverlapPercentage
-          )
+            minOverlapPercentage,
+          ),
         );
       }
       setMinOverlap(Math.ceil((minOverlapPercentage * height) / 100));
@@ -476,7 +475,7 @@ export default function TileConfiguration({
           'latitude',
           'longitude',
         ],
-        { signal, onProgress: (count) => setImagesLoaded(count) }
+        { signal, onProgress: (count) => setImagesLoaded(count) },
       );
       if (signal.aborted) return;
       const imagesArr: ImageData[] = (all as any[]).map((img: any) => ({
@@ -500,7 +499,7 @@ export default function TileConfiguration({
       const allMatch = imagesArr.every(
         (img) =>
           (img.width === firstWidth && img.height === firstHeight) ||
-          (img.width === firstHeight && img.height === firstWidth)
+          (img.width === firstHeight && img.height === firstWidth),
       );
       if (!allMatch) {
         console.log('Inconsistent image sizes detected');
@@ -546,7 +545,7 @@ export default function TileConfiguration({
         complete: (results) => {
           if (results.errors && results.errors.length > 0) {
             setCsvParseError(
-              results.errors[0]?.message ?? 'Failed to parse CSV'
+              results.errors[0]?.message ?? 'Failed to parse CSV',
             );
             setCsvFilterIds([]);
             return;
@@ -556,30 +555,19 @@ export default function TileConfiguration({
             if (row == null) continue;
             if (Array.isArray(row)) {
               row.forEach((cell) => {
-                if (
-                  typeof cell === 'string' ||
-                  typeof cell === 'number'
-                ) {
+                if (typeof cell === 'string' || typeof cell === 'number') {
                   const id = String(cell).trim();
                   if (id) ids.add(id);
                 }
               });
             } else if (typeof row === 'object') {
-              Object.values(row as Record<string, unknown>).forEach(
-                (cell) => {
-                  if (
-                    typeof cell === 'string' ||
-                    typeof cell === 'number'
-                  ) {
-                    const id = String(cell).trim();
-                    if (id) ids.add(id);
-                  }
+              Object.values(row as Record<string, unknown>).forEach((cell) => {
+                if (typeof cell === 'string' || typeof cell === 'number') {
+                  const id = String(cell).trim();
+                  if (id) ids.add(id);
                 }
-              );
-            } else if (
-              typeof row === 'string' ||
-              typeof row === 'number'
-            ) {
+              });
+            } else if (typeof row === 'string' || typeof row === 'number') {
               const id = String(row).trim();
               if (id) ids.add(id);
             }
@@ -594,7 +582,7 @@ export default function TileConfiguration({
       // Allow re-uploading the same file
       event.target.value = '';
     },
-    []
+    [],
   );
 
   const handleClearCsv = useCallback(() => {
@@ -612,13 +600,11 @@ export default function TileConfiguration({
           const step = Math.max(1, Number(stepRaw) || 1);
           const offsetRaw = transectSubsetOffsets[g.transectId];
           const offset = Math.max(0, Number(offsetRaw) || 0);
-          const subset = (g.images as any[]).filter(
-            (_: any, idx: number) => {
-              const pos = idx + 1;
-              if (pos <= offset) return false;
-              return (pos - offset) % step === 0;
-            }
-          );
+          const subset = (g.images as any[]).filter((_: any, idx: number) => {
+            const pos = idx + 1;
+            if (pos <= offset) return false;
+            return (pos - offset) % step === 0;
+          });
           selected.push(...subset);
         }
         imagesToUse = selected;
@@ -634,7 +620,7 @@ export default function TileConfiguration({
           return 0;
         });
         imagesToUse = sortedImages.filter(
-          (_, idx) => (idx + 1) % subsetN === 0
+          (_, idx) => (idx + 1) % subsetN === 0,
         );
       }
       if (csvFilterIds.length > 0) {
@@ -691,9 +677,9 @@ export default function TileConfiguration({
           : undefined,
       dev: hasDevGeoTransect
         ? {
-          transectSubsetSteps,
-          transectSubsetOffsets,
-        }
+            transectSubsetSteps,
+            transectSubsetOffsets,
+          }
         : undefined,
     });
 
@@ -751,18 +737,16 @@ export default function TileConfiguration({
 
   return (
     <>
-      <div className='flex flex-col gap-4 mt-2'>
+      <div className='mt-2 flex flex-col gap-4'>
         {process.env.NODE_ENV === 'development' && (
           <div
-            className='p-2 border border-dark mb-2 shadow-sm'
+            className='mb-2 border border-dark p-2 shadow-sm'
             style={{ backgroundColor: '#697582' }}
           >
             {hasDevGeoTransect ? (
               <>
-                <div className='flex items-center justify-between mb-2'>
-                  <Label className='mb-0'>
-                    Per-transect subset steps
-                  </Label>
+                <div className='mb-2 flex items-center justify-between'>
+                  <Label className='mb-0'>Per-transect subset steps</Label>
                   <label
                     className='mb-0 flex items-center gap-2 text-white'
                     style={{ fontSize: '12px' }}
@@ -775,7 +759,7 @@ export default function TileConfiguration({
                   </label>
                 </div>
                 <span
-                  className='block text-muted-foreground mb-2'
+                  className='mb-2 block text-muted-foreground'
                   style={{ fontSize: '12px' }}
                 >
                   Computed distance (vincenty) and speed are based on the first
@@ -784,7 +768,7 @@ export default function TileConfiguration({
                 {transectGroupStats.map((g: any) => (
                   <div
                     key={g.transectId}
-                    className='flex items-center justify-between mb-2'
+                    className='mb-2 flex items-center justify-between'
                   >
                     <div
                       className='me-4 text-white'
@@ -810,7 +794,7 @@ export default function TileConfiguration({
                             setTransectSubsetSteps((prev) => ({
                               ...prev,
                               [g.transectId]: Number(
-                                (e.target as HTMLInputElement).value
+                                (e.target as HTMLInputElement).value,
                               ),
                             }))
                           }
@@ -831,7 +815,7 @@ export default function TileConfiguration({
                             setTransectSubsetOffsets((prev) => ({
                               ...prev,
                               [g.transectId]: Number(
-                                (e.target as HTMLInputElement).value
+                                (e.target as HTMLInputElement).value,
                               ),
                             }))
                           }
@@ -841,7 +825,7 @@ export default function TileConfiguration({
                   </div>
                 ))}
                 <div
-                  className='mt-2 text-white border-t border-dark pt-2'
+                  className='mt-2 border-t border-dark pt-2 text-white'
                   style={{ fontSize: '12px' }}
                 >
                   {transectGroupStats.map((g: any) => (
@@ -859,7 +843,7 @@ export default function TileConfiguration({
               <>
                 <Label className='mb-0'>Image Subset Step (n)</Label>
                 <span
-                  className='block text-muted-foreground mb-2'
+                  className='mb-2 block text-muted-foreground'
                   style={{ fontSize: '12px' }}
                 >
                   1-based indexing
@@ -874,12 +858,12 @@ export default function TileConfiguration({
                 />
               </>
             )}
-            <div className='mt-4 p-2 border-t border-dark text-white'>
+            <div className='mt-4 border-t border-dark p-2 text-white'>
               <Label className='mb-1 text-white'>
                 Limit tiling to CSV image IDs (dev only)
               </Label>
               <span
-                className='block text-muted-foreground mb-2'
+                className='mb-2 block text-muted-foreground'
                 style={{ fontSize: '12px' }}
               >
                 Upload a CSV with image IDs in any column. Parsed IDs:{' '}
@@ -894,10 +878,7 @@ export default function TileConfiguration({
                 disabled={loadingImages}
               />
               {csvParseError && (
-                <div
-                  className='text-warning mt-1'
-                  style={{ fontSize: '12px' }}
-                >
+                <div className='mt-1 text-warning' style={{ fontSize: '12px' }}>
                   {csvParseError}
                 </div>
               )}
@@ -916,11 +897,11 @@ export default function TileConfiguration({
         )}
       </div>
       <div
-        className='border border-dark shadow-sm p-2'
+        className='border border-dark p-2 shadow-sm'
         style={{ backgroundColor: '#697582' }}
       >
         {loadingImages ? (
-          <div className='flex justify-center items-center text-white'>
+          <div className='flex items-center justify-center text-white'>
             <Spinner animation='border' size='sm' className='me-2' /> Scanning
             images... ({imagesLoaded} images scanned)
           </div>
@@ -937,7 +918,7 @@ export default function TileConfiguration({
             Expected tiles: {expectedTiles}
           </div>
         )}
-        <div className='mb-4 mt-4'>
+        <div className='mt-4 mb-4'>
           <LabeledToggleSwitch
             leftLabel='Specify number of tiles'
             rightLabel='Specify tile dimensions'
@@ -948,7 +929,7 @@ export default function TileConfiguration({
             disabled={loadingImages || disabled}
           />
 
-          <div className='flex flex-wrap -mx-3'>
+          <div className='-mx-3 flex flex-wrap'>
             <InputBox
               label='Horizontal Tiles'
               enabled={!specifyTileDimensions && !loadingImages && !disabled}
@@ -975,7 +956,7 @@ export default function TileConfiguration({
             />
           </div>
         </div>
-        <div className='mb-4 mt-4'>
+        <div className='mt-4 mb-4'>
           <LabeledToggleSwitch
             leftLabel='Specify overlap (px)'
             rightLabel='Specify overlap (%)'
@@ -985,7 +966,7 @@ export default function TileConfiguration({
             }}
             disabled={loadingImages || disabled}
           />
-          <div className='flex flex-wrap -mx-3'>
+          <div className='-mx-3 flex flex-wrap'>
             <InputBox
               label='Minimum sidelap (px)'
               enabled={
@@ -1019,7 +1000,7 @@ export default function TileConfiguration({
               setter={(x) => setMinOverlapPercentage(x)}
             />
           </div>
-          <div className='flex flex-wrap -mx-3'>
+          <div className='-mx-3 flex flex-wrap'>
             <InputBox
               label='Actual sidelap (px)'
               enabled={false}
@@ -1042,7 +1023,7 @@ export default function TileConfiguration({
             />
           </div>
         </div>
-        <div className='mb-4 mt-4'>
+        <div className='mt-4 mb-4'>
           <LabeledToggleSwitch
             leftLabel='Process Entire Image'
             rightLabel='Specify Processing Borders'
@@ -1067,7 +1048,7 @@ export default function TileConfiguration({
                 }}
                 disabled={loadingImages || disabled}
               />
-              <div className='flex flex-wrap -mx-3'>
+              <div className='-mx-3 flex flex-wrap'>
                 <InputBox
                   label='Minimum X (px)'
                   enabled={
@@ -1109,7 +1090,7 @@ export default function TileConfiguration({
                   }
                 />
               </div>
-              <div className='flex flex-wrap -mx-3'>
+              <div className='-mx-3 flex flex-wrap'>
                 <InputBox
                   label='Maximum X (px)'
                   enabled={
@@ -1176,12 +1157,12 @@ function InputBox({
   const current = getter();
 
   return (
-    <div className='w-full md:w-1/4 px-3'>
+    <div className='w-full px-3 md:w-1/4'>
       <div>
         <Label>{label}</Label>
         <Input
           type='number'
-          value={isFocused ? tempValue : (current as any) ?? ''}
+          value={isFocused ? tempValue : ((current as any) ?? '')}
           onFocus={() => {
             setIsFocused(true);
             setTempValue(current == null ? '' : String(current));
@@ -1206,5 +1187,3 @@ function InputBox({
     </div>
   );
 }
-
-

@@ -1,14 +1,14 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { Combobox } from '@/components/ui/combobox';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import MyTable from './Table';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import { escapeCsvValue } from '../shared/csv';
 import { GlobalContext } from './Context';
+import MyTable from './Table';
+import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
-import type { Schema } from './amplify/client-schema';
-import { escapeCsvValue } from '../shared/csv';
 
 type Option = { label: string; value: string };
 
@@ -22,7 +22,7 @@ export default function ClientLogs() {
         label: `${u.name || u.id} (${u.email || ''})`,
         value: u.id,
       })),
-    [users]
+    [users],
   );
 
   const [selectedUser, setSelectedUser] = useState<Option | null>(null);
@@ -101,7 +101,7 @@ export default function ClientLogs() {
             'createdAt',
           ],
           limit: 10000,
-        } as any
+        } as any,
       );
       setLogs(data as any);
     } finally {
@@ -123,20 +123,20 @@ export default function ClientLogs() {
     if (start) {
       const s = new Date(start).getTime();
       result = result.filter(
-        (l) => new Date(l.createdAt as any).getTime() >= s
+        (l) => new Date(l.createdAt as any).getTime() >= s,
       );
     }
     if (end) {
       const e = new Date(end).getTime();
       result = result.filter(
-        (l) => new Date(l.createdAt as any).getTime() <= e
+        (l) => new Date(l.createdAt as any).getTime() <= e,
       );
     }
     // newest first
     return [...result].sort(
       (a, b) =>
         new Date(b.createdAt as any).getTime() -
-        new Date(a.createdAt as any).getTime()
+        new Date(a.createdAt as any).getTime(),
     );
   }, [logs, start, end]);
 
@@ -173,7 +173,7 @@ export default function ClientLogs() {
   return (
     <div className='mt-2'>
       <h5>Client Logs</h5>
-      <div className='flex gap-2 items-end flex-wrap mb-4'>
+      <div className='mb-4 flex flex-wrap items-end gap-2'>
         <div style={{ minWidth: 300 }}>
           <Label className='mb-1'>User</Label>
           <Combobox

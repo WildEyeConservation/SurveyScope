@@ -1,10 +1,10 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   bufferedTiles,
+  MAX_TILE_BATCH,
   tileId,
   validTile,
-  MAX_TILE_BATCH,
   type TileCoordinate,
 } from '../../shared/imageTiles';
 import { TileUrlBatcher, type TileContext } from './tileUrlBatcher';
@@ -25,12 +25,12 @@ test('clips to actual image bounds and handles zoom zero and small images', () =
   const dimensions = { width: 600, height: 300 };
   assert(
     bufferedTiles([{ z: 2, row: 0, col: 0 }], dimensions).every((t) =>
-      validTile(t, dimensions)
-    )
+      validTile(t, dimensions),
+    ),
   );
   assert.deepEqual(
     bufferedTiles([{ z: 0, row: 0, col: 0 }], { width: 100, height: 100 }),
-    [{ z: 0, row: 0, col: 0 }]
+    [{ z: 0, row: 0, col: 0 }],
   );
   for (const invalid of [
     { z: -1, row: 0, col: 0 },
@@ -59,7 +59,7 @@ test('coalesces concurrent tiles, reuses signed buffer and isolates identities',
   assert.equal(batches.length, 1);
   assert.equal(
     (await batcher.get('user-a', image, 'legacy/photo.jpg', center)).url,
-    '4/5/5'
+    '4/5/5',
   );
   await tick();
   assert.equal(batches.length, 1);
@@ -77,7 +77,7 @@ test('refreshes near expiry and splits large viewports at the API bound', async 
         tiles: tiles.map((t) => ({ ...t, url: 'url' })),
       };
     },
-    () => now
+    () => now,
   );
   const tiles = Array.from({ length: 150 }, (_, i) => ({
     z: 4,

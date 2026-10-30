@@ -1,7 +1,7 @@
 import type { ImageType } from './schemaTypes';
 
 export type TaskAcknowledgement = (
-  submittedAt?: number
+  submittedAt?: number,
 ) => void | Promise<void>;
 
 export type AnnotationImage = Pick<ImageType, 'id' | 'width' | 'height'> &

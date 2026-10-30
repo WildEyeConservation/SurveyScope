@@ -15,11 +15,9 @@ interface NavButtonsProps {
 
 export function NavButtons({ prev, next }: NavButtonsProps) {
   return (
-    <div
-      className='flex flex-row items-center justify-center gap-1 w-full'
-    >
+    <div className='flex w-full flex-row items-center justify-center gap-1'>
       <Button
-        className='flex flex-row items-center justify-center w-full h-full'
+        className='flex h-full w-full flex-row items-center justify-center'
         variant='primary'
         onClick={prev}
         disabled={!prev}
@@ -29,7 +27,7 @@ export function NavButtons({ prev, next }: NavButtonsProps) {
         <span className='hidden sm:block'>Previous Location</span>
       </Button>
       <Button
-        className='flex flex-row items-center justify-center w-full h-full'
+        className='flex h-full w-full flex-row items-center justify-center'
         variant='primary'
         onClick={next}
         disabled={!next}

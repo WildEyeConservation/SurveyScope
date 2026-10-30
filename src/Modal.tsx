@@ -1,5 +1,3 @@
-import React, { useState, ReactElement } from 'react';
-import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -11,6 +9,8 @@ import {
   type DialogSize,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { ArrowLeft } from 'lucide-react';
+import React, { ReactElement, useState } from 'react';
 
 export function Header({
   closeButton = false,
@@ -88,8 +88,9 @@ function CustomModal({
       React.Children.forEach(
         (child as ReactElement<any>).props.children,
         (bodyChild) => {
-          if (React.isValidElement(bodyChild)) modalBodyChildren.push(bodyChild);
-        }
+          if (React.isValidElement(bodyChild))
+            modalBodyChildren.push(bodyChild);
+        },
       );
     } else {
       modalBodyChildren.push(child);

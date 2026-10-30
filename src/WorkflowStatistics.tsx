@@ -1,13 +1,4 @@
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -17,24 +8,34 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { fieldBase, fieldSizes } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Spinner } from '@/components/ui/spinner';
 import { Combobox } from '@/components/ui/combobox';
-import { RefreshCw, XIcon } from 'lucide-react';
-import { Alert } from '@/components/ui/alert';
+import { fieldBase, fieldSizes } from '@/components/ui/input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 import exportFromJSON from 'export-from-json';
+import { RefreshCw, XIcon } from 'lucide-react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { neutraliseCsvRows } from '../shared/csv';
-import MyTable from './Table';
 import { GlobalContext } from './Context';
+import MyTable from './Table';
+import WorkflowSnapshotModal from './WorkflowSnapshotModal';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
+import { eventToCsvRow, fetchAllWorkflowEvents } from './workflowEvents';
 import { WORKFLOW_REGISTRY, type WorkflowType } from './workflowRegistry';
-import WorkflowSnapshotModal from './WorkflowSnapshotModal';
-import {
-  eventToCsvRow,
-  fetchAllWorkflowEvents,
-} from './workflowEvents';
 import {
   buildWorkflowSections,
   localDateString,
@@ -93,7 +94,7 @@ function formatUtc(timestamp: string | null | undefined): string {
 
 function runStatusLabel(run: RunSummary): string {
   const reason = run.finishReason
-    ? FINISH_REASON_LABELS[run.finishReason] ?? run.finishReason
+    ? (FINISH_REASON_LABELS[run.finishReason] ?? run.finishReason)
     : undefined;
   return reason ? `${run.status} (${reason})` : run.status;
 }
@@ -121,7 +122,7 @@ function resolveStatsQuery(client: unknown) {
   const query = queries?.queryWorkflowStats;
   return typeof query === 'function'
     ? (query as (
-        input: QueryWorkflowStatsInput
+        input: QueryWorkflowStatsInput,
       ) => Promise<{ data?: unknown; errors?: { message?: string }[] }>)
     : undefined;
 }
@@ -157,7 +158,9 @@ export default function WorkflowStatistics() {
   // Until the user touches the dates, the range follows the survey: from its
   // earliest run launch to today, so an older survey never opens empty.
   const [dateRangeIsAuto, setDateRangeIsAuto] = useState(true);
-  const [selectedWorkflow, setSelectedWorkflow] = useState<SelectOption | null>(null);
+  const [selectedWorkflow, setSelectedWorkflow] = useState<SelectOption | null>(
+    null,
+  );
 
   const [buckets, setBuckets] = useState<StatsBucket[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -170,7 +173,7 @@ export default function WorkflowStatistics() {
   const [refreshCooldown, setRefreshCooldown] = useState(false);
   const [secondsUntilSync, setSecondsUntilSync] = useState(AUTO_REFRESH_S);
   const [pageVisible, setPageVisible] = useState(
-    () => document.visibilityState === 'visible'
+    () => document.visibilityState === 'visible',
   );
   // Selections can change faster than queries return; only the latest wins.
   const requestSequence = useRef(0);
@@ -193,29 +196,29 @@ export default function WorkflowStatistics() {
           }),
           fetchAllPaginatedResults<{ id: string; name: string }>(
             client.models.Organization.list,
-            { selectionSet: ['id', 'name'], limit: 10000 }
+            { selectionSet: ['id', 'name'], limit: 10000 },
           ),
         ]);
         if (cancelled) return;
         setProjects(
           [...allProjects].sort((left, right) =>
-            (left.name ?? '').localeCompare(right.name ?? '')
-          )
+            (left.name ?? '').localeCompare(right.name ?? ''),
+          ),
         );
         setOrganizationNames(
           Object.fromEntries(
             allOrganizations.map((organization) => [
               organization.id,
               organization.name,
-            ])
-          )
+            ]),
+          ),
         );
       } catch (loadError) {
         if (!cancelled) {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : 'Failed to load surveys'
+              : 'Failed to load surveys',
           );
         }
       }
@@ -238,12 +241,12 @@ export default function WorkflowStatistics() {
           value: candidate.id,
         };
       }),
-    [projects, organizationNames]
+    [projects, organizationNames],
   );
 
   const setOptions = useMemo(() => {
     const selected = projects.find(
-      (candidate) => candidate.id === project?.value
+      (candidate) => candidate.id === project?.value,
     );
     return (selected?.annotationSets ?? []).map((set) => ({
       label: set.name,
@@ -254,7 +257,7 @@ export default function WorkflowStatistics() {
   const userName = useCallback(
     (userId: string) =>
       allUsers.find((candidate) => candidate.id === userId)?.name ?? userId,
-    [allUsers]
+    [allUsers],
   );
 
   // Buckets are small (one per user, day and run), so the whole history for
@@ -272,7 +275,7 @@ export default function WorkflowStatistics() {
         const statsQuery = resolveStatsQuery(client);
         if (!statsQuery) {
           throw new Error(
-            'The workflow statistics query is not available in this environment yet. It ships with the backend deploy that adds it.'
+            'The workflow statistics query is not available in this environment yet. It ships with the backend deploy that adds it.',
           );
         }
         const { data, errors } = await statsQuery({
@@ -282,11 +285,11 @@ export default function WorkflowStatistics() {
         if (sequence !== requestSequence.current) return;
         if (errors?.length) {
           throw new Error(
-            errors.map((entry) => entry.message ?? 'Unknown error').join('; ')
+            errors.map((entry) => entry.message ?? 'Unknown error').join('; '),
           );
         }
         const parsed = (
-          typeof data === 'string' ? JSON.parse(data) : data ?? {}
+          typeof data === 'string' ? JSON.parse(data) : (data ?? {})
         ) as QueryResult;
         setBuckets(parsed.buckets ?? []);
         setRuns(parsed.runs ?? []);
@@ -298,7 +301,7 @@ export default function WorkflowStatistics() {
         setError(
           queryError instanceof Error
             ? queryError.message
-            : 'Failed to load workflow statistics'
+            : 'Failed to load workflow statistics',
         );
         if (!background) {
           setBuckets([]);
@@ -310,7 +313,7 @@ export default function WorkflowStatistics() {
         }
       }
     },
-    [client, project, selectedSets]
+    [client, project, selectedSets],
   );
 
   useEffect(() => {
@@ -341,7 +344,7 @@ export default function WorkflowStatistics() {
     if (!hasLoaded || !pageVisible) return;
     const timer = setInterval(
       () => setSecondsUntilSync((seconds) => Math.max(0, seconds - 1)),
-      1000
+      1000,
     );
     return () => clearInterval(timer);
   }, [hasLoaded, pageVisible]);
@@ -356,7 +359,7 @@ export default function WorkflowStatistics() {
     if (!refreshCooldown) return;
     const timeout = setTimeout(
       () => setRefreshCooldown(false),
-      MANUAL_REFRESH_COOLDOWN_MS
+      MANUAL_REFRESH_COOLDOWN_MS,
     );
     return () => clearTimeout(timeout);
   }, [refreshCooldown]);
@@ -378,7 +381,7 @@ export default function WorkflowStatistics() {
       .filter((time) => Number.isFinite(time));
     const earliest = Math.min(...launches, ...bucketDates);
     setStartDate(
-      Number.isFinite(earliest) ? startOfLocalDay(new Date(earliest)) : null
+      Number.isFinite(earliest) ? startOfLocalDay(new Date(earliest)) : null,
     );
     setEndDate(startOfLocalDay(new Date()));
   }, [dateRangeIsAuto, hasLoaded, runs, buckets]);
@@ -404,9 +407,9 @@ export default function WorkflowStatistics() {
       buckets.filter(
         (bucket) =>
           (!startString || bucket.date >= startString) &&
-          (!endString || bucket.date <= endString)
+          (!endString || bucket.date <= endString),
       ),
-    [buckets, startString, endString]
+    [buckets, startString, endString],
   );
 
   const runOptions = useMemo(() => {
@@ -417,7 +420,7 @@ export default function WorkflowStatistics() {
         run.runId,
         `${run.displayName || run.runId}${label ? ` — ${label}` : ''}${
           run.launchedAt ? ` (${run.launchedAt.slice(0, 10)})` : ''
-        }`
+        }`,
       );
     });
     // A run that recorded work but is missing from the run table would
@@ -433,45 +436,54 @@ export default function WorkflowStatistics() {
   const runName = useCallback(
     (runId: string) =>
       runOptions.find((option) => option.value === runId)?.label ?? runId,
-    [runOptions]
+    [runOptions],
   );
 
   const workflowOptions = useMemo(
-    () => [...new Set([...runs, ...buckets].map((item) => item.workflowType))]
-      .map((value) => ({
-        value,
-        label: WORKFLOW_REGISTRY[value as WorkflowType]?.label ?? value,
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
-    [runs, buckets]
+    () =>
+      [...new Set([...runs, ...buckets].map((item) => item.workflowType))]
+        .map((value) => ({
+          value,
+          label: WORKFLOW_REGISTRY[value as WorkflowType]?.label ?? value,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    [runs, buckets],
   );
 
   const visibleBuckets = useMemo(
     () =>
       selectedWorkflow
         ? bucketsInRange.filter(
-            (bucket) => bucket.workflowType === selectedWorkflow.value
+            (bucket) => bucket.workflowType === selectedWorkflow.value,
           )
         : bucketsInRange,
-    [bucketsInRange, selectedWorkflow]
+    [bucketsInRange, selectedWorkflow],
   );
 
   const visibleRunIds = useMemo(
-    () =>
-      [...new Set([
+    () => [
+      ...new Set([
         ...runs
-          .filter((run) => !selectedWorkflow || run.workflowType === selectedWorkflow.value)
+          .filter(
+            (run) =>
+              !selectedWorkflow || run.workflowType === selectedWorkflow.value,
+          )
           .map((run) => run.runId),
         ...buckets
-          .filter((bucket) => !selectedWorkflow || bucket.workflowType === selectedWorkflow.value)
+          .filter(
+            (bucket) =>
+              !selectedWorkflow ||
+              bucket.workflowType === selectedWorkflow.value,
+          )
           .map((bucket) => bucket.workflowRunId),
-      ])],
-    [selectedWorkflow, runs, buckets]
+      ]),
+    ],
+    [selectedWorkflow, runs, buckets],
   );
 
   const workflowSections = useMemo(
     () => buildWorkflowSections(visibleBuckets, userName),
-    [visibleBuckets, userName]
+    [visibleBuckets, userName],
   );
 
   const runRows = useMemo(() => {
@@ -480,7 +492,9 @@ export default function WorkflowStatistics() {
       completionsByRun.set(
         bucket.workflowRunId,
         (completionsByRun.get(bucket.workflowRunId) ?? 0) +
-          (bucket.workflowType === 'info-tags' ? bucket.metrics.annotationsProcessed ?? 0 : bucket.completedUnits)
+          (bucket.workflowType === 'info-tags'
+            ? (bucket.metrics.annotationsProcessed ?? 0)
+            : bucket.completedUnits),
       );
     });
     // Runs with no work in the range are hidden, except ones launched in it.
@@ -493,7 +507,10 @@ export default function WorkflowStatistics() {
       );
     };
     return runs
-      .filter((run) => !selectedWorkflow || run.workflowType === selectedWorkflow.value)
+      .filter(
+        (run) =>
+          !selectedWorkflow || run.workflowType === selectedWorkflow.value,
+      )
       .filter((run) => completionsByRun.has(run.runId) || launchedInRange(run))
       .sort((left, right) => right.launchedAt.localeCompare(left.launchedAt))
       .map((run) => ({
@@ -510,9 +527,10 @@ export default function WorkflowStatistics() {
       }));
   }, [runs, bucketsInRange, selectedWorkflow, startString, endString]);
 
-  const exportBaseName = `${project?.label ?? 'survey'}_${startString ?? 'all'}_${
-    endString ?? 'all'
-  }`.replace(/[\s()]/g, '_');
+  const exportBaseName =
+    `${project?.label ?? 'survey'}_${startString ?? 'all'}_${
+      endString ?? 'all'
+    }`.replace(/[\s()]/g, '_');
 
   function exportDailyStats() {
     if (visibleBuckets.length === 0) return;
@@ -527,8 +545,10 @@ export default function WorkflowStatistics() {
       annotationSetId: bucket.annotationSetId,
       run: runName(bucket.workflowRunId),
       workflowRunId: bucket.workflowRunId,
-      completedUnits: bucket.workflowType === 'info-tags'
-        ? bucket.metrics.annotationsProcessed ?? '' : bucket.completedUnits,
+      completedUnits:
+        bucket.workflowType === 'info-tags'
+          ? (bucket.metrics.annotationsProcessed ?? '')
+          : bucket.completedUnits,
       skippedUnits: bucket.skippedUnits,
       activeTimeMs: bucket.activeTimeMs,
       waitingTimeMs: bucket.waitingTimeMs,
@@ -536,7 +556,7 @@ export default function WorkflowStatistics() {
         Object.entries(bucket.metrics).map(([key, value]) => [
           `metric_${key}`,
           value,
-        ])
+        ]),
       ),
     }));
     exportFromJSON({
@@ -559,7 +579,7 @@ export default function WorkflowStatistics() {
           startAt: startDate ? localDayStart(startDate) : undefined,
           endAt: endDate ? localDayEnd(endDate) : undefined,
         },
-        (count) => setExportProgress(`${count.toLocaleString()} events…`)
+        (count) => setExportProgress(`${count.toLocaleString()} events…`),
       );
       if (events.length === 0) {
         setError('No task events in the selected period.');
@@ -567,7 +587,7 @@ export default function WorkflowStatistics() {
       }
       exportFromJSON({
         data: neutraliseCsvRows(
-          events.map((event) => eventToCsvRow(event, userName, runName))
+          events.map((event) => eventToCsvRow(event, userName, runName)),
         ),
         fileName: `${exportBaseName}_TaskEvents`,
         exportType: exportFromJSON.types.csv,
@@ -576,7 +596,7 @@ export default function WorkflowStatistics() {
       setError(
         exportError instanceof Error
           ? exportError.message
-          : 'Failed to export task events'
+          : 'Failed to export task events',
       );
     } finally {
       setExportProgress(null);
@@ -603,8 +623,8 @@ export default function WorkflowStatistics() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className='flex flex-wrap -mx-2 gap-y-4 items-end'>
-            <div className='w-full md:w-1/3 px-2'>
+          <div className='-mx-2 flex flex-wrap items-end gap-y-4'>
+            <div className='w-full px-2 md:w-1/3'>
               <label htmlFor='workflow-survey' className='mb-1 inline-block'>
                 Survey
               </label>
@@ -616,7 +636,7 @@ export default function WorkflowStatistics() {
                 placeholder='Select a survey'
               />
             </div>
-            <div className='w-full md:w-1/3 px-2'>
+            <div className='w-full px-2 md:w-1/3'>
               <label htmlFor='workflow-sets' className='mb-1 inline-block'>
                 Annotation sets
               </label>
@@ -634,7 +654,7 @@ export default function WorkflowStatistics() {
                 }
               />
             </div>
-            <div className='w-full md:w-1/3 px-2'>
+            <div className='w-full px-2 md:w-1/3'>
               <label className='mb-1 inline-block'>Date range</label>
               <div className='flex items-center gap-2'>
                 <DateField
@@ -680,22 +700,25 @@ export default function WorkflowStatistics() {
           <hr className='my-6' />
 
           {loading ? (
-            <div className='flex justify-center items-center py-12'>
+            <div className='flex items-center justify-center py-12'>
               <Spinner animation='border' />
               <span className='ms-4'>Loading statistics…</span>
             </div>
           ) : !project ? (
-            <p className='text-muted-foreground mb-0'>Select a survey to see its statistics.</p>
+            <p className='mb-0 text-muted-foreground'>
+              Select a survey to see its statistics.
+            </p>
           ) : needsSetChoice ? (
-            <p className='text-muted-foreground mb-0'>
-              This survey has several annotation sets. Choose the ones to report on.
+            <p className='mb-0 text-muted-foreground'>
+              This survey has several annotation sets. Choose the ones to report
+              on.
             </p>
           ) : (
             <>
-              <div className='flex justify-between items-center flex-wrap gap-2'>
+              <div className='flex flex-wrap items-center justify-between gap-2'>
                 <div className='flex items-center gap-2'>
                   <h5 className='mb-0'>Results</h5>
-                  <small className='text-muted-foreground ms-2'>
+                  <small className='ms-2 text-muted-foreground'>
                     Syncs in {secondsUntilSync} s
                   </small>
                   <Button
@@ -894,7 +917,7 @@ function DateField({
               fieldBase,
               fieldSizes.default,
               'text-left',
-              value ? 'pr-8' : 'text-[#6c757d]'
+              value ? 'pr-8' : 'text-[#6c757d]',
             )}
           >
             {value ? format(value, 'yyyy/MM/dd') : placeholder}
@@ -919,7 +942,7 @@ function DateField({
                   date.setHours(
                     value.getHours(),
                     value.getMinutes(),
-                    value.getSeconds()
+                    value.getSeconds(),
                   );
                 onChange(date);
               }
@@ -932,7 +955,7 @@ function DateField({
         <button
           type='button'
           aria-label='Clear'
-          className='absolute right-2 top-1/2 -translate-y-1/2 text-[#6c757d] opacity-75 hover:opacity-100'
+          className='absolute top-1/2 right-2 -translate-y-1/2 text-[#6c757d] opacity-75 hover:opacity-100'
           onClick={() => onChange(null)}
         >
           <XIcon className='size-4' />

@@ -1,31 +1,39 @@
+import * as maplibregl from 'maplibre-gl';
 import {
+  useCallback,
   useContext,
   useEffect,
-  useState,
-  useCallback,
-  useRef,
   useMemo,
+  useRef,
+  useState,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import * as maplibregl from 'maplibre-gl';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, Undo2, SearchCheck, RotateCcw } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  SearchCheck,
+  Undo2,
+} from 'lucide-react';
 import { GlobalContext, UserContext } from './Context';
-import { applyActiveMarkerStyle } from './activeMarkerStyle';
 import { getTileBlob, imageTileContext } from './StorageLayer';
+import { applyActiveMarkerStyle } from './activeMarkerStyle';
 import type { Schema } from './amplify/client-schema';
 import {
   fetchInfoTagDataForSet,
   formatInfoTagsForDisplay,
   infoTagNamesFor,
 } from './infoTags';
-import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 import { recordWorkflowTask } from './recordWorkflowTask';
 import { reviewWorkflowTask } from './reviewWorkflowTask';
 import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
+import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 
 // ── Constants ──
 
@@ -72,7 +80,6 @@ type QCReviewProps = {
   setLegendCollapsed: (collapsed: boolean) => void;
 };
 
-
 export default function QCAnnotationReview({
   annotation,
   queueId,
@@ -115,7 +122,10 @@ export default function QCAnnotationReview({
   }, [visible]);
 
   // ── Marker position (draggable) ──
-  const [markerPosition, setMarkerPosition] = useState<{ x: number; y: number }>({
+  const [markerPosition, setMarkerPosition] = useState<{
+    x: number;
+    y: number;
+  }>({
     x: annotation.x,
     y: annotation.y,
   });
@@ -147,7 +157,9 @@ export default function QCAnnotationReview({
     return queueZoom ?? DEFAULT_ZOOM_OFFSET;
   });
   const [hasLocalZoom, setHasLocalZoom] = useState<boolean>(() => {
-    return queueId ? localStorage.getItem(`qcDefaultZoom-${queueId}`) != null : false;
+    return queueId
+      ? localStorage.getItem(`qcDefaultZoom-${queueId}`) != null
+      : false;
   });
 
   // ── UI state ──
@@ -187,8 +199,9 @@ export default function QCAnnotationReview({
 
   // ── False Positive logic ──
   const existingFpCategory = useMemo(
-    () => categories.find((c) => c.name.trim().toLowerCase() === 'false positive'),
-    [categories]
+    () =>
+      categories.find((c) => c.name.trim().toLowerCase() === 'false positive'),
+    [categories],
   );
   const fpHotkey = existingFpCategory ? existingFpCategory.shortcutKey : '+';
   const fpLabel = `False Positive (${fpHotkey ? formatShortcutKey(fpHotkey) : '+/='})`;
@@ -200,7 +213,7 @@ export default function QCAnnotationReview({
       existingFpCategory
         ? categories.filter((c) => c.id !== existingFpCategory.id)
         : categories,
-    [categories, existingFpCategory]
+    [categories, existingFpCategory],
   );
 
   // ── Reset marker position when the annotation changes ──
@@ -214,11 +227,14 @@ export default function QCAnnotationReview({
     let mounted = true;
     Promise.all([
       client.models.Annotation.annotationsByImageIdAndSetId(
-        { imageId: annotation.imageId, setId: { eq: annotation.annotationSetId } },
+        {
+          imageId: annotation.imageId,
+          setId: { eq: annotation.annotationSetId },
+        },
         {
           limit: 10000,
           selectionSet: ['id', 'x', 'y', 'categoryId', 'reviewedBy'],
-        }
+        },
       ),
       fetchInfoTagDataForSet(client, annotation.annotationSetId),
     ]).then(([{ data }, infoTagData]) => {
@@ -234,7 +250,7 @@ export default function QCAnnotationReview({
             categoryId: a.categoryId,
             reviewed: !!a.reviewedBy,
             infoTags: infoTagNamesFor(infoTagData, a.id),
-          }))
+          })),
       );
     });
     return () => {
@@ -249,19 +265,19 @@ export default function QCAnnotationReview({
 
     client.models.Image.get(
       { id: annotation.imageId },
-      { selectionSet: ['id', 'width', 'height'] }
+      { selectionSet: ['id', 'width', 'height'] },
     ).then(({ data }) => {
       if (!mounted || !data) return;
       setImage(data);
     });
 
-    client.models.ImageFile.imagesByimageId({ imageId: annotation.imageId }).then(
-      ({ data }) => {
-        if (!mounted) return;
-        const jpeg = data?.find((f) => f.type === 'image/jpeg');
-        if (jpeg) setSourceKey(jpeg.key);
-      }
-    );
+    client.models.ImageFile.imagesByimageId({
+      imageId: annotation.imageId,
+    }).then(({ data }) => {
+      if (!mounted) return;
+      const jpeg = data?.find((f) => f.type === 'image/jpeg');
+      if (jpeg) setSourceKey(jpeg.key);
+    });
 
     return () => {
       mounted = false;
@@ -270,21 +286,21 @@ export default function QCAnnotationReview({
 
   // ── MapLibre coordinate helpers ──
   const scale = useMemo(
-    () =>
-      image ? 0.1 / Math.max(image.width, image.height) : undefined,
-    [image]
+    () => (image ? 0.1 / Math.max(image.width, image.height) : undefined),
+    [image],
   );
 
   const px2lngLat = useCallback(
     (x: number, y: number): [number, number] =>
       scale ? [x * scale, -y * scale] : [0, 0],
-    [scale]
+    [scale],
   );
 
   // ── Update main marker position + label on state changes ──
   useEffect(() => {
     if (!map || !scale) return;
-    const source = map.getSource(SOURCE_MARKER) as maplibregl.GeoJSONSource | undefined;
+    const source = map.getSource(SOURCE_MARKER) as
+      maplibregl.GeoJSONSource | undefined;
     if (!source) return;
     source.setData({
       type: 'FeatureCollection',
@@ -300,23 +316,32 @@ export default function QCAnnotationReview({
       ],
     });
     if (mainMarkerRef.current) {
-      mainMarkerRef.current.setLngLat(px2lngLat(markerPosition.x, markerPosition.y));
+      mainMarkerRef.current.setLngLat(
+        px2lngLat(markerPosition.x, markerPosition.y),
+      );
     }
-  }, [map, scale, displayCategoryId, markerPosition, px2lngLat, displayCategory?.name]);
+  }, [
+    map,
+    scale,
+    displayCategoryId,
+    markerPosition,
+    px2lngLat,
+    displayCategory?.name,
+  ]);
 
   // ── Sync other-annotations source data ──
   useEffect(() => {
     if (!map || !scale) return;
     const source = map.getSource(SOURCE_OTHER_ANNOTATIONS) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!source) return;
     source.setData({
       type: 'FeatureCollection',
       features: otherAnnotations.map((a) => ({
         type: 'Feature',
         properties: {
-          label: categories.find((c) => c.id === a.categoryId)?.name ?? 'Unknown',
+          label:
+            categories.find((c) => c.id === a.categoryId)?.name ?? 'Unknown',
           reviewed: a.reviewed,
           infoTags: JSON.stringify(a.infoTags),
         },
@@ -365,7 +390,7 @@ export default function QCAnnotationReview({
           const c2 = px2lngLat(x1, y1);
           const tileBounds = new maplibregl.LngLatBounds(
             [Math.min(c1[0], c2[0]), Math.min(c1[1], c2[1])],
-            [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])]
+            [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])],
           );
 
           const isVisible =
@@ -378,56 +403,62 @@ export default function QCAnnotationReview({
           if (isVisible) {
             loadedTilesRef.current.add(sourceId);
             const path = `slippymaps/${sourceKey}/${z}/${row}/${col}.png`;
-            pendingTiles.push(getTileBlob(path, imageTileContext(image))
-              .then((blob) => {
-                if (cancelledRef.current) return;
-                const url = URL.createObjectURL(blob);
-                blobUrlsRef.current.push(url);
+            pendingTiles.push(
+              getTileBlob(path, imageTileContext(image))
+                .then((blob) => {
+                  if (cancelledRef.current) return;
+                  const url = URL.createObjectURL(blob);
+                  blobUrlsRef.current.push(url);
 
-                if (m.getSource(sourceId)) return;
-                m.addSource(sourceId, {
-                  type: 'image',
-                  url,
-                  coordinates: [
-                    px2lngLat(x0, y0),
-                    px2lngLat(x1, y0),
-                    px2lngLat(x1, y1),
-                    px2lngLat(x0, y1),
-                  ],
-                });
+                  if (m.getSource(sourceId)) return;
+                  m.addSource(sourceId, {
+                    type: 'image',
+                    url,
+                    coordinates: [
+                      px2lngLat(x0, y0),
+                      px2lngLat(x1, y0),
+                      px2lngLat(x1, y1),
+                      px2lngLat(x0, y1),
+                    ],
+                  });
 
-                let beforeId: string = LAYER_MARKER_LABEL;
-                const layers = m.getStyle().layers || [];
-                for (const layer of layers) {
-                  if (layer.id.startsWith('layer-')) {
-                    const layerZ = parseInt(layer.id.split('-')[1], 10);
-                    if (layerZ > z) {
-                      beforeId = layer.id;
-                      break;
+                  let beforeId: string = LAYER_MARKER_LABEL;
+                  const layers = m.getStyle().layers || [];
+                  for (const layer of layers) {
+                    if (layer.id.startsWith('layer-')) {
+                      const layerZ = parseInt(layer.id.split('-')[1], 10);
+                      if (layerZ > z) {
+                        beforeId = layer.id;
+                        break;
+                      }
                     }
                   }
-                }
 
-                m.addLayer(
-                  {
-                    id: `layer-${z}-${row}-${col}`,
-                    type: 'raster',
-                    source: sourceId,
-                    paint: { 'raster-fade-duration': 0 },
-                  },
-                  beforeId
-                );
-                addedTiles += 1;
-              })
-              .catch(() => {
-                loadedTilesRef.current.delete(sourceId);
-              }));
+                  m.addLayer(
+                    {
+                      id: `layer-${z}-${row}-${col}`,
+                      type: 'raster',
+                      source: sourceId,
+                      paint: { 'raster-fade-duration': 0 },
+                    },
+                    beforeId,
+                  );
+                  addedTiles += 1;
+                })
+                .catch(() => {
+                  loadedTilesRef.current.delete(sourceId);
+                }),
+            );
           }
         }
       }
       if (pendingTiles.length > 0 && readyAtRef.current === null) {
         await Promise.all(pendingTiles);
-        if (addedTiles > 0 && statsMapRef.current === m && readyAtRef.current === null) {
+        if (
+          addedTiles > 0 &&
+          statsMapRef.current === m &&
+          readyAtRef.current === null
+        ) {
           m.once('idle', () => {
             if (statsMapRef.current === m && readyAtRef.current === null) {
               readyAtRef.current = Date.now();
@@ -436,7 +467,7 @@ export default function QCAnnotationReview({
         }
       }
     },
-    [sourceKey, image, px2lngLat, scale]
+    [sourceKey, image, px2lngLat, scale],
   );
 
   // ── Initialize map ──
@@ -471,7 +502,7 @@ export default function QCAnnotationReview({
         showZoom: true,
         visualizePitch: false,
       }),
-      'top-left'
+      'top-left',
     );
 
     m.touchZoomRotate.disableRotation();
@@ -528,11 +559,7 @@ export default function QCAnnotationReview({
         source: SOURCE_OTHER_ANNOTATIONS,
         paint: {
           'circle-radius': 6,
-          'circle-color': [
-            'case',
-            ['get', 'reviewed'], '#00c853',
-            '#ff1744',
-          ],
+          'circle-color': ['case', ['get', 'reviewed'], '#00c853', '#ff1744'],
           'circle-stroke-color': '#000000',
           'circle-stroke-width': 1,
         },
@@ -552,15 +579,16 @@ export default function QCAnnotationReview({
         if (feat.geometry.type !== 'Point') return;
         const coords = feat.geometry.coordinates.slice() as [number, number];
         const label = String(feat.properties?.label ?? '');
-        const escaped = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const escaped = label
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
         const reviewed = !!feat.properties?.reviewed;
         const statusColor = reviewed ? '#00c853' : '#ff1744';
         const statusText = reviewed ? 'Reviewed' : 'Unreviewed';
         let infoTagNames: string[] = [];
         try {
-          infoTagNames = JSON.parse(
-            String(feat.properties?.infoTags ?? '[]')
-          );
+          infoTagNames = JSON.parse(String(feat.properties?.infoTags ?? '[]'));
         } catch {
           infoTagNames = [];
         }
@@ -573,8 +601,8 @@ export default function QCAnnotationReview({
           .setLngLat(coords)
           .setHTML(
             `<div style="color:#000"><div>${escaped}</div>` +
-            `<div style="color:${statusColor};font-weight:600;font-size:11px">${statusText}</div>` +
-            `${hasInfoTagsRef.current ? `<div style="font-size:11px">Tags: ${escapedTags}</div>` : ''}</div>`
+              `<div style="color:${statusColor};font-weight:600;font-size:11px">${statusText}</div>` +
+              `${hasInfoTagsRef.current ? `<div style="font-size:11px">Tags: ${escapedTags}</div>` : ''}</div>`,
           )
           .addTo(m);
       });
@@ -599,8 +627,7 @@ export default function QCAnnotationReview({
       mainMarker.on('drag', () => {
         const ll = mainMarker.getLngLat();
         const src = m.getSource(SOURCE_MARKER) as
-          | maplibregl.GeoJSONSource
-          | undefined;
+          maplibregl.GeoJSONSource | undefined;
         if (!src) return;
         src.setData({
           type: 'FeatureCollection',
@@ -625,7 +652,7 @@ export default function QCAnnotationReview({
       // Compute the zoom level that fits the whole image, then add the offset.
       const imageBounds = new maplibregl.LngLatBounds(
         px2lngLat(0, image.height),
-        px2lngLat(image.width, 0)
+        px2lngLat(image.width, 0),
       );
       // Temporarily fit to get the base zoom, then override.
       m.fitBounds(imageBounds, { padding: 20, animate: false });
@@ -695,7 +722,7 @@ export default function QCAnnotationReview({
       map.setLayoutProperty(
         LAYER_MARKER_LABEL,
         'visibility',
-        hideMarker ? 'none' : 'visible'
+        hideMarker ? 'none' : 'visible',
       );
     }
   }, [hideMarker, map]);
@@ -711,11 +738,13 @@ export default function QCAnnotationReview({
     }
   }, [client, queueId]);
 
-  const fetchExistingReviewer = useCallback(async (): Promise<string | null> => {
+  const fetchExistingReviewer = useCallback(async (): Promise<
+    string | null
+  > => {
     try {
       const { data } = await client.models.Annotation.get(
         { id: annotation.id },
-        { selectionSet: ['id', 'reviewedBy'] }
+        { selectionSet: ['id', 'reviewedBy'] },
       );
       return data?.reviewedBy ?? null;
     } catch {
@@ -761,7 +790,7 @@ export default function QCAnnotationReview({
           `Failed to save review: ${
             errors?.map((error) => error.message).join('; ') ||
             'no row returned'
-          }`
+          }`,
         );
       }
 
@@ -785,18 +814,17 @@ export default function QCAnnotationReview({
       markerPosition,
       fetchExistingReviewer,
       incrementObservedCount,
-    ]
+    ],
   );
 
   const handleApprove = useCallback(() => {
-
     setReviewedCatId(annotation.categoryId);
 
     // Navigation still is not blocked on the network; the commit runs in the
     // background, but its steps are ordered so a failure leaves the task on
     // the queue to be redelivered.
     void commitReview(annotation.categoryId).catch((err) =>
-      console.error('Failed to approve annotation', err)
+      console.error('Failed to approve annotation', err),
     );
 
     if (next) {
@@ -808,11 +836,10 @@ export default function QCAnnotationReview({
 
   const handleRelabel = useCallback(
     (newCategoryId: string) => {
-
       setReviewedCatId(newCategoryId);
 
       void commitReview(newCategoryId).catch((err) =>
-        console.error('Failed to relabel annotation', err)
+        console.error('Failed to relabel annotation', err),
       );
 
       if (next) {
@@ -821,7 +848,7 @@ export default function QCAnnotationReview({
         startWaiting();
       }
     },
-    [commitReview, next]
+    [commitReview, next],
   );
 
   const startWaiting = useCallback(() => {
@@ -842,7 +869,7 @@ export default function QCAnnotationReview({
       waitingTimerRef.current = undefined;
       if (countdownRef.current) clearInterval(countdownRef.current);
       alert(
-        'No new work was loaded. The job appears to be complete. Thank you for your contribution!'
+        'No new work was loaded. The job appears to be complete. Thank you for your contribution!',
       );
       navigate('/surveys');
     }, 60000);
@@ -857,12 +884,10 @@ export default function QCAnnotationReview({
 
     if (!hasLocalZoom) {
       // Check if admin on this project — offer to save for everyone
-      const isAdmin = adminMemberships?.some(
-        (m) => m.projectId === projectId
-      );
+      const isAdmin = adminMemberships?.some((m) => m.projectId === projectId);
       if (isAdmin) {
         const result = window.prompt(
-          'Set as default zoom for all users on this job? (y/n)'
+          'Set as default zoom for all users on this job? (y/n)',
         );
         if (result === null) return;
         if (result?.toLowerCase() === 'y') {
@@ -872,7 +897,7 @@ export default function QCAnnotationReview({
           });
           setQueueZoom(newOffset);
           alert(
-            'Default zoom updated for all users. Save & Exit for changes to take effect.'
+            'Default zoom updated for all users. Save & Exit for changes to take effect.',
           );
           return;
         }
@@ -890,7 +915,16 @@ export default function QCAnnotationReview({
       setHasLocalZoom(true);
       setZoomOffset(newOffset);
     }
-  }, [map, hasLocalZoom, adminMemberships, projectId, client, queueId, queueZoom, setQueueZoom]);
+  }, [
+    map,
+    hasLocalZoom,
+    adminMemberships,
+    projectId,
+    client,
+    queueId,
+    queueZoom,
+    setQueueZoom,
+  ]);
 
   const handleFalsePositive = useCallback(async () => {
     let fpCatId: string;
@@ -899,7 +933,9 @@ export default function QCAnnotationReview({
       fpCatId = existingFpCategory.id;
     } else {
       if (!projectId || !annotationSetId) {
-        console.error('Cannot create False Positive category: missing projectId or annotationSetId');
+        console.error(
+          'Cannot create False Positive category: missing projectId or annotationSetId',
+        );
         return;
       }
       if (creatingFp) return;
@@ -934,7 +970,7 @@ export default function QCAnnotationReview({
     setReviewedCatId(fpCatId);
 
     void commitReview(fpCatId, true).catch((err) =>
-      console.error('Failed to mark as false positive', err)
+      console.error('Failed to mark as false positive', err),
     );
 
     if (next) {
@@ -943,9 +979,16 @@ export default function QCAnnotationReview({
       startWaiting();
     }
   }, [
-    existingFpCategory, projectId, annotationSetId, creatingFp,
-    client, group, commitReview, next,
-    setCategories, startWaiting,
+    existingFpCategory,
+    projectId,
+    annotationSetId,
+    creatingFp,
+    client,
+    group,
+    commitReview,
+    next,
+    setCategories,
+    startWaiting,
   ]);
 
   // ── Hotkey handling ──
@@ -953,7 +996,6 @@ export default function QCAnnotationReview({
     if (!visible) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
@@ -976,7 +1018,7 @@ export default function QCAnnotationReview({
       const matchingCategory = findShortcutMatch(
         e,
         categories,
-        (c) => c.shortcutKey
+        (c) => c.shortcutKey,
       );
       if (matchingCategory) {
         e.preventDefault();
@@ -1020,14 +1062,14 @@ export default function QCAnnotationReview({
 
   if (!image || !sourceKey) {
     return (
-      <div className='flex justify-center items-center w-full h-full'>
+      <div className='flex h-full w-full items-center justify-center'>
         <div className='text-muted-foreground'>Loading image...</div>
       </div>
     );
   }
 
   return (
-    <div className='flex flex-col w-full h-full'>
+    <div className='flex h-full w-full flex-col'>
       {/* Header bar */}
       <div
         className='flex items-center justify-between py-2'
@@ -1037,9 +1079,7 @@ export default function QCAnnotationReview({
         }}
       >
         <div className='flex items-center gap-4'>
-          <Badge variant='info'>
-            {displayCategory?.name ?? 'Unknown'}
-          </Badge>
+          <Badge variant='info'>{displayCategory?.name ?? 'Unknown'}</Badge>
           {reviewedCatId && (
             <Badge variant='success' style={{ fontSize: '11px' }}>
               Reviewed
@@ -1050,11 +1090,14 @@ export default function QCAnnotationReview({
           </span>
         </div>
         <button
-          className='p-0 m-0 border-0 bg-transparent flex items-center text-white'
+          className='m-0 flex items-center border-0 bg-transparent p-0 text-white'
           onClick={saveDefaultZoom}
         >
           {hasLocalZoom ? <RotateCcw size={20} /> : <SearchCheck size={20} />}
-          <span className='ms-2 mb-0 hidden md:block' style={{ fontSize: '13px' }}>
+          <span
+            className='ms-2 mb-0 hidden md:block'
+            style={{ fontSize: '13px' }}
+          >
             {hasLocalZoom ? 'Reset zoom' : 'Set as default zoom'}
           </span>
         </button>
@@ -1104,7 +1147,9 @@ export default function QCAnnotationReview({
                 }}
               />
               <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-              <div style={{ color: '#fff', fontSize: '14px', textAlign: 'center' }}>
+              <div
+                style={{ color: '#fff', fontSize: '14px', textAlign: 'center' }}
+              >
                 Waiting for new work... ({secondsRemaining}s remaining)
               </div>
             </div>
@@ -1113,7 +1158,15 @@ export default function QCAnnotationReview({
 
         {/* Collapsible side legend */}
         {legendCollapsed ? (
-          <div className='flex items-center' style={{ padding: '0 4px', flexShrink: 0, height: '100%', marginLeft: '12px' }}>
+          <div
+            className='flex items-center'
+            style={{
+              padding: '0 4px',
+              flexShrink: 0,
+              height: '100%',
+              marginLeft: '12px',
+            }}
+          >
             <Button
               variant='secondary'
               size='sm'
@@ -1131,7 +1184,15 @@ export default function QCAnnotationReview({
             </Button>
           </div>
         ) : (
-          <div className='flex flex-col' style={{ position: 'relative', height: '100%', flexShrink: 0, marginLeft: '24px' }}>
+          <div
+            className='flex flex-col'
+            style={{
+              position: 'relative',
+              height: '100%',
+              flexShrink: 0,
+              marginLeft: '24px',
+            }}
+          >
             <Button
               variant='secondary'
               size='sm'
@@ -1153,12 +1214,18 @@ export default function QCAnnotationReview({
               <ChevronRight size={18} />
             </Button>
 
-            <Card className='flex flex-col h-full overflow-hidden' style={{ width: '280px' }}>
+            <Card
+              className='flex h-full flex-col overflow-hidden'
+              style={{ width: '280px' }}
+            >
               <CardHeader>
-                <CardTitle className='flex flex-row items-center gap-2 mb-2'>
+                <CardTitle className='mb-2 flex flex-row items-center gap-2'>
                   <span>Legend</span>
                 </CardTitle>
-                <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
+                <span
+                  className='text-muted-foreground'
+                  style={{ fontSize: '14px' }}
+                >
                   Press a shortcut key to approve or fix
                 </span>
               </CardHeader>
@@ -1168,7 +1235,9 @@ export default function QCAnnotationReview({
                   .sort((a, b) => a.name.localeCompare(b.name))
                   .map((cat) => (
                     <Button
-                      variant={cat.id === displayCategoryId ? 'info' : 'primary'}
+                      variant={
+                        cat.id === displayCategoryId ? 'info' : 'primary'
+                      }
                       key={cat.id}
                       className='flex flex-row items-center justify-between gap-2'
                       onClick={() => {
@@ -1178,7 +1247,6 @@ export default function QCAnnotationReview({
                           handleRelabel(cat.id);
                         }
                       }}
-
                     >
                       <div>{cat.name}</div>
                       {cat.shortcutKey && (
@@ -1194,7 +1262,7 @@ export default function QCAnnotationReview({
 
       {/* Bottom action bar */}
       <div
-        className='flex items-center justify-between py-2 mt-2'
+        className='mt-2 flex items-center justify-between py-2'
         style={{
           backgroundColor: '#2b3e50',
           flexShrink: 0,
@@ -1233,7 +1301,6 @@ export default function QCAnnotationReview({
             variant='primary'
             style={{ width: 160 }}
             onClick={() => navigate('/jobs')}
-
           >
             Save &amp; Exit
           </Button>

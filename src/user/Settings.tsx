@@ -1,3 +1,12 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormText, Label } from '@/components/ui/label';
+import {
+  confirmUserAttribute,
+  fetchUserAttributes,
+  updateUserAttribute,
+} from 'aws-amplify/auth';
 import {
   EraserIcon,
   LogOutIcon,
@@ -6,18 +15,9 @@ import {
   UserIcon,
   XIcon,
 } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
-import {
-  confirmUserAttribute,
-  fetchUserAttributes,
-  updateUserAttribute,
-} from 'aws-amplify/auth';
-import { Alert } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { FormText, Label } from '@/components/ui/label';
-import { Modal, Header, Title, Body, Footer } from '../Modal';
+import { useCallback, useEffect, useState } from 'react';
 import { isValidEmail, normalizeEmail } from '../../shared/email';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
 
 type Status = { variant: 'success' | 'danger'; text: string } | null;
 
@@ -187,7 +187,7 @@ export default function Settings({ signOut }: { signOut: () => void }) {
   return (
     <>
       <button
-        className='text-muted-foreground px-2 flex items-center justify-center'
+        className='flex items-center justify-center px-2 text-muted-foreground'
         style={{
           backgroundColor: 'transparent',
           border: 'none',

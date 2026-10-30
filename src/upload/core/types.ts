@@ -31,9 +31,7 @@ export interface ItemFailure {
 }
 
 export type BlockedReasonKind =
-  | 'missing-from-folder'
-  | 'transfer-failed'
-  | 'not-in-storage';
+  'missing-from-folder' | 'transfer-failed' | 'not-in-storage';
 
 export interface BlockedItem {
   originalPath: string;

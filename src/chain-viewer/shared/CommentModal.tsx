@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { FormText, Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useEffect, useState } from 'react';
 
 interface Props {
   show: boolean;
@@ -44,7 +44,9 @@ export function CommentModal({ show, initial, onClose, onSave }: Props) {
         </DialogHeader>
         <DialogBody>
           <div>
-            <Label htmlFor='comment-modal-text'>Your note on this annotation</Label>
+            <Label htmlFor='comment-modal-text'>
+              Your note on this annotation
+            </Label>
             <Textarea
               id='comment-modal-text'
               rows={4}
@@ -54,7 +56,8 @@ export function CommentModal({ show, initial, onClose, onSave }: Props) {
               placeholder='Add a comment for this annotation…'
             />
             <FormText className='text-muted-foreground'>
-              Recorded as your review feedback; it never changes the original data.
+              Recorded as your review feedback; it never changes the original
+              data.
             </FormText>
           </div>
         </DialogBody>

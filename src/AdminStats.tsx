@@ -1,5 +1,3 @@
-import { useMemo, useState } from 'react';
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -14,6 +12,8 @@ import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { Table } from '@/components/ui/table';
 import { DateTime } from 'luxon';
+import { useMemo, useState } from 'react';
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { useAdminStatsData } from './useAdminStatsData';
 
 function SummaryTile(props: {
@@ -24,10 +24,12 @@ function SummaryTile(props: {
   return (
     <Card className='mb-4 h-full'>
       <CardContent>
-        <div className='flex justify-between items-baseline'>
+        <div className='flex items-baseline justify-between'>
           <div>
-            <div className='text-muted-foreground text-sm'>{props.title}</div>
-            <div className='text-2xl font-medium leading-tight mb-0'>{props.total.toLocaleString()}</div>
+            <div className='text-sm text-muted-foreground'>{props.title}</div>
+            <div className='mb-0 text-2xl leading-tight font-medium'>
+              {props.total.toLocaleString()}
+            </div>
           </div>
           <div className='text-success'>
             +{props.thisMonth.toLocaleString()} this month
@@ -93,21 +95,21 @@ function OrgBreakdownTable(props: {
       </CardHeader>
       <CardContent className='p-0'>
         <Table size='sm' responsive className='mb-0'>
-            <thead>
-              <tr>
-                <th style={{ width: 28 }}></th>
-                <th>Organization</th>
-                <th className='text-right'>Surveys</th>
-                <th className='text-right'>Images</th>
-                <th className='text-right'>Annotations</th>
-                <th className='text-right'>This month</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((org) => (
-                <OrgRow key={org.organizationId} org={org} />
-              ))}
-            </tbody>
+          <thead>
+            <tr>
+              <th style={{ width: 28 }}></th>
+              <th>Organization</th>
+              <th className='text-right'>Surveys</th>
+              <th className='text-right'>Images</th>
+              <th className='text-right'>Annotations</th>
+              <th className='text-right'>This month</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((org) => (
+              <OrgRow key={org.organizationId} org={org} />
+            ))}
+          </tbody>
         </Table>
       </CardContent>
     </Card>
@@ -136,7 +138,9 @@ function OrgRow(props: {
         <td>{org.organizationName}</td>
         <td className='text-right'>{org.totals.surveys.toLocaleString()}</td>
         <td className='text-right'>{org.totals.images.toLocaleString()}</td>
-        <td className='text-right'>{org.totals.annotations.toLocaleString()}</td>
+        <td className='text-right'>
+          {org.totals.annotations.toLocaleString()}
+        </td>
         <td className='text-right'>
           {org.thisMonth.surveys.toLocaleString()} /{' '}
           {org.thisMonth.images.toLocaleString()} /{' '}
@@ -195,12 +199,12 @@ export default function AdminStats() {
         thisMonth: data.annotations.thisMonth,
       },
     ],
-    [data]
+    [data],
   );
 
   return (
     <div>
-      <div className='flex items-end gap-4 mb-4'>
+      <div className='mb-4 flex items-end gap-4'>
         <div>
           <Label className='mb-1'>Timeframe</Label>
           <NativeSelect
@@ -225,9 +229,9 @@ export default function AdminStats() {
           </div>
         </div>
         {data.updatedAt && (
-          <div className='text-muted-foreground text-sm mb-2'>
-            Counts updated{' '}
-            {DateTime.fromISO(data.updatedAt).toRelative()}, refreshed hourly
+          <div className='mb-2 text-sm text-muted-foreground'>
+            Counts updated {DateTime.fromISO(data.updatedAt).toRelative()},
+            refreshed hourly
           </div>
         )}
       </div>
@@ -239,7 +243,7 @@ export default function AdminStats() {
       )}
 
       {data.loading ? (
-        <div className='flex items-center gap-2 mb-4'>
+        <div className='mb-4 flex items-center gap-2'>
           <Spinner animation='border' size='sm' />
           <span>Loading statistics…</span>
         </div>

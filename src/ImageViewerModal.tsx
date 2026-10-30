@@ -54,7 +54,7 @@ export default function ImageViewerModal({
         </DialogHeader>
         <DialogBody style={{ height: '75vh' }}>
           {imageId ? (
-            <div className='w-full h-full' style={{ position: 'relative' }}>
+            <div className='h-full w-full' style={{ position: 'relative' }}>
               <LightImageView
                 imageId={imageId}
                 annotationSetId={annotationSetId}
@@ -68,7 +68,7 @@ export default function ImageViewerModal({
         <DialogFooter className='flex justify-between'>
           <div className='flex flex-row gap-2'>
             <Button
-              className='flex flex-row items-center justify-center h-full'
+              className='flex h-full flex-row items-center justify-center'
               variant='primary'
               onClick={handlePrevious}
               disabled={!hasPrevious}
@@ -78,7 +78,7 @@ export default function ImageViewerModal({
               <span className='hidden sm:block'>Previous</span>
             </Button>
             <Button
-              className='flex flex-row items-center justify-center h-full'
+              className='flex h-full flex-row items-center justify-center'
               variant='primary'
               onClick={handleNext}
               disabled={!hasNext}

@@ -24,7 +24,7 @@ export const candidateKey = (c: CandidateRef) =>
 // Preset locations are copies with new IDs; older ones lack sourceLocationId.
 export function findAddedKeys(
   pool: PoolEntry[],
-  presetLocations: PresetLocation[]
+  presetLocations: PresetLocation[],
 ): Set<string> {
   const added = new Set<string>();
   const byImage = new Map<string, PoolEntry[]>();
@@ -47,7 +47,7 @@ export function findAddedKeys(
     let nearest: PoolEntry | null = null;
     let nearestDistance = Infinity;
     for (const entry of byImage.get(
-      `${preset.annotationSetId}_${copy.imageId}`
+      `${preset.annotationSetId}_${copy.imageId}`,
     ) ?? []) {
       const dx = Math.abs(copy.x - entry.location.x);
       const dy = Math.abs(copy.y - entry.location.y);
@@ -69,7 +69,7 @@ export function filterCandidates(
   pool: PoolEntry[],
   label: string,
   maxAnnotations: number | '',
-  excludedKeys: Set<string>
+  excludedKeys: Set<string>,
 ): CandidateRef[] {
   const limit = maxAnnotations === '' ? null : Number(maxAnnotations);
   const seenLocationIds = new Set<string>();

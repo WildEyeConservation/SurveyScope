@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
-import { useContext } from 'react';
-import { GlobalContext } from './Context';
+import { useContext, useEffect, useState } from 'react';
 import type { UserType } from '../amplify/shared/types';
+import { GlobalContext } from './Context';
 
 export const useUsers = () => {
   const { client } = useContext(GlobalContext)!;
@@ -14,7 +13,7 @@ export const useUsers = () => {
         const aggregated: UserType[] = [];
         do {
           const { data } = await client.queries.listUsers(
-            nextToken ? { nextToken } : {}
+            nextToken ? { nextToken } : {},
           );
           const users = data?.Users as UserType[] | undefined;
           if (users) aggregated.push(...users);

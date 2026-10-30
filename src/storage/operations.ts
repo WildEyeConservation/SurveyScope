@@ -4,7 +4,7 @@
 export type StorageOperation = <T>(
   query: string,
   variables: Record<string, unknown>,
-  field: string
+  field: string,
 ) => Promise<T>;
 
 export const SIGN_TILES = `query SignImageTiles($imageId: ID!, $sourceKey: String!, $sharedImageId: ID, $tiles: AWSJSON!) {

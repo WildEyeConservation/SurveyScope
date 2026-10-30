@@ -1,14 +1,14 @@
-import { useContext, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useContext, useMemo, useState } from 'react';
 import { GlobalContext, ProjectContext } from '../../Context';
-import { fetchAllPaginatedResults } from '../../utils';
+import { attachInfoTagsToAnnotations } from '../../infoTags';
 import type {
   AnnotationType,
   CategoryType,
   ImageNeighbourType,
   ImageType,
 } from '../../schemaTypes';
-import { attachInfoTagsToAnnotations } from '../../infoTags';
+import { fetchAllPaginatedResults } from '../../utils';
 
 type ImageWithNeighbours = Pick<
   ImageType,
@@ -19,13 +19,7 @@ type ImageWithNeighbours = Pick<
 };
 
 export interface PairLoadProgress {
-  phase:
-    | 'idle'
-    | 'images'
-    | 'category'
-    | 'annotations'
-    | 'chain'
-    | 'done';
+  phase: 'idle' | 'images' | 'category' | 'annotations' | 'chain' | 'done';
   annotations: number;
 }
 
@@ -62,10 +56,10 @@ export function usePairData(input: UsePairDataInput) {
 
   const enabled = Boolean(
     image1Id &&
-      image2Id &&
-      categoryId &&
-      annotationSetId &&
-      projectCtx?.project?.id
+    image2Id &&
+    categoryId &&
+    annotationSetId &&
+    projectCtx?.project?.id,
   );
 
   const [progress, setProgress] = useState<PairLoadProgress>({
@@ -81,7 +75,7 @@ export function usePairData(input: UsePairDataInput) {
       categoryId,
       annotationSetId,
     ],
-    [image1Id, image2Id, categoryId, annotationSetId]
+    [image1Id, image2Id, categoryId, annotationSetId],
   );
 
   const query = useQuery<PairData>({
@@ -104,7 +98,7 @@ export function usePairData(input: UsePairDataInput) {
               'leftNeighbours.*',
               'rightNeighbours.*',
             ],
-          }
+          },
         ),
         (client.models.Image as any).get(
           { id: image2Id! },
@@ -119,14 +113,14 @@ export function usePairData(input: UsePairDataInput) {
               'leftNeighbours.*',
               'rightNeighbours.*',
             ],
-          }
+          },
         ),
       ]);
       const img1 = img1Resp?.data as ImageWithNeighbours | null;
       const img2 = img2Resp?.data as ImageWithNeighbours | null;
       if (!img1 || !img2) {
         throw new Error(
-          `Could not load one or both images (${image1Id}, ${image2Id}).`
+          `Could not load one or both images (${image1Id}, ${image2Id}).`,
         );
       }
 
@@ -156,11 +150,11 @@ export function usePairData(input: UsePairDataInput) {
       const [annsA, annsB] = await Promise.all([
         fetchAllPaginatedResults<AnnotationType>(
           (client.models.Annotation as any).annotationsByImageIdAndSetId,
-          { imageId: img1.id, setId: { eq: annotationSetId! }, limit: 1000 }
+          { imageId: img1.id, setId: { eq: annotationSetId! }, limit: 1000 },
         ),
         fetchAllPaginatedResults<AnnotationType>(
           (client.models.Annotation as any).annotationsByImageIdAndSetId,
-          { imageId: img2.id, setId: { eq: annotationSetId! }, limit: 1000 }
+          { imageId: img2.id, setId: { eq: annotationSetId! }, limit: 1000 },
         ),
       ]);
       // Keep every category — the workflow filters to `categoryId`, but the
@@ -182,7 +176,7 @@ export function usePairData(input: UsePairDataInput) {
       // wasted work if the root annotation happens to be in pairAnnotations.
       const localIds = new Set(pairAnnotations.map((a) => a.id));
       const rootIdsToFetch = Array.from(rootIds).filter(
-        (id) => !localIds.has(id)
+        (id) => !localIds.has(id),
       );
 
       const chainExtras: AnnotationType[] = [];
@@ -191,16 +185,16 @@ export function usePairData(input: UsePairDataInput) {
           Array.from(rootIds).map(async (rootId) => {
             const byObj = await fetchAllPaginatedResults<AnnotationType>(
               (client.models.Annotation as any).annotationsByObjectId,
-              { objectId: rootId, limit: 1000 }
+              { objectId: rootId, limit: 1000 },
             );
             return byObj;
-          })
+          }),
         );
         const rootResults = await Promise.all(
           rootIdsToFetch.map(async (rootId) => {
             const resp = await client.models.Annotation.get({ id: rootId });
             return (resp?.data ?? null) as AnnotationType | null;
-          })
+          }),
         );
         const seen = new Set<string>(localIds);
         for (const list of results) {
@@ -218,10 +212,11 @@ export function usePairData(input: UsePairDataInput) {
         }
       }
 
-      const annotations = await attachInfoTagsToAnnotations(client, [
-        ...pairAnnotations,
-        ...chainExtras,
-      ], annotationSetId!);
+      const annotations = await attachInfoTagsToAnnotations(
+        client,
+        [...pairAnnotations, ...chainExtras],
+        annotationSetId!,
+      );
       const imagesById: Record<string, ImageType> = {
         [img1.id]: img1 as unknown as ImageType,
         [img2.id]: img2 as unknown as ImageType,
@@ -230,8 +225,8 @@ export function usePairData(input: UsePairDataInput) {
         new Set(
           annotations
             .map((a) => a.imageId)
-            .filter((id) => id !== img1.id && id !== img2.id)
-        )
+            .filter((id) => id !== img1.id && id !== img2.id),
+        ),
       );
       const extraImages = await Promise.all(
         extraImageIds.map(async (id) => {
@@ -246,10 +241,10 @@ export function usePairData(input: UsePairDataInput) {
                 'timestamp',
                 'cameraId',
               ],
-            }
+            },
           );
           return (resp?.data ?? null) as ImageType | null;
-        })
+        }),
       );
       for (const img of extraImages) {
         if (img) imagesById[img.id] = img;

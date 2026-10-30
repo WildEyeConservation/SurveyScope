@@ -1,10 +1,10 @@
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Bell, Check, RefreshCw, X } from 'lucide-react';
 import { useContext, useState } from 'react';
 import { GlobalContext, UserContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
-import { Button } from '@/components/ui/button';
-import { Bell, Check, X, RefreshCw } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { loadCognitoGroups } from '../cognitoGroups';
 
 export default function Notifications() {
@@ -13,10 +13,17 @@ export default function Notifications() {
   const { client } = useContext(GlobalContext)!;
   const username = user.username;
 
-  const { data: allInvites, isFetching, refetch } = useQuery<Schema['OrganizationInvite']['type'][]>({
+  const {
+    data: allInvites,
+    isFetching,
+    refetch,
+  } = useQuery<Schema['OrganizationInvite']['type'][]>({
     queryKey: ['OrganizationInvite', username],
     queryFn: async () => {
-      const result = await client.models.OrganizationInvite.organizationInvitesByUsername({ username });
+      const result =
+        await client.models.OrganizationInvite.organizationInvitesByUsername({
+          username,
+        });
       return result.data;
     },
     enabled: !!username,
@@ -24,13 +31,14 @@ export default function Notifications() {
     gcTime: 0,
   });
 
-  const pendingInvites = allInvites?.filter((inv) => inv.status === 'pending') ?? [];
+  const pendingInvites =
+    allInvites?.filter((inv) => inv.status === 'pending') ?? [];
   const totalNotifications = pendingInvites.length;
 
   return (
     <div className='relative'>
       <button
-        className='text-muted-foreground px-2 flex items-center justify-center'
+        className='flex items-center justify-center px-2 text-muted-foreground'
         style={{
           position: 'relative',
           backgroundColor: 'transparent',
@@ -44,7 +52,7 @@ export default function Notifications() {
           style={{ position: 'relative', height: '100%' }}
         >
           <div
-            className='text-white bg-primary'
+            className='bg-primary text-white'
             style={{
               position: 'absolute',
               top: -5,
@@ -90,7 +98,7 @@ export default function Notifications() {
             zIndex: 2,
           }}
         >
-          <CardHeader className='flex justify-between items-center'>
+          <CardHeader className='flex items-center justify-between'>
             <div className='flex items-center gap-2'>
               <CardTitle className='mb-0'>Notifications</CardTitle>
               <Button
@@ -101,13 +109,19 @@ export default function Notifications() {
                 disabled={isFetching}
                 title='Refresh'
               >
-                <RefreshCw size={16} className={isFetching ? 'spinning' : undefined} />
+                <RefreshCw
+                  size={16}
+                  className={isFetching ? 'spinning' : undefined}
+                />
               </Button>
             </div>
             <X onClick={() => setShow(false)} style={{ cursor: 'pointer' }} />
           </CardHeader>
           <CardContent>
-            <Inbox invites={pendingInvites} queryKey={['OrganizationInvite', username]} />
+            <Inbox
+              invites={pendingInvites}
+              queryKey={['OrganizationInvite', username]}
+            />
           </CardContent>
         </Card>
       )}
@@ -123,7 +137,7 @@ function Inbox({
   queryKey: unknown[];
 }) {
   return invites.length === 0 ? (
-    <h5 className='text-center mb-0 p-2'>Empty</h5>
+    <h5 className='mb-0 p-2 text-center'>Empty</h5>
   ) : (
     <>
       {invites.map((invite, i) => (
@@ -149,7 +163,8 @@ function Invite({
   function updateCacheStatus(status: 'accepted' | 'declined') {
     queryClient.setQueryData<Schema['OrganizationInvite']['type'][]>(
       queryKey,
-      (old) => old?.map((inv) => inv.id === invite.id ? { ...inv, status } : inv)
+      (old) =>
+        old?.map((inv) => (inv.id === invite.id ? { ...inv, status } : inv)),
     );
   }
 
@@ -195,17 +210,16 @@ function Invite({
 
   return (
     <div
-      className={`flex flex-row gap-2 text-left p-2 ${index % 2 !== 0 ? 'bg-secondary text-dark' : ''
-        }`}
+      className={`flex flex-row gap-2 p-2 text-left ${
+        index % 2 !== 0 ? 'bg-secondary text-dark' : ''
+      }`}
     >
       <div>
         <p className='mb-2' style={{ fontSize: '1.25rem' }}>
           Organization Invite
         </p>
         <p className='mb-0'>
-          <b>
-            {(invite as any).organizationName ?? 'Unknown Organization'}
-          </b>{' '}
+          <b>{(invite as any).organizationName ?? 'Unknown Organization'}</b>{' '}
           invited you to their organisation.
         </p>
       </div>

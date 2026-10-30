@@ -1,10 +1,12 @@
-import { useContext, useEffect, useState } from 'react';
-import { ProjectContext, UserContext, GlobalContext } from './Context';
-import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
-import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import {
+  GetQueueAttributesCommand,
+  type GetQueueAttributesCommandInput,
+} from '@aws-sdk/client-sqs';
+import { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GlobalContext, ProjectContext, UserContext } from './Context';
 
 export function JobsRemaining() {
   const { client } = useContext(GlobalContext)!;
@@ -23,20 +25,18 @@ export function JobsRemaining() {
 
   useEffect(() => {
     if (currentPM.queueId) {
-      client.models.Queue.get({ id: currentPM.queueId }).then(
-        ({ data }) => {
-          if (!data) return;
-          setUrl(data.url ?? undefined);
-          if (data.batchSize) {
-            setBatchSize(data.batchSize);
-          }
+      client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
+        if (!data) return;
+        setUrl(data.url ?? undefined);
+        if (data.batchSize) {
+          setBatchSize(data.batchSize);
         }
-      );
+      });
       if (currentPM.backupQueueId) {
         client.models.Queue.get({ id: currentPM.backupQueueId }).then(
           ({ data }) => {
             setBackupUrl(data?.url ?? undefined);
-          }
+          },
         );
       }
     }
@@ -51,7 +51,7 @@ export function JobsRemaining() {
         };
         const sqsClient = await getSqsClient();
         const result = await sqsClient.send(
-          new GetQueueAttributesCommand(params)
+          new GetQueueAttributesCommand(params),
         );
         return result.Attributes?.ApproximateNumberOfMessages || 'Unknown';
       };
@@ -95,7 +95,7 @@ export function JobsRemaining() {
     parseInt(jobsRemaining) < batchSize ? (
     <Badge
       variant='secondary'
-      className='flex flex-row items-center justify-center gap-4 p-2 w-full flex-wrap'
+      className='flex w-full flex-row flex-wrap items-center justify-center gap-4 p-2'
     >
       <p className='mb-0'>
         {jobsRemaining} jobs remaining
@@ -107,7 +107,7 @@ export function JobsRemaining() {
       </p>
     </Badge>
   ) : (
-    <div className='flex flex-col items-center gap-2 w-full'>
+    <div className='flex w-full flex-col items-center gap-2'>
       <Progress
         className='w-full'
         variant='primary'

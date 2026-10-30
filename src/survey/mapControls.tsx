@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
@@ -37,17 +37,19 @@ export function MapButton({
       onClick={onClick}
       className={cn(
         'group relative flex size-9 items-center justify-center text-[#212529] transition-colors disabled:cursor-not-allowed disabled:[&>svg]:opacity-35',
-        active ? 'bg-primary text-white [&_svg]:!text-white' : 'enabled:hover:bg-black/10',
-        className
+        active
+          ? 'bg-primary text-white [&_svg]:!text-white'
+          : 'enabled:hover:bg-black/10',
+        className,
       )}
     >
       {children}
       <span
         className={cn(
-          'pointer-events-none absolute z-20 hidden items-center gap-1.5 whitespace-nowrap border border-black/10 bg-white px-2 py-1 text-xs text-[#212529] shadow-md group-hover:flex group-focus-visible:flex',
+          'pointer-events-none absolute z-20 hidden items-center gap-1.5 border border-black/10 bg-white px-2 py-1 text-xs whitespace-nowrap text-[#212529] shadow-md group-hover:flex group-focus-visible:flex',
           tipSide === 'right' && 'left-full ml-2',
           tipSide === 'left' && 'right-full mr-2',
-          tipSide === 'top' && 'bottom-full mb-2'
+          tipSide === 'top' && 'bottom-full mb-2',
         )}
       >
         {label}

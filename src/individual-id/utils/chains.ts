@@ -19,7 +19,7 @@ export interface SameImageAnnotationConflict {
 }
 
 export function findSameImageAnnotationConflicts(
-  annotations: Array<{ id: string; imageId: string }>
+  annotations: Array<{ id: string; imageId: string }>,
 ): SameImageAnnotationConflict[] {
   const byImage = new Map<string, string[]>();
   for (const annotation of annotations) {
@@ -33,7 +33,7 @@ export function findSameImageAnnotationConflicts(
 }
 
 export function findDuplicateSameImageChainAnnotationIds(
-  annotations: AnnotationType[]
+  annotations: AnnotationType[],
 ): Set<string> {
   const byChainAndImage = new Map<string, AnnotationType[]>();
   for (const annotation of annotations) {
@@ -69,24 +69,26 @@ function isOlder(a: ImageAge, b: ImageAge): boolean {
 export function buildChainSplitPlan(
   annotations: AnnotationType[],
   annotationId: string,
-  ageOf: (imageId: string) => ImageAge
+  ageOf: (imageId: string) => ImageAge,
 ): ChainSplitPlan | null {
   const target = annotations.find((a) => a.id === annotationId);
   if (!target) return null;
 
   const chainKey = target.objectId ?? target.id;
   const chainMembers = annotations.filter(
-    (a) => a.objectId === chainKey || a.id === chainKey
+    (a) => a.objectId === chainKey || a.id === chainKey,
   );
   if (chainMembers.length <= 1) return null;
 
   const targetAge = ageOf(target.imageId);
   const retained = chainMembers.filter((a) =>
-    isOlder(ageOf(a.imageId), targetAge)
+    isOlder(ageOf(a.imageId), targetAge),
   );
   if (retained.length === 0) return null;
 
-  const split = chainMembers.filter((a) => !isOlder(ageOf(a.imageId), targetAge));
+  const split = chainMembers.filter(
+    (a) => !isOlder(ageOf(a.imageId), targetAge),
+  );
   if (split.length === 0 || split.length === chainMembers.length) return null;
 
   const newRootId = target.id;

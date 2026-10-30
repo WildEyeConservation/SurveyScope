@@ -1,3 +1,13 @@
+import { Alert } from '@/components/ui/alert';
+import { badgeVariants } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox } from '@/components/ui/combobox';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import {
   useCallback,
   useContext,
@@ -6,20 +16,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Alert } from '@/components/ui/alert';
-import { badgeVariants } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
-import { Progress } from '@/components/ui/progress';
-import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/utils';
-import { Combobox } from '@/components/ui/combobox';
-import { GlobalContext } from '../Context';
-import { useUsers } from '../apiInterface';
-import { fetchAllPaginatedResults } from '../utils';
 import type { Schema } from '../amplify/client-schema';
+import { useUsers } from '../apiInterface';
+import { GlobalContext } from '../Context';
+import { fetchAllPaginatedResults } from '../utils';
 import { AbortError, loadAnnotationSets } from './loaders';
 import {
   STATS,
@@ -33,7 +33,9 @@ import {
 } from './report';
 import SurveyMetricsResults from './SurveyMetricsResults';
 import type { AnnotationSetRow } from './types';
+
 import '../AdminSurveys.css';
+
 import './SurveyMetrics.css';
 
 type SurveyOption = { value: string; label: string; imageCount: number };
@@ -63,7 +65,7 @@ export default function SurveyMetrics() {
   const [loadingSets, setLoadingSets] = useState(false);
   const [setId, setSetId] = useState('');
   const [selected, setSelected] = useState<Set<StatId>>(
-    () => new Set<StatId>(['overview'])
+    () => new Set<StatId>(['overview']),
   );
   const [reuseCache, setReuseCache] = useState(true);
   const [running, setRunning] = useState(false);
@@ -89,16 +91,16 @@ export default function SurveyMetrics() {
                 'imageSets.imageCount',
               ],
               limit: 10000,
-            }
+            },
           ),
           fetchAllPaginatedResults<Schema['Organization']['type']>(
             client.models.Organization.list,
-            { selectionSet: ['id', 'name'], limit: 10000 }
+            { selectionSet: ['id', 'name'], limit: 10000 },
           ),
         ]);
         if (!active) return;
         const orgNames = new Map(
-          organizations.map((org) => [org.id, org.name])
+          organizations.map((org) => [org.id, org.name]),
         );
         setSurveys(
           projects
@@ -113,13 +115,13 @@ export default function SurveyMetrics() {
                 }[]) ?? []
               ).reduce((sum, set) => sum + (set.imageCount ?? 0), 0),
             }))
-            .sort((a, b) => a.label.localeCompare(b.label))
+            .sort((a, b) => a.label.localeCompare(b.label)),
         );
       } catch (err) {
         console.error('Failed to load surveys', err);
         if (active) {
           setError(
-            err instanceof Error ? err.message : 'Failed to load surveys.'
+            err instanceof Error ? err.message : 'Failed to load surveys.',
           );
         }
       } finally {
@@ -176,15 +178,15 @@ export default function SurveyMetrics() {
       const user = users.find((candidate) => parts.includes(candidate.id));
       return user?.name || user?.email || parts[parts.length - 1];
     },
-    [users]
+    [users],
   );
 
   const activeStats = useMemo(
     () =>
       STATS.filter(
-        (stat) => selected.has(stat.id) && (!stat.needsSet || setId)
+        (stat) => selected.has(stat.id) && (!stat.needsSet || setId),
       ),
-    [selected, setId]
+    [selected, setId],
   );
 
   const toggle = (id: StatId) =>
@@ -285,7 +287,7 @@ export default function SurveyMetrics() {
             value={survey}
             onChange={(option) =>
               setSurvey(
-                surveys.find((item) => item.value === option?.value) ?? null
+                surveys.find((item) => item.value === option?.value) ?? null,
               )
             }
             loading={loadingSurveys}
@@ -330,7 +332,7 @@ export default function SurveyMetrics() {
         </div>
       </div>
 
-      <div className='flex items-center gap-4 flex-wrap mb-4'>
+      <div className='mb-4 flex flex-wrap items-center gap-4'>
         {running ? (
           <Button variant='outline-danger' onClick={cancel}>
             Cancel
@@ -405,10 +407,10 @@ export default function SurveyMetrics() {
                         task.state === 'done' || task.state === 'cached'
                           ? 100
                           : task.total
-                          ? Math.min(100, (task.count / task.total) * 100)
-                          : task.state === 'running'
-                          ? 100
-                          : 0
+                            ? Math.min(100, (task.count / task.total) * 100)
+                            : task.state === 'running'
+                              ? 100
+                              : 0
                       }
                       animated={task.state === 'running' && !task.total}
                       striped={task.state === 'running' && !task.total}
@@ -416,8 +418,8 @@ export default function SurveyMetrics() {
                         task.state === 'error'
                           ? 'danger'
                           : task.state === 'done' || task.state === 'cached'
-                          ? 'success'
-                          : undefined
+                            ? 'success'
+                            : undefined
                       }
                     />
                   </div>

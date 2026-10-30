@@ -1,6 +1,6 @@
-import React from 'react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import React from 'react';
 
 interface LabeledToggleSwitchProps {
   leftLabel: string;
@@ -20,13 +20,11 @@ const LabeledToggleSwitch: React.FC<LabeledToggleSwitchProps> = ({
   disabled,
 }) => {
   return (
-    <div
-      className={`flex flex-wrap -mx-3 ${className || 'mb-4 items-center'}`}
-    >
+    <div className={`-mx-3 flex flex-wrap ${className || 'mb-4 items-center'}`}>
       <div className='w-1/3 px-3 text-right'>
         <Label className='mb-0'>{leftLabel}</Label>
       </div>
-      <div className='w-1/3 px-3 flex justify-center'>
+      <div className='flex w-1/3 justify-center px-3'>
         <Switch
           id='custom-switch'
           checked={checked}

@@ -15,7 +15,9 @@ export interface ImageFileRow {
   type?: string | null;
 }
 
-export function normalizeImagePath(value: string | null | undefined): string | null {
+export function normalizeImagePath(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
   return value.replace(/\\/g, '/').replace(/^images\//, '');
 }
@@ -34,7 +36,7 @@ export function isJpegFile(file: ImageFileRow): boolean {
 
 export function imageFileMatchesOriginalPath(
   file: ImageFileRow,
-  originalPath: string | null | undefined
+  originalPath: string | null | undefined,
 ): boolean {
   const original = normalizeImagePath(originalPath);
   if (!original) return false;
@@ -54,11 +56,11 @@ export function imageFileMatchesOriginalPath(
  */
 export function selectSourceKeyForImage(
   files: ImageFileRow[],
-  originalPath: string | null | undefined
+  originalPath: string | null | undefined,
 ): string | null {
   const jpgs = files.filter(isJpegFile);
   const exact = jpgs.find((file) =>
-    imageFileMatchesOriginalPath(file, originalPath)
+    imageFileMatchesOriginalPath(file, originalPath),
   );
   return exact?.key ?? jpgs[0]?.key ?? null;
 }

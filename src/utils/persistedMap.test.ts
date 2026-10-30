@@ -10,7 +10,7 @@ test('entries rebuild into a working Map', () => {
       ['annoA', ['Calf']],
       ['annoB', ['Tagged', 'Collared']],
     ],
-    EMPTY
+    EMPTY,
   );
   assert.equal(typeof result.get, 'function');
   assert.deepEqual(result.get('annoA'), ['Calf']);
@@ -40,5 +40,8 @@ test('a cache entry in the old Map shape degrades instead of throwing', () => {
 test('missing data returns the shared empty value', () => {
   assert.equal(mapFromEntries(undefined, EMPTY), EMPTY);
   // Identity is preserved so consumers memoising on the result do not churn.
-  assert.equal(mapFromEntries(undefined, EMPTY), mapFromEntries(undefined, EMPTY));
+  assert.equal(
+    mapFromEntries(undefined, EMPTY),
+    mapFromEntries(undefined, EMPTY),
+  );
 });

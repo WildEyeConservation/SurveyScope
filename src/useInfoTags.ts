@@ -1,5 +1,5 @@
-import { useCallback, useContext, useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
+import { useCallback, useContext, useMemo } from 'react';
 import { GlobalContext } from './Context';
 import {
   fetchInfoTagDataForSet,
@@ -51,10 +51,7 @@ export function useInfoTagData(annotationSetIds: string[]) {
   const idsKey = Array.from(new Set(annotationSetIds.filter(Boolean)))
     .sort()
     .join(',');
-  const ids = useMemo(
-    () => (idsKey ? idsKey.split(',') : []),
-    [idsKey]
-  );
+  const ids = useMemo(() => (idsKey ? idsKey.split(',') : []), [idsKey]);
 
   const queries = useQueries({
     queries: ids.map((id) => ({
@@ -80,7 +77,7 @@ export function useInfoTagData(annotationSetIds: string[]) {
         ? `${q.data.nameById?.length ?? -1}:${
             q.data.tagIdsByAnnotation?.length ?? -1
           }`
-        : ''
+        : '',
     )
     .join('|');
 
@@ -92,7 +89,7 @@ export function useInfoTagData(annotationSetIds: string[]) {
       map.set(id, {
         tagIdsByAnnotation: mapFromEntries(
           data.tagIdsByAnnotation,
-          EMPTY_TAG_IDS
+          EMPTY_TAG_IDS,
         ),
         nameById: mapFromEntries(data.nameById, EMPTY_NAMES),
       });
@@ -114,7 +111,7 @@ export function useInfoTagData(annotationSetIds: string[]) {
       const data = bySet.get(annotationSetId);
       return data ? infoTagNamesFor(data, annotationId) : EMPTY_LIST;
     },
-    [bySet]
+    [bySet],
   );
 
   return {
@@ -129,7 +126,7 @@ export function useInfoTagData(annotationSetIds: string[]) {
 /** Tag names per annotation for a single image, keyed by annotation id. */
 export function useImageInfoTags(
   imageId: string | null | undefined,
-  annotationSetId: string | null | undefined
+  annotationSetId: string | null | undefined,
 ) {
   const { client } = useContext(GlobalContext)!;
   const nameById = useInfoTagNames(annotationSetId);
@@ -145,8 +142,8 @@ export function useImageInfoTags(
           client,
           imageId!,
           annotationSetId!,
-          nameById
-        )
+          nameById,
+        ),
       ),
   });
   const entries = query.data;

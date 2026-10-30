@@ -1,14 +1,14 @@
-import { useContext } from 'react';
-import { UserContext } from './Context';
-import { Tabs, Tab } from './Tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import PendingOrganizations from './PendingOrganizations';
-import ClientLogs from './ClientLogs';
-import ErrorReports from './ErrorReports';
+import { useContext } from 'react';
 import AdminStats from './AdminStats';
-import AwsServiceHealth from './AwsServiceHealth';
 import AdminSurveys from './AdminSurveys';
+import AwsServiceHealth from './AwsServiceHealth';
+import ClientLogs from './ClientLogs';
+import { UserContext } from './Context';
+import ErrorReports from './ErrorReports';
+import PendingOrganizations from './PendingOrganizations';
 import SurveyMetrics from './survey-metrics/SurveyMetrics';
+import { Tab, Tabs } from './Tabs';
 
 export default function Admin() {
   const { cognitoGroups } = useContext(UserContext)!;

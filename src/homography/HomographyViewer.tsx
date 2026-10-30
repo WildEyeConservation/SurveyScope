@@ -1,4 +1,3 @@
-import { useState, useContext, useCallback, useMemo, useEffect } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,12 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import { matrix, inv } from 'mathjs';
 import type { Matrix } from 'mathjs';
+import { inv, matrix } from 'mathjs';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext, UserContext } from '../Context';
-import { MapLibrePairViewer } from './MapLibrePairViewer';
-import { makeTransform, fetchAllPaginatedResults } from '../utils';
 import type { ImageType } from '../schemaTypes';
+import { fetchAllPaginatedResults, makeTransform } from '../utils';
+import { MapLibrePairViewer } from './MapLibrePairViewer';
 
 type CameraOption = { id: string; name: string };
 
@@ -81,10 +81,13 @@ export default function HomographyViewer() {
     try {
       const { data } = await client.models.Camera.camerasByProjectId(
         { projectId },
-        { selectionSet: ['id', 'name'], limit: 1000 }
+        { selectionSet: ['id', 'name'], limit: 1000 },
       );
       const list: CameraOption[] = (data ?? [])
-        .filter((c: { id?: string | null; name?: string | null }) => !!c?.id && !!c?.name)
+        .filter(
+          (c: { id?: string | null; name?: string | null }) =>
+            !!c?.id && !!c?.name,
+        )
         .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
         .sort((a, b) => a.name.localeCompare(b.name));
       if (list.length === 0) {
@@ -130,7 +133,7 @@ export default function HomographyViewer() {
       }
 
       const flat = rec.homography.filter(
-        (v: unknown): v is number => typeof v === 'number'
+        (v: unknown): v is number => typeof v === 'number',
       );
       if (flat.length !== 9) throw new Error('Stored homography is malformed');
 
@@ -158,7 +161,7 @@ export default function HomographyViewer() {
         reversedDirection,
       });
     },
-    [client]
+    [client],
   );
 
   const handleLoadManual = useCallback(async () => {
@@ -197,7 +200,7 @@ export default function HomographyViewer() {
             'rightNeighbours.homography',
           ],
           limit: 1000,
-        }
+        },
       )) as Array<{
         id: string;
         cameraId?: string | null;
@@ -214,7 +217,8 @@ export default function HomographyViewer() {
       }>;
 
       const imageCamera = new Map<string, string | null>();
-      for (const img of rawImages) imageCamera.set(img.id, img.cameraId ?? null);
+      for (const img of rawImages)
+        imageCamera.set(img.id, img.cameraId ?? null);
 
       const seen = new Map<string, ProjectPair>();
       const ingest = (n: {
@@ -238,7 +242,7 @@ export default function HomographyViewer() {
       }
       return Array.from(seen.values());
     },
-    [client]
+    [client],
   );
 
   const handleLoadRandomPair = useCallback(async () => {
@@ -274,7 +278,7 @@ export default function HomographyViewer() {
         throw new Error(
           sameCamera
             ? `No pairs with a stored homography found within this camera`
-            : `No pairs with a stored homography found between the two selected cameras`
+            : `No pairs with a stored homography found between the two selected cameras`,
         );
       }
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
@@ -311,10 +315,7 @@ export default function HomographyViewer() {
   }, [pair]);
 
   // Empty, stable refs so MapLibrePairViewer doesn't think points have changed.
-  const emptyPoints = useMemo(
-    () => [[], []] as [never[], never[]],
-    []
-  );
+  const emptyPoints = useMemo(() => [[], []] as [never[], never[]], []);
   const noopSetter = useCallback(() => {}, []);
   const noopAction = useCallback(() => {}, []);
 
@@ -345,10 +346,10 @@ export default function HomographyViewer() {
   }
 
   return (
-    <div className='p-4 flex flex-col gap-4' style={{ height: '100vh' }}>
+    <div className='flex flex-col gap-4 p-4' style={{ height: '100vh' }}>
       <div>
         <h4 className='mb-1'>Homography Sanity Check</h4>
-        <p className='text-sm mb-0' style={{ opacity: 0.75 }}>
+        <p className='mb-0 text-sm' style={{ opacity: 0.75 }}>
           Loads a stored ImageNeighbour homography and renders it across both
           images via the same preview transform the manual workbench uses. Hover
           / click an image to verify the correspondence visually.
@@ -361,9 +362,9 @@ export default function HomographyViewer() {
           handleLoadManual();
         }}
       >
-        <div className='flex flex-wrap gap-4 items-end'>
+        <div className='flex flex-wrap items-end gap-4'>
           <div>
-            <Label className='text-sm mb-1'>Image 1 ID</Label>
+            <Label className='mb-1 text-sm'>Image 1 ID</Label>
             <Input
               size='sm'
               value={image1IdInput}
@@ -374,7 +375,7 @@ export default function HomographyViewer() {
             />
           </div>
           <div>
-            <Label className='text-sm mb-1'>Image 2 ID</Label>
+            <Label className='mb-1 text-sm'>Image 2 ID</Label>
             <Input
               size='sm'
               value={image2IdInput}
@@ -393,10 +394,10 @@ export default function HomographyViewer() {
             Load Pair
           </Button>
 
-          <div className='border-l mx-2' style={{ height: '2.25rem' }} />
+          <div className='mx-2 border-l' style={{ height: '2.25rem' }} />
 
           <div>
-            <Label className='text-sm mb-1'>Project ID</Label>
+            <Label className='mb-1 text-sm'>Project ID</Label>
             <div className='flex gap-2'>
               <Input
                 size='sm'
@@ -418,7 +419,7 @@ export default function HomographyViewer() {
             </div>
           </div>
           <div>
-            <Label className='text-sm mb-1'>Camera A</Label>
+            <Label className='mb-1 text-sm'>Camera A</Label>
             <NativeSelect
               size='sm'
               value={cameraAId}
@@ -437,7 +438,7 @@ export default function HomographyViewer() {
             </NativeSelect>
           </div>
           <div>
-            <Label className='text-sm mb-1'>Camera B</Label>
+            <Label className='mb-1 text-sm'>Camera B</Label>
             <NativeSelect
               size='sm'
               value={cameraBId}
@@ -459,14 +460,16 @@ export default function HomographyViewer() {
             size='sm'
             type='button'
             variant='outline-primary'
-            disabled={loading || projectPairsLoading || !cameraAId || !cameraBId}
+            disabled={
+              loading || projectPairsLoading || !cameraAId || !cameraBId
+            }
             onClick={handleLoadRandomPair}
           >
             {projectPairsLoading
               ? 'Fetching project pairs…'
               : cameraAId && cameraBId && cameraAId === cameraBId
-              ? 'Random Same-Camera Pair'
-              : 'Random Cross-Camera Pair'}
+                ? 'Random Same-Camera Pair'
+                : 'Random Cross-Camera Pair'}
           </Button>
         </div>
       </form>
@@ -479,14 +482,17 @@ export default function HomographyViewer() {
       )}
 
       {error && (
-        <Alert variant='danger' className='py-2 px-4 text-sm mb-0'>
+        <Alert variant='danger' className='mb-0 px-4 py-2 text-sm'>
           {error}
         </Alert>
       )}
 
       {pair && (
         <>
-          <div className='flex flex-wrap gap-2 items-center text-sm' style={{ opacity: 0.85 }}>
+          <div
+            className='flex flex-wrap items-center gap-2 text-sm'
+            style={{ opacity: 0.85 }}
+          >
             <Badge variant='secondary'>
               Source: {pair.rec.homographySource ?? 'unknown'}
             </Badge>
@@ -496,7 +502,7 @@ export default function HomographyViewer() {
                 : 'DB direction matches input'}
             </Badge>
             {pair.rec.skipped ? <Badge variant='danger'>skipped</Badge> : null}
-            <span className='ml-2 mono'>
+            <span className='mono ml-2'>
               DB record: {pair.rec.image1Id} → {pair.rec.image2Id}
             </span>
           </div>

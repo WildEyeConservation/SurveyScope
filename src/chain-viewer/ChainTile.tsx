@@ -1,19 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
 import {
-  Eye,
   ExternalLink,
+  Eye,
   EyeOff,
   RotateCw,
   ScanEye,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { AnnotationImageMeta, ChainAnnotation } from './types';
 import {
   CHAIN_TILE_SIZE,
   fetchCenteredCrop,
   getCropZoomRange,
 } from './utils/tileCrop';
-import type { AnnotationImageMeta, ChainAnnotation } from './types';
 
 interface Props {
   annotation: ChainAnnotation;
@@ -68,7 +68,9 @@ export function ChainTile({
   const [error, setError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
-  const maxZoomOut = meta ? getCropZoomRange(meta.width, meta.height).maxSteps : 0;
+  const maxZoomOut = meta
+    ? getCropZoomRange(meta.width, meta.height).maxSteps
+    : 0;
   const effectiveZoomOut = Math.min(zoomOut, maxZoomOut);
 
   useEffect(() => {

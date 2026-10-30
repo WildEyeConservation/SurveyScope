@@ -1,17 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Table } from '@/components/ui/table';
-import { Combobox } from '@/components/ui/combobox';
+import { useEffect, useMemo, useState } from 'react';
+
 import './admin.css';
+
 import { useUsers } from '../../apiInterface';
 import { useSharedChainData } from '../shared/useSharedChainData';
-import { useActiveShares, ownerToUserId } from './useActiveShares';
-import {
-  foldFeedbackRows,
-  useAllChainReviewFeedback,
-} from './useAllChainReviewFeedback';
 import {
   computeCombinedOverlay,
   computeDistribution,
@@ -19,6 +16,11 @@ import {
   emptyOverlay,
   type Overlay,
 } from './shareStats';
+import { ownerToUserId, useActiveShares } from './useActiveShares';
+import {
+  foldFeedbackRows,
+  useAllChainReviewFeedback,
+} from './useAllChainReviewFeedback';
 
 type Option = { label: string; value: string };
 
@@ -33,7 +35,10 @@ interface Column {
 function Delta({ value }: { value: number }) {
   if (value === 0) return null;
   return (
-    <span className={value > 0 ? 'text-success' : 'text-danger'} style={{ marginLeft: 6 }}>
+    <span
+      className={value > 0 ? 'text-success' : 'text-danger'}
+      style={{ marginLeft: 6 }}
+    >
       ({value > 0 ? '+' : ''}
       {value})
     </span>
@@ -53,12 +58,13 @@ export default function ChainShareResults() {
   const [shareId, setShareId] = useState<string | undefined>(undefined);
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
 
-  const { data: chainData, isLoading: chainLoading } = useSharedChainData(shareId);
+  const { data: chainData, isLoading: chainLoading } =
+    useSharedChainData(shareId);
   const { data: feedbackRows, isLoading: feedbackLoading } =
     useAllChainReviewFeedback(shareId);
   const feedback = useMemo(
     () => foldFeedbackRows(feedbackRows ?? []),
-    [feedbackRows]
+    [feedbackRows],
   );
 
   const userNameById = useMemo(() => {
@@ -70,7 +76,7 @@ export default function ChainShareResults() {
   const ownerLabel = useMemo(
     () => (owner: string) =>
       userNameById.get(ownerToUserId(owner)) ?? ownerToUserId(owner),
-    [userNameById]
+    [userNameById],
   );
 
   const shareOptions: Option[] = (shares ?? []).map((s) => ({
@@ -99,13 +105,23 @@ export default function ChainShareResults() {
   // Build columns: baseline, one per selected reviewer, plus combined (>1).
   const columns: Column[] = useMemo(() => {
     const cols: Column[] = [
-      { key: 'baseline', label: 'Baseline', overlay: emptyOverlay(), isBaseline: true },
+      {
+        key: 'baseline',
+        label: 'Baseline',
+        overlay: emptyOverlay(),
+        isBaseline: true,
+      },
     ];
     const overlays: Overlay[] = [];
     for (const owner of selectedOwners) {
       const overlay = feedback?.overlayByOwner.get(owner) ?? emptyOverlay();
       overlays.push(overlay);
-      cols.push({ key: owner, label: ownerLabel(owner), overlay, isBaseline: false });
+      cols.push({
+        key: owner,
+        label: ownerLabel(owner),
+        overlay,
+        isBaseline: false,
+      });
     }
     if (overlays.length > 1) {
       cols.push({
@@ -125,7 +141,7 @@ export default function ChainShareResults() {
         dist: computeDistribution(annotations, col.overlay),
         obscured: computeObscuredDiff(annotations, col.overlay),
       })),
-    [columns, annotations]
+    [columns, annotations],
   );
 
   const baselineDist = perColumn[0]?.dist;
@@ -138,7 +154,8 @@ export default function ChainShareResults() {
     }
     return [...ids].sort(
       (a, b) =>
-        (baselineDist?.byCategory.get(b) ?? 0) - (baselineDist?.byCategory.get(a) ?? 0)
+        (baselineDist?.byCategory.get(b) ?? 0) -
+        (baselineDist?.byCategory.get(a) ?? 0),
     );
   }, [perColumn, baselineDist]);
 
@@ -151,14 +168,16 @@ export default function ChainShareResults() {
           <h4 className='mb-0'>Results</h4>
         </CardHeader>
         <CardContent>
-          <div className='flex flex-row flex-wrap gap-4 items-end'>
+          <div className='flex flex-row flex-wrap items-end gap-4'>
             <div style={{ minWidth: 320, flex: 1 }}>
               <Label>Share</Label>
               <Combobox
                 value={shareOptions.find((o) => o.value === shareId) ?? null}
                 onChange={(option) => setShareId(option?.value)}
                 options={shareOptions}
-                placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
+                placeholder={
+                  sharesLoading ? 'Loading shares…' : 'Select a share…'
+                }
                 loading={sharesLoading}
                 clearable
                 name='Share'
@@ -168,8 +187,12 @@ export default function ChainShareResults() {
               <Label>Reviewers</Label>
               <Combobox
                 multiple
-                value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
-                onChange={(options) => setSelectedOwners(options.map((o) => o.value))}
+                value={ownerOptions.filter((o) =>
+                  selectedOwners.includes(o.value),
+                )}
+                onChange={(options) =>
+                  setSelectedOwners(options.map((o) => o.value))
+                }
                 options={ownerOptions}
                 placeholder='All reviewers'
                 disabled={!shareId || ownerOptions.length === 0}
@@ -179,7 +202,8 @@ export default function ChainShareResults() {
           </div>
           {shareId && !busy && (feedback?.owners.length ?? 0) === 0 && (
             <p className='mt-4 mb-0 text-warning'>
-              No reviewer feedback recorded for this share yet — showing baseline only.
+              No reviewer feedback recorded for this share yet — showing
+              baseline only.
             </p>
           )}
         </CardContent>
@@ -204,7 +228,7 @@ export default function ChainShareResults() {
                 responsive
                 hover
                 size='sm'
-                className='align-middle mb-0 chain-share-table'
+                className='chain-share-table mb-0 align-middle'
               >
                 <thead>
                   <tr>
@@ -238,7 +262,9 @@ export default function ChainShareResults() {
                           return (
                             <td key={col.key}>
                               {count}
-                              {!col.isBaseline && <Delta value={count - baseCount} />}
+                              {!col.isBaseline && (
+                                <Delta value={count - baseCount} />
+                              )}
                             </td>
                           );
                         })}
@@ -276,7 +302,7 @@ export default function ChainShareResults() {
                 responsive
                 hover
                 size='sm'
-                className='align-middle mb-0 chain-share-table'
+                className='chain-share-table mb-0 align-middle'
               >
                 <thead>
                   <tr>
@@ -306,13 +332,17 @@ export default function ChainShareResults() {
                   <tr>
                     <td>Marked obscured (was visible)</td>
                     {perColumn.map(({ col, obscured }) => (
-                      <td key={col.key}>{col.isBaseline ? '—' : obscured.added}</td>
+                      <td key={col.key}>
+                        {col.isBaseline ? '—' : obscured.added}
+                      </td>
                     ))}
                   </tr>
                   <tr>
                     <td>Marked visible (was obscured)</td>
                     {perColumn.map(({ col, obscured }) => (
-                      <td key={col.key}>{col.isBaseline ? '—' : obscured.removed}</td>
+                      <td key={col.key}>
+                        {col.isBaseline ? '—' : obscured.removed}
+                      </td>
                     ))}
                   </tr>
                 </tbody>

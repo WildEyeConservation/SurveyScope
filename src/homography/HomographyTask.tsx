@@ -1,13 +1,13 @@
-import { useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { GlobalContext, UserContext } from '../Context';
-import {
-  ReceiveMessageCommand,
-  DeleteMessageCommand,
-  GetQueueAttributesCommand,
-} from '@aws-sdk/client-sqs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DeleteMessageCommand,
+  GetQueueAttributesCommand,
+  ReceiveMessageCommand,
+} from '@aws-sdk/client-sqs';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { GlobalContext, UserContext } from '../Context';
 import {
   HomographyWorkbenchWorker,
   type HomographyMessage,
@@ -29,7 +29,7 @@ export default function HomographyTask() {
   const [queueEmpty, setQueueEmpty] = useState(false);
   const processedRef = useRef<Set<string>>(new Set());
   const savedPointsRef = useRef<Map<string, { p1: Point[]; p2: Point[] }>>(
-    new Map()
+    new Map(),
   );
   // Tracks which pairs have been successfully saved
   const [savedPairs, setSavedPairs] = useState<Set<string>>(new Set());
@@ -60,7 +60,7 @@ export default function HomographyTask() {
             MaxNumberOfMessages: 1,
             MessageAttributeNames: ['All'],
             VisibilityTimeout: 600,
-          })
+          }),
         );
 
         if (response.Messages && response.Messages.length > 0) {
@@ -76,9 +76,11 @@ export default function HomographyTask() {
                 new DeleteMessageCommand({
                   QueueUrl: queueUrl,
                   ReceiptHandle: entity.ReceiptHandle,
-                })
+                }),
               );
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
             attempts++;
             continue;
           }
@@ -90,7 +92,7 @@ export default function HomographyTask() {
                 new DeleteMessageCommand({
                   QueueUrl: queueUrl,
                   ReceiptHandle: entity.ReceiptHandle,
-                })
+                }),
               );
               if (pairKey) processedRef.current.add(pairKey);
             } catch (error) {
@@ -123,7 +125,9 @@ export default function HomographyTask() {
 
   // Keep a ref to latest fetchNext so callbacks always invoke the current version
   const fetchNextRef = useRef(fetchNext);
-  useEffect(() => { fetchNextRef.current = fetchNext; }, [fetchNext]);
+  useEffect(() => {
+    fetchNextRef.current = fetchNext;
+  }, [fetchNext]);
 
   // Fetch first message when queue URL is ready
   useEffect(() => {
@@ -144,12 +148,14 @@ export default function HomographyTask() {
           new GetQueueAttributesCommand({
             QueueUrl: queueUrl,
             AttributeNames: ['ApproximateNumberOfMessages'],
-          })
+          }),
         );
         const count = result.Attributes?.ApproximateNumberOfMessages;
         setJobsRemaining(count || 'Unknown');
         if (count === '0') setQueueEmpty(true);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     };
     updateJobs();
     const interval = setInterval(updateJobs, 10000);
@@ -176,20 +182,26 @@ export default function HomographyTask() {
     return () => clearTimeout(timer);
   }, [countdown, navigate]);
 
-  const handleComplete = useCallback((pairKey: string) => {
-    setSavedPairs((prev) => new Set(prev).add(pairKey));
-    setSessionCompleted((prev) => prev + 1);
-    setQueueEmpty(false);
-    setIndex((prev) => {
-      const nextIndex = prev + 1;
-      frontierIndexRef.current = Math.max(frontierIndexRef.current, nextIndex);
-      // Fetch next if we don't have it
-      if (nextIndex >= buffer.length) {
-        setTimeout(() => fetchNextRef.current(), 0);
-      }
-      return nextIndex;
-    });
-  }, [buffer.length]);
+  const handleComplete = useCallback(
+    (pairKey: string) => {
+      setSavedPairs((prev) => new Set(prev).add(pairKey));
+      setSessionCompleted((prev) => prev + 1);
+      setQueueEmpty(false);
+      setIndex((prev) => {
+        const nextIndex = prev + 1;
+        frontierIndexRef.current = Math.max(
+          frontierIndexRef.current,
+          nextIndex,
+        );
+        // Fetch next if we don't have it
+        if (nextIndex >= buffer.length) {
+          setTimeout(() => fetchNextRef.current(), 0);
+        }
+        return nextIndex;
+      });
+    },
+    [buffer.length],
+  );
 
   const handleBack = useCallback(() => {
     if (index > 0) {
@@ -207,7 +219,7 @@ export default function HomographyTask() {
     (pairKey: string, points: { p1: Point[]; p2: Point[] }) => {
       savedPointsRef.current.set(pairKey, points);
     },
-    []
+    [],
   );
 
   const currentPair = buffer[index];
@@ -217,10 +229,10 @@ export default function HomographyTask() {
 
   return (
     <div
-      className='flex flex-col items-center gap-4 w-full h-full'
+      className='flex h-full w-full flex-col items-center gap-4'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-full h-full'>
+      <div className='h-full w-full'>
         {currentPair ? (
           <HomographyWorkbenchWorker
             key={currentPair.pairKey}
@@ -229,13 +241,15 @@ export default function HomographyTask() {
             queueId={queueId!}
             onComplete={handleComplete}
             onBack={index > 0 ? handleBack : undefined}
-            onForward={index < frontierIndexRef.current ? handleForward : undefined}
+            onForward={
+              index < frontierIndexRef.current ? handleForward : undefined
+            }
             onExit={() => navigate('/jobs')}
             onSavePoints={handleSavePoints}
             isSaved={savedPairs.has(currentPair.pairKey)}
           />
         ) : queueEmpty || countdown !== null ? (
-          <div className='flex flex-col justify-center items-center h-full gap-4'>
+          <div className='flex h-full flex-col items-center justify-center gap-4'>
             <h5>No more pairs to process</h5>
             <p className='text-muted-foreground'>
               {countdown !== null
@@ -247,18 +261,22 @@ export default function HomographyTask() {
             </Button>
           </div>
         ) : (
-          <div className='flex justify-center items-center h-full'>
-            <div className='text-muted-foreground'>Loading homography task...</div>
+          <div className='flex h-full items-center justify-center'>
+            <div className='text-muted-foreground'>
+              Loading homography task...
+            </div>
           </div>
         )}
       </div>
       <Badge
         variant='secondary'
-        className='flex flex-row items-center justify-center gap-4 p-2 w-full flex-wrap'
+        className='flex w-full flex-row flex-wrap items-center justify-center gap-4 p-2'
       >
         <p className='mb-0'>{jobsRemaining} pairs remaining (globally)</p>
         <span className='hidden sm:block'>|</span>
-        <p className='mb-0'>{sessionCompleted} pairs completed in this session</p>
+        <p className='mb-0'>
+          {sessionCompleted} pairs completed in this session
+        </p>
       </Badge>
     </div>
   );

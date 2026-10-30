@@ -1,30 +1,32 @@
-import { useParams } from 'react-router-dom';
+import { Combobox } from '@/components/ui/combobox';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import {
-  useEffect,
-  useState,
+  useCallback,
   useContext,
+  useEffect,
+  useId,
   useMemo,
   useRef,
-  useCallback,
-  useId,
+  useState,
 } from 'react';
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useParams } from 'react-router-dom';
 import { AnnotationSetDropdown } from './AnnotationSetDropDown';
-import { Combobox } from '@/components/ui/combobox';
-import { ProjectContext, ManagementContext, GlobalContext } from './Context';
+import { GlobalContext, ManagementContext, ProjectContext } from './Context';
+
 import './Review.css';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { FormText, Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { PanelBottom, ChevronRight } from 'lucide-react';
-import { Tab, Tabs } from './Tabs';
-import ReviewCarousel from './ReviewCarousel';
+import { ChevronRight, PanelBottom } from 'lucide-react';
 import DensityMap, { type DensitySource } from './DensityMap';
+import ReviewCarousel from './ReviewCarousel';
+import { Tab, Tabs } from './Tabs';
 import { useUsers } from './apiInterface';
-import { fetchAllPaginatedResults } from './utils';
 import { useInfoTagData } from './useInfoTags';
+import { fetchAllPaginatedResults } from './utils';
 
 type Option = { label: string; value: string };
 
@@ -63,7 +65,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
   // by default and tracks the primary annotation set chosen below.
   const [selectedSurveyIds, setSelectedSurveyIds] = useState<string[]>([]);
   const [setsBySurvey, setSetsBySurvey] = useState<Record<string, string[]>>(
-    {}
+    {},
   );
   // Transects reported by the map (consistent numbering) + the active filter.
   const [transectOptionsRaw, setTransectOptionsRaw] = useState<
@@ -87,7 +89,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
           projectId: project.id,
           selectionSet: ['userId'],
           limit: 1000,
-        }
+        },
       );
       if (!cancelled) {
         setProjectMemberships(memberships as { userId: string }[]);
@@ -163,7 +165,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
       queryFn: () =>
         fetchAllPaginatedResults(
           client.models.AnnotationSet.annotationSetsByProjectId,
-          { projectId: sid, selectionSet: ['id', 'name'] }
+          { projectId: sid, selectionSet: ['id', 'name'] },
         ),
     })),
   });
@@ -225,7 +227,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
         setSelectedAnnotationSet((prev) => prev || only);
       } else {
         setSetsBySurvey((prev) =>
-          prev[sid]?.length ? prev : { ...prev, [sid]: [only] }
+          prev[sid]?.length ? prev : { ...prev, [sid]: [only] },
         );
       }
     });
@@ -263,21 +265,21 @@ export function Review({ showAnnotationSetDropdown = true }) {
 
   const categoryNames = useMemo(
     () => selectedCategories.map((c) => c.label),
-    [selectedCategories]
+    [selectedCategories],
   );
 
   // Informational tags defined on the primary set. Tags are filtered by name so
   // the selection also applies to any other sets overlaid on the map.
   const { tagNames: infoTagOptionNames } = useInfoTagData(
-    selectedAnnotationSet ? [selectedAnnotationSet] : []
+    selectedAnnotationSet ? [selectedAnnotationSet] : [],
   );
   const infoTagOptions = useMemo<Option[]>(
     () => infoTagOptionNames.map((name) => ({ label: name, value: name })),
-    [infoTagOptionNames]
+    [infoTagOptionNames],
   );
   const infoTagNames = useMemo(
     () => selectedInfoTags.map((t) => t.value),
-    [selectedInfoTags]
+    [selectedInfoTags],
   );
 
   // Drop selections the newly-chosen set does not define (but not while its
@@ -304,7 +306,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
         return next.length === prev.length ? prev : next;
       });
     },
-    []
+    [],
   );
 
   const transectOptions = useMemo<Option[]>(() => {
@@ -314,7 +316,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
       .sort((a, b) =>
         a.surveyId === b.surveyId
           ? a.number - b.number
-          : surveyLabel(a.surveyId).localeCompare(surveyLabel(b.surveyId))
+          : surveyLabel(a.surveyId).localeCompare(surveyLabel(b.surveyId)),
       )
       .map((t) => ({
         value: t.id,
@@ -354,16 +356,16 @@ export function Review({ showAnnotationSetDropdown = true }) {
         marginBottom: '16px',
       }}
     >
-      <div className='w-full h-full flex flex-col sm:flex-row gap-2'>
+      <div className='flex h-full w-full flex-col gap-2 sm:flex-row'>
         <div
-          className='flex flex-col gap-2 w-full'
+          className='flex w-full flex-col gap-2'
           style={{
             maxWidth: '300px',
             maxHeight: 'calc(100vh - 32px)',
             overflow: 'hidden',
           }}
         >
-          <Card className='sm:block hidden w-full'>
+          <Card className='hidden w-full sm:block'>
             <CardHeader>
               <CardTitle className='mb-0'>Information</CardTitle>
             </CardHeader>
@@ -378,19 +380,16 @@ export function Review({ showAnnotationSetDropdown = true }) {
               </p>
             </CardContent>
           </Card>
-          <Card
-            className='w-full grow flex flex-col'
-            style={{ minHeight: 0 }}
-          >
+          <Card className='flex w-full grow flex-col' style={{ minHeight: 0 }}>
             <CardHeader>
               <CardTitle className='mb-0 flex items-center'>
                 <Button
-                  className='p-0 mb-0 hover:bg-transparent'
+                  className='mb-0 p-0 hover:bg-transparent'
                   variant='ghost'
                   onClick={() => setShowFilters(!showFilters)}
                 >
                   <PanelBottom
-                    className='sm:hidden size-6'
+                    className='size-6 sm:hidden'
                     style={{
                       transform: showFilters
                         ? 'rotate(180deg)'
@@ -416,7 +415,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     options={
                       categories
                         ?.filter(
-                          (c) => c.annotationSetId === selectedAnnotationSet
+                          (c) => c.annotationSetId === selectedAnnotationSet,
                         )
                         .map((q) => ({
                           label: q.name,
@@ -479,10 +478,10 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 )}
 
                 {/* Advanced: overlay data from other surveys on the map. */}
-                <div className='w-full border-t pt-2 mt-1'>
+                <div className='mt-1 w-full border-t pt-2'>
                   <Button
                     variant='ghost'
-                    className='p-0 flex items-center gap-1 w-full text-left hover:bg-transparent'
+                    className='flex w-full items-center gap-1 p-0 text-left hover:bg-transparent'
                     onClick={() => setShowAdvanced(!showAdvanced)}
                     style={{ boxShadow: 'none' }}
                   >
@@ -499,7 +498,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                   </Button>
 
                   {showAdvanced && (
-                    <div className='flex flex-col gap-2 mt-2'>
+                    <div className='mt-2 flex flex-col gap-2'>
                       <div className='w-full'>
                         <Label className='mb-1'>Surveys</Label>
                         <Combobox
@@ -522,14 +521,12 @@ export function Review({ showAnnotationSetDropdown = true }) {
 
                       {selectedSurveyIds.map((sid, i) => (
                         <div className='w-full' key={sid}>
-                          <Label className='mb-1'>
-                            {surveyLabel(sid)}
-                          </Label>
+                          <Label className='mb-1'>{surveyLabel(sid)}</Label>
                           <Combobox
                             value={(setsBySurvey[sid] ?? []).map((aid) => ({
                               label:
                                 setOptionsBySurvey[sid]?.find(
-                                  (o) => o.value === aid
+                                  (o) => o.value === aid,
                                 )?.label ?? aid,
                               value: aid,
                             }))}
@@ -546,7 +543,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                       ))}
 
                       <div className='w-full'>
-                        <div className='flex items-center justify-between mb-1'>
+                        <div className='mb-1 flex items-center justify-between'>
                           <Label className='mb-0'>Transects</Label>
                           <div className='flex items-center gap-2'>
                             <Switch
@@ -580,7 +577,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                             }))}
                             onChange={(options) =>
                               setSelectedTransectIds(
-                                options.map((v) => v.value)
+                                options.map((v) => v.value),
                               )
                             }
                             multiple

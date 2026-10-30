@@ -1,7 +1,7 @@
 import { useCallback, useContext } from 'react';
-import { UserContext, ProjectContext, GlobalContext } from './Context';
-import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 import { Schema } from './amplify/client-schema';
+import { GlobalContext, ProjectContext, UserContext } from './Context';
+import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 
 interface UseCreateTestResultProps {
   locationId?: string;
@@ -39,23 +39,23 @@ export default function useCreateTestResult({
     const existingTestResult = sessionTestsResults.find(
       (result) =>
         result.locationId === locationId &&
-        result.annotationSetId === annotationSetToUse
+        result.annotationSetId === annotationSetToUse,
     );
 
     const userAnnotations = Object.entries(currentAnnoCount).filter(
-      ([, annotations]) => annotations.length > 0
+      ([, annotations]) => annotations.length > 0,
     );
 
     setCurrentAnnoCount({});
 
     const surveyCategories = categoriesHook.data?.reduce(
       (acc, c) => ({ ...acc, [c.id]: c.name.toLowerCase() }),
-      {} as Record<string, string>
+      {} as Record<string, string>,
     );
 
     const { data: location } = await client.models.Location.get(
       { id: locationId! },
-      { selectionSet: ['x', 'y', 'width', 'height'] }
+      { selectionSet: ['x', 'y', 'width', 'height'] },
     );
 
     if (!location) {
@@ -71,7 +71,7 @@ export default function useCreateTestResult({
         locationId: locationId!,
         annotationSetId: { eq: annotationSetId },
         selectionSet: ['categoryId', 'category.name', 'count'],
-      }
+      },
     );
 
     if (!categoryCounts) {
@@ -95,11 +95,11 @@ export default function useCreateTestResult({
     // Total count of annotations
     const totalUserCounts = userAnnotationsEntries.reduce(
       (acc, [, count]) => acc + count,
-      0
+      0,
     );
     const totalTestCounts = categoryCounts.reduce(
       (acc, count) => acc + (count.count as number),
-      0
+      0,
     );
 
     let testResult: Schema['TestResult']['type'];
@@ -112,7 +112,7 @@ export default function useCreateTestResult({
           totalMissedAnimals: totalTestCounts - totalUserCounts,
           // Placeholder to satisfy current schema; not used for reporting
           passedOnTotal: false,
-        }
+        },
       );
       testResult = updatedTestResult!;
     } else {
@@ -140,7 +140,7 @@ export default function useCreateTestResult({
     if (userAnnotationsEntries.length > 0) {
       for (const [categoryName, count] of userAnnotationsEntries) {
         const category = categoryCounts.find(
-          (c) => c.category.name.toLowerCase() === categoryName
+          (c) => c.category.name.toLowerCase() === categoryName,
         );
 
         if (!category) {

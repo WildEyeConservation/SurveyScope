@@ -1,12 +1,11 @@
-import { createContext, useState } from 'react';
-import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
-import outputs from '../amplify_outputs.json';
 import { AuthUser } from '@aws-amplify/auth';
 import { SQSClient } from '@aws-sdk/client-sqs';
+import { createContext, useState } from 'react';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import type { UserType } from '../amplify/shared/types';
+import outputs from '../amplify_outputs.json';
+import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
 import { limitedClient } from './limitedClient';
-
 
 export interface ProgressType {
   [key: string]: { value?: number; detail: JSX.Element };
@@ -81,7 +80,7 @@ export interface ManagementContextType {
   queuesHook: {
     data: Schema['Queue']['type'][];
     update: (
-      arg: Parameters<ClientType['models']['Queue']['update']>[0]
+      arg: Parameters<ClientType['models']['Queue']['update']>[0],
     ) => void;
     delete: (arg: { id: string }) => void;
   };
@@ -117,10 +116,12 @@ export interface TestingContextType {
   organizationMembershipsHook: CRUDhook<'OrganizationMembership'>;
 }
 
-type NeighbourTransform = {
-  fwd: ((c1: [number, number]) => [number, number]) | undefined;
-  bwd: ((c1: [number, number]) => [number, number]) | undefined;
-} | undefined;
+type NeighbourTransform =
+  | {
+      fwd: ((c1: [number, number]) => [number, number]) | undefined;
+      bwd: ((c1: [number, number]) => [number, number]) | undefined;
+    }
+  | undefined;
 
 interface ImageContextType {
   annotationsHook: AnnotationsHook;
@@ -129,7 +130,9 @@ interface ImageContextType {
   visibleTimestamp: number | undefined;
   fullyLoadedTimestamp: number | undefined;
   setVisibleTimestamp: React.Dispatch<React.SetStateAction<number | undefined>>;
-  setFullyLoadedTimestamp: React.Dispatch<React.SetStateAction<number | undefined>>;
+  setFullyLoadedTimestamp: React.Dispatch<
+    React.SetStateAction<number | undefined>
+  >;
   zoom: number;
   setZoom: React.Dispatch<React.SetStateAction<number>>;
   prevImages:
@@ -150,11 +153,11 @@ interface ImageContextType {
 export const UserContext = createContext<UserContextType | null>(null);
 export const ProjectContext = createContext<ProjectContextType | null>(null);
 export const ManagementContext = createContext<ManagementContextType | null>(
-  null
+  null,
 );
 export const ProgressContext = createContext<ProgressContextType | null>(null);
 export const ImageContext = createContext<ImageContextType | undefined>(
-  undefined
+  undefined,
 );
 export const TestingContext = createContext<TestingContextType | null>(null);
 // export const OrganizationContext =

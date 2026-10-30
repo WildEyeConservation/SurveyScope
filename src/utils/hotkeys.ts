@@ -115,7 +115,10 @@ function splitCombo(shortcutKey: string): string[] {
   return parts;
 }
 
-function canonical(modifiers: readonly string[], keys: readonly string[]): string {
+function canonical(
+  modifiers: readonly string[],
+  keys: readonly string[],
+): string {
   const mods = MODIFIERS.filter((m) => modifiers.includes(m));
   const rest = keys.filter((k) => k !== '' && !isModifier(k));
   return [...mods, ...[...rest].sort()].join('+');
@@ -123,7 +126,7 @@ function canonical(modifiers: readonly string[], keys: readonly string[]): strin
 
 /** Canonical form of a stored shortcutKey. 'Ctrl+H' -> 'ctrl+h', '.' -> 'period'. */
 export function normalizeShortcutKey(
-  shortcutKey: string | null | undefined
+  shortcutKey: string | null | undefined,
 ): string {
   if (!shortcutKey) return '';
   const parts = splitCombo(shortcutKey.trim().toLowerCase()).map(mapKeyName);
@@ -151,7 +154,7 @@ export function canonicalHotkeysFromEvent(event: KeyboardEvent): string[] {
       (m === 'alt' && event.altKey) ||
       (m === 'ctrl' && event.ctrlKey) ||
       (m === 'meta' && event.metaKey) ||
-      (m === 'shift' && event.shiftKey)
+      (m === 'shift' && event.shiftKey),
   );
   const code = mapKeyName(event.code);
   const char = mapKeyName(event.key);
@@ -171,7 +174,7 @@ export function canonicalHotkeysFromEvent(event: KeyboardEvent): string[] {
 export function findShortcutMatch<T>(
   event: KeyboardEvent,
   items: readonly T[],
-  getShortcutKey: (item: T) => string | null | undefined
+  getShortcutKey: (item: T) => string | null | undefined,
 ): T | undefined {
   const candidates = canonicalHotkeysFromEvent(event);
   if (candidates.length === 0) return undefined;
@@ -183,19 +186,21 @@ export function findShortcutMatch<T>(
 
 /** Human-readable rendering of a stored shortcutKey. 'ctrl+h' -> 'Ctrl+H'. */
 export function formatShortcutKey(
-  shortcutKey: string | null | undefined
+  shortcutKey: string | null | undefined,
 ): string {
   if (!shortcutKey) return '';
   const parts = splitCombo(shortcutKey.trim().toLowerCase()).map(mapKeyName);
   const mods = MODIFIERS.filter((m) => parts.includes(m)).map(
-    (m) => DISPLAY_MODIFIERS[m]
+    (m) => DISPLAY_MODIFIERS[m],
   );
   const keys = parts
     .filter((k) => k !== '' && !isModifier(k))
     .map(
       (k) =>
         DISPLAY_KEYS[k] ??
-        (k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1))
+        (k.length === 1
+          ? k.toUpperCase()
+          : k.charAt(0).toUpperCase() + k.slice(1)),
     );
   return [...mods, ...keys].join('+');
 }

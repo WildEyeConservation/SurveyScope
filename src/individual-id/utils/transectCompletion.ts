@@ -3,10 +3,10 @@ import type {
   ImageNeighbourType,
   ImageType,
 } from '../../schemaTypes';
-import { buildNeighbourTransforms } from './transforms';
-import { buildMatchCandidates } from './munkres';
 import { evaluatePairCompletion } from './completion';
+import { buildMatchCandidates } from './munkres';
 import { findReunions } from './reunionSearch';
+import { buildNeighbourTransforms } from './transforms';
 
 // Must match IndividualIdHarness DEFAULT_LENIENCY so launch-time completeness agrees with runtime.
 export const DEFAULT_INDIVIDUAL_ID_LENIENCY = 40;
@@ -32,7 +32,7 @@ export interface TransectCompletenessInput {
 
 // Pair orientation is irrelevant — swapping A/B also swaps forward/backward, so candidate sets are invariant.
 export function findIncompleteTransectIds(
-  input: TransectCompletenessInput
+  input: TransectCompletenessInput,
 ): string[] {
   const {
     imagesById,

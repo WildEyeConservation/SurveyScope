@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   encodeHeader,
   HEADER_GUESS_BYTES,
@@ -19,13 +19,13 @@ import {
 // Tile `i` is `lengthOf(i)` bytes, each of value `i % 251`.
 function buildPack(
   meta: TilePackMeta,
-  lengthOf: (index: number) => number = () => 4
+  lengthOf: (index: number) => number = () => 4,
 ) {
   const { tileCount } = pyramid(meta);
   const lengths = Array.from({ length: tileCount }, (_, i) => lengthOf(i));
   const header = encodeHeader(meta, lengths);
   const file = new Uint8Array(
-    header.length + lengths.reduce((a, b) => a + b, 0)
+    header.length + lengths.reduce((a, b) => a + b, 0),
   );
   file.set(header, 0);
   let offset = header.length;
@@ -57,7 +57,7 @@ function storage(file: Uint8Array, expired: string[] = []) {
   const fetchFn: typeof fetch = async (input, init) => {
     const url = String(input);
     const range = /^bytes=(\d+)-(\d+)$/.exec(
-      new Headers(init?.headers).get('Range') ?? ''
+      new Headers(init?.headers).get('Range') ?? '',
     );
     if (!range) throw new Error('Expected a range request');
     const first = Number(range[1]);
@@ -87,7 +87,7 @@ function storage(file: Uint8Array, expired: string[] = []) {
 
 const access = (
   url: string,
-  expiresAt = Number.MAX_SAFE_INTEGER
+  expiresAt = Number.MAX_SAFE_INTEGER,
 ): TilePackAccess => ({ url, expiresAt });
 const never = async (): Promise<TilePackAccess> => {
   throw new Error('No refresh expected');
@@ -202,7 +202,7 @@ test('renews once on 403 and retries; concurrent reads share the renewal', async
   assert.equal(refreshes, 1);
   assert.deepEqual(
     store.calls.map((c) => c.url),
-    ['old', 'new', 'new', 'new']
+    ['old', 'new', 'new', 'new'],
   );
 });
 
@@ -234,7 +234,7 @@ test('renews a URL about to expire before using it', async () => {
   await pack.header();
   assert.deepEqual(
     store.calls.map((c) => c.url),
-    ['new']
+    ['new'],
   );
 });
 

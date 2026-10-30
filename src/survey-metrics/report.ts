@@ -257,7 +257,7 @@ export const STATS = [
     compute: ({ locationScan }) => {
       if (!locationScan.coverage) {
         throw new Error(
-          'Detector locations were not matched against this set.'
+          'Detector locations were not matched against this set.',
         );
       }
       return locationScan.coverage;
@@ -344,14 +344,14 @@ export function entitiesFor(statIds: StatId[]): EntityKey[] {
     if (statIds.includes(stat.id)) stat.needs.forEach((key) => needed.add(key));
   }
   return (Object.keys(ENTITY_LABELS) as EntityKey[]).filter((key) =>
-    needed.has(key)
+    needed.has(key),
   );
 }
 
 function cacheKey(
   request: ReportRequest,
   entity: EntityKey,
-  forSet = SET_ENTITIES.includes(entity)
+  forSet = SET_ENTITIES.includes(entity),
 ) {
   return forSet
     ? `${request.surveyId}:${entity}:${request.annotationSetId}`
@@ -370,7 +370,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
   const { surveyId, annotationSetId, signal } = request;
   const stats = STATS.filter(
     (stat) =>
-      request.statIds.includes(stat.id) && (!stat.needsSet || annotationSetId)
+      request.statIds.includes(stat.id) && (!stat.needsSet || annotationSetId),
   );
   const entities = entitiesFor(stats.map((stat) => stat.id));
   const wantsCoverage = stats.some((stat) => stat.id === 'confidenceCoverage');
@@ -441,7 +441,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         if (entity === 'locationScan' && wantsCoverage) {
           try {
             const observations = (await load(
-              'observations'
+              'observations',
             )) as ObservationRow[];
             needs.annotations = (await load('annotations')) as AnnotationRow[];
             needs.observations = observations;
@@ -506,7 +506,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
     } catch (error) {
       failures.set(
         entity,
-        error instanceof Error ? error.message : String(error)
+        error instanceof Error ? error.message : String(error),
       );
     }
   }
@@ -520,7 +520,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
     fetchedAt: Object.fromEntries(
       tasks
         .filter((task) => task.fetchedAt)
-        .map((task) => [task.entity, task.fetchedAt])
+        .map((task) => [task.entity, task.fetchedAt]),
     ),
     stats: {},
   };
@@ -546,7 +546,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         throw new Error(
           `Could not fetch ${ENTITY_LABELS[
             failed
-          ].toLowerCase()}: ${failures.get(failed)}`
+          ].toLowerCase()}: ${failures.get(failed)}`,
         );
       }
       const queues = (data.queues as QueueRow[] | undefined) ?? [];
@@ -583,7 +583,7 @@ type Dependencies = {
 async function scanLocations(
   surveyId: string,
   ctx: LoadContext,
-  needs: Dependencies
+  needs: Dependencies,
 ): Promise<LocationScan> {
   const detections: DetectionScan = new Map();
   const coverage =
@@ -603,7 +603,7 @@ function fetchEntity(
   entity: EntityKey,
   request: ReportRequest,
   ctx: LoadContext,
-  needs: Dependencies
+  needs: Dependencies,
 ): Promise<unknown> {
   const { surveyId } = request;
   const setId = request.annotationSetId ?? '';

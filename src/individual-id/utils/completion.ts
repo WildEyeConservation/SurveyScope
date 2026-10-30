@@ -2,7 +2,7 @@ import type { MatchCandidate, PairCompletionState } from '../types';
 
 // Informational candidates (project outside partner image) are excluded from totals.
 export function evaluatePairCompletion(
-  candidates: MatchCandidate[]
+  candidates: MatchCandidate[],
 ): PairCompletionState {
   const linkable = candidates.filter((c) => !c.informational);
   if (linkable.length === 0) {

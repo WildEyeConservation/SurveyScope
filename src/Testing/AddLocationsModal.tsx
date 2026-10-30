@@ -1,24 +1,22 @@
-import {
-  useState,
-  useEffect,
-  useContext,
-  useMemo,
-  useRef,
-  useCallback,
-} from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import { Modal, Header, Title, Body, Footer } from '../Modal';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { GlobalContext, TestingContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
 import { loadRows } from '../rowChunks';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
-import LightLocationView from './LightLocationView';
-import ProjectContext from './ProjectContext';
+import { fetchAllPaginatedResults } from '../utils';
 import {
   type CandidateRef,
   type PoolEntry,
@@ -26,6 +24,8 @@ import {
   filterCandidates,
   findAddedKeys,
 } from './addLocationCandidates';
+import LightLocationView from './LightLocationView';
+import ProjectContext from './ProjectContext';
 
 type Props = {
   show: boolean;
@@ -73,7 +73,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const candidateIndexRef = useRef(0);
   const currentCandidate = candidatesRef.current[index] ?? null;
   const [addedLocations, setAddedLocations] = useState<Record<string, boolean>>(
-    {}
+    {},
   );
   const lastAddedRef = useRef<{
     annotationSetId: string;
@@ -96,7 +96,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       entries: PoolEntry[],
       excludedKeys: Set<string>,
       label: string,
-      maxAnn: number | ''
+      maxAnn: number | '',
     ) => {
       const filtered = filterCandidates(entries, label, maxAnn, excludedKeys);
       candidatesRef.current = filtered;
@@ -105,7 +105,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       setIndex(0);
       setBufferKey((k) => k + 1);
     },
-    []
+    [],
   );
 
   const loadPool = useCallback<
@@ -137,7 +137,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         {
           projectId: surveyId,
           selectionSet: ['id'] as const,
-        }
+        },
       )) as any[];
 
       // Labels are per annotation set, so match them across sets by name
@@ -147,10 +147,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           projectId: surveyId,
           selectionSet: ['id', 'name'] as const,
           limit: 10000,
-        }
+        },
       )) as any[];
       const labelById = new Map<string, string>(
-        categories.map((c: any) => [c.id, c.name])
+        categories.map((c: any) => [c.id, c.name]),
       );
 
       // Each loadRows call reports its own running total.
@@ -183,14 +183,14 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 'location.y',
                 'location.source',
               ],
-              { onProgress: reportProgress(`obs:${as.id}`) }
+              { onProgress: reportProgress(`obs:${as.id}`) },
             ),
             loadRows(
               client,
               'annotationsByAnnotationSetId',
               as.id,
               ['imageId', 'x', 'y', 'categoryId'],
-              { onProgress: reportProgress(`ann:${as.id}`) }
+              { onProgress: reportProgress(`ann:${as.id}`) },
             ),
           ]);
           const annotationsByImage = new Map<string, typeof annotationRows>();
@@ -226,7 +226,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 ann.x >= x - width / 2 &&
                 ann.y >= y - height / 2 &&
                 ann.x <= x + width / 2 &&
-                ann.y <= y + height / 2
+                ann.y <= y + height / 2,
             );
             if (inside.length === 0) continue;
             setEntries.push({
@@ -234,18 +234,18 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
               locationId: obs.locationId,
               location: { imageId, width, height, x, y },
               labels: inside.map(
-                (ann) => labelById.get(ann.categoryId ?? '') ?? ''
+                (ann) => labelById.get(ann.categoryId ?? '') ?? '',
               ),
             });
           }
           return setEntries;
-        })
+        }),
       ).then((sets) => sets.flat());
 
       setLabels(
         [...new Set(entries.flatMap((entry) => entry.labels))]
           .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
+          .sort((a, b) => a.localeCompare(b)),
       );
       const excludedKeys = findAddedKeys(entries, presetLocations);
       excludedKeysRef.current = excludedKeys;
@@ -253,7 +253,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       showCandidates(entries, excludedKeys, label, maxAnn);
       setLoading(false);
     },
-    [client, preset.id, surveyId, showCandidates]
+    [client, preset.id, surveyId, showCandidates],
   );
 
   // Fetch project location sets for tiled sizes / testing set
@@ -267,7 +267,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           (client as any).models.LocationSet.locationSetsByProjectId as any
         )(
           { projectId: surveyId },
-          { selectionSet: ['id', 'name', 'description'] as const }
+          { selectionSet: ['id', 'name', 'description'] as const },
         )) as { data: any[] };
         if (!cancelled) setLocationSets(Array.isArray(data) ? data : []);
       } finally {
@@ -334,7 +334,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const matchingTotal = useMemo(
     () =>
       filterCandidates(pool, selectedLabel, maxAnnotations, new Set()).length,
-    [pool, selectedLabel, maxAnnotations]
+    [pool, selectedLabel, maxAnnotations],
   );
 
   const applyFilters = useCallback(() => {
@@ -344,7 +344,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       pool,
       new Set([...excludedKeysRef.current, ...Object.keys(addedLocations)]),
       pendingLabel,
-      pendingMaxAnnotations || ''
+      pendingMaxAnnotations || '',
     );
   }, [
     pendingLabel,
@@ -358,7 +358,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const getOrCreateTestingLocationSetId = useCallback(async () => {
     const TESTING_SET_NAME = 'Testing Locations';
     const existing = (locationSets || []).find(
-      (s: any) => s?.name === TESTING_SET_NAME
+      (s: any) => s?.name === TESTING_SET_NAME,
     );
     if (existing?.id) return existing.id as string;
     const { data: created } = await (client as any).models.LocationSet.create({
@@ -389,7 +389,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         setId: { eq: cand.annotationSetId },
         selectionSet: ['categoryId', 'x', 'y'] as const,
         limit: 10000,
-      }
+      },
     )) as any[];
     if (location.width == null || location.height == null) return;
     const boundsxy: [number, number][] = [
@@ -463,10 +463,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       const finalHeight =
         (advancedOpen && changeSize ? customHeight : orig.height) ?? 100;
       const finalX = Math.round(
-        (orig.x as number) + (advancedOpen ? offsetX || 0 : 0)
+        (orig.x as number) + (advancedOpen ? offsetX || 0 : 0),
       );
       const finalY = Math.round(
-        (orig.y as number) + (advancedOpen ? offsetY || 0 : 0)
+        (orig.y as number) + (advancedOpen ? offsetY || 0 : 0),
       );
 
       // Create a new testing location
@@ -524,7 +524,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         </Header>
         <Body>
           <div
-            className='flex flex-col gap-4 px-4 pb-4 pt-0'
+            className='flex flex-col gap-4 px-4 pt-0 pb-4'
             style={{ height: '75vh' }}
           >
             {loading ? (
@@ -536,10 +536,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
             ) : pool.length === 0 ? (
               <p>No available locations to add.</p>
             ) : (
-              <div className='flex flex-row gap-4 h-full'>
+              <div className='flex h-full flex-row gap-4'>
                 {/* Left controls column */}
                 <div
-                  className='flex flex-col gap-4 border-r border-dark mt-4 pe-4'
+                  className='mt-4 flex flex-col gap-4 border-r border-dark pe-4'
                   style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
                 >
                   <div className='flex flex-col gap-2'>
@@ -568,7 +568,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                           setPendingMaxAnnotations(
                             e.target.value === ''
                               ? ''
-                              : Number(e.target.value) || ''
+                              : Number(e.target.value) || '',
                           )
                         }
                       />
@@ -590,7 +590,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                       Advanced options
                     </label>
                     {advancedOpen && (
-                      <div className='flex flex-row items-end gap-2 flex-wrap'>
+                      <div className='flex flex-row flex-wrap items-end gap-2'>
                         <label className='mb-0 flex items-center gap-2'>
                           <Checkbox
                             checked={changeSize}
@@ -611,7 +611,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                               const val = e.target.value;
                               setSelectedSize(val);
                               const found = tiledSizeOptions.find(
-                                (o) => o.value === val
+                                (o) => o.value === val,
                               );
                               if (found) {
                                 setCustomWidth(found.w);
@@ -639,7 +639,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                               setCustomWidth(
                                 e.target.value === ''
                                   ? ''
-                                  : Math.max(1, Number(e.target.value) || 1)
+                                  : Math.max(1, Number(e.target.value) || 1),
                               )
                             }
                           />
@@ -656,7 +656,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                               setCustomHeight(
                                 e.target.value === ''
                                   ? ''
-                                  : Math.max(1, Number(e.target.value) || 1)
+                                  : Math.max(1, Number(e.target.value) || 1),
                               )
                             }
                           />
@@ -694,11 +694,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                     {!selectedLabel && maxAnnotations === ''
                       ? 'No available locations to add.'
                       : matchingTotal > 0
-                      ? `Every location matching the filter (${matchingTotal}) is already in the pool.`
-                      : 'No locations match the filter.'}
+                        ? `Every location matching the filter (${matchingTotal}) is already in the pool.`
+                        : 'No locations match the filter.'}
                   </p>
                 ) : (
-                  <div className='flex flex-col grow h-full w-full'>
+                  <div className='flex h-full w-full grow flex-col'>
                     <div className='mt-4 h-full w-full'>
                       <TaskBuffer
                         key={bufferKey}
@@ -726,7 +726,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                         )}
                       />
                     </div>
-                    <div className='flex flex-col w-full gap-2 pt-4'>
+                    <div className='flex w-full flex-col gap-2 pt-4'>
                       {currentCandidate && (
                         <a
                           className={buttonVariants({
@@ -758,12 +758,12 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                         {adding
                           ? 'Adding...'
                           : addedLocations[
-                              `${currentCandidate!.annotationSetId}_${
-                                currentCandidate!.locationId
-                              }`
-                            ]
-                          ? 'Added'
-                          : 'Add to pool'}
+                                `${currentCandidate!.annotationSetId}_${
+                                  currentCandidate!.locationId
+                                }`
+                              ]
+                            ? 'Added'
+                            : 'Add to pool'}
                       </Button>
                     </div>
                   </div>

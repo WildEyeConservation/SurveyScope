@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
+import { useState } from 'react';
 import {
   collectFilesFromHandle,
   pickDirectory,
@@ -115,7 +115,7 @@ export default function FileInput({
         style={{ width: 'fit-content' }}
         className={cn(
           'cursor-pointer',
-          disabled && 'pointer-events-none opacity-65'
+          disabled && 'pointer-events-none opacity-65',
         )}
       >
         <label htmlFor={id} className='mb-0' aria-disabled={disabled}>

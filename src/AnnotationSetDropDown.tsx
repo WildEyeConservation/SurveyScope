@@ -1,6 +1,6 @@
-import { useContext } from 'react';
-import { ProjectContext, ManagementContext } from './Context';
 import { Combobox } from '@/components/ui/combobox';
+import { useContext } from 'react';
+import { ManagementContext, ProjectContext } from './Context';
 
 interface AnnotationSetDropdownProps {
   setAnnotationSet: (arg0: string) => void;
@@ -26,7 +26,7 @@ export function AnnotationSetDropdown({
           name,
           projectId: project.id,
           group: project.organizationId,
-        })
+        }),
       );
     }
   };

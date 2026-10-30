@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChainTile } from '../ChainTile';
-import { rotationKeyFor } from '../utils/rotationKey';
 import type { AnnotationImageMeta, Chain } from '../types';
+import { rotationKeyFor } from '../utils/rotationKey';
 
 interface Props {
   chain: Chain;
@@ -63,12 +63,16 @@ export function ChainTilePaginator({
 
   const annotation = chain.annotations[safeIndex];
   if (!annotation) {
-    return <div className='text-muted-foreground text-center p-6'>No tiles in chain.</div>;
+    return (
+      <div className='p-6 text-center text-muted-foreground'>
+        No tiles in chain.
+      </div>
+    );
   }
 
   const rotKey = rotationKeyFor(
     metaByAnnotationId.get(annotation.id),
-    annotation.imageId
+    annotation.imageId,
   );
 
   return (

@@ -78,12 +78,14 @@ export default function GPSSubsetImageViewerModal({
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <CardHeader className='flex justify-between items-center p-4'>
+          <CardHeader className='flex items-center justify-between p-4'>
             <CardTitle className='mb-0'>
               {currentFilteredPoints[currentImageIndex]?.filepath ||
                 'Image Viewer'}
               {imageRotation > 0 && (
-                <small className='text-muted-foreground ms-2'>({imageRotation}°)</small>
+                <small className='ms-2 text-muted-foreground'>
+                  ({imageRotation}°)
+                </small>
               )}
             </CardTitle>
           </CardHeader>
@@ -157,7 +159,7 @@ export default function GPSSubsetImageViewerModal({
 
           {/* Footer */}
           <CardFooter>
-            <div className='flex justify-between w-full'>
+            <div className='flex w-full justify-between'>
               <div>
                 <Button
                   variant='primary'

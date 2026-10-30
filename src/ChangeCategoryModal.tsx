@@ -1,4 +1,3 @@
-import React, { useState, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,7 +9,14 @@ import {
 } from '@/components/ui/dialog';
 import { fieldBase, fieldSizes } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { Search, X, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Search, X } from 'lucide-react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { CategoryType } from './schemaTypes';
 
 interface ChangeCategoryModalProps {
@@ -53,7 +59,7 @@ export default function ChangeCategoryModal({
     return categories
       .filter((cat) => cat.id !== currentCategoryId)
       .filter((cat) =>
-        cat.name.toLowerCase().includes(searchTerm.toLowerCase())
+        cat.name.toLowerCase().includes(searchTerm.toLowerCase()),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [categories, currentCategoryId, searchTerm]);
@@ -258,14 +264,17 @@ export default function ChangeCategoryModal({
                       textAlign: 'left',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                      e.currentTarget.style.background =
+                        'rgba(255,255,255,0.12)';
                       e.currentTarget.style.borderColor =
                         category.color || '#888';
                       e.currentTarget.style.transform = 'translateY(-1px)';
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                      e.currentTarget.style.background =
+                        'rgba(255,255,255,0.05)';
+                      e.currentTarget.style.borderColor =
+                        'rgba(255,255,255,0.1)';
                       e.currentTarget.style.transform = 'translateY(0)';
                     }}
                   >

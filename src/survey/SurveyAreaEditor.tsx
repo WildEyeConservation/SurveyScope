@@ -1,3 +1,10 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormText } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
+import * as maplibregl from 'maplibre-gl';
 import {
   useCallback,
   useEffect,
@@ -7,20 +14,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { Alert } from '@/components/ui/alert';
-import { Input } from '@/components/ui/input';
-import { FormText } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
-import * as maplibregl from 'maplibre-gl';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
-import {
-  TerraDraw,
-  TerraDrawPolygonMode,
-  TerraDrawSelectMode,
-  TerraDrawRenderMode,
-} from 'terra-draw';
+
+import { cn } from '@/lib/utils';
+import * as turf from '@turf/turf';
 import {
   CrosshairIcon,
   LayersIcon,
@@ -38,12 +36,18 @@ import {
   WandSparklesIcon,
   XIcon,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import {
+  TerraDraw,
+  TerraDrawPolygonMode,
+  TerraDrawRenderMode,
+  TerraDrawSelectMode,
+} from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
-import * as turf from '@turf/turf';
 import FileInput from '../FileInput';
 import { BASE_STYLE, EMPTY_FC, type FeatureCollection } from './surveyMapStyle';
+
 import './surveyMap.css';
+
 import { Kbd, MapButton } from './mapControls';
 import { LIGHT_THEME, MAP_CONTROLS, MAP_DIVIDER } from './mapTheme';
 import {
@@ -135,7 +139,7 @@ type Preview = { from: LatLng | null; to: LatLng; snapped: boolean };
 function nearestOnSegment(
   p: maplibregl.Point,
   a: maplibregl.Point,
-  b: maplibregl.Point
+  b: maplibregl.Point,
 ): { t: number; d: number } {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -179,12 +183,12 @@ function ringToDrawFeature(
   ring: LatLng[],
   mode: string,
   id: string | number,
-  precision: number
+  precision: number,
 ): any | null {
   const scale = 10 ** precision;
   const round = (value: number) => Math.round(value * scale) / scale;
   const polygon = ringToPolygon(
-    ring.map(([lat, lng]) => [round(lat), round(lng)] as LatLng)
+    ring.map(([lat, lng]) => [round(lat), round(lng)] as LatLng),
   );
   if (!polygon) return null;
   return {
@@ -198,7 +202,7 @@ function ringToDrawFeature(
 // Terra Draw polygon ([lng,lat], closed) -> open [lat,lng] ring.
 function drawFeatureToRing(feature: any): LatLng[] {
   const ring = (feature.geometry.coordinates[0] as [number, number][]).map(
-    ([lng, lat]) => [lat, lng] as LatLng
+    ([lng, lat]) => [lat, lng] as LatLng,
   );
   if (ring.length > 1) {
     const [firstLat, firstLng] = ring[0];
@@ -214,7 +218,7 @@ function areaPolygons(draw: TerraDraw, mode: string): any[] {
     .filter(
       (feature: any) =>
         feature.geometry?.type === 'Polygon' &&
-        feature.properties?.mode === mode
+        feature.properties?.mode === mode,
     );
 }
 
@@ -236,12 +240,12 @@ export default function SurveyAreaEditor({
   const [mapLoaded, setMapLoaded] = useState(false);
   const [activeTool, setActiveTool] = useState<Tool | null>(null);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(
-    null
+    null,
   );
   const [history, setHistory] = useState<SurveyArea[]>([]);
   const [future, setFuture] = useState<SurveyArea[]>([]);
   const [pendingImport, setPendingImport] = useState<ImportedPolygon[] | null>(
-    null
+    null,
   );
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
@@ -303,7 +307,7 @@ export default function SurveyAreaEditor({
   const fitToRings = useCallback(
     (rings: LatLng[][]) =>
       fitTo(rings.flat().map(([lat, lng]) => ({ lat, lng }))),
-    [fitTo]
+    [fitTo],
   );
 
   const fitAll = useCallback(() => {
@@ -331,7 +335,7 @@ export default function SurveyAreaEditor({
     mapRef.current = map;
     map.addControl(
       new maplibregl.ScaleControl({ unit: 'metric' }),
-      'bottom-left'
+      'bottom-left',
     );
 
     const commitSnapshot = () => {
@@ -344,7 +348,7 @@ export default function SurveyAreaEditor({
           boundary: boundary ? drawFeatureToRing(boundary) : null,
           exclusions: areaPolygons(draw, MODE_EXCLUSION).map(drawFeatureToRing),
         },
-        true
+        true,
       );
     };
 
@@ -402,7 +406,7 @@ export default function SurveyAreaEditor({
         const next = moveNode(
           valueRef.current.network ?? EMPTY_NETWORK,
           drag.index,
-          hit.kind === 'edge' ? hit.point : hitPoint(hit)
+          hit.kind === 'edge' ? hit.point : hitPoint(hit),
         );
         dragNetworkRef.current = next;
         setDragNetwork(next);
@@ -460,7 +464,7 @@ export default function SurveyAreaEditor({
       const { network, end } = connect(
         area.network ?? EMPTY_NETWORK,
         chain,
-        hit
+        hit,
       );
       commit({ ...area, network });
       chainRef.current = hit.snapped ? null : { kind: 'node', index: end };
@@ -666,7 +670,7 @@ export default function SurveyAreaEditor({
               exclusions.map((feature) => ({
                 ...feature,
                 properties: { mode: feature.properties.mode },
-              }))
+              })),
             );
           }
         }
@@ -777,7 +781,12 @@ export default function SurveyAreaEditor({
     ];
     const features = rings
       .map(({ ring, mode }) =>
-        ringToDrawFeature(ring, mode, draw.getFeatureId(), precisionRef.current)
+        ringToDrawFeature(
+          ring,
+          mode,
+          draw.getFeatureId(),
+          precisionRef.current,
+        ),
       )
       .filter(Boolean);
     if (features.length) {
@@ -796,7 +805,7 @@ export default function SurveyAreaEditor({
       type: 'FeatureCollection',
       features: (points ?? [])
         .filter(
-          (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)
+          (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
         )
         .map((point) => ({
           type: 'Feature',
@@ -804,15 +813,14 @@ export default function SurveyAreaEditor({
           geometry: { type: 'Point', coordinates: [point.lng, point.lat] },
         })),
     }),
-    [points]
+    [points],
   );
 
   useEffect(() => {
     if (!mapLoaded) return;
     (
       mapRef.current?.getSource(SRC_POINTS) as
-        | maplibregl.GeoJSONSource
-        | undefined
+        maplibregl.GeoJSONSource | undefined
     )?.setData(pointsFC as any);
   }, [mapLoaded, pointsFC]);
 
@@ -829,7 +837,7 @@ export default function SurveyAreaEditor({
         if (!feature) return [];
         // Labelled at the northernmost point so nested polygons stay apart.
         const [lat, lng] = polygon.ring.reduce((top, position) =>
-          position[0] > top[0] ? position : top
+          position[0] > top[0] ? position : top,
         );
         return [
           { ...feature, properties: { role: polygon.role } },
@@ -841,15 +849,14 @@ export default function SurveyAreaEditor({
         ];
       }),
     }),
-    [pendingImport]
+    [pendingImport],
   );
 
   useEffect(() => {
     if (!mapLoaded) return;
     (
       mapRef.current?.getSource(SRC_IMPORT) as
-        | maplibregl.GeoJSONSource
-        | undefined
+        maplibregl.GeoJSONSource | undefined
     )?.setData(importFC as any);
   }, [mapLoaded, importFC]);
 
@@ -878,7 +885,7 @@ export default function SurveyAreaEditor({
         ];
       }),
     }),
-    [sections, names, highlighted]
+    [sections, names, highlighted],
   );
 
   const networkFC = useMemo<FeatureCollection>(() => {
@@ -941,7 +948,7 @@ export default function SurveyAreaEditor({
     ];
     for (const [id, data] of sources) {
       (map?.getSource(id) as maplibregl.GeoJSONSource | undefined)?.setData(
-        data
+        data,
       );
     }
   }, [mapLoaded, strataFC, networkFC, previewFC]);
@@ -976,8 +983,8 @@ export default function SurveyAreaEditor({
       tool === 'strata'
         ? MODE_IDLE
         : tool === 'boundary'
-        ? MODE_BOUNDARY
-        : MODE_EXCLUSION
+          ? MODE_BOUNDARY
+          : MODE_EXCLUSION,
     );
     if (tool === 'strata' && !value.network) {
       commit({ ...value, network: EMPTY_NETWORK });
@@ -997,7 +1004,7 @@ export default function SurveyAreaEditor({
       commit({ ...area, boundary: null });
     } else {
       const index = areaPolygons(draw, MODE_EXCLUSION).findIndex(
-        (feature: any) => feature.id === selected.id
+        (feature: any) => feature.id === selected.id,
       );
       commit({
         ...area,
@@ -1037,7 +1044,7 @@ export default function SurveyAreaEditor({
       const suggested = suggestRoles(
         polygons,
         pointsRef.current ?? [],
-        valueRef.current.boundary
+        valueRef.current.boundary,
       );
       stopTool();
       fitToRings(suggested.map((polygon) => polygon.ring));
@@ -1081,7 +1088,7 @@ export default function SurveyAreaEditor({
         : {
             ...value,
             exclusions: value.exclusions.filter((_, i) => i !== index - offset),
-          }
+          },
     );
   };
 
@@ -1167,24 +1174,24 @@ export default function SurveyAreaEditor({
   const hint = locked
     ? null
     : pendingImport
-    ? 'Choose what each imported polygon is in the panel'
-    : activeTool === 'strata'
-    ? 'Click to place points; a line ends at the boundary or another line · drag a point to move it · right-click to delete'
-    : activeTool
-    ? 'Click to add corners · double-click or Enter to finish'
-    : selectedKind
-    ? 'Drag corners to reshape · right-click a corner to remove it'
-    : rings.length === 0
-    ? 'Draw a boundary, trace it around the images, or import a file'
-    : null;
+      ? 'Choose what each imported polygon is in the panel'
+      : activeTool === 'strata'
+        ? 'Click to place points; a line ends at the boundary or another line · drag a point to move it · right-click to delete'
+        : activeTool
+          ? 'Click to add corners · double-click or Enter to finish'
+          : selectedKind
+            ? 'Drag corners to reshape · right-click a corner to remove it'
+            : rings.length === 0
+              ? 'Draw a boundary, trace it around the images, or import a file'
+              : null;
   const hintKeys =
     activeTool && activeTool !== 'strata'
       ? 'Esc cancel'
       : activeTool === 'strata'
-      ? 'Esc stop'
-      : selectedKind
-      ? 'Del delete'
-      : null;
+        ? 'Esc stop'
+        : selectedKind
+          ? 'Del delete'
+          : null;
 
   const controls = MAP_CONTROLS;
   const divider = MAP_DIVIDER;
@@ -1210,7 +1217,9 @@ export default function SurveyAreaEditor({
         ? 'Delete the boundary to draw a new one'
         : 'Draw boundary',
       shortcut: value.boundary ? undefined : 'B',
-      icon: <PentagonIcon className='size-4' style={{ color: BOUNDARY_COLOR }} />,
+      icon: (
+        <PentagonIcon className='size-4' style={{ color: BOUNDARY_COLOR }} />
+      ),
       disabled: !!value.boundary,
       divider: true,
     },
@@ -1218,7 +1227,9 @@ export default function SurveyAreaEditor({
       tool: 'exclusion',
       label: 'Draw exclusion',
       shortcut: 'E',
-      icon: <PentagonIcon className='size-4' style={{ color: EXCLUSION_COLOR }} />,
+      icon: (
+        <PentagonIcon className='size-4' style={{ color: EXCLUSION_COLOR }} />
+      ),
       divider: true,
     },
     ...(strata
@@ -1227,7 +1238,9 @@ export default function SurveyAreaEditor({
             tool: 'strata' as Tool,
             label: 'Draw strata lines',
             shortcut: 'S',
-            icon: <SplineIcon className='size-4' style={{ color: NETWORK_COLOR }} />,
+            icon: (
+              <SplineIcon className='size-4' style={{ color: NETWORK_COLOR }} />
+            ),
             disabled: !value.boundary,
             divider: true,
           },
@@ -1244,19 +1257,19 @@ export default function SurveyAreaEditor({
       ))}
       <div
         ref={frameRef}
-        className={cn('survey-map', fullscreen && 'h-full rounded-none border-0')}
+        className={cn(
+          'survey-map',
+          fullscreen && 'h-full rounded-none border-0',
+        )}
       >
         {/* Inline: maplibre's unlayered CSS overrides layered utilities here. */}
-        <div
-          ref={mapContainerRef}
-          style={{ position: 'absolute', inset: 0 }}
-        />
+        <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
 
         {!locked && !pendingImport && (
           <div
             className={cn(
               'absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2',
-              controls
+              controls,
             )}
           >
             {railTools.map((item) => (
@@ -1320,7 +1333,7 @@ export default function SurveyAreaEditor({
           </div>
         )}
 
-        <div className='absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] items-start gap-2'>
+        <div className='absolute top-3 right-3 z-10 flex max-h-[calc(100%-1.5rem)] items-start gap-2'>
           {layersOpen ? (
             <div
               className='flex max-h-full w-80 flex-col overflow-hidden bg-white text-foreground shadow-lg'
@@ -1349,8 +1362,8 @@ export default function SurveyAreaEditor({
                 {pendingImport ? (
                   <div className='flex flex-col gap-2 p-3'>
                     <FormText className='mt-0'>
-                      Choose what each polygon is. A survey has one boundary,
-                      so picking a new one replaces the current choice.
+                      Choose what each polygon is. A survey has one boundary, so
+                      picking a new one replaces the current choice.
                     </FormText>
                     {pendingImport.map((polygon, index) => (
                       <div
@@ -1375,8 +1388,8 @@ export default function SurveyAreaEditor({
                               setImportRole(
                                 pendingImport,
                                 polygon.id,
-                                e.target.value as AreaRole
-                              )
+                                e.target.value as AreaRole,
+                              ),
                             )
                           }
                         >
@@ -1416,7 +1429,9 @@ export default function SurveyAreaEditor({
                           ) : (
                             <>
                               No boundary yet. Press <Kbd>B</Kbd> to draw one
-                              {canTrace ? ', trace it around the images,' : ''}{' '}
+                              {canTrace
+                                ? ', trace it around the images,'
+                                : ''}{' '}
                               or import a shapefile, GeoJSON or KML file.
                             </>
                           )}
@@ -1432,7 +1447,9 @@ export default function SurveyAreaEditor({
                             style={{
                               borderColor: color,
                               background:
-                                color === EXCLUSION_COLOR ? `${color}55` : undefined,
+                                color === EXCLUSION_COLOR
+                                  ? `${color}55`
+                                  : undefined,
                             }}
                           />
                           <span className='flex-1 truncate'>{label}</span>
@@ -1443,7 +1460,7 @@ export default function SurveyAreaEditor({
                             type='button'
                             title='Zoom to'
                             aria-label={`Zoom to ${label}`}
-                            className='p-1 opacity-60 hover:text-primary group-hover:opacity-100'
+                            className='p-1 opacity-60 group-hover:opacity-100 hover:text-primary'
                             onClick={() => fitToRings([ring])}
                           >
                             <CrosshairIcon className='size-3.5' />
@@ -1453,7 +1470,7 @@ export default function SurveyAreaEditor({
                               type='button'
                               title='Delete'
                               aria-label={`Delete ${label}`}
-                              className='p-1 opacity-60 hover:text-danger group-hover:opacity-100'
+                              className='p-1 opacity-60 group-hover:opacity-100 hover:text-danger'
                               onClick={() => removeRing(index)}
                             >
                               <Trash2Icon className='size-3.5' />
@@ -1467,7 +1484,11 @@ export default function SurveyAreaEditor({
                         {fileInput}
                         {importing && <Spinner animation='border' size='sm' />}
                         {canTrace && !value.boundary && (
-                          <Button variant='outline-secondary' size='sm' onClick={trace}>
+                          <Button
+                            variant='outline-secondary'
+                            size='sm'
+                            onClick={trace}
+                          >
                             <WandSparklesIcon className='size-4' />
                             Trace around images
                           </Button>
@@ -1475,13 +1496,13 @@ export default function SurveyAreaEditor({
                       </div>
                     )}
                     {children && (
-                      <div className='border-t border-black/10 px-3 pb-3 pt-1'>
+                      <div className='border-t border-black/10 px-3 pt-1 pb-3'>
                         {children}
                       </div>
                     )}
                     {strata && (
                       <div className='flex flex-col gap-2 border-t border-black/10 p-3'>
-                        <div className='text-xs font-semibold uppercase tracking-wider text-muted-foreground'>
+                        <div className='text-xs font-semibold tracking-wider text-muted-foreground uppercase'>
                           Strata
                         </div>
                         <FormText className='mt-0'>
@@ -1506,7 +1527,8 @@ export default function SurveyAreaEditor({
                             <span
                               className='inline-block size-3 shrink-0'
                               style={{
-                                background: strataColors[i % strataColors.length],
+                                background:
+                                  strataColors[i % strataColors.length],
                               }}
                             />
                             <Input
@@ -1533,8 +1555,8 @@ export default function SurveyAreaEditor({
                         {strata.dangling && (
                           <span className='text-xs text-warning'>
                             Some strata lines do not reach the boundary or
-                            another line at both ends, so they do not divide
-                            the area.
+                            another line at both ends, so they do not divide the
+                            area.
                           </span>
                         )}
                       </div>
@@ -1556,7 +1578,9 @@ export default function SurveyAreaEditor({
           )}
         </div>
 
-        <div className={cn('absolute left-3 top-3 z-10 flex flex-col', controls)}>
+        <div
+          className={cn('absolute top-3 left-3 z-10 flex flex-col', controls)}
+        >
           <MapButton
             label={fullscreen ? 'Exit full screen' : 'Full screen'}
             shortcut={fullscreen ? 'Esc' : undefined}
@@ -1569,16 +1593,10 @@ export default function SurveyAreaEditor({
             )}
           </MapButton>
           <div className='mx-2 h-px bg-black/15' />
-          <MapButton
-            label='Zoom in'
-            onClick={() => mapRef.current?.zoomIn()}
-          >
+          <MapButton label='Zoom in' onClick={() => mapRef.current?.zoomIn()}>
             <PlusIcon className='size-4' />
           </MapButton>
-          <MapButton
-            label='Zoom out'
-            onClick={() => mapRef.current?.zoomOut()}
-          >
+          <MapButton label='Zoom out' onClick={() => mapRef.current?.zoomOut()}>
             <MinusIcon className='size-4' />
           </MapButton>
           <MapButton label='Fit to area' shortcut='F' onClick={fitAll}>
@@ -1590,8 +1608,8 @@ export default function SurveyAreaEditor({
           <div className='pointer-events-none absolute bottom-[5.5rem] left-1/2 z-10 -translate-x-1/2'>
             <div
               className={cn(
-                'flex items-center gap-2 whitespace-nowrap border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
-                controls
+                'flex items-center gap-2 border border-black/10 px-3 py-1.5 text-xs whitespace-nowrap text-[#212529]',
+                controls,
               )}
             >
               {hint}

@@ -1,33 +1,33 @@
-import { useMemo, useContext, useEffect, useRef, useState } from 'react';
-import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
-import { SideLegend } from './Legend';
-import {
-  GlobalContext,
-  ProjectContext,
-  UserContext,
-  ImageContext,
-  type AnnotationsHook,
-} from './Context';
-import { useOptimisticUpdates } from './useOptimisticUpdates';
-import { ImageContextFromHook } from './ImageContext';
-import { Schema } from './amplify/client-schema';
-import useImageStats from './useImageStats';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Share2, SearchCheck, RotateCcw, LogOut } from 'lucide-react';
+import { LogOut, RotateCcw, SearchCheck, Share2 } from 'lucide-react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import MapLibreAnnotator from './annotator/MapLibreAnnotator';
-import { useImageInfoTags } from './useInfoTags';
-import type { CategoryType } from './schemaTypes';
+import {
+  GlobalContext,
+  ImageContext,
+  ProjectContext,
+  UserContext,
+  type AnnotationsHook,
+} from './Context';
+import { ImageContextFromHook } from './ImageContext';
+import { SideLegend } from './Legend';
+import { Schema } from './amplify/client-schema';
 import type {
   AnnotationLocation,
   AnnotationWorkspaceProps,
   TaskAcknowledgement,
 } from './annotationTypes';
+import MapLibreAnnotator from './annotator/MapLibreAnnotator';
 import {
   publishSharedDefaultZoom,
   subscribeToSharedDefaultZoom,
 } from './defaultZoomEvents';
+import type { CategoryType } from './schemaTypes';
+import useImageStats from './useImageStats';
+import { useImageInfoTags } from './useInfoTags';
+import { useOptimisticUpdates } from './useOptimisticUpdates';
+import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
 
 interface AnnotationSessionProps {
   location: AnnotationLocation;
@@ -207,7 +207,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         if (updatedSurveyId === surveyId) {
           setDefaultZoom(updatedZoom);
         }
-      }
+      },
     );
   }, [surveyId]);
   const [isFalseNegativesJob, setIsFalseNegativesJob] =
@@ -217,7 +217,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     async function checkQueue() {
       try {
         const membership = myMembershipHook.data?.find(
-          (membership) => membership.projectId === surveyId
+          (membership) => membership.projectId === surveyId,
         );
         const queueId = membership?.queueId;
         if (!queueId) {
@@ -239,7 +239,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
 
   const testSetId = useMemo(
     () => (isTest ? crypto.randomUUID() : annotationSetId),
-    [isTest, annotationSetId]
+    [isTest, annotationSetId],
   );
   const {
     project,
@@ -306,7 +306,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         console.error(
           'Failed to ensure categories for annotation set',
           annotationSetId,
-          e
+          e,
         );
         if (!cancelled) {
           setLegendCategories(projectCategories ?? null);
@@ -326,9 +326,9 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     async (nextToken: string | null | undefined) =>
       client.models.Annotation.annotationsByImageIdAndSetId(
         { imageId: location.image.id, setId: { eq: location.annotationSetId } },
-        { limit: 10000, nextToken }
+        { limit: 10000, nextToken },
       ),
-    subscriptionFilter
+    subscriptionFilter,
   ) as unknown as AnnotationsHook;
   const stats = useImageStats(annotationsHook);
 
@@ -342,15 +342,15 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   // ephemeral set, so there is nothing to look up there.
   const infoTagsByAnnotation = useImageInfoTags(
     location.image.id,
-    annotationSetId
+    annotationSetId,
   );
 
   const filteredCategories = useMemo(
     () =>
       (legendCategories ?? projectCategories)?.filter(
-        (c) => c.annotationSetId == annotationSetId
+        (c) => c.annotationSetId == annotationSetId,
       ) ?? [],
-    [legendCategories, projectCategories, annotationSetId]
+    [legendCategories, projectCategories, annotationSetId],
   );
 
   async function handleShare() {
@@ -393,21 +393,21 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       }}
     >
       <div
-        className={`flex md:flex-row flex-col w-full h-full gap-4 overflow-auto ${
+        className={`flex h-full w-full flex-col gap-4 overflow-auto md:flex-row ${
           legendCollapsed ? 'legend-collapsed' : 'justify-center'
         }`}
       >
         <div
           className={`flex flex-col ${
             legendCollapsed ? 'items-stretch' : 'items-center'
-          } w-full h-full gap-4`}
+          } h-full w-full gap-4`}
           style={{
             maxWidth: legendCollapsed ? 'none' : '1024px',
             flex: legendCollapsed ? 1 : undefined,
           }}
         >
           <div
-            className='flex flex-row justify-center items-center w-full gap-4 overflow-hidden'
+            className='flex w-full flex-row items-center justify-center gap-4 overflow-hidden'
             style={{ position: 'relative', height: '26px' }}
           >
             <div
@@ -482,18 +482,18 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
               <Button
                 variant='success'
                 onClick={() => navigate('/jobs')}
-                className='hidden md:flex items-center justify-center'
+                className='hidden items-center justify-center md:flex'
                 style={{ width: '40px', height: '40px', padding: 0 }}
                 title='Save & Exit'
               >
                 <LogOut size={20} />
               </Button>
             ) : (
-              <div className='hidden md:block w-full ps-2'>
+              <div className='hidden w-full ps-2 md:block'>
                 <Button
                   variant='success'
                   onClick={() => navigate('/jobs')}
-                  className='hidden md:block w-full'
+                  className='hidden w-full md:block'
                 >
                   Save & Exit
                 </Button>
@@ -547,12 +547,12 @@ function SetDefaultZoom({
   const saveDefaultZoom = async () => {
     if (!storedZoom) {
       const currentProjectMembership = adminMemberships.find(
-        (membership) => membership.projectId === surveyId!
+        (membership) => membership.projectId === surveyId!,
       );
 
       if (currentProjectMembership) {
         const result = window.prompt(
-          'Set as default zoom for all users on this job? (y/n)'
+          'Set as default zoom for all users on this job? (y/n)',
         );
 
         if (result === null) {
@@ -596,7 +596,7 @@ function SetDefaultZoom({
 
   return (
     <button
-      className='p-0 m-0 border-0 bg-transparent flex items-center text-white'
+      className='m-0 flex items-center border-0 bg-transparent p-0 text-white'
       style={{
         position: 'absolute',
         top: 0,

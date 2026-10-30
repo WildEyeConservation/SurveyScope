@@ -30,7 +30,7 @@ export interface HerdRuns {
  */
 export function buildHerdRuns(
   chainSets: Set<string>[],
-  herdIds?: string[]
+  herdIds?: string[],
 ): HerdRuns {
   const runIdByIndex: number[] = [];
   const runStarts: number[] = [];
@@ -39,8 +39,7 @@ export function buildHerdRuns(
   let runIdx = -1;
   chainSets.forEach((cur, i) => {
     const set = cur ?? new Set<string>();
-    const changedHerd =
-      herdIds !== undefined && herdIds[i] !== prevHerdId;
+    const changedHerd = herdIds !== undefined && herdIds[i] !== prevHerdId;
     if (
       prev === null ||
       set.size === 0 ||

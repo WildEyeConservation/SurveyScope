@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
 import { Alert, type AlertVariant } from '@/components/ui/alert';
+import type { ReactNode } from 'react';
 import {
   HOMOGRAPHY_BUCKETS,
+  type AnnotationSummary,
   type ChainLinkSummary,
   type ChainStateCounts,
   type ConfidenceCoverage,
@@ -10,7 +11,6 @@ import {
   type HomographyBucket,
   type HomographyCounts,
   type HomographySummary,
-  type AnnotationSummary,
   type ObservationSummary,
   type ProcessedBySummary,
   type SetHomographySummary,
@@ -117,7 +117,7 @@ function Subheading({ children }: { children: ReactNode }) {
 
 function countsRows(
   counts: Counts,
-  label: (key: string) => string = (key) => key
+  label: (key: string) => string = (key) => key,
 ): Cell[][] {
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
   return Object.entries(counts)
@@ -320,7 +320,7 @@ function Homographies({ data }: { data: HomographySummary }) {
         rows={Object.entries(data.byCameraPair).map(([pair, counts]) => {
           const total = HOMOGRAPHY_BUCKETS.reduce(
             (sum, key) => sum + counts[key],
-            0
+            0,
           );
           return [
             pair,

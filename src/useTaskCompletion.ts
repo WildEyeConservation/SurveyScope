@@ -1,9 +1,9 @@
-import useAckOnTimeout from './useAckOnTimeout';
-import useCreateObservation from './useCreateObservation';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
 } from './annotationTypes';
+import useAckOnTimeout from './useAckOnTimeout';
+import useCreateObservation from './useCreateObservation';
 
 interface UseTaskCompletionProps {
   location: AnnotationLocation;

@@ -17,12 +17,18 @@ export function emptyOverlay(): Overlay {
 }
 
 /** Effective category for an annotation under an overlay (override ?? baseline). */
-export function effectiveCategory(ann: ChainAnnotation, overlay: Overlay): string {
+export function effectiveCategory(
+  ann: ChainAnnotation,
+  overlay: Overlay,
+): string {
   return overlay.category.get(ann.id) ?? ann.categoryId;
 }
 
 /** Effective obscured flag for an annotation under an overlay (override ?? baseline). */
-export function effectiveObscured(ann: ChainAnnotation, overlay: Overlay): boolean {
+export function effectiveObscured(
+  ann: ChainAnnotation,
+  overlay: Overlay,
+): boolean {
   const v = overlay.obscured.get(ann.id);
   return typeof v === 'boolean' ? v : ann.obscured;
 }
@@ -38,7 +44,7 @@ export interface LabelDistribution {
 /** Distribution of annotations across categories under an overlay. */
 export function computeDistribution(
   annotations: ChainAnnotation[],
-  overlay: Overlay
+  overlay: Overlay,
 ): LabelDistribution {
   const byCategory = new Map<string, number>();
   let oov = 0;
@@ -54,7 +60,7 @@ export function computeDistribution(
 
 /** Baseline distribution = distribution under an empty overlay. */
 export function computeBaselineDistribution(
-  annotations: ChainAnnotation[]
+  annotations: ChainAnnotation[],
 ): LabelDistribution {
   return computeDistribution(annotations, emptyOverlay());
 }
@@ -75,7 +81,7 @@ export interface ObscuredDiff {
  */
 export function computeObscuredDiff(
   annotations: ChainAnnotation[],
-  overlay: Overlay
+  overlay: Overlay,
 ): ObscuredDiff {
   let added = 0;
   let removed = 0;
@@ -90,12 +96,18 @@ export function computeObscuredDiff(
 }
 
 /** True when a reviewer's overlay diverges from baseline for this annotation. */
-export function divergesCategory(ann: ChainAnnotation, overlay: Overlay): boolean {
+export function divergesCategory(
+  ann: ChainAnnotation,
+  overlay: Overlay,
+): boolean {
   const proposed = overlay.category.get(ann.id);
   return proposed !== undefined && proposed !== ann.categoryId;
 }
 
-export function divergesObscured(ann: ChainAnnotation, overlay: Overlay): boolean {
+export function divergesObscured(
+  ann: ChainAnnotation,
+  overlay: Overlay,
+): boolean {
   if (ann.oov) return false;
   const proposed = overlay.obscured.get(ann.id);
   return proposed !== undefined && proposed !== ann.obscured;
@@ -128,7 +140,7 @@ function pluralityWinner<T>(votes: T[]): T | undefined {
  */
 export function computeCombinedOverlay(
   annotations: ChainAnnotation[],
-  overlays: Overlay[]
+  overlays: Overlay[],
 ): Overlay {
   const combined = emptyOverlay();
   for (const ann of annotations) {

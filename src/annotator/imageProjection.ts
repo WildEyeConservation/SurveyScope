@@ -24,7 +24,7 @@ export function makeProjection(width: number, height: number): ImageProjection {
   };
   const maxNativeZoom = Math.max(
     0,
-    Math.ceil(Math.log2(Math.max(width, height))) - 8
+    Math.ceil(Math.log2(Math.max(width, height))) - 8,
   );
   return { px2lngLat, lngLat2px, maxNativeZoom, size: n };
 }
@@ -32,7 +32,7 @@ export function makeProjection(width: number, height: number): ImageProjection {
 // Centre the image so off-image drags stay within longitude bounds.
 export function makeCentredProjection(
   width: number,
-  height: number
+  height: number,
 ): ImageProjection {
   const world = makeProjection(width * 2, height * 2);
   const dx = (world.size - width) / 2;
@@ -57,11 +57,11 @@ export function pxBoundsCamera(
   left: number,
   top: number,
   right: number,
-  bottom: number
+  bottom: number,
 ): { center: [number, number]; zoom: number } | null {
   const scale = Math.min(
     viewport.width / (right - left),
-    viewport.height / (bottom - top)
+    viewport.height / (bottom - top),
   );
   const zoom = Math.log2((scale * projection.size) / WORLD_SIZE_AT_ZOOM_0);
   if (!Number.isFinite(zoom)) return null;

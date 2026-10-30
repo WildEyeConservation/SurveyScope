@@ -26,11 +26,11 @@ function kmlToGeoJson(text: string, source: string) {
       ?.textContent?.trim();
     for (const polygon of placemark.getElementsByTagNameNS('*', 'Polygon')) {
       const outer = kmlRing(
-        polygon.getElementsByTagNameNS('*', 'outerBoundaryIs')[0]
+        polygon.getElementsByTagNameNS('*', 'outerBoundaryIs')[0],
       );
       if (!outer) continue;
       const holes = Array.from(
-        polygon.getElementsByTagNameNS('*', 'innerBoundaryIs')
+        polygon.getElementsByTagNameNS('*', 'innerBoundaryIs'),
       )
         .map(kmlRing)
         .filter((ring): ring is number[][] => ring !== null);
@@ -45,7 +45,7 @@ function kmlToGeoJson(text: string, source: string) {
 }
 
 async function readAreaFile(
-  file: File
+  file: File,
 ): Promise<Omit<ImportedPolygon, 'role'>[]> {
   const extension = file.name.toLowerCase().split('.').pop();
   if (extension === 'zip') {
@@ -54,14 +54,14 @@ async function readAreaFile(
   if (extension === 'kml') {
     return polygonsFromGeoJson(
       kmlToGeoJson(await file.text(), file.name),
-      file.name
+      file.name,
     );
   }
   if (extension === 'geojson' || extension === 'json') {
     return polygonsFromGeoJson(JSON.parse(await file.text()), file.name);
   }
   throw new Error(
-    `${file.name} is not a zipped shapefile, GeoJSON or KML file.`
+    `${file.name} is not a zipped shapefile, GeoJSON or KML file.`,
   );
 }
 
@@ -82,7 +82,7 @@ export async function readAreaFiles(files: File[]): Promise<{
         ...found.map((polygon) => ({
           ...polygon,
           id: `${index}:${polygon.id}`,
-        }))
+        })),
       );
     } catch (err) {
       console.error('Failed to read survey area file', file.name, err);
@@ -90,7 +90,7 @@ export async function readAreaFiles(files: File[]): Promise<{
       errors.push(
         message.startsWith(file.name)
           ? message
-          : `${file.name} could not be read.`
+          : `${file.name} could not be read.`,
       );
     }
   }

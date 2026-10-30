@@ -5,8 +5,12 @@ import localforage from 'localforage';
 interface DirectoryHandleLike {
   readonly kind: 'directory' | 'file';
   readonly name: string;
-  queryPermission?(desc: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
-  requestPermission?(desc: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  queryPermission?(desc: {
+    mode: 'read' | 'readwrite';
+  }): Promise<PermissionState>;
+  requestPermission?(desc: {
+    mode: 'read' | 'readwrite';
+  }): Promise<PermissionState>;
   values(): AsyncIterableIterator<DirectoryHandleLike | FileHandleLike>;
 }
 
@@ -47,7 +51,7 @@ export async function pickDirectory(): Promise<DirectoryHandleLike | null> {
 
 export async function saveDirectoryHandle(
   projectId: string,
-  handle: unknown
+  handle: unknown,
 ): Promise<void> {
   try {
     // FileSystemDirectoryHandle is structured-cloneable into IndexedDB.
@@ -67,13 +71,13 @@ export async function removeDirectoryHandle(projectId: string): Promise<void> {
 
 /** Returns restored files, or null when the picker fallback is required. */
 export async function loadFilesFromStoredHandle(
-  projectId: string
+  projectId: string,
 ): Promise<File[] | null> {
   let handle: DirectoryHandleLike | null;
   try {
-    handle = (await dirHandleStore.getItem(projectId)) as
-      | DirectoryHandleLike
-      | null;
+    handle = (await dirHandleStore.getItem(
+      projectId,
+    )) as DirectoryHandleLike | null;
   } catch {
     return null;
   }
@@ -97,7 +101,7 @@ export async function loadFilesFromStoredHandle(
 /** Walks a directory handle into Files with input-style webkitRelativePath. */
 export async function collectFilesFromHandle(
   handle: DirectoryHandleLike,
-  onProgress?: (found: number) => void
+  onProgress?: (found: number) => void,
 ): Promise<File[]> {
   const files: File[] = [];
   const walk = async (dir: DirectoryHandleLike, prefix: string) => {
@@ -114,10 +118,7 @@ export async function collectFilesFromHandle(
         files.push(file);
         if (files.length % 250 === 0) onProgress?.(files.length);
       } else {
-        await walk(
-          entry as DirectoryHandleLike,
-          `${prefix}${entry.name}/`
-        );
+        await walk(entry as DirectoryHandleLike, `${prefix}${entry.name}/`);
       }
     }
   };

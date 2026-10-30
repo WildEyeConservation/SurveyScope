@@ -17,11 +17,11 @@ test('an urgent test is inserted before preloaded normal tasks', () => {
 
   assert.deepEqual(
     next.map((entry) => entry.id),
-    ['normal-1', 'test-1', 'normal-2', 'normal-3', 'normal-4']
+    ['normal-1', 'test-1', 'normal-2', 'normal-3', 'normal-4'],
   );
   assert.deepEqual(
     buffer.map((entry) => entry.id),
-    ['normal-1', 'normal-2', 'normal-3', 'normal-4']
+    ['normal-1', 'normal-2', 'normal-3', 'normal-4'],
   );
 });
 
@@ -37,7 +37,7 @@ test('a promoted standby keeps its identity and stable render id', () => {
   assert.equal(next[1], standby);
   assert.deepEqual(
     next.map((entry) => entry.id),
-    ['normal-1', 'test-hot', 'normal-2']
+    ['normal-1', 'test-hot', 'normal-2'],
   );
 });
 

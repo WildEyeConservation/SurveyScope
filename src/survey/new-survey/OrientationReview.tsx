@@ -1,3 +1,6 @@
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import { Maximize2Icon, RotateCcwIcon, ShuffleIcon, XIcon } from 'lucide-react';
 import React, {
   createContext,
   useContext,
@@ -7,11 +10,8 @@ import React, {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Maximize2Icon, RotateCcwIcon, ShuffleIcon, XIcon } from 'lucide-react';
-import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/utils';
-import { MAP_CONTROLS } from '../mapTheme';
 import { type ImageOrientationGroup } from '../../types/Orientation';
+import { MAP_CONTROLS } from '../mapTheme';
 
 // Each camera is split strictly by the source image's displayed dimensions.
 // Landscape and portrait images can therefore receive independent physical
@@ -35,7 +35,10 @@ export function SampleViewerArea({ children }: { children: ReactNode }) {
     <ViewerHostContext.Provider value={{ host, setOpen }}>
       <div className={cn('relative', open && 'min-h-[34rem]')}>
         {children}
-        <div ref={setHost} className={open ? 'absolute inset-0 z-20' : 'hidden'} />
+        <div
+          ref={setHost}
+          className={open ? 'absolute inset-0 z-20' : 'hidden'}
+        />
       </div>
     </ViewerHostContext.Provider>
   );
@@ -121,7 +124,7 @@ function ExpandedSample({
       setStage({
         width: entry.contentRect.width,
         height: entry.contentRect.height,
-      })
+      }),
     );
     observer.observe(el);
     return () => observer.disconnect();
@@ -146,7 +149,7 @@ function ExpandedSample({
     setView((prev) => {
       const scale = Math.min(
         Math.max(prev.scale * (e.deltaY < 0 ? 1.2 : 1 / 1.2), 1),
-        20
+        20,
       );
       if (scale === 1) return { scale, x: 0, y: 0 };
       const ratio = scale / prev.scale;
@@ -228,7 +231,7 @@ function ExpandedSample({
         />
       </div>
     </div>,
-    host ?? document.body
+    host ?? document.body,
   );
 }
 
@@ -244,7 +247,7 @@ export function OrientationSample({
   // Start from the middle of the flight rather than the first frame, which is
   // often a ground/calibration shot; "Another sample" strides through the set.
   const [sampleIdx, setSampleIdx] = useState(() =>
-    Math.floor(group.files.length / 2)
+    Math.floor(group.files.length / 2),
   );
   const file = group.files[Math.min(sampleIdx, group.files.length - 1)];
   const [url, setUrl] = useState<string | null>(null);
@@ -265,7 +268,8 @@ export function OrientationSample({
     setSampleIdx((prev) => (prev + stride) % group.files.length);
   };
 
-  const label = group.orientationGroup === 'portrait' ? 'Portrait' : 'Landscape';
+  const label =
+    group.orientationGroup === 'portrait' ? 'Portrait' : 'Landscape';
 
   return (
     <figure className='m-0 flex w-36 shrink-0 flex-col gap-1.5'>
@@ -296,7 +300,7 @@ export function OrientationSample({
           <Spinner animation='border' size='sm' />
         )}
         {rotation !== 0 && (
-          <span className='pointer-events-none absolute left-1.5 top-1.5 bg-primary px-1.5 text-[11px] leading-5 text-white'>
+          <span className='pointer-events-none absolute top-1.5 left-1.5 bg-primary px-1.5 text-[11px] leading-5 text-white'>
             Rotated {rotation}°
           </span>
         )}

@@ -1,7 +1,7 @@
-import { useParams } from 'react-router-dom';
 import { useContext, useEffect, useState } from 'react';
-import { GlobalContext } from './Context';
+import { useParams } from 'react-router-dom';
 import AnnotationWorkspace from './AnnotationWorkspace';
+import { GlobalContext } from './Context';
 import type { ImageType } from './schemaTypes';
 
 export function ImageLoader() {
@@ -24,7 +24,7 @@ export function ImageLoader() {
           'altitude_egm96',
           'altitude_agl',
         ],
-      }
+      },
     ).then(({ data }) => {
       if (!cancelled && data) setImage(data as ImageType);
     });
@@ -35,7 +35,7 @@ export function ImageLoader() {
 
   return (
     <div
-      className='flex flex-col items-center w-full h-full'
+      className='flex h-full w-full flex-col items-center'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
       {image && (

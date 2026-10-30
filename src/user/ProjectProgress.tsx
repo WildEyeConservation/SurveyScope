@@ -1,15 +1,18 @@
-import { useContext, useEffect, useRef, useState } from 'react';
-import { UserContext, GlobalContext } from '../Context';
-import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
+import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { GlobalContext, UserContext } from '../Context';
 
 type ProjectProgressProps = {
   projectId: string;
   onScanningChange?: (isScanning: boolean) => void;
 };
 
-export default function ProjectProgress({ projectId, onScanningChange }: ProjectProgressProps) {
+export default function ProjectProgress({
+  projectId,
+  onScanningChange,
+}: ProjectProgressProps) {
   const { client } = useContext(GlobalContext)!;
   const { getSqsClient } = useContext(UserContext)!;
   const [isLoading, setIsLoading] = useState(true);
@@ -45,7 +48,7 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
               'queues.requeuesCompleted',
               'queues.emptyQueueTimestamp',
             ],
-          }
+          },
         )
       ).data;
 
@@ -62,7 +65,15 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
       const observedCount = q.observedCount ?? null;
       const requeuesCompleted = q.requeuesCompleted ?? null;
       const emptyQueueTimestamp = q.emptyQueueTimestamp ?? null;
-      setQueueInfo({ url, batchSize, totalBatches, launchedCount, observedCount, requeuesCompleted, emptyQueueTimestamp });
+      setQueueInfo({
+        url,
+        batchSize,
+        totalBatches,
+        launchedCount,
+        observedCount,
+        requeuesCompleted,
+        emptyQueueTimestamp,
+      });
       setIsLoading(false);
 
       async function updateJobsRemaining() {
@@ -72,7 +83,7 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
           AttributeNames: ['ApproximateNumberOfMessages'] as any[],
         };
         const attrs = await sqsClient.send(
-          new GetQueueAttributesCommand(params)
+          new GetQueueAttributesCommand(params),
         );
         if (cancelled) return;
         const num = attrs.Attributes?.ApproximateNumberOfMessages;
@@ -91,11 +102,12 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
     };
   }, [projectId, client, getSqsClient]);
 
-  const isScanning = jobsRemaining === 0
-    && queueInfo?.launchedCount != null
-    && queueInfo?.emptyQueueTimestamp != null
-    && (queueInfo.observedCount || 0) < queueInfo.launchedCount
-    && (queueInfo.requeuesCompleted || 0) < 1;
+  const isScanning =
+    jobsRemaining === 0 &&
+    queueInfo?.launchedCount != null &&
+    queueInfo?.emptyQueueTimestamp != null &&
+    (queueInfo.observedCount || 0) < queueInfo.launchedCount &&
+    (queueInfo.requeuesCompleted || 0) < 1;
 
   const isPolling = jobsRemaining === 0 && !isScanning;
 
@@ -117,8 +129,8 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
     const batchesRemaining = Math.ceil(jobsRemaining / batchSize);
     if (isScanning) {
       return (
-        <div className='flex flex-col w-full'>
-          <div className='flex items-center gap-2 mb-0'>
+        <div className='flex w-full flex-col'>
+          <div className='mb-0 flex items-center gap-2'>
             <Spinner animation='border' size='sm' />
             <span>Scanning for missed locations...</span>
           </div>
@@ -132,8 +144,8 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
     }
     if (isPolling) {
       return (
-        <div className='flex flex-col w-full'>
-          <div className='flex items-center gap-2 mb-0'>
+        <div className='flex w-full flex-col'>
+          <div className='mb-0 flex items-center gap-2'>
             <Spinner animation='border' size='sm' />
             <span>Polling for work...</span>
           </div>
@@ -146,7 +158,7 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
       );
     }
     return (
-      <div className='flex flex-col w-full'>
+      <div className='flex w-full flex-col'>
         <p className='mb-0'>{batchesRemaining} batches remaining</p>
         <Progress
           value={totalBatches - batchesRemaining}
@@ -159,7 +171,7 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
   } else {
     if (isScanning) {
       return (
-        <div className='flex items-center gap-2 mb-0'>
+        <div className='mb-0 flex items-center gap-2'>
           <Spinner animation='border' size='sm' />
           <span>Scanning for missed locations...</span>
         </div>
@@ -167,7 +179,7 @@ export default function ProjectProgress({ projectId, onScanningChange }: Project
     }
     if (isPolling) {
       return (
-        <div className='flex items-center gap-2 mb-0'>
+        <div className='mb-0 flex items-center gap-2'>
           <Spinner animation='border' size='sm' />
           <span>Polling for work...</span>
         </div>

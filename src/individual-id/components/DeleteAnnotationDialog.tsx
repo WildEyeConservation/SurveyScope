@@ -40,9 +40,9 @@ export function DeleteAnnotationDialog({
           <DialogTitle>Delete linked annotation</DialogTitle>
         </DialogHeader>
         <DialogBody>
-          This annotation is linked to {others} other{others === 1 ? '' : 's'} of
-          the same individual. Delete just this sighting, or the entire chain of{' '}
-          <strong>{chainSize}</strong>?
+          This annotation is linked to {others} other{others === 1 ? '' : 's'}{' '}
+          of the same individual. Delete just this sighting, or the entire chain
+          of <strong>{chainSize}</strong>?
         </DialogBody>
         <DialogFooter>
           <Button variant='secondary' onClick={onCancel}>

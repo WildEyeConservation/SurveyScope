@@ -1,6 +1,6 @@
-import { useRouteError, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
+import { useNavigate, useRouteError } from 'react-router-dom';
 import { reportClientError } from './reportClientError';
 
 interface ErrorWithDetails {
@@ -77,7 +77,7 @@ ${errorDetails.stack}
   return (
     <div
       id='error-page'
-      className='flex flex-col items-center justify-center min-h-screen text-center'
+      className='flex min-h-screen flex-col items-center justify-center text-center'
     >
       <h1>Oops!</h1>
       {isWebGLError ? (
@@ -86,7 +86,7 @@ ${errorDetails.stack}
             Your browser can&apos;t show the images and maps SurveyScope needs.
           </p>
           <p className='mb-1 text-start'>Try these solutions:</p>
-          <ul className='text-start text-sm list-disc pl-5'>
+          <ul className='list-disc pl-5 text-start text-sm'>
             <li>
               Turn on hardware acceleration. In Edge, go to Settings &gt; System
               and performance and switch on &quot;Use graphics acceleration when
@@ -113,7 +113,7 @@ ${errorDetails.stack}
         </Button>
       </div>
       {copySuccess && (
-        <p className='text-success mt-2 text-sm'>
+        <p className='mt-2 text-sm text-success'>
           Error details copied to clipboard! Please send this information to our
           support team.
         </p>

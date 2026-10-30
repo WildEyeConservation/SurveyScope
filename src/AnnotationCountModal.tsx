@@ -1,12 +1,12 @@
-import React, { useContext, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Modal, Body, Header, Footer, Title } from './Modal';
+import React, { useContext, useEffect, useState } from 'react';
+import { Body, Footer, Header, Modal, Title } from './Modal';
 
 import { GlobalContext } from './Context';
+import LabeledToggleSwitch from './LabeledToggleSwitch';
 import { loadRows } from './rowChunks';
 import MyTable from './Table';
-import LabeledToggleSwitch from './LabeledToggleSwitch';
 
 interface AnnotationRow {
   id: string;
@@ -60,7 +60,7 @@ const AnnotationCountModal: React.FC<Props> = ({
 
       if (
         result.some((annotation) =>
-          annotation.source?.includes('false-negative')
+          annotation.source?.includes('false-negative'),
         )
       ) {
         setHasFalseNegatives(true);
@@ -73,25 +73,31 @@ const AnnotationCountModal: React.FC<Props> = ({
   }, [setId, projectId, show]);
 
   //reduce to group by category
-  const annotationByCategory = annotations.reduce((acc, annotation) => {
-    const category = annotation.category;
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(annotation);
-    return acc;
-  }, {} as { [category: string]: AnnotationRow[] });
+  const annotationByCategory = annotations.reduce(
+    (acc, annotation) => {
+      const category = annotation.category;
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(annotation);
+      return acc;
+    },
+    {} as { [category: string]: AnnotationRow[] },
+  );
 
-  const falseNegativesByCategory = annotations.reduce((acc, annotation) => {
-    const category = annotation.category;
-    if (!acc[category]) {
-      acc[category] = 0;
-    }
-    if (annotation.source?.includes('false-negative')) {
-      acc[category]++;
-    }
-    return acc;
-  }, {} as { [category: string]: number });
+  const falseNegativesByCategory = annotations.reduce(
+    (acc, annotation) => {
+      const category = annotation.category;
+      if (!acc[category]) {
+        acc[category] = 0;
+      }
+      if (annotation.source?.includes('false-negative')) {
+        acc[category]++;
+      }
+      return acc;
+    },
+    {} as { [category: string]: number },
+  );
 
   const tableData = Object.entries(annotationByCategory).map(
     ([category, annotations]) => ({
@@ -100,11 +106,11 @@ const AnnotationCountModal: React.FC<Props> = ({
         category,
         primaryOnly
           ? annotations.filter(
-            (annotation) => annotation.objectId === annotation.id
-          ).length
+              (annotation) => annotation.objectId === annotation.id,
+            ).length
           : annotations.length,
       ].concat(hasFalseNegatives ? [falseNegativesByCategory[category]] : []),
-    })
+    }),
   );
 
   return (
@@ -132,7 +138,7 @@ const AnnotationCountModal: React.FC<Props> = ({
               Fetching annotations...
             </div>
           ) : (
-            <div className='flex flex-col gap-2 w-full'>
+            <div className='flex w-full flex-col gap-2'>
               <LabeledToggleSwitch
                 className='mb-2'
                 leftLabel='All annotations'
@@ -152,7 +158,7 @@ const AnnotationCountModal: React.FC<Props> = ({
                 ].concat(
                   hasFalseNegatives
                     ? [{ content: 'False Negatives', style: { width: '34%' } }]
-                    : []
+                    : [],
                 )}
                 tableData={tableData}
                 emptyMessage='No annotations found'

@@ -1,5 +1,5 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import {
   connect,
   EMPTY_NETWORK,
@@ -93,12 +93,12 @@ test('a line started on another line splits it at a shared junction', () => {
   const across = connect(
     EMPTY_NETWORK,
     { kind: 'point', point: [0.005, -0.001] },
-    { kind: 'point', point: [0.005, 0.011] }
+    { kind: 'point', point: [0.005, 0.011] },
   ).network;
   const { network, end } = connect(
     across,
     { kind: 'edge', edge: 0, point: [0.005, 0.005] },
-    { kind: 'point', point: [0.011, 0.005] }
+    { kind: 'point', point: [0.011, 0.005] },
   );
   assert.equal(network.nodes.length, 4);
   assert.equal(network.edges.length, 3);
@@ -113,7 +113,7 @@ test('removing an edge drops nodes left without edges', () => {
   const { network } = connect(
     EMPTY_NETWORK,
     { kind: 'point', point: [0, 0] },
-    { kind: 'point', point: [1, 1] }
+    { kind: 'point', point: [1, 1] },
   );
   assert.deepEqual(removeEdge(network, 0), EMPTY_NETWORK);
 });

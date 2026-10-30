@@ -1,8 +1,8 @@
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext, UserContext } from './Context.tsx';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GlobalContext, UserContext } from './Context.tsx';
 import { fetchAllPaginatedResults } from './utils.tsx';
 
 export default function SharedResults() {
@@ -17,7 +17,7 @@ export default function SharedResults() {
     async function fetchAnnotationSets() {
       const jollyResultsMemberships = await fetchAllPaginatedResults<any>(
         client.models.JollyResultsMembership.list as any,
-        { filter: { userId: { eq: user?.userId } }, limit: 10000 } as any
+        { filter: { userId: { eq: user?.userId } }, limit: 10000 } as any,
       );
       const annotationSets = await Promise.all(
         jollyResultsMemberships.map(async (result) => {
@@ -25,21 +25,26 @@ export default function SharedResults() {
             { id: result.annotationSetId },
             {
               selectionSet: ['id', 'name', 'projectId', 'project.name'],
-            }
+            },
           );
           return annotationSet;
-        })
+        }),
       );
       if (annotationSets) {
         setAnnotationSets(
           annotationSets
-            .filter((annotationSet): annotationSet is NonNullable<typeof annotationSet> => annotationSet !== null)
+            .filter(
+              (
+                annotationSet,
+              ): annotationSet is NonNullable<typeof annotationSet> =>
+                annotationSet !== null,
+            )
             .map((annotationSet) => ({
               id: annotationSet.id,
               name: annotationSet.name,
               projectId: annotationSet.projectId,
               projectName: annotationSet.project.name,
-            }))
+            })),
         );
       }
     }
@@ -57,7 +62,7 @@ export default function SharedResults() {
       }}
     >
       <Card>
-        <CardHeader className='flex justify-between items-center gap-2'>
+        <CardHeader className='flex items-center justify-between gap-2'>
           <CardTitle className='mb-0 w-full' style={{ maxWidth: '300px' }}>
             <h4 className='mb-0'>Shared Results</h4>
           </CardTitle>
@@ -67,7 +72,7 @@ export default function SharedResults() {
             annotationSets.map((annotationSet) => (
               <div
                 key={annotationSet.id}
-                className='flex flex-row justify-between items-center gap-2 border border-dark p-4'
+                className='flex flex-row items-center justify-between gap-2 border border-dark p-4'
               >
                 <div>
                   <p className='mb-0'>Survey: {annotationSet.projectName}</p>
@@ -77,7 +82,7 @@ export default function SharedResults() {
                   variant='primary'
                   onClick={() => {
                     navigate(
-                      `/jolly/${annotationSet.projectId}/${annotationSet.id}`
+                      `/jolly/${annotationSet.projectId}/${annotationSet.id}`,
                     );
                   }}
                 >

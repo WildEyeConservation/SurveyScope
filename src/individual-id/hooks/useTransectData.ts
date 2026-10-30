@@ -1,14 +1,14 @@
-import { useContext, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useContext, useMemo, useState } from 'react';
 import { GlobalContext, ProjectContext } from '../../Context';
-import { fetchAllPaginatedResults } from '../../utils';
+import { attachInfoTagsToAnnotations } from '../../infoTags';
 import type {
   AnnotationType,
   CategoryType,
   ImageNeighbourType,
   ImageType,
 } from '../../schemaTypes';
-import { attachInfoTagsToAnnotations } from '../../infoTags';
+import { fetchAllPaginatedResults } from '../../utils';
 
 // Amplify's return type doesn't reflect custom selectionSets, so we type this explicitly.
 type ImageWithNeighbours = Pick<
@@ -58,7 +58,7 @@ export function useTransectData(input: UseTransectDataInput) {
 
   const isChainMode = Boolean(chainObjectId);
   const enabled = Boolean(
-    categoryId && project?.id && (transectId || chainObjectId)
+    categoryId && project?.id && (transectId || chainObjectId),
   );
 
   const [progress, setProgress] = useState<LoadProgress>({
@@ -91,7 +91,7 @@ export function useTransectData(input: UseTransectDataInput) {
       chainObjectId,
       categoryId,
       annotationSetId,
-    ]
+    ],
   );
 
   const query = useQuery<TransectData>({
@@ -110,12 +110,14 @@ export function useTransectData(input: UseTransectDataInput) {
         });
       }
       setProgress({ phase: 'category', images: 0, annotations: 0 });
-      const categoryResp = await client.models.Category.get({ id: categoryId! });
+      const categoryResp = await client.models.Category.get({
+        id: categoryId!,
+      });
       const category = (categoryResp?.data ?? null) as CategoryType | null;
       const setId = annotationSetId ?? category?.annotationSetId ?? '';
       if (!setId) {
         throw new Error(
-          `Cannot resolve annotationSetId for category ${categoryId}`
+          `Cannot resolve annotationSetId for category ${categoryId}`,
         );
       }
 
@@ -137,7 +139,7 @@ export function useTransectData(input: UseTransectDataInput) {
             'rightNeighbours.*',
           ],
         },
-        (n) => setProgress((p) => ({ ...p, images: n }))
+        (n) => setProgress((p) => ({ ...p, images: n })),
       )) as unknown as ImageWithNeighbours[];
 
       const imagesById: Record<string, ImageType> = {};
@@ -148,7 +150,7 @@ export function useTransectData(input: UseTransectDataInput) {
       setProgress((p) => ({ ...p, phase: 'cameras' }));
       const cameraResp = await client.models.Camera.camerasByProjectId(
         { projectId: project!.id },
-        { selectionSet: ['id', 'name'], limit: 1000 }
+        { selectionSet: ['id', 'name'], limit: 1000 },
       );
       const cameraNamesById: Record<string, string> = {};
       for (const c of (cameraResp.data ?? []) as Array<{
@@ -183,7 +185,7 @@ export function useTransectData(input: UseTransectDataInput) {
       const categoriesResp =
         await client.models.Category.categoriesByAnnotationSetId(
           { annotationSetId: setId },
-          { selectionSet: ['id'], limit: 1000 }
+          { selectionSet: ['id'], limit: 1000 },
         );
       const categoryIds = (
         (categoriesResp.data ?? []) as Array<{ id?: string | null }>
@@ -210,9 +212,9 @@ export function useTransectData(input: UseTransectDataInput) {
                 ...p,
                 annotations: perCategoryCounts.reduce((s, c) => s + c, 0),
               }));
-            }
-          )
-        )
+            },
+          ),
+        ),
       );
       const filteredAnnotations = perCategory
         .flat()
@@ -220,7 +222,7 @@ export function useTransectData(input: UseTransectDataInput) {
       const annotations = await attachInfoTagsToAnnotations(
         client,
         filteredAnnotations,
-        setId
+        setId,
       );
 
       const annotationsByImage: Record<string, AnnotationType[]> = {};
@@ -267,7 +269,9 @@ async function fetchChainData(opts: {
   primaryId: string;
   categoryId: string;
   annotationSetId: string | undefined;
-  setProgress: (next: LoadProgress | ((p: LoadProgress) => LoadProgress)) => void;
+  setProgress: (
+    next: LoadProgress | ((p: LoadProgress) => LoadProgress),
+  ) => void;
 }): Promise<TransectData> {
   const {
     client,
@@ -284,7 +288,7 @@ async function fetchChainData(opts: {
   const setId = annotationSetId ?? category?.annotationSetId ?? '';
   if (!setId) {
     throw new Error(
-      `Cannot resolve annotationSetId for category ${categoryId}`
+      `Cannot resolve annotationSetId for category ${categoryId}`,
     );
   }
 
@@ -297,7 +301,7 @@ async function fetchChainData(opts: {
       objectId: primaryId,
       filter: { setId: { eq: setId } },
       limit: 1000,
-    }
+    },
   )) as AnnotationType[];
 
   const chainImageIds = new Set<string>(chainAnnotations.map((a) => a.imageId));
@@ -323,9 +327,9 @@ async function fetchChainData(opts: {
             'leftNeighbours.*',
             'rightNeighbours.*',
           ],
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
   const chainImages = chainImageResps
     .map((r) => r?.data as ImageWithNeighbours | null)
@@ -345,7 +349,7 @@ async function fetchChainData(opts: {
     }
   }
   const additionalIds = Array.from(neighbourImageIds).filter(
-    (id) => !chainImageIds.has(id)
+    (id) => !chainImageIds.has(id),
   );
   setProgress((p) => ({ ...p, images: chainImages.length }));
 
@@ -364,9 +368,9 @@ async function fetchChainData(opts: {
             'timestamp',
             'cameraId',
           ],
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
   const additionalImages = additionalImageResps
     .map((r) => r?.data as ImageType | null)
@@ -385,7 +389,7 @@ async function fetchChainData(opts: {
   setProgress((p) => ({ ...p, phase: 'cameras' }));
   const cameraResp = await client.models.Camera.camerasByProjectId(
     { projectId },
-    { selectionSet: ['id', 'name'], limit: 1000 }
+    { selectionSet: ['id', 'name'], limit: 1000 },
   );
   const cameraNamesById: Record<string, string> = {};
   for (const c of (cameraResp.data ?? []) as Array<{
@@ -405,7 +409,8 @@ async function fetchChainData(opts: {
       ...(img.rightNeighbours ?? []),
     ]) {
       if (n.skipped) continue;
-      if (!allImageIds.has(n.image1Id) || !allImageIds.has(n.image2Id)) continue;
+      if (!allImageIds.has(n.image1Id) || !allImageIds.has(n.image2Id))
+        continue;
       const k = `${n.image1Id}__${n.image2Id}`;
       if (seen.has(k)) continue;
       seen.add(k);
@@ -424,14 +429,14 @@ async function fetchChainData(opts: {
           imageId,
           setId: { eq: setId },
           limit: 1000,
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
   const annotations = await attachInfoTagsToAnnotations(
     client,
     perImage.flat(),
-    setId
+    setId,
   );
   setProgress((p) => ({ ...p, annotations: annotations.length }));
 

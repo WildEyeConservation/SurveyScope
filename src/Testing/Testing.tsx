@@ -1,13 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useContext, useState } from 'react';
+import { GlobalContext, TestingContext } from '../Context';
 import OrganizationSelector from '../OrganizationSelector';
-import { useState, useContext } from 'react';
 import { Tab, Tabs } from '../Tabs';
-import Surveys from './Surveys';
-import { TestingContext, GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
 import { useOptimisticUpdates } from '../useOptimisticUpdates';
-import Users from './Users';
 import Results from './Results';
+import Surveys from './Surveys';
+import Users from './Users';
 
 export default function Testing() {
   const { client } = useContext(GlobalContext)!;
@@ -29,7 +29,7 @@ export default function Testing() {
       }),
     {
       filter: { organizationId: { eq: organization.id } },
-    }
+    },
   );
 
   const { data: testPresets } = useOptimisticUpdates<
@@ -45,7 +45,7 @@ export default function Testing() {
     {
       filter: { organizationId: { eq: organization.id } },
     },
-    { staleTime: 5 * 60 * 1000 }
+    { staleTime: 5 * 60 * 1000 },
   );
 
   const membershipsHook = useOptimisticUpdates<
@@ -64,7 +64,7 @@ export default function Testing() {
     {
       compositeKey: (membership) =>
         `${membership.organizationId}:${membership.userId}`,
-    }
+    },
   );
   return (
     <TestingContext.Provider
@@ -84,7 +84,7 @@ export default function Testing() {
         }}
       >
         <Card>
-          <CardHeader className='flex justify-between mb-0'>
+          <CardHeader className='mb-0 flex justify-between'>
             <CardTitle className='mb-0'>
               <h4 className='mb-0'>User Testing</h4>
             </CardTitle>

@@ -41,7 +41,7 @@ export type NeighbourAdjacency = Map<string, DirectedEdge[]>;
  * `buildChainedTransformsFromAdj` for every source.
  */
 export function buildAdjacency(
-  rawNeighbours: ImageNeighbourType[]
+  rawNeighbours: ImageNeighbourType[],
 ): NeighbourAdjacency {
   const adj: NeighbourAdjacency = new Map();
   const push = (from: string, edge: DirectedEdge) => {
@@ -84,7 +84,7 @@ export function buildAdjacency(
 export function buildChainedTransformsFromAdj(
   sourceImageId: string,
   adj: NeighbourAdjacency,
-  maxHops: number
+  maxHops: number,
 ): Map<string, ChainedTransform> {
   const out = new Map<string, ChainedTransform>();
   const identity: PixelTransform = (c) => [c[0], c[1]];
@@ -148,7 +148,7 @@ export function buildChainedTransformsFromAdj(
 export function buildChainedTransforms(
   sourceImageId: string,
   rawNeighbours: ImageNeighbourType[],
-  maxHops: number
+  maxHops: number,
 ): Map<string, ChainedTransform> {
   const adj = buildAdjacency(rawNeighbours);
   return buildChainedTransformsFromAdj(sourceImageId, adj, maxHops);

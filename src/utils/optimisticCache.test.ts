@@ -74,7 +74,7 @@ test('rolling back a failed delete puts the row back exactly once', () => {
   // If a subscription already put it back, don't duplicate it.
   assert.deepEqual(
     withRowReinstated(result, { id: 'a' }, previousItems, byId),
-    result
+    result,
   );
 });
 

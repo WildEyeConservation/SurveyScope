@@ -1,10 +1,10 @@
-import type { ImageNeighbourType, ImageType } from '../../schemaTypes';
-import { buildNeighbourTransforms } from '../../individual-id/utils/transforms';
 import {
   buildAdjacency,
   buildChainedTransformsFromAdj,
   type ChainedTransform,
 } from '../../individual-id/utils/chainedTransforms';
+import { buildNeighbourTransforms } from '../../individual-id/utils/transforms';
+import type { ImageNeighbourType, ImageType } from '../../schemaTypes';
 import type { ChainAnnotation, HerdDisplayPair } from '../types';
 
 const identity = (c: [number, number]): [number, number] => [c[0], c[1]];
@@ -70,7 +70,7 @@ class DisjointSet {
 function syntheticPair(
   herdId: string,
   image1: ImageType,
-  image2: ImageType
+  image2: ImageType,
 ): HerdDisplayPair {
   const swap = compareImages(image2, image1) < 0;
   const imageA = swap ? image2 : image1;
@@ -93,7 +93,7 @@ function chainedPair(
   herdId: string,
   image1: ImageType,
   image2: ImageType,
-  chained: ChainedTransform | undefined
+  chained: ChainedTransform | undefined,
 ): HerdDisplayPair {
   if (!chained) return syntheticPair(herdId, image1, image2);
   const swap = compareImages(image2, image1) < 0;
@@ -118,17 +118,15 @@ function registeredPair(
   neighbour: ImageNeighbourType,
   image1: ImageType,
   image2: ImageType,
-  crossover: boolean
+  crossover: boolean,
 ): HerdDisplayPair | null {
   const transforms = buildNeighbourTransforms(neighbour);
   if (transforms.noHomography) return null;
 
   // Transform direction is defined by the neighbour row, independently of
   // the order in which the candidate images were supplied.
-  const neighbourImage1 =
-    image1.id === neighbour.image1Id ? image1 : image2;
-  const neighbourImage2 =
-    image2.id === neighbour.image2Id ? image2 : image1;
+  const neighbourImage1 = image1.id === neighbour.image1Id ? image1 : image2;
+  const neighbourImage2 = image2.id === neighbour.image2Id ? image2 : image1;
   if (
     neighbourImage1.id !== neighbour.image1Id ||
     neighbourImage2.id !== neighbour.image2Id
@@ -171,8 +169,8 @@ function adjacentPair(
   neighboursByPair: Map<string, ImageNeighbourType>,
   getChainedTransform: (
     sourceImageId: string,
-    targetImageId: string
-  ) => ChainedTransform | undefined
+    targetImageId: string,
+  ) => ChainedTransform | undefined,
 ): HerdDisplayPair {
   const neighbour = neighboursByPair.get(pairKey(image1.id, image2.id));
   if (neighbour) {
@@ -183,7 +181,7 @@ function adjacentPair(
     herdId,
     image1,
     image2,
-    getChainedTransform(image1.id, image2.id)
+    getChainedTransform(image1.id, image2.id),
   );
 }
 
@@ -205,8 +203,8 @@ function cameraPairs(
   neighboursByPair: Map<string, ImageNeighbourType>,
   getChainedTransform: (
     sourceImageId: string,
-    targetImageId: string
-  ) => ChainedTransform | undefined
+    targetImageId: string,
+  ) => ChainedTransform | undefined,
 ): HerdDisplayPair[] {
   // Connect images that are consecutive sightings of a shared chain. This is
   // the same connectivity the previous minimum forest used; only the layout
@@ -247,8 +245,8 @@ function cameraPairs(
           list[i - 1],
           list[i],
           neighboursByPair,
-          getChainedTransform
-        )
+          getChainedTransform,
+        ),
       );
     }
   }
@@ -274,7 +272,7 @@ function cameraPairs(
 export function buildHerdDisplayPairs(
   imagesById: Record<string, ImageType>,
   rawNeighbours: ImageNeighbourType[],
-  annotationsByImage: Record<string, ChainAnnotation[]>
+  annotationsByImage: Record<string, ChainAnnotation[]>,
 ): HerdDisplayPair[] {
   const chainsByImage = new Map<string, Set<string>>();
   const annotatedImages: ImageType[] = [];
@@ -293,7 +291,7 @@ export function buildHerdDisplayPairs(
     if (neighbour.skipped) continue;
     neighboursByPair.set(
       pairKey(neighbour.image1Id, neighbour.image2Id),
-      neighbour
+      neighbour,
     );
   }
 
@@ -307,14 +305,14 @@ export function buildHerdDisplayPairs(
   >();
   const getChainedTransform = (
     sourceImageId: string,
-    targetImageId: string
+    targetImageId: string,
   ): ChainedTransform | undefined => {
     let transforms = chainedTransformsBySource.get(sourceImageId);
     if (!transforms) {
       transforms = buildChainedTransformsFromAdj(
         sourceImageId,
         adjacency,
-        MAX_CHAINED_TRANSFORM_HOPS
+        MAX_CHAINED_TRANSFORM_HOPS,
       );
       chainedTransformsBySource.set(sourceImageId, transforms);
     }
@@ -396,13 +394,7 @@ export function buildHerdDisplayPairs(
       const chains1 = chainsByImage.get(image1.id);
       const chains2 = chainsByImage.get(image2.id);
       if (!chains1 || !chains2 || !intersects(chains1, chains2)) continue;
-      const pair = registeredPair(
-        herdId,
-        neighbour,
-        image1,
-        image2,
-        true
-      );
+      const pair = registeredPair(herdId, neighbour, image1, image2, true);
       if (pair) crossovers.push(pair);
     }
     crossovers.sort(comparePairs);
@@ -422,8 +414,8 @@ export function buildHerdDisplayPairs(
             imagesByCamera.get(firstCamera) ?? [],
             chainsByImage,
             neighboursByPair,
-            getChainedTransform
-          )
+            getChainedTransform,
+          ),
         );
         continue;
       }
@@ -452,8 +444,8 @@ export function buildHerdDisplayPairs(
             imagesByCamera.get(nextCamera) ?? [],
             chainsByImage,
             neighboursByPair,
-            getChainedTransform
-          )
+            getChainedTransform,
+          ),
         );
         continue;
       }
@@ -469,8 +461,8 @@ export function buildHerdDisplayPairs(
           imagesByCamera.get(nextCamera) ?? [],
           chainsByImage,
           neighboursByPair,
-          getChainedTransform
-        )
+          getChainedTransform,
+        ),
       );
     }
   }

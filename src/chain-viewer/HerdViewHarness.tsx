@@ -1,22 +1,31 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import { Combobox } from '@/components/ui/combobox';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import ChangeCategoryModal from '../ChangeCategoryModal';
 import { GlobalContext, ProjectContext } from '../Context';
-import { loadRows } from '../rowChunks';
-import { loadProjectImages } from '../projectImages';
 import type { Lane } from '../individual-id/utils/lanes';
-import { buildHerdRuns } from './utils/herdRuns';
-import { buildHerdDisplayPairs } from './utils/herdPairs';
+import { loadProjectImages } from '../projectImages';
+import { loadRows } from '../rowChunks';
 import type { CategoryType, ImageType } from '../schemaTypes';
-import { useHerdData } from './hooks/useHerdData';
 import { HerdMapPair } from './HerdMapPair';
 import { HerdNavBar } from './HerdNavBar';
 import { ChainTilesModal } from './components/ChainTilesModal';
-import ChangeCategoryModal from '../ChangeCategoryModal';
+import { useHerdData } from './hooks/useHerdData';
 import type { ChainAnnotation } from './types';
+import { buildHerdDisplayPairs } from './utils/herdPairs';
+import { buildHerdRuns } from './utils/herdRuns';
+
 import './ChainViewer.css';
+
 import { fetchInfoTagDataForSet, infoTagNamesFor } from '../infoTags';
 
 interface Props {
@@ -94,17 +103,17 @@ export function HerdViewHarness({ annotationSetId }: Props) {
               onProgress: (count) => {
                 if (!cancelled) setFetchCount(count);
               },
-            }
+            },
           ),
           loadProjectImages(client, project.id, ['timestamp']),
         ]);
         const timestamps = new Map(
-          images.map((image) => [image.id, image.timestamp])
+          images.map((image) => [image.id, image.timestamp]),
         );
         if (cancelled) return;
         const infoTagData = await fetchInfoTagDataForSet(
           client,
-          annotationSetId
+          annotationSetId,
         );
         const tagsDefined = infoTagData.nameById.size > 0;
         if (cancelled) return;
@@ -122,7 +131,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
             infoTags: tagsDefined
               ? infoTagNamesFor(infoTagData, a.id)
               : undefined,
-          }))
+          })),
         );
         setFetchStatus('done');
       } catch (err) {
@@ -149,7 +158,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       (categories ?? [])
         .filter((c) => c.annotationSetId === annotationSetId)
         .sort((a, b) => a.name.localeCompare(b.name)) as CategoryType[],
-    [categories, annotationSetId]
+    [categories, annotationSetId],
   );
 
   const categoryOptions = useMemo(
@@ -157,7 +166,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       setCategories
         .map((c) => ({ label: c.name, value: c.id }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [setCategories]
+    [setCategories],
   );
 
   const categoryColors = useMemo(() => {
@@ -173,7 +182,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       selectedCategory
         ? annotations.filter((a) => a.categoryId === selectedCategory.value)
         : annotations,
-    [annotations, selectedCategory]
+    [annotations, selectedCategory],
   );
 
   const annotationsByImage = useMemo(() => {
@@ -189,7 +198,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
     const ps = buildHerdDisplayPairs(
       herd.data?.imagesById ?? {},
       herd.data?.rawNeighbours ?? [],
-      annotationsByImage
+      annotationsByImage,
     );
     const cs = ps.map((p) => {
       const aAnns = annotationsByImage[p.image1Id] ?? [];
@@ -200,18 +209,18 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       ]);
     });
     return { pairs: ps, chainSets: cs };
-  }, [
-    herd.data?.imagesById,
-    herd.data?.rawNeighbours,
-    annotationsByImage,
-  ]);
+  }, [herd.data?.imagesById, herd.data?.rawNeighbours, annotationsByImage]);
 
   // ---- Single display-order lane + herd-run grouping ----
   // "Herd runs" remain maximal contiguous chain-sharing stretches, now over
   // the camera-grouped traversal rather than globally timestamp-sorted pairs.
   const { runIdByIndex, runStarts } = useMemo(
-    () => buildHerdRuns(chainSets, pairs.map((pair) => pair.herdId)),
-    [chainSets, pairs]
+    () =>
+      buildHerdRuns(
+        chainSets,
+        pairs.map((pair) => pair.herdId),
+      ),
+    [chainSets, pairs],
   );
 
   const navLane: Lane = useMemo(
@@ -222,19 +231,19 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       entries: pairs.map((_, i) => i),
       timestamps: pairs.map((p) => p.imageA.timestamp ?? 0),
     }),
-    [pairs]
+    [pairs],
   );
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [imageBearings, setImageBearings] = useState<Map<string, number>>(
-    () => new Map()
+    () => new Map(),
   );
   const initialChainParamHandledRef = useRef<string | null>(null);
 
   const bearingForImage = useCallback(
     (image: ImageType) => imageBearings.get(image.id) ?? 0,
-    [imageBearings]
+    [imageBearings],
   );
   const onImageBearingChange = useCallback(
     (image: ImageType, bearing: number) => {
@@ -245,7 +254,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         return next;
       });
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -257,13 +266,13 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       if (target < 0 || target >= pairs.length) return;
       setCurrentIndex(target);
     },
-    [pairs.length]
+    [pairs.length],
   );
 
   // Frame step: walk the single time-ordered sequence one pair at a time.
   const stepFrame = useCallback(
     (delta: 1 | -1) => goTo(currentIndex + delta),
-    [goTo, currentIndex]
+    [goTo, currentIndex],
   );
 
   // Herd jump: next → start of the following run; prev → start of the current
@@ -279,13 +288,14 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         else if (run > 0) goTo(runStarts[run - 1]);
       }
     },
-    [runIdByIndex, runStarts, currentIndex, goTo]
+    [runIdByIndex, runStarts, currentIndex, goTo],
   );
 
   const currentRun = runIdByIndex[currentIndex] ?? 0;
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < pairs.length - 1;
-  const hasPrevHerd = currentRun > 0 || currentIndex > (runStarts[currentRun] ?? 0);
+  const hasPrevHerd =
+    currentRun > 0 || currentIndex > (runStarts[currentRun] ?? 0);
   const hasNextHerd = currentRun + 1 < runStarts.length;
 
   // ---- Obscured toggle (optimistic, reverts on failure). ----
@@ -296,11 +306,11 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       const desired = !current.obscured;
       const apply = (list: ChainAnnotation[]) =>
         list.map((a) =>
-          a.id === annotationId ? { ...a, obscured: desired } : a
+          a.id === annotationId ? { ...a, obscured: desired } : a,
         );
       const revert = (list: ChainAnnotation[]) =>
         list.map((a) =>
-          a.id === annotationId ? { ...a, obscured: current.obscured } : a
+          a.id === annotationId ? { ...a, obscured: current.obscured } : a,
         );
       setAnnotations(apply);
       try {
@@ -314,7 +324,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
           throw new Error(
             response.errors
               .map((e) => e.message ?? 'Unknown GraphQL error')
-              .join('; ')
+              .join('; '),
           );
         }
       } catch (err) {
@@ -322,7 +332,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         setAnnotations(revert);
       }
     },
-    [annotations, client]
+    [annotations, client],
   );
 
   // ---- Change label (chain-wide, optimistic, reverts on failure). ----
@@ -344,7 +354,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       }
       return Array.from(ids);
     },
-    [annotations]
+    [annotations],
   );
 
   const handleChangeLabel = useCallback(
@@ -357,7 +367,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         chainIds: buildChainIds(annotationId),
       });
     },
-    [annotations, buildChainIds]
+    [annotations, buildChainIds],
   );
 
   const applyLabelChange = useCallback(
@@ -374,7 +384,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
 
       const apply = (list: ChainAnnotation[]) =>
         list.map((a) =>
-          ids.has(a.id) ? { ...a, categoryId: newCategoryId } : a
+          ids.has(a.id) ? { ...a, categoryId: newCategoryId } : a,
         );
       const rollback = (list: ChainAnnotation[]) =>
         list.map((a) => beforeMap.get(a.id) ?? a);
@@ -387,15 +397,13 @@ export function HerdViewHarness({ annotationSetId }: Props) {
           .update as unknown as UpdateAnnotationCategory;
         const responses = await Promise.all(
           Array.from(ids).map((aid) =>
-            updateAnnotation({ id: aid, categoryId: newCategoryId })
-          )
+            updateAnnotation({ id: aid, categoryId: newCategoryId }),
+          ),
         );
         const errors = responses.flatMap((response) => response?.errors ?? []);
         if (errors.length) {
           throw new Error(
-            errors
-              .map((e) => e.message ?? 'Unknown GraphQL error')
-              .join('; ')
+            errors.map((e) => e.message ?? 'Unknown GraphQL error').join('; '),
           );
         }
       } catch (err) {
@@ -403,7 +411,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
         setAnnotations(rollback);
       }
     },
-    [annotations, client, labelChange]
+    [annotations, client, labelChange],
   );
 
   // ---- Chain-tiles modal ----
@@ -413,7 +421,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
       const a = annotations.find((x) => x.id === annotationId);
       if (a) setTilesChainId(a.objectId ?? a.id);
     },
-    [annotations]
+    [annotations],
   );
   // Preserve old `?chain=<id>` share links: open the modal and position the
   // maps at the first pair of the herd run containing that chain.
@@ -445,7 +453,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
   const openImageHrefFor = useCallback(
     (a: ChainAnnotation) =>
       `/surveys/${surveyId}/image/${a.imageId}/${annotationSetId}`,
-    [surveyId, annotationSetId]
+    [surveyId, annotationSetId],
   );
 
   const currentPair = pairs[currentIndex];
@@ -453,7 +461,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
 
   return (
     <div
-      className='w-full h-full flex flex-col'
+      className='flex h-full w-full flex-col'
       style={{ minHeight: 0, paddingTop: 12, paddingBottom: 12 }}
     >
       <div

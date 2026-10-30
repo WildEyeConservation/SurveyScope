@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { gpsRowKey, nextMapRemovedKeys } from './gpsIndex';
 
 const row = (lat: number) => ({ lat, lng: 0, alt: 100 });

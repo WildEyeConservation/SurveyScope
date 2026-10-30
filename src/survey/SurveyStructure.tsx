@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { escapeCsvValue } from '../../shared/csv';
 
 export type ImageInfo = {
@@ -74,12 +74,12 @@ function flattenRows(cameras: Camera[]): FlatRow[] {
           altitude: Number.isFinite(image.altitude_agl)
             ? (image.altitude_agl as number)
             : Number.isFinite(image.altitude_wgs84)
-            ? (image.altitude_wgs84 as number)
-            : null,
+              ? (image.altitude_wgs84 as number)
+              : null,
           timestamp: image.timestamp ?? null,
         };
-      })
-    )
+      }),
+    ),
   );
 }
 
@@ -109,7 +109,7 @@ function downloadCsv(filename: string, rows: FlatRow[]) {
         row.timestamp ? new Date(row.timestamp * 1000).toISOString() : '',
       ]
         .map(escapeCsvValue)
-        .join(',')
+        .join(','),
     ),
   ];
   const blob = new Blob([lines.join('\n')], {
@@ -145,7 +145,7 @@ export default function SurveyStructure({
             row.filename.toLowerCase().includes(query) ||
             row.folder.toLowerCase().includes(query) ||
             row.cameraName.toLowerCase().includes(query) ||
-            row.originalPath.toLowerCase().includes(query)
+            row.originalPath.toLowerCase().includes(query),
         )
       : flatRows;
 
@@ -203,13 +203,13 @@ export default function SurveyStructure({
 
   return (
     <div className='flex flex-col gap-4'>
-      <div className='flex justify-between items-center flex-wrap gap-2'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
         <div
-          className='uppercase font-semibold text-muted-foreground'
+          className='font-semibold text-muted-foreground uppercase'
           style={{ letterSpacing: 0.5, fontSize: 12 }}
         >
           Survey Structure{' '}
-          <span className='font-normal ms-1'>
+          <span className='ms-1 font-normal'>
             {flatRows.length.toLocaleString()} image
             {flatRows.length === 1 ? '' : 's'}
           </span>
@@ -222,7 +222,7 @@ export default function SurveyStructure({
               `${projectName || 'survey'}-images${
                 search.trim() ? '-filtered' : ''
               }.csv`,
-              filteredRows
+              filteredRows,
             )
           }
         >
@@ -234,12 +234,12 @@ export default function SurveyStructure({
           <Spinner animation='border' size='sm' /> Loading structure...
         </div>
       ) : flatRows.length === 0 ? (
-        <div className='text-muted-foreground text-sm italic'>
+        <div className='text-sm text-muted-foreground italic'>
           No images uploaded yet.
         </div>
       ) : (
         <>
-          <div className='flex gap-2 items-center flex-wrap'>
+          <div className='flex flex-wrap items-center gap-2'>
             <Input
               type='search'
               placeholder='Search filename, folder, camera, or path...'
@@ -248,11 +248,9 @@ export default function SurveyStructure({
               style={{ maxWidth: 360, flex: '1 1 240px' }}
             />
             {!search.trim() && (
-              <div className='flex gap-2 ms-auto'>
+              <div className='ms-auto flex gap-2'>
                 <Button
-                  variant={
-                    viewMode === 'summary' ? 'primary' : 'outline-light'
-                  }
+                  variant={viewMode === 'summary' ? 'primary' : 'outline-light'}
                   active={viewMode === 'summary'}
                   onClick={() => setViewMode('summary')}
                 >
@@ -293,25 +291,25 @@ export default function SurveyStructure({
               {cameras.map((camera, index) => {
                 const total = camera.folders.reduce(
                   (sum, folder) => sum + folder.images.length,
-                  0
+                  0,
                 );
 
                 return (
                   <div key={`${camera.name}-${index}`}>
                     <div
-                      className='flex justify-between items-center gap-4 px-4 py-2 font-semibold'
+                      className='flex items-center justify-between gap-4 px-4 py-2 font-semibold'
                       style={{ borderBottom: DIVIDER }}
                     >
                       <span>{camera.name}</span>
-                      <small className='text-muted-foreground text-right font-normal'>
+                      <small className='text-right font-normal text-muted-foreground'>
                         {camera.folders.length} folder
-                        {camera.folders.length === 1 ? '' : 's'} · {total}{' '}
-                        image{total === 1 ? '' : 's'}
+                        {camera.folders.length === 1 ? '' : 's'} · {total} image
+                        {total === 1 ? '' : 's'}
                       </small>
                     </div>
                     {camera.folders.length === 0 ? (
                       <div
-                        className='text-sm italic text-muted-foreground ps-6 pe-4 py-2'
+                        className='py-2 ps-6 pe-4 text-sm text-muted-foreground italic'
                         style={{ borderBottom: DIVIDER }}
                       >
                         No folders
@@ -320,7 +318,7 @@ export default function SurveyStructure({
                       camera.folders.map((folder) => (
                         <div
                           key={folder.path}
-                          className='flex justify-between gap-4 ps-6 pe-4 py-2'
+                          className='flex justify-between gap-4 py-2 ps-6 pe-4'
                           style={{ borderBottom: DIVIDER }}
                         >
                           <span>{folder.path}</span>
@@ -338,7 +336,7 @@ export default function SurveyStructure({
           ) : (
             <div>
               <div
-                className='grid uppercase font-semibold text-muted-foreground'
+                className='grid font-semibold text-muted-foreground uppercase'
                 style={{
                   gridTemplateColumns: gridColumns,
                   fontSize: 11,
@@ -409,7 +407,7 @@ export default function SurveyStructure({
                         }}
                       >
                         <div
-                          className='px-4 py-2 truncate'
+                          className='truncate px-4 py-2'
                           title={row.originalPath}
                         >
                           {row.filename}
@@ -424,7 +422,7 @@ export default function SurveyStructure({
                         <div className='px-4 py-2 text-muted-foreground'>
                           {row.latitude !== null && row.longitude !== null
                             ? `${row.latitude.toFixed(
-                                5
+                                5,
                               )}, ${row.longitude.toFixed(5)}`
                             : '—'}
                         </div>
@@ -438,12 +436,12 @@ export default function SurveyStructure({
                   })}
                 </div>
               </div>
-              <small className='block text-muted-foreground mt-2'>
+              <small className='mt-2 block text-muted-foreground'>
                 {filteredRows.length.toLocaleString()} row
                 {filteredRows.length === 1 ? '' : 's'}
               </small>
               {filteredRows.length === 0 && (
-                <div className='text-muted-foreground text-sm italic mt-2'>
+                <div className='mt-2 text-sm text-muted-foreground italic'>
                   No images match your search.
                 </div>
               )}

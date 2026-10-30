@@ -1,22 +1,22 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { modelForProcessedSources } from './modelDispatch';
 
 test('modelForProcessedSources maps a single source to its model', () => {
   assert.equal(
     modelForProcessedSources(['scoutbotv3', 'scoutbotv3']),
-    'scoutbot'
+    'scoutbot',
   );
   assert.equal(
     modelForProcessedSources(['heatmap']),
-    'elephant-detection-nadir'
+    'elephant-detection-nadir',
   );
 });
 
 test('modelForProcessedSources ignores sources that are not detectors', () => {
   assert.equal(
     modelForProcessedSources(['registration-dispatch', 'manual', 'mad-v2']),
-    'mad'
+    'mad',
   );
 });
 

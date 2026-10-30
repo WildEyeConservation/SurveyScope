@@ -1,13 +1,3 @@
-import React, {
-  useState,
-  useRef,
-  useLayoutEffect,
-  useEffect,
-  useCallback,
-  useMemo,
-  ReactElement,
-} from 'react';
-import { ChevronDown } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +5,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { ChevronDown } from 'lucide-react';
+import React, {
+  ReactElement,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import './Tabs.css';
 
 interface TabProps {
@@ -36,7 +37,7 @@ interface TabsProps {
 
 export const Tab: React.FC<TabProps> = ({ children, className }) => {
   return (
-    <div className={`flex flex-col w-full h-full ${className ?? ''}`}>
+    <div className={`flex h-full w-full flex-col ${className ?? ''}`}>
       {children}
     </div>
   );
@@ -52,7 +53,7 @@ export const Tabs: React.FC<TabsProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState(defaultTab);
   const childrenArray = React.Children.toArray(
-    children
+    children,
   ) as ReactElement<TabProps>[];
 
   const [tabWidths, setTabWidths] = useState<number[]>([]);
@@ -140,29 +141,27 @@ export const Tabs: React.FC<TabsProps> = ({
   };
 
   return (
-    <div className={`w-full h-full flex flex-col ${className ?? ''}`}>
-      <div
-        ref={headerRef}
-        className='tabs-header border-b border-dark'
-      >
+    <div className={`flex h-full w-full flex-col ${className ?? ''}`}>
+      <div ref={headerRef} className='tabs-header border-b border-dark'>
         {/* Hidden measurement row */}
         {tabWidths.length === 0 && (
-          <div ref={hiddenRowRef} className='tabs-measure-row' aria-hidden='true'>
+          <div
+            ref={hiddenRowRef}
+            className='tabs-measure-row'
+            aria-hidden='true'
+          >
             {childrenArray.map((child, i) => (
               <div
                 key={i}
                 ref={(el) => {
                   tabRefs.current[i] = el;
                 }}
-                className='tab-label py-2! px-4!'
+                className='tab-label px-4! py-2!'
               >
                 {child.props.label}
               </div>
             ))}
-            <div
-              ref={moreRef}
-              className='tab-label py-2! px-4!'
-            >
+            <div ref={moreRef} className='tab-label px-4! py-2!'>
               More <ChevronDown size={14} />
             </div>
           </div>
@@ -172,7 +171,7 @@ export const Tabs: React.FC<TabsProps> = ({
         {visibleIndices.map((index) => (
           <div
             key={index}
-            className={`tab-label py-2! px-4! ${
+            className={`tab-label px-4! py-2! ${
               activeTab === index ? 'bg-primary!' : ''
             }`}
             onClick={() => handleTabClick(index)}
@@ -187,18 +186,21 @@ export const Tabs: React.FC<TabsProps> = ({
             <DropdownMenuTrigger asChild>
               <div
                 className={cn(
-                  'tab-label tab-more-toggle py-2! px-4!',
-                  overflowIndices.includes(activeTab) && 'bg-primary!'
+                  'tab-label tab-more-toggle px-4! py-2!',
+                  overflowIndices.includes(activeTab) && 'bg-primary!',
                 )}
               >
-                More <ChevronDown size={14} style={{ verticalAlign: 'middle' }} />
+                More{' '}
+                <ChevronDown size={14} style={{ verticalAlign: 'middle' }} />
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align='start'>
               {overflowIndices.map((index) => (
                 <DropdownMenuItem
                   key={index}
-                  className={cn(activeTab === index && 'bg-primary! text-white!')}
+                  className={cn(
+                    activeTab === index && 'bg-primary! text-white!',
+                  )}
                   onSelect={() => handleTabClick(index)}
                 >
                   {childrenArray[index].props.label}
@@ -208,7 +210,7 @@ export const Tabs: React.FC<TabsProps> = ({
           </DropdownMenu>
         )}
       </div>
-      <div className='grow flex flex-col w-full h-full'>
+      <div className='flex h-full w-full grow flex-col'>
         {sharedChild}
         {childrenArray[activeTab]}
       </div>

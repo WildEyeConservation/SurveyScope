@@ -1,6 +1,6 @@
-import { useContext, useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { useContext, useEffect, useState, type ReactNode } from 'react';
 import { GlobalContext } from '../Context';
 import { boundaryRecomputePending } from '../utils/shapefileUtils';
 
@@ -31,7 +31,7 @@ export default function BoundaryRecomputeGate({
               'boundaryRecomputeLeaseUntil',
             ],
           },
-          { signal }
+          { signal },
         );
         if (signal.aborted) return;
         if (data && boundaryRecomputePending(data)) {

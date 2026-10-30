@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
-import exifr from 'exifr';
 import { bmvbhash } from 'blockhash-core';
+import exifr from 'exifr';
 
 interface HashRequest {
   id: number;
@@ -63,7 +63,7 @@ async function computePhash(file: File): Promise<string> {
         height: imageData.height,
         data: imageData.data,
       },
-      HASH_BITS
+      HASH_BITS,
     );
   } finally {
     bitmap.close();

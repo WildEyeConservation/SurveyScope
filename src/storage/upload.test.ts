@@ -1,5 +1,5 @@
-import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import test, { type TestContext } from 'node:test';
 import pLimit from 'p-limit';
 import {
   isAbortError,
@@ -23,7 +23,7 @@ interface PutCall {
 function fixture(
   options: {
     putResults?: (call: PutCall, attempt: number) => PutResult | Error;
-  } = {}
+  } = {},
 ) {
   const calls: Call[] = [];
   const puts: PutCall[] = [];
@@ -32,7 +32,7 @@ function fixture(
     operation: async <T>(
       _query: string,
       variables: Record<string, unknown>,
-      field: string
+      field: string,
     ): Promise<T> => {
       calls.push({ field, variables });
       const responses: Record<string, () => unknown> = {
@@ -96,11 +96,11 @@ test('small originals use one signed PUT with the server-provided headers', asyn
       rotation: 90,
       onProgress: (bytes) => progress.push(bytes),
     },
-    deps
+    deps,
   ).result;
   assert.deepEqual(
     calls.map((c) => c.field),
-    ['prepareImageUpload']
+    ['prepareImageUpload'],
   );
   assert.equal(calls[0].variables.rotation, 90);
   assert.deepEqual(puts, [{ url: 'https://s3/put', size: 1024 }]);
@@ -118,11 +118,11 @@ test('originals up to the single-PUT limit skip multipart', async () => {
       rotation: 0,
       onProgress: () => {},
     },
-    deps
+    deps,
   ).result;
   assert.deepEqual(
     calls.map((c) => c.field),
-    ['prepareImageUpload']
+    ['prepareImageUpload'],
   );
   assert.equal(puts.length, 1);
 });
@@ -139,7 +139,7 @@ test('large originals are split into parts, uploaded concurrently, then complete
       rotation: 0,
       onProgress: (bytes) => progress.push(bytes),
     },
-    deps
+    deps,
   ).result;
   assert.deepEqual(
     calls.map((c) => c.field),
@@ -147,12 +147,12 @@ test('large originals are split into parts, uploaded concurrently, then complete
       'createImageMultipartUpload',
       'signImageUploadParts',
       'completeImageMultipartUpload',
-    ]
+    ],
   );
   assert.deepEqual(calls[1].variables.partNumbers, [1, 2, 3]);
   assert.deepEqual(
     puts.map((p) => p.size).sort((a, b) => a - b),
-    [10, PART_SIZE, PART_SIZE]
+    [10, PART_SIZE, PART_SIZE],
   );
   const parts = JSON.parse(calls[2].variables.parts as string) as {
     partNumber: number;
@@ -160,7 +160,7 @@ test('large originals are split into parts, uploaded concurrently, then complete
   }[];
   assert.deepEqual(
     parts.map((p) => p.partNumber).sort((a, b) => a - b),
-    [1, 2, 3]
+    [1, 2, 3],
   );
   assert(parts.every((p) => p.eTag.startsWith('"etag-')));
   assert.equal(progress.at(-1), size);
@@ -187,13 +187,13 @@ test('a failed part is retried with a fresh URL and never double-counts progress
         last = bytes;
       },
     },
-    deps
+    deps,
   ).result;
   assert.equal(puts.filter((p) => p.url.endsWith('/2')).length, 2);
   assert.equal(
     calls.filter((c) => c.field === 'signImageUploadParts').length,
     2,
-    'retry re-signs the failed part'
+    'retry re-signs the failed part',
   );
   assert.equal(last, size);
 });
@@ -211,9 +211,9 @@ test('client errors are not retried and the multipart upload is aborted', async 
         rotation: 0,
         onProgress: () => {},
       },
-      deps
+      deps,
     ).result,
-    /403/
+    /403/,
   );
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert(calls.some((c) => c.field === 'abortImageMultipartUpload'));
@@ -239,7 +239,7 @@ test('cancellation aborts in-flight parts and reports AbortError', async () => {
       rotation: 0,
       onProgress: () => {},
     },
-    deps
+    deps,
   );
   await new Promise((resolve) => setTimeout(resolve, 0));
   task.cancel();
@@ -247,13 +247,13 @@ test('cancellation aborts in-flight parts and reports AbortError', async () => {
   await assert.rejects(
     task.result,
     (error: unknown) =>
-      error instanceof DOMException && error.name === 'AbortError'
+      error instanceof DOMException && error.name === 'AbortError',
   );
 });
 
 test('an original that already exists is reported complete without a transfer', async () => {
   const { deps, puts } = fixture();
-  deps.operation = async <T>() => ({ exists: true, sourceKey: 'k' } as T);
+  deps.operation = async <T>() => ({ exists: true, sourceKey: 'k' }) as T;
   let reported = 0;
   await uploadOriginal(
     {
@@ -265,7 +265,7 @@ test('an original that already exists is reported complete without a transfer', 
         reported = bytes;
       },
     },
-    deps
+    deps,
   ).result;
   assert.equal(puts.length, 0);
   assert.equal(reported, PART_SIZE * 3);
@@ -292,7 +292,7 @@ test('PUTs from concurrent uploads share the slot limit', async () => {
         rotation: 0,
         onProgress: () => {},
       },
-      deps
+      deps,
     ).result;
   await Promise.all([upload(PART_SIZE * 3), upload(1024), upload(1024)]);
   assert.equal(puts.length, 5);
@@ -332,7 +332,7 @@ test('part URLs near expiry are re-signed before use', async () => {
   deps.operation = async <T>(
     query: string,
     variables: Record<string, unknown>,
-    field: string
+    field: string,
   ): Promise<T> => {
     const result = await innerOperation<T>(query, variables, field);
     return field === 'signImageUploadParts'
@@ -347,13 +347,13 @@ test('part URLs near expiry are re-signed before use', async () => {
       rotation: 0,
       onProgress: () => {},
     },
-    deps
+    deps,
   ).result;
   assert.deepEqual(
     calls
       .filter((c) => c.field === 'signImageUploadParts')
       .map((c) => c.variables.partNumbers),
-    [[1, 2, 3], [2, 3], [3]]
+    [[1, 2, 3], [2, 3], [3]],
   );
 });
 

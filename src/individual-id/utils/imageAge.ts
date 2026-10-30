@@ -1,6 +1,6 @@
 export function isOlder(
   a: { timestamp?: number | null; originalPath?: string | null },
-  b: { timestamp?: number | null; originalPath?: string | null }
+  b: { timestamp?: number | null; originalPath?: string | null },
 ): boolean {
   const at = a.timestamp ?? null;
   const bt = b.timestamp ?? null;

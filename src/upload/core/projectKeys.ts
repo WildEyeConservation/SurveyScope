@@ -9,11 +9,11 @@ export interface ProjectKeyInfo {
 
 export async function getProjectKeyInfo(
   client: UploadClient,
-  projectId: string
+  projectId: string,
 ): Promise<ProjectKeyInfo> {
   const { data: project } = await client.models.Project.get(
     { id: projectId },
-    { selectionSet: ['id', 'organizationId', 'tags'] as const }
+    { selectionSet: ['id', 'organizationId', 'tags'] as const },
   );
   const record = (project ?? {}) as Record<string, unknown>;
   const organizationId: string | undefined =

@@ -18,10 +18,10 @@ export function LoadingProgressCard({
 }) {
   return (
     <div
-      className='border border-dark shadow-sm p-4'
+      className='border border-dark p-4 shadow-sm'
       style={{ backgroundColor: '#697582' }}
     >
-      <div className='flex items-center gap-2 text-white mb-2'>
+      <div className='mb-2 flex items-center gap-2 text-white'>
         <Spinner animation='border' size='sm' />
         <span style={{ fontSize: '13px', fontWeight: 600 }}>{title}</span>
       </div>

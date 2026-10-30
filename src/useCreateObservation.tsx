@@ -1,12 +1,12 @@
 import { useCallback, useContext, useRef } from 'react';
-import { GlobalContext, ImageContext, ProjectContext } from './Context';
-import useCreateTestResult from './useCreateTestResult';
-import { GraphQLError } from './limitedClient';
-import { persistObservation } from './persistObservation';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
 } from './annotationTypes';
+import { GlobalContext, ImageContext, ProjectContext } from './Context';
+import { GraphQLError } from './limitedClient';
+import { persistObservation } from './persistObservation';
+import useCreateTestResult from './useCreateTestResult';
 
 /* This hook will take an ack callback as input and create a new ack callback that:
 - Uses the graphQL API to create an Observation entry for the current user.
@@ -76,7 +76,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
         const submittedTimestamp = submittedAt ?? Date.now();
         if (!id || !annotationSetId || !project) {
           throw new Error(
-            'Cannot complete task without a location, annotation set, and project'
+            'Cannot complete task without a location, annotation set, and project',
           );
         }
 
@@ -96,7 +96,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           console.warn(
             `Time taken (${timeTaken}ms) exceeds maximum (${maxTime}ms) for ${
               hasSighting ? 'sighting' : 'search'
-            }. Clamping to the maximum.`
+            }. Clamping to the maximum.`,
           );
           timeTaken = maxTime;
         }
@@ -137,7 +137,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
                       'locationId',
                       'queueId',
                     ],
-                  }
+                  },
                 )
             : undefined,
           expected: {
@@ -183,7 +183,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
       observationSource,
       client,
       ack,
-    ]
+    ],
   );
 
   return newAck;

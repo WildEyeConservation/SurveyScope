@@ -1,9 +1,9 @@
 import * as turf from '@turf/turf';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
-import { fetchAllPaginatedResults } from '../utils';
 import { isOnEffort } from '../../shared/boundaryStatus';
-import { ringToPolygon } from './new-survey/surveyArea';
 import { loadProjectImages } from '../projectImages';
+import { fetchAllPaginatedResults } from '../utils';
+import { ringToPolygon } from './new-survey/surveyArea';
 
 export type LatLng = [number, number];
 
@@ -58,7 +58,7 @@ export function isValidLatLng(lat: any, lng: any): boolean {
 }
 
 export function toLatLngPairs(
-  values: Array<number | null | undefined>
+  values: Array<number | null | undefined>,
 ): LatLng[] {
   const flat = values.filter((n): n is number => n != null);
   const pairs: LatLng[] = [];
@@ -70,18 +70,18 @@ export function toLatLngPairs(
 
 // Mixed second/millisecond timestamps -> milliseconds; missing stays NaN.
 function normalizeToMillis(ts: any): number {
-  const n = typeof ts === 'string' ? Number(ts) : ts ?? NaN;
+  const n = typeof ts === 'string' ? Number(ts) : (ts ?? NaN);
   return n > 0 && n < 1e12 ? n * 1000 : n;
 }
 
 // Requires images sorted by timestamp.
 function imputeLatLng<
-  T extends { timestamp: number; latitude: any; longitude: any }
+  T extends { timestamp: number; latitude: any; longitude: any },
 >(imgs: T[]): { filled: T[]; imputedIds: Set<number> } {
   const filled = imgs.map((img) => ({ ...img }));
   const n = filled.length;
   const isValid = filled.map((img) =>
-    isValidLatLng(img.latitude, img.longitude)
+    isValidLatLng(img.latitude, img.longitude),
   );
   const prev: number[] = Array(n).fill(-1);
   const next: number[] = Array(n).fill(-1);
@@ -106,7 +106,7 @@ function imputeLatLng<
       const t1 = filled[q].timestamp;
       const r = Math.min(
         Math.max((filled[i].timestamp - t0) / Math.max(t1 - t0, 1), 0),
-        1
+        1,
       );
       filled[i].latitude =
         filled[p].latitude + r * (filled[q].latitude - filled[p].latitude);
@@ -125,7 +125,7 @@ function imputeLatLng<
 export async function loadOnEffortImages(
   client: DataClient,
   projectId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<{
   images: SurveyImage[];
   imputedIds: Set<string>;
@@ -142,10 +142,10 @@ export async function loadOnEffortImages(
       'transectId',
       'boundaryStatus',
     ],
-    { signal }
+    { signal },
   )) as any[];
   const dbTransectIds = new Map<string, string | null>(
-    rawImgs.map((img) => [img.id, img.transectId ?? null])
+    rawImgs.map((img) => [img.id, img.transectId ?? null]),
   );
   const onEffort = rawImgs
     .filter((img) => isOnEffort(img.boundaryStatus))
@@ -169,7 +169,7 @@ export async function loadOnEffortImages(
 export async function loadStrata(
   client: DataClient,
   projectId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<SavedStratum[]> {
   const strata = (await fetchAllPaginatedResults(
     client.models.Stratum.strataByProjectId as any,
@@ -178,7 +178,7 @@ export async function loadStrata(
       limit: 10000,
       selectionSet: ['id', 'name', 'coordinates', 'offEffort'],
       signal,
-    } as any
+    } as any,
   )) as any[];
   return strata
     .filter((st) => !st.offEffort)
@@ -224,7 +224,7 @@ export async function clearJollyResults(client: DataClient, projectId: string) {
       surveyId: projectId,
       limit: 10000,
       selectionSet: ['surveyId', 'stratumId', 'annotationSetId', 'categoryId'],
-    } as any
+    } as any,
   )) as any[];
   await Promise.all(
     jollyResults.map((jr) =>
@@ -233,8 +233,8 @@ export async function clearJollyResults(client: DataClient, projectId: string) {
         stratumId: jr.stratumId,
         annotationSetId: jr.annotationSetId,
         categoryId: jr.categoryId,
-      })
-    )
+      }),
+    ),
   );
 }
 
@@ -268,7 +268,7 @@ export type NamedStratum = { id?: string; name: string; coords: LatLng[] };
 // New sections keep the id of the previous stratum they mostly cover.
 export function carryStrata(
   sections: LatLng[][],
-  previous: NamedStratum[]
+  previous: NamedStratum[],
 ): NamedStratum[] {
   const polys = sections.map(ringToPolygon);
   const prevPolys = previous.map((st) => ringToPolygon(st.coords));
@@ -280,7 +280,7 @@ export function carryStrata(
       if (overlap > 0.5 * Math.min(turf.area(a), turf.area(b))) {
         pairs.push({ i, j, overlap });
       }
-    })
+    }),
   );
   pairs.sort((p, q) => q.overlap - p.overlap);
   const matched = new Map<number, number>();
@@ -295,7 +295,7 @@ export function carryStrata(
   const used = new Set(
     [...matched.values()]
       .map((j) => previous[j].name)
-      .filter((name) => !isDefault(name))
+      .filter((name) => !isDefault(name)),
   );
   let next = 1;
   return sections.map((coords, i) => {

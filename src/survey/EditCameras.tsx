@@ -2,9 +2,9 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useState, useEffect, useContext } from 'react';
-import { Footer } from '../Modal';
+import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
+import { Footer } from '../Modal';
 import { Schema } from '../amplify/client-schema';
 import { loadProjectImages } from '../projectImages';
 
@@ -18,11 +18,17 @@ interface CameraFormDataMap {
   [cameraId: string]: CameraFormData;
 }
 
-export default function EditCameras({ projectId, organizationId }: { projectId: string; organizationId: string }) {
+export default function EditCameras({
+  projectId,
+  organizationId,
+}: {
+  projectId: string;
+  organizationId: string;
+}) {
   const { client, showModal } = useContext(GlobalContext);
   const [cameras, setCameras] = useState<Schema['Camera']['type'][]>([]);
   const [cameraFormDataMap, setCameraFormDataMap] = useState<CameraFormDataMap>(
-    {}
+    {},
   );
   const [isLoading, setIsLoading] = useState(true);
   const [disabled, setDisabled] = useState(false);
@@ -32,7 +38,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
     async function getCameras() {
       const { data: cameras } = await client.models.Camera.camerasByProjectId(
         { projectId },
-        { signal: controller.signal }
+        { signal: controller.signal },
       );
       setCameras(cameras);
 
@@ -63,7 +69,8 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
     }
 
     getCameras().catch((error) => {
-      if (!controller.signal.aborted) console.error('Failed to load cameras', error);
+      if (!controller.signal.aborted)
+        console.error('Failed to load cameras', error);
     });
     return () => controller.abort();
   }, [projectId]);
@@ -71,7 +78,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
   const handleFormChange = (
     cameraId: string,
     field: keyof CameraFormData,
-    value: string
+    value: string,
   ) => {
     const numValue = value === '' ? undefined : parseFloat(value);
     setCameraFormDataMap((prev) => ({
@@ -135,8 +142,8 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
             client.models.Image.update({
               id: image.id,
               cameraId: newCamera.id,
-            })
-          )
+            }),
+          ),
         );
       }
     } else {
@@ -150,7 +157,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
             sensorWidthMm: formData.sensorWidthMm,
             tiltDegrees: formData.tiltDegrees,
           });
-        })
+        }),
       );
     }
 
@@ -185,12 +192,10 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                     Camera {index + 1}: {camera.name}
                   </h5>
 
-                  <div className='flex flex-wrap -mx-2 gap-y-4'>
-                    <div className='w-full md:w-1/3 px-2'>
+                  <div className='-mx-2 flex flex-wrap gap-y-4'>
+                    <div className='w-full px-2 md:w-1/3'>
                       <div>
-                        <Label className='mb-0'>
-                          Focal Length (mm)
-                        </Label>
+                        <Label className='mb-0'>Focal Length (mm)</Label>
                         <Input
                           type='number'
                           step='0.01'
@@ -203,7 +208,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                             handleFormChange(
                               camera.id,
                               'focalLengthMm',
-                              e.target.value
+                              e.target.value,
                             )
                           }
                           placeholder='Enter focal length'
@@ -211,11 +216,9 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                       </div>
                     </div>
 
-                    <div className='w-full md:w-1/3 px-2'>
+                    <div className='w-full px-2 md:w-1/3'>
                       <div>
-                        <Label className='mb-0'>
-                          Sensor Width (mm)
-                        </Label>
+                        <Label className='mb-0'>Sensor Width (mm)</Label>
                         <Input
                           type='number'
                           step='0.01'
@@ -228,7 +231,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                             handleFormChange(
                               camera.id,
                               'sensorWidthMm',
-                              e.target.value
+                              e.target.value,
                             )
                           }
                           placeholder='Enter sensor width'
@@ -236,7 +239,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                       </div>
                     </div>
 
-                    <div className='w-full md:w-1/3 px-2'>
+                    <div className='w-full px-2 md:w-1/3'>
                       <div>
                         <Label className='mb-0'>Tilt (degrees)</Label>
                         <Input
@@ -251,7 +254,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                             handleFormChange(
                               camera.id,
                               'tiltDegrees',
-                              e.target.value
+                              e.target.value,
                             )
                           }
                           placeholder='Enter tilt'
@@ -272,8 +275,8 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
             <div className='border p-4'>
               <h5 className='mb-4'>New Camera: Survey Camera</h5>
 
-              <div className='flex flex-wrap -mx-2 gap-y-4'>
-                <div className='w-full md:w-1/3 px-2'>
+              <div className='-mx-2 flex flex-wrap gap-y-4'>
+                <div className='w-full px-2 md:w-1/3'>
                   <div>
                     <Label className='mb-0'>Focal Length (mm)</Label>
                     <Input
@@ -290,7 +293,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                         handleFormChange(
                           'new-camera',
                           'focalLengthMm',
-                          e.target.value
+                          e.target.value,
                         )
                       }
                       placeholder='Enter focal length'
@@ -298,7 +301,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                   </div>
                 </div>
 
-                <div className='w-full md:w-1/3 px-2'>
+                <div className='w-full px-2 md:w-1/3'>
                   <div>
                     <Label className='mb-0'>Sensor Width (mm)</Label>
                     <Input
@@ -315,7 +318,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                         handleFormChange(
                           'new-camera',
                           'sensorWidthMm',
-                          e.target.value
+                          e.target.value,
                         )
                       }
                       placeholder='Enter sensor width'
@@ -323,7 +326,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                   </div>
                 </div>
 
-                <div className='w-full md:w-1/3 px-2'>
+                <div className='w-full px-2 md:w-1/3'>
                   <div>
                     <Label className='mb-0'>Tilt (degrees)</Label>
                     <Input
@@ -340,7 +343,7 @@ export default function EditCameras({ projectId, organizationId }: { projectId: 
                         handleFormChange(
                           'new-camera',
                           'tiltDegrees',
-                          e.target.value
+                          e.target.value,
                         )
                       }
                       placeholder='Enter tilt'

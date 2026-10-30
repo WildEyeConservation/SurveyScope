@@ -1,39 +1,30 @@
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import ChangeCategoryModal from '../ChangeCategoryModal';
 import { GlobalContext, ProjectContext } from '../Context';
 import type { AnnotationType, CategoryType } from '../schemaTypes';
+import { IndividualIdMapPair } from './IndividualIdMapPair';
+import { LinkAnnotationDialog } from './components/LinkAnnotationDialog';
+import { LoadingCard } from './components/LoadingCard';
+import { SplitChainDialog } from './components/SplitChainDialog';
 import { usePairData, type PairData } from './hooks/usePairData';
-import {
-  makePairKey,
-  usePairWorkingState,
-} from './hooks/usePairWorkingState';
-import { buildMatchCandidates } from './utils/munkres';
-import { buildNeighbourTransforms } from './utils/transforms';
-import { isOov } from './utils/identity';
+import { makePairKey, usePairWorkingState } from './hooks/usePairWorkingState';
+import type { MatchCandidate, NeighbourPairWithMeta } from './types';
 import {
   buildChainSplitPlan,
   findDuplicateSameImageChainAnnotationIds,
   findSameImageAnnotationConflicts,
   type ChainSplitPlan,
 } from './utils/chains';
-import type { MatchCandidate, NeighbourPairWithMeta } from './types';
-import { IndividualIdMapPair } from './IndividualIdMapPair';
-import { LoadingCard } from './components/LoadingCard';
-import { LinkAnnotationDialog } from './components/LinkAnnotationDialog';
-import { SplitChainDialog } from './components/SplitChainDialog';
-import ChangeCategoryModal from '../ChangeCategoryModal';
+import { isOov } from './utils/identity';
+import { buildMatchCandidates } from './utils/munkres';
+import { buildNeighbourTransforms } from './utils/transforms';
 
 const DEFAULT_LENIENCY = 40;
 
 function indexByImage(
-  annotations: AnnotationType[]
+  annotations: AnnotationType[],
 ): Record<string, AnnotationType[]> {
   const out: Record<string, AnnotationType[]> = {};
   for (const a of annotations) (out[a.imageId] ??= []).push(a);
@@ -42,7 +33,7 @@ function indexByImage(
 
 function isOlder(
   a: { timestamp?: number | null; originalPath?: string | null },
-  b: { timestamp?: number | null; originalPath?: string | null }
+  b: { timestamp?: number | null; originalPath?: string | null },
 ): boolean {
   const at = a.timestamp ?? null;
   const bt = b.timestamp ?? null;
@@ -112,7 +103,7 @@ export function IndividualIdPairHarness({
   const working = usePairWorkingState();
 
   const [localAnnotations, setLocalAnnotations] = useState<AnnotationType[]>(
-    []
+    [],
   );
   useEffect(() => {
     if (pairData.data?.annotations)
@@ -121,7 +112,7 @@ export function IndividualIdPairHarness({
 
   const annotationsByImage = useMemo(
     () => indexByImage(localAnnotations),
-    [localAnnotations]
+    [localAnnotations],
   );
 
   // Mirror the optimistic mutation pattern from the transect harness so the
@@ -133,10 +124,10 @@ export function IndividualIdPairHarness({
           predicate: (q) =>
             Array.isArray(q.queryKey) && q.queryKey[0] === 'individual-id-pair',
         },
-        (old) => (old ? mutate(old) : old)
+        (old) => (old ? mutate(old) : old),
       );
     },
-    [queryClient]
+    [queryClient],
   );
 
   // Build a single NeighbourPair, re-orienting so A is the older image.
@@ -149,8 +140,10 @@ export function IndividualIdPairHarness({
     // The neighbour fixes which image is "1" and which is "2" for the
     // homography. Find which loaded image is on which side so the
     // swap-to-chronological-order logic below picks the right transforms.
-    const neighbourImg1 = d.imageA.id === d.neighbour.image1Id ? d.imageA : d.imageB;
-    const neighbourImg2 = d.imageA.id === d.neighbour.image1Id ? d.imageB : d.imageA;
+    const neighbourImg1 =
+      d.imageA.id === d.neighbour.image1Id ? d.imageA : d.imageB;
+    const neighbourImg2 =
+      d.imageA.id === d.neighbour.image1Id ? d.imageB : d.imageA;
 
     const swap = isOlder(neighbourImg2, neighbourImg1);
     const imageA = swap ? neighbourImg2 : neighbourImg1;
@@ -186,14 +179,7 @@ export function IndividualIdPairHarness({
       categoryFilter: categoryId,
     });
     return working.mergeCandidates(currentPairKey, munkres);
-  }, [
-    pair,
-    annotationsByImage,
-    leniency,
-    categoryId,
-    working,
-    currentPairKey,
-  ]);
+  }, [pair, annotationsByImage, leniency, categoryId, working, currentPairKey]);
 
   // ---- The map-pair callbacks (mirror IndividualIdHarness) ----
   // Persist a dragged real annotation's new position straight to the DB
@@ -232,15 +218,11 @@ export function IndividualIdPairHarness({
         }));
       }
     },
-    [localAnnotations, client, patchPairCache]
+    [localAnnotations, client, patchPairCache],
   );
 
   const handleDrag = useCallback(
-    (
-      candidateKey: string,
-      side: 'A' | 'B',
-      pos: { x: number; y: number }
-    ) => {
+    (candidateKey: string, side: 'A' | 'B', pos: { x: number; y: number }) => {
       if (!currentPairKey) return;
       const candidate = candidates.find((c) => c.pairKey === candidateKey);
       if (!candidate) {
@@ -257,15 +239,11 @@ export function IndividualIdPairHarness({
         working.setCandidatePosition(currentPairKey, candidateKey, side, pos);
       }
     },
-    [working, currentPairKey, candidates, persistAnnotationPosition]
+    [working, currentPairKey, candidates, persistAnnotationPosition],
   );
 
   const handlePlaceNew = useCallback(
-    async (
-      side: 'A' | 'B',
-      pos: { x: number; y: number },
-      newId: string
-    ) => {
+    async (side: 'A' | 'B', pos: { x: number; y: number }, newId: string) => {
       if (!pair) return;
       const group = (projectCtx?.project as any)?.organizationId ?? undefined;
       const nowIso = new Date().toISOString();
@@ -312,7 +290,7 @@ export function IndividualIdPairHarness({
       projectCtx?.project,
       client,
       patchPairCache,
-    ]
+    ],
   );
 
   const handleDelete = useCallback(
@@ -324,8 +302,7 @@ export function IndividualIdPairHarness({
       // bridges newer annotations to an older chain re-anchors the newer
       // segment to its own oldest survivor so the chains end up split, not
       // dangling.
-      const imagesById: Record<string, any> =
-        pairData.data?.imagesById ?? {};
+      const imagesById: Record<string, any> = pairData.data?.imagesById ?? {};
       const ageOf = (imageId: string) => {
         const img: any = imagesById[imageId];
         return {
@@ -342,11 +319,11 @@ export function IndividualIdPairHarness({
         const chainMembers = localAnnotations.filter(
           (a) =>
             a.id !== annotationId &&
-            (a.objectId === chainKey || a.id === chainKey)
+            (a.objectId === chainKey || a.id === chainKey),
         );
         const oovAge = ageOf(target.imageId);
         const newer = chainMembers.filter((a) =>
-          isOlder(oovAge, ageOf(a.imageId))
+          isOlder(oovAge, ageOf(a.imageId)),
         );
         if (newer.length > 0) {
           let nearest = newer[0];
@@ -367,15 +344,13 @@ export function IndividualIdPairHarness({
       }
 
       const applyDeleteAndReRoot = (
-        prev: AnnotationType[]
+        prev: AnnotationType[],
       ): AnnotationType[] => {
         let next = prev.filter((a) => a.id !== annotationId);
         if (reRootUpdates.length > 0) {
-          const patchById = new Map(
-            reRootUpdates.map((u) => [u.id, u.patch])
-          );
+          const patchById = new Map(reRootUpdates.map((u) => [u.id, u.patch]));
           next = next.map((a) =>
-            patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a
+            patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a,
           );
         }
         return next;
@@ -396,13 +371,13 @@ export function IndividualIdPairHarness({
             client.models.Annotation.update({
               id: u.id,
               ...u.patch,
-            } as any)
-          )
+            } as any),
+          ),
         );
         if (result && result.data == null && !result.errors?.length) {
           console.warn(
             'Annotation.delete returned null — likely an authorization issue (you may not own this row).',
-            { id: annotationId }
+            { id: annotationId },
           );
         }
       } catch (err) {
@@ -411,7 +386,7 @@ export function IndividualIdPairHarness({
         patchPairCache((old) => ({ ...old, annotations: before }));
       }
     },
-    [client, localAnnotations, pairData.data?.imagesById, patchPairCache]
+    [client, localAnnotations, pairData.data?.imagesById, patchPairCache],
   );
 
   const handleToggleObscured = useCallback(
@@ -443,7 +418,7 @@ export function IndividualIdPairHarness({
         }));
       }
     },
-    [localAnnotations, client, patchPairCache]
+    [localAnnotations, client, patchPairCache],
   );
 
   const handleSetProposedObscured = useCallback(
@@ -451,7 +426,7 @@ export function IndividualIdPairHarness({
       if (!currentPairKey) return;
       working.setCandidateObscured(currentPairKey, candidateKey, side, value);
     },
-    [working, currentPairKey]
+    [working, currentPairKey],
   );
 
   // ---- Change-label flow ----
@@ -460,9 +435,9 @@ export function IndividualIdPairHarness({
   const setCategories = useMemo(
     () =>
       allCategories.filter(
-        (c) => (c as any).annotationSetId === annotationSetId
+        (c) => (c as any).annotationSetId === annotationSetId,
       ),
-    [allCategories, annotationSetId]
+    [allCategories, annotationSetId],
   );
 
   // categoryId → marker colour for the informational (other-category)
@@ -485,19 +460,19 @@ export function IndividualIdPairHarness({
       (a) =>
         a.categoryId !== categoryId &&
         !isOov(a) &&
-        (a.imageId === pair.image1Id || a.imageId === pair.image2Id)
+        (a.imageId === pair.image1Id || a.imageId === pair.image2Id),
     );
   }, [localAnnotations, pair, categoryId]);
 
   const duplicateAnnotationIds = useMemo(
     () => findDuplicateSameImageChainAnnotationIds(localAnnotations),
-    [localAnnotations]
+    [localAnnotations],
   );
   const [conflictHighlightAnnotationIds, setConflictHighlightAnnotationIds] =
     useState<Set<string>>(() => new Set<string>());
   const clearConflictHighlights = useCallback(
     () => setConflictHighlightAnnotationIds(new Set<string>()),
-    []
+    [],
   );
 
   const [labelChange, setLabelChange] = useState<{
@@ -524,7 +499,7 @@ export function IndividualIdPairHarness({
       }
       return Array.from(ids);
     },
-    [localAnnotations]
+    [localAnnotations],
   );
 
   const handleChangeLabel = useCallback(
@@ -535,7 +510,7 @@ export function IndividualIdPairHarness({
         chainIds: buildChainIds(annotationId),
       });
     },
-    [buildChainIds]
+    [buildChainIds],
   );
 
   const buildSplitPlan = useCallback(
@@ -549,12 +524,12 @@ export function IndividualIdPairHarness({
         };
       });
     },
-    [localAnnotations, pairData.data?.imagesById]
+    [localAnnotations, pairData.data?.imagesById],
   );
 
   const canSplitChain = useCallback(
     (annotationId: string) => buildSplitPlan(annotationId) !== null,
-    [buildSplitPlan]
+    [buildSplitPlan],
   );
 
   const handleSplitChain = useCallback(
@@ -563,7 +538,7 @@ export function IndividualIdPairHarness({
       if (!plan) return;
       setSplitRequest({ annotationId, plan });
     },
-    [buildSplitPlan]
+    [buildSplitPlan],
   );
 
   const executeSplitChain = useCallback(
@@ -575,7 +550,7 @@ export function IndividualIdPairHarness({
       const patchById = new Map(plan.updates.map((u) => [u.id, u.patch]));
       const applySplit = (prev: AnnotationType[]): AnnotationType[] =>
         prev.map((a) =>
-          patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a
+          patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a,
         );
 
       setLocalAnnotations(applySplit);
@@ -587,8 +562,8 @@ export function IndividualIdPairHarness({
       try {
         await Promise.all(
           plan.updates.map((u) =>
-            client.models.Annotation.update({ id: u.id, ...u.patch } as any)
-          )
+            client.models.Annotation.update({ id: u.id, ...u.patch } as any),
+          ),
         );
       } catch (err) {
         console.error('Failed to split individual-id chain', err);
@@ -596,7 +571,7 @@ export function IndividualIdPairHarness({
         patchPairCache((old) => ({ ...old, annotations: before }));
       }
     },
-    [buildSplitPlan, client, localAnnotations, patchPairCache]
+    [buildSplitPlan, client, localAnnotations, patchPairCache],
   );
 
   const confirmSplitChain = () => {
@@ -629,8 +604,8 @@ export function IndividualIdPairHarness({
             client.models.Annotation.update({
               id: aid,
               categoryId: newCategoryId,
-            } as any)
-          )
+            } as any),
+          ),
         );
       } catch (err) {
         console.error('Failed to update annotation labels', err);
@@ -643,7 +618,7 @@ export function IndividualIdPairHarness({
         }));
       }
     },
-    [labelChange, localAnnotations, client, patchPairCache]
+    [labelChange, localAnnotations, client, patchPairCache],
   );
 
   const commitActorLink = useCallback(
@@ -651,8 +626,7 @@ export function IndividualIdPairHarness({
       if (actors.length === 0) return false;
       const nowIso = new Date().toISOString();
       const group = (projectCtx?.project as any)?.organizationId ?? undefined;
-      const imagesById: Record<string, any> =
-        pairData.data?.imagesById ?? {};
+      const imagesById: Record<string, any> = pairData.data?.imagesById ?? {};
       const ageOf = (imageId: string) => {
         const img: any = imagesById[imageId];
         return {
@@ -682,18 +656,18 @@ export function IndividualIdPairHarness({
       ]);
       if (sameImageConflicts.length > 0) {
         setConflictHighlightAnnotationIds(
-          new Set(sameImageConflicts.flatMap((c) => c.annotationIds))
+          new Set(sameImageConflicts.flatMap((c) => c.annotationIds)),
         );
         const details = sameImageConflicts
           .map(
             (c) =>
               `${c.imageId}: ${c.annotationIds
                 .map((id) => id.slice(0, 8))
-                .join(', ')}`
+                .join(', ')}`,
           )
           .join('; ');
         window.alert(
-          `Cannot link these annotations: that would put multiple annotations from the same image in one chain (${details}).`
+          `Cannot link these annotations: that would put multiple annotations from the same image in one chain (${details}).`,
         );
         return false;
       }
@@ -772,7 +746,7 @@ export function IndividualIdPairHarness({
       try {
         await Promise.all([
           ...updates.map((u) =>
-            client.models.Annotation.update({ id: u.id, ...u.patch } as any)
+            client.models.Annotation.update({ id: u.id, ...u.patch } as any),
           ),
           ...newRows.map((row) => {
             const { createdAt: _c, updatedAt: _u, ...dbInput } = row as any;
@@ -792,7 +766,7 @@ export function IndividualIdPairHarness({
       localAnnotations,
       client,
       patchPairCache,
-    ]
+    ],
   );
 
   const handleAccept = useCallback(
@@ -841,7 +815,7 @@ export function IndividualIdPairHarness({
       }
       return false;
     },
-    [pair, candidates, working, currentPairKey, commitActorLink]
+    [pair, candidates, working, currentPairKey, commitActorLink],
   );
 
   const handleManualLink = useCallback(
@@ -854,10 +828,10 @@ export function IndividualIdPairHarness({
           { id: a.id, imageId: a.imageId, existing: a, candidatePos: null },
           { id: b.id, imageId: b.imageId, existing: b, candidatePos: null },
         ],
-        a.categoryId
+        a.categoryId,
       );
     },
-    [localAnnotations, commitActorLink]
+    [localAnnotations, commitActorLink],
   );
 
   const handleMoveToOov = useCallback(
@@ -886,7 +860,7 @@ export function IndividualIdPairHarness({
       const committed = await commitActorLink(actors, candidate.categoryId);
       if (committed) working.acceptCandidate(currentPairKey, candidateKey);
     },
-    [pair, candidates, working, currentPairKey, commitActorLink]
+    [pair, candidates, working, currentPairKey, commitActorLink],
   );
 
   const [pendingLink, setPendingLink] = useState<{
@@ -900,7 +874,7 @@ export function IndividualIdPairHarness({
         clicked: clickedAnnotationId,
       });
     },
-    []
+    [],
   );
   const confirmManualLink = () => {
     if (pendingLink) handleManualLink(pendingLink.active, pendingLink.clicked);
@@ -910,11 +884,11 @@ export function IndividualIdPairHarness({
 
   const goPrev = useMemo(
     () => (prevHref ? () => navigate(prevHref) : undefined),
-    [prevHref, navigate]
+    [prevHref, navigate],
   );
   const goNext = useMemo(
     () => (nextHref ? () => navigate(nextHref) : undefined),
-    [nextHref, navigate]
+    [nextHref, navigate],
   );
 
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
@@ -936,8 +910,8 @@ export function IndividualIdPairHarness({
             pairData.progress.phase === 'chain'
               ? 'annotations'
               : pairData.progress.phase === 'idle'
-              ? 'idle'
-              : pairData.progress.phase,
+                ? 'idle'
+                : pairData.progress.phase,
           images: 0,
           annotations: pairData.progress.annotations,
         }}
@@ -954,8 +928,8 @@ export function IndividualIdPairHarness({
   if (!pairData.data?.neighbour) {
     return (
       <div className='p-6 text-light'>
-        These two images aren't registered as neighbours (no homography
-        between them).
+        These two images aren't registered as neighbours (no homography between
+        them).
       </div>
     );
   }
@@ -968,10 +942,7 @@ export function IndividualIdPairHarness({
   }
 
   return (
-    <div
-      className='w-full h-full flex flex-col py-4'
-      style={{ minHeight: 0 }}
-    >
+    <div className='flex h-full w-full flex-col py-4' style={{ minHeight: 0 }}>
       <div style={{ flex: 1, minHeight: 0 }}>
         <IndividualIdMapPair
           key={currentPairKey}
@@ -1023,12 +994,12 @@ export function IndividualIdPairHarness({
           if (count > 1) {
             return (
               <>
-              <strong>Heads up:</strong> this annotation is linked to{' '}
-              {count - 1} other{count - 1 === 1 ? '' : 's'} of the same
-              individual. Changing the label will update{' '}
-              <strong>all {count}</strong> of them so the chain stays
-              consistent.
-            </>
+                <strong>Heads up:</strong> this annotation is linked to{' '}
+                {count - 1} other{count - 1 === 1 ? '' : 's'} of the same
+                individual. Changing the label will update{' '}
+                <strong>all {count}</strong> of them so the chain stays
+                consistent.
+              </>
             );
           }
         })()}

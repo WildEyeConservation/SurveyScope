@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { JobsRemaining } from './JobsRemaining';
 import AnnotationWorkspace from './AnnotationWorkspace';
+import { JobsRemaining } from './JobsRemaining';
 import { TaskBuffer } from './TaskBuffer';
 import useAnnotationTaskQueue from './useAnnotationTaskQueue';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
@@ -11,16 +11,15 @@ tasks mounted for instant navigation, and shows the queue/session totals.
 */
 export default function AnnotationQueuePage() {
   const [index, setIndex] = useState(0);
-  const { fetcher, standbyTestFetcher, beforeNext } =
-    useAnnotationTaskQueue();
+  const { fetcher, standbyTestFetcher, beforeNext } = useAnnotationTaskQueue();
   useUnsavedWorkGuard();
 
   return (
     <div
-      className='flex flex-col items-center gap-4 w-full h-full'
+      className='flex h-full w-full flex-col items-center gap-4'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-full h-full'>
+      <div className='h-full w-full'>
         {fetcher && (
           <TaskBuffer
             index={index}

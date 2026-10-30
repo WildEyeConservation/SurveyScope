@@ -1,5 +1,6 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { loadSurveyArea, saveSurveyArea } from '../../utils/shapefileUtils.ts';
 import {
   applyImport,
   outsideAreaKeys,
@@ -13,7 +14,6 @@ import {
   type ImportedPolygon,
   type LatLng,
 } from './surveyArea.ts';
-import { loadSurveyArea, saveSurveyArea } from '../../utils/shapefileUtils.ts';
 
 // [lng, lat] closed square, as GeoJSON stores it.
 // Offset longitude to expose lat/lng swaps.
@@ -61,11 +61,11 @@ test('polygonsFromGeoJson splits multipolygons and reports holes', () => {
         },
       ],
     },
-    'area.geojson'
+    'area.geojson',
   );
   assert.deepEqual(
     polygons.map((polygon) => polygon.name),
-    ['Block', 'Block (hole 1)', 'Polygon 3', 'Polygon 4']
+    ['Block', 'Block (hole 1)', 'Polygon 3', 'Polygon 4'],
   );
   assert.equal(new Set(polygons.map((polygon) => polygon.id)).size, 4);
   assert.deepEqual(polygons[2].ring[0], [5, EAST + 5]);
@@ -78,7 +78,7 @@ test('polygonsFromGeoJson reads shpjs layer arrays and bare geometries', () => {
       { type: 'FeatureCollection', features: [] },
       { type: 'Polygon', coordinates: [square(0, 0, 1)] },
     ],
-    'layers.zip'
+    'layers.zip',
   );
   assert.equal(polygons.length, 1);
 });
@@ -98,9 +98,9 @@ test('polygonsFromGeoJson rejects projected coordinates', () => {
             ],
           ],
         },
-        'utm.geojson'
+        'utm.geojson',
       ),
-    /WGS84/
+    /WGS84/,
   );
 });
 
@@ -126,7 +126,7 @@ test('suggestRoles picks the polygon holding the images as the boundary', () => 
         },
       ],
     },
-    'area.geojson'
+    'area.geojson',
   );
   const points = [
     { lat: 0.2, lng: EAST + 0.2 },
@@ -134,12 +134,12 @@ test('suggestRoles picks the polygon holding the images as the boundary', () => 
   ];
   assert.deepEqual(
     suggestRoles(polygons, points, null).map((polygon) => polygon.role),
-    ['ignore', 'boundary', 'exclusion']
+    ['ignore', 'boundary', 'exclusion'],
   );
   assert.equal(suggestRoles(polygons, [], null)[0].role, 'boundary');
   assert.deepEqual(
     suggestRoles(polygons, points, block).map((polygon) => polygon.role),
-    ['ignore', 'ignore', 'exclusion']
+    ['ignore', 'ignore', 'exclusion'],
   );
 });
 
@@ -150,15 +150,15 @@ test('setImportRole keeps a single boundary', () => {
         type: 'MultiPolygon',
         coordinates: [[square(0, 0, 2)], [square(10, 10, 1)]],
       },
-      'a.geojson'
+      'a.geojson',
     ),
     [],
-    null
+    null,
   );
   const promoted = setImportRole(polygons, polygons[1].id, 'boundary');
   assert.deepEqual(
     promoted.map((polygon) => polygon.role),
-    ['ignore', 'boundary']
+    ['ignore', 'boundary'],
   );
 });
 
@@ -204,7 +204,7 @@ test('outsideAreaKeys honours the margin and skips unplaced rows', () => {
   const keyOf = (row: { id: string }) => row.id;
   assert.deepEqual(
     [...outsideAreaKeys(rows, block, 0, keyOf)],
-    ['near', 'far']
+    ['near', 'far'],
   );
   assert.deepEqual([...outsideAreaKeys(rows, block, 500, keyOf)], ['far']);
   assert.equal(outsideAreaKeys(rows, null, 0, keyOf).size, 0);
@@ -224,7 +224,7 @@ test('pruneOutsideArea drops queued images outside the area', () => {
   const kept = pruneOutsideArea(queued, block, 0, new Set(['created.jpg']));
   assert.deepEqual(
     kept.map((entry) => entry.originalPath),
-    ['in.jpg', 'created.jpg']
+    ['in.jpg', 'created.jpg'],
   );
   assert.equal(pruneOutsideArea(queued, null, 0, new Set()).length, 3);
 });
@@ -243,7 +243,7 @@ test('traceAroundPoints encloses every position', () => {
   assert.equal(outsideAreaKeys(points, ring, 0, key).size, 0);
   assert.ok(
     ringAreaKm2(ring) >
-      ringAreaKm2(points.slice(0, 4).map(({ lat, lng }) => [lat, lng]))
+      ringAreaKm2(points.slice(0, 4).map(({ lat, lng }) => [lat, lng])),
   );
 
   const line = traceAroundPoints(points.slice(0, 2));
@@ -269,9 +269,9 @@ function fakeClient(respond: (call: Call) => unknown) {
                 calls.push(call);
                 return respond(call) ?? { data: [] };
               },
-          }
+          },
         ),
-    }
+    },
   );
   return { client: { models }, calls };
 }
@@ -280,16 +280,16 @@ test('saveSurveyArea stores the boundary and replaces exclusions', async () => {
   const { client, calls } = fakeClient(([model, method]) =>
     model === 'ShapefileExclusions' && method.endsWith('ByProjectId')
       ? { data: [{ id: 'old' }] }
-      : undefined
+      : undefined,
   );
   await saveSurveyArea(
     client,
     'p1',
     { boundary: block, exclusions: [block.slice(0, 3)] },
-    'org'
+    'org',
   );
   const boundary = calls.find(
-    ([model, method]) => model === 'Shapefile' && method === 'create'
+    ([model, method]) => model === 'Shapefile' && method === 'create',
   );
   assert.deepEqual((boundary?.[2].coordinates as number[]).slice(0, 4), [
     0,
@@ -301,7 +301,7 @@ test('saveSurveyArea stores the boundary and replaces exclusions', async () => {
     calls
       .filter(([model]) => model === 'ShapefileExclusions')
       .map(([, method]) => method),
-    ['shapefileExclusionsByProjectId', 'delete', 'create']
+    ['shapefileExclusionsByProjectId', 'delete', 'create'],
   );
 });
 
@@ -309,14 +309,14 @@ test('saveSurveyArea removes a cleared boundary', async () => {
   const { client, calls } = fakeClient(([model, method]) =>
     model === 'Shapefile' && method.endsWith('ByProjectId')
       ? { data: [{ id: 's1' }] }
-      : undefined
+      : undefined,
   );
   await saveSurveyArea(client, 'p1', { boundary: null, exclusions: [] }, 'org');
   assert.ok(
     calls.some(
       ([model, method, args]) =>
-        model === 'Shapefile' && method === 'delete' && args.id === 's1'
-    )
+        model === 'Shapefile' && method === 'delete' && args.id === 's1',
+    ),
   );
 });
 
@@ -324,16 +324,16 @@ test('area persistence rejects when a request reports errors', async () => {
   const failing = fakeClient(([, method]) =>
     method === 'create'
       ? { data: null, errors: [{ message: 'denied' }] }
-      : undefined
+      : undefined,
   );
   await assert.rejects(
     saveSurveyArea(
       failing.client,
       'p1',
       { boundary: block, exclusions: [] },
-      'org'
+      'org',
     ),
-    /denied/
+    /denied/,
   );
   const unreadable = fakeClient(() => ({
     data: null,

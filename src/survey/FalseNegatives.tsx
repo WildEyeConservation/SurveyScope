@@ -1,4 +1,3 @@
-import { useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,23 +5,31 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import {
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
+import { DataClient } from '../../amplify/shared/data-schema.generated';
+import { isCentreObserved } from '../../shared/locationGeometry';
+import { Schema } from '../amplify/client-schema';
+import { GlobalContext, UserContext } from '../Context';
+import { loadRows } from '../rowChunks';
+import {
   deleteFalseNegativeFiles,
   readFalseNegativeFile,
   uploadWorkflowFile,
 } from '../storage/workflowFiles';
-import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
-import { loadRows } from '../rowChunks';
-import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { loadLocationCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
-import { isCentreObserved } from '../../shared/locationGeometry';
 
 type LaunchHandler = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 };
 
@@ -76,12 +83,11 @@ export default function FalseNegatives({
 
   // Global tiled location set from project
   const tiledLocationSetId = (project as any).tiledLocationSetId as
-    | string
-    | undefined;
+    string | undefined;
 
   // Queue tag
   const [queueTag, setQueueTag] = useState<string>(
-    `${annotationSet.name} - False Negatives`
+    `${annotationSet.name} - False Negatives`,
   );
 
   // Tile count state
@@ -107,7 +113,7 @@ export default function FalseNegatives({
   const [fnPool, setFnPool] = useState<FnPool | null>(null);
   const [fnHistory, setFnHistory] = useState<FnHistory | null>(null);
   const [remainingTiles, setRemainingTiles] = useState<MinimalTile[] | null>(
-    null
+    null,
   );
   const [loadingRemaining, setLoadingRemaining] = useState<boolean>(false);
 
@@ -135,14 +141,14 @@ export default function FalseNegatives({
       try {
         const pool = await readFalseNegativeFile<FnPool>(
           annotationSet.id,
-          'pool'
+          'pool',
         );
         if (!mounted) return;
         setFnPool(pool);
         const history = pool
           ? await readFalseNegativeFile<FnHistory>(
               annotationSet.id,
-              'history'
+              'history',
             ).catch(() => null)
           : null;
         if (mounted) setFnHistory(history);
@@ -174,7 +180,7 @@ export default function FalseNegatives({
       try {
         const { data } = await client.models.LocationSet.get(
           { id: tiledLocationSetId },
-          { selectionSet: ['locationCount'] }
+          { selectionSet: ['locationCount'] },
         );
         if (mounted) {
           setGlobalTileCount(data?.locationCount ?? 0);
@@ -208,11 +214,11 @@ export default function FalseNegatives({
       try {
         const observedLocationIds = await fetchObservedLocationIds(
           client,
-          annotationSet.id
+          annotationSet.id,
         );
         const annotationPoints = await fetchAnnotationPointsDetailed(
           client,
-          annotationSet.id
+          annotationSet.id,
         );
 
         // Collect all launched tiles across all launches
@@ -223,7 +229,7 @@ export default function FalseNegatives({
           if (observedLocationIds.has(tile.id)) return false;
           const anns = annotationPoints.get(tile.imageId) || [];
           const hasAnnotation = anns.some((pt) =>
-            isInsideTile(pt.x, pt.y, tile)
+            isInsideTile(pt.x, pt.y, tile),
           );
           return !hasAnnotation;
         });
@@ -281,18 +287,24 @@ export default function FalseNegatives({
   const fetchLocationsFromSet = useCallback(
     async (
       locationSetId: string,
-      onProgress?: (message: string) => void
+      onProgress?: (message: string) => void,
     ): Promise<MinimalTile[]> => {
       onProgress?.('Querying locations...');
       const allLocs = await loadRows(
         client,
         'locationsBySetIdAndConfidence',
         locationSetId,
-        ['imageId', 'x', 'y', 'width', 'height']
+        ['imageId', 'x', 'y', 'width', 'height'],
       );
       return allLocs
-        .filter(loc => loc.x !== 0 && loc.y !== 0 && (loc.width ?? 0) !== 0 && (loc.height ?? 0) !== 0)
-        .map(loc => ({
+        .filter(
+          (loc) =>
+            loc.x !== 0 &&
+            loc.y !== 0 &&
+            (loc.width ?? 0) !== 0 &&
+            (loc.height ?? 0) !== 0,
+        )
+        .map((loc) => ({
           id: loc.id,
           imageId: loc.imageId!,
           x: loc.x!,
@@ -301,7 +313,7 @@ export default function FalseNegatives({
           height: loc.height!,
         }));
     },
-    [client]
+    [client],
   );
 
   const computeSummary = useCallback(async () => {
@@ -316,7 +328,7 @@ export default function FalseNegatives({
       setSummaryMessage('Fetching tiles...');
       const tiles = await fetchLocationsFromSet(
         tiledLocationSetId,
-        setSummaryMessage
+        setSummaryMessage,
       );
 
       setExpectedTiles(tiles.length);
@@ -324,13 +336,13 @@ export default function FalseNegatives({
       setSummaryMessage('Fetching reviewed locations...');
       const observationPoints = await fetchObservationPointsDetailed(
         client,
-        annotationSet.id
+        annotationSet.id,
       );
 
       setSummaryMessage('Fetching annotations...');
       const annotationPoints = await fetchAnnotationPointsDetailed(
         client,
-        annotationSet.id
+        annotationSet.id,
       );
 
       setSummaryMessage('Evaluating tiles...');
@@ -346,7 +358,7 @@ export default function FalseNegatives({
       const normalizedPercent = Math.min(Math.max(samplePercent, 0), 100);
       const availableTiles = candidates.length;
       let estimatedSamples = Math.floor(
-        (availableTiles * normalizedPercent) / 100
+        (availableTiles * normalizedPercent) / 100,
       );
       if (
         normalizedPercent > 0 &&
@@ -406,7 +418,7 @@ export default function FalseNegatives({
     setFalseNegativesLaunchHandler({
       execute: async (
         onProgress: (msg: string) => void,
-        onLaunchConfirmed: () => void
+        onLaunchConfirmed: () => void,
       ) => {
         const currentTiledLocationSetId = tiledLocationSetIdRef.current;
         if (!currentTiledLocationSetId) {
@@ -453,7 +465,7 @@ export default function FalseNegatives({
             user.userId,
             `Continued False Negatives queue for annotation set "${annotationSet.name}" in project "${project.name}" (${remaining.length} remaining tiles)`,
             project.id,
-            project.organizationId
+            project.organizationId,
           ).catch(console.error);
         } else if (currentMode === 'additional') {
           // Additional sample mode – Lambda loads from existing pool
@@ -485,14 +497,14 @@ export default function FalseNegatives({
             user.userId,
             `Launched additional ${samplePercentRef.current}% False Negatives sample for annotation set "${annotationSet.name}" in project "${project.name}"`,
             project.id,
-            project.organizationId
+            project.organizationId,
           ).catch(console.error);
         } else {
           // First launch mode – sample from all tiles
           onProgress('Fetching locations from global tile set...');
           const locationTiles = await fetchLocationsFromSet(
             currentTiledLocationSetId,
-            onProgress
+            onProgress,
           );
           if (locationTiles.length === 0) {
             alert('No locations found in the global tiled set');
@@ -526,7 +538,7 @@ export default function FalseNegatives({
             user.userId,
             `Launched False Negatives queue for annotation set "${annotationSet.name}" in project "${project.name}" (${samplePercentRef.current}% sample)`,
             project.id,
-            project.organizationId
+            project.organizationId,
           ).catch(console.error);
         }
       },
@@ -553,7 +565,7 @@ export default function FalseNegatives({
   const handleReset = useCallback(async () => {
     if (
       !confirm(
-        'Reset all false negatives data? This will delete all observations and annotations from false negative reviews, clear the candidate pool and launch history, allowing you to start fresh. This cannot be undone.'
+        'Reset all false negatives data? This will delete all observations and annotations from false negative reviews, clear the candidate pool and launch history, allowing you to start fresh. This cannot be undone.',
       )
     ) {
       return;
@@ -568,7 +580,7 @@ export default function FalseNegatives({
       if (!history) {
         history = await readFalseNegativeFile<FnHistory>(
           annotationSet.id,
-          'history'
+          'history',
         ).catch(() => null);
       }
 
@@ -581,7 +593,7 @@ export default function FalseNegatives({
         const runWithConcurrency = async <T,>(
           items: T[],
           fn: (item: T) => Promise<void>,
-          concurrency: number
+          concurrency: number,
         ): Promise<void> => {
           const queue = [...items];
           const workers = Array.from({ length: concurrency }, async () => {
@@ -611,32 +623,37 @@ export default function FalseNegatives({
                     filter: { annotationSetId: { eq: annotationSet.id } },
                     limit: 100,
                     nextToken,
-                  }
+                  },
                 );
               const deletePromises = (data || []).map((obs) =>
-                client.models.Observation.delete({ id: obs.id })
+                client.models.Observation.delete({ id: obs.id }),
               );
               await Promise.all(deletePromises);
               nextToken = nt as string | null | undefined;
             } while (nextToken);
 
             observationsDeleted++;
-            if (observationsDeleted % 10 === 0 || observationsDeleted === totalTiles) {
+            if (
+              observationsDeleted % 10 === 0 ||
+              observationsDeleted === totalTiles
+            ) {
               setResetProgress(
-                `Deleting observations (${observationsDeleted}/${totalTiles} tiles)...`
+                `Deleting observations (${observationsDeleted}/${totalTiles} tiles)...`,
               );
             }
           },
-          50
+          50,
         );
 
         // Delete annotations by imageId with source containing "false-negative"
         // Get unique imageIds from launched tiles
         const uniqueImageIds = Array.from(
-          new Set(allLaunchedTiles.map((t) => t.imageId))
+          new Set(allLaunchedTiles.map((t) => t.imageId)),
         );
         let imagesProcessed = 0;
-        setResetProgress(`Deleting annotations (0/${uniqueImageIds.length} images)...`);
+        setResetProgress(
+          `Deleting annotations (0/${uniqueImageIds.length} images)...`,
+        );
 
         await runWithConcurrency(
           uniqueImageIds,
@@ -650,23 +667,26 @@ export default function FalseNegatives({
                     filter: { source: { contains: 'false-negative' } },
                     limit: 100,
                     nextToken,
-                  }
+                  },
                 );
               const deletePromises = (data || []).map((ann) =>
-                client.models.Annotation.delete({ id: ann.id })
+                client.models.Annotation.delete({ id: ann.id }),
               );
               await Promise.all(deletePromises);
               nextToken = nt as string | null | undefined;
             } while (nextToken);
 
             imagesProcessed++;
-            if (imagesProcessed % 10 === 0 || imagesProcessed === uniqueImageIds.length) {
+            if (
+              imagesProcessed % 10 === 0 ||
+              imagesProcessed === uniqueImageIds.length
+            ) {
               setResetProgress(
-                `Deleting annotations (${imagesProcessed}/${uniqueImageIds.length} images)...`
+                `Deleting annotations (${imagesProcessed}/${uniqueImageIds.length} images)...`,
               );
             }
           },
-          50
+          50,
         );
       }
 
@@ -717,7 +737,7 @@ export default function FalseNegatives({
       loadCandidates={() =>
         loadLocationCandidates(
           client,
-          tiledLocationSetId ? [tiledLocationSetId] : []
+          tiledLocationSetId ? [tiledLocationSetId] : [],
         )
       }
       disabled={launching || !tiledLocationSetId}
@@ -725,11 +745,11 @@ export default function FalseNegatives({
   );
 
   return (
-    <div className='px-4 pb-4 pt-1'>
-      <div className='flex flex-col gap-4 mt-2'>
+    <div className='px-4 pt-1 pb-4'>
+      <div className='mt-2 flex flex-col gap-4'>
         {mode === 'loading' ? (
           <p
-            className='text-muted-foreground mb-0 text-center'
+            className='mb-0 text-center text-muted-foreground'
             style={{ fontSize: '12px' }}
           >
             Loading...
@@ -737,7 +757,7 @@ export default function FalseNegatives({
         ) : showNoTilesWarning ? (
           <Alert variant='warning' className='mb-0'>
             <strong>No tiles configured.</strong>
-            <p className='mb-0 mt-1' style={{ fontSize: '14px' }}>
+            <p className='mt-1 mb-0' style={{ fontSize: '14px' }}>
               Please go to <strong>Edit Survey &gt; Manage Tiles</strong> to
               create tiles for this survey before launching a false negatives
               task.
@@ -746,74 +766,68 @@ export default function FalseNegatives({
         ) : mode === 'continue' ? (
           // ── Continue mode UI ──
           <>
-          <div
-            className='border border-dark shadow-sm p-2'
-            style={{ backgroundColor: '#697582' }}
-          >
-            <p className='mb-0 text-white'>
-              <strong>Continuing False Negatives Task</strong>
-            </p>
-            <p className='mb-0 mt-2 text-white' style={{ fontSize: '14px' }}>
-              {coveragePercent}% of candidate pool has been covered
-              ({totalLaunched} of {poolSize} candidates launched across{' '}
-              {fnHistory?.launches.length ?? 0} session
-              {(fnHistory?.launches.length ?? 0) !== 1 ? 's' : ''})
-            </p>
-            {loadingRemaining ? (
-              <div className='mt-2 flex items-center gap-2 text-white'>
-                <Spinner animation='border' size='sm' />
-                <span style={{ fontSize: '12px' }}>
-                  Calculating remaining tiles...
-                </span>
-              </div>
-            ) : remainingTiles !== null ? (
-              <div className='mt-2'>
-                <p className='mb-0 text-white' style={{ fontSize: '14px' }}>
-                  <strong>{remainingTiles.length}</strong> tiles remaining from
-                  previous launches
-                </p>
-              </div>
-            ) : null}
-            <div className='mt-4'>
-              <Button
-                variant='outline-light'
-                size='sm'
-                onClick={handleReset}
-                disabled={launching || resetting}
-              >
-                {resetting ? (
-                  <span className='inline-flex items-center'>
-                    <Spinner animation='border' size='sm' className='me-2' />
-                    {resetProgress || 'Resetting...'}
+            <div
+              className='border border-dark p-2 shadow-sm'
+              style={{ backgroundColor: '#697582' }}
+            >
+              <p className='mb-0 text-white'>
+                <strong>Continuing False Negatives Task</strong>
+              </p>
+              <p className='mt-2 mb-0 text-white' style={{ fontSize: '14px' }}>
+                {coveragePercent}% of candidate pool has been covered (
+                {totalLaunched} of {poolSize} candidates launched across{' '}
+                {fnHistory?.launches.length ?? 0} session
+                {(fnHistory?.launches.length ?? 0) !== 1 ? 's' : ''})
+              </p>
+              {loadingRemaining ? (
+                <div className='mt-2 flex items-center gap-2 text-white'>
+                  <Spinner animation='border' size='sm' />
+                  <span style={{ fontSize: '12px' }}>
+                    Calculating remaining tiles...
                   </span>
-                ) : (
-                  'Reset FN Data'
-                )}
-              </Button>
+                </div>
+              ) : remainingTiles !== null ? (
+                <div className='mt-2'>
+                  <p className='mb-0 text-white' style={{ fontSize: '14px' }}>
+                    <strong>{remainingTiles.length}</strong> tiles remaining
+                    from previous launches
+                  </p>
+                </div>
+              ) : null}
+              <div className='mt-4'>
+                <Button
+                  variant='outline-light'
+                  size='sm'
+                  onClick={handleReset}
+                  disabled={launching || resetting}
+                >
+                  {resetting ? (
+                    <span className='inline-flex items-center'>
+                      <Spinner animation='border' size='sm' className='me-2' />
+                      {resetProgress || 'Resetting...'}
+                    </span>
+                  ) : (
+                    'Reset FN Data'
+                  )}
+                </Button>
+              </div>
             </div>
-          </div>
-          {zoomSetting}
+            {zoomSetting}
           </>
         ) : mode === 'additional' ? (
           // ── Additional sample mode UI ──
           <>
             <div
-              className='border border-dark shadow-sm p-2'
+              className='border border-dark p-2 shadow-sm'
               style={{ backgroundColor: '#697582' }}
             >
               <p className='mb-0 text-white'>
                 <strong>False Negatives Progress</strong>
               </p>
-              <p
-                className='mb-0 mt-2 text-white'
-                style={{ fontSize: '14px' }}
-              >
+              <p className='mt-2 mb-0 text-white' style={{ fontSize: '14px' }}>
                 {coveragePercent}% of candidate pool has been covered
               </p>
-              <div
-                className='mt-1 text-white'
-                style={{ fontSize: '12px' }}
-              >
+              <div className='mt-1 text-white' style={{ fontSize: '12px' }}>
                 <div>
                   Pool size: <strong>{poolSize}</strong>
                 </div>
@@ -835,15 +849,13 @@ export default function FalseNegatives({
             ) : (
               <>
                 <div>
-                  <Label className='mb-0'>
-                    Additional sample size (%)
-                  </Label>
+                  <Label className='mb-0'>Additional sample size (%)</Label>
                   <span
-                    className='text-muted-foreground block mb-1'
+                    className='mb-1 block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
-                    Percentage of the candidate pool ({poolSize}{' '}
-                    tiles). Up to {remainingInPool} tiles can still be launched.
+                    Percentage of the candidate pool ({poolSize} tiles). Up to{' '}
+                    {remainingInPool} tiles can still be launched.
                   </span>
                   <Input
                     type='number'
@@ -853,7 +865,7 @@ export default function FalseNegatives({
                     value={samplePercent}
                     onChange={(e) =>
                       setSamplePercent(
-                        Number((e.target as HTMLInputElement).value)
+                        Number((e.target as HTMLInputElement).value),
                       )
                     }
                     disabled={launching}
@@ -867,7 +879,9 @@ export default function FalseNegatives({
                     <Switch
                       id={advancedSwitchId}
                       checked={showAdvancedOptions}
-                      onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                      onCheckedChange={() =>
+                        setShowAdvancedOptions(!showAdvancedOptions)
+                      }
                       disabled={launching}
                     />
                     <Label htmlFor={advancedSwitchId} className='mb-0'>
@@ -878,13 +892,13 @@ export default function FalseNegatives({
 
                 {showAdvancedOptions && (
                   <div
-                    className='flex flex-col gap-4 border border-dark shadow-sm p-2'
+                    className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
                     style={{ backgroundColor: '#697582' }}
                   >
                     <div>
                       <Label className='mb-0'>Batch Size</Label>
                       <span
-                        className='text-muted-foreground block mb-1'
+                        className='mb-1 block text-muted-foreground'
                         style={{ fontSize: '12px' }}
                       >
                         The number of annotation jobs a user can pick up at a
@@ -895,7 +909,7 @@ export default function FalseNegatives({
                         value={batchSize}
                         onChange={(e) =>
                           setBatchSize(
-                            Number((e.target as HTMLInputElement).value)
+                            Number((e.target as HTMLInputElement).value),
                           )
                         }
                         disabled={launching}
@@ -904,7 +918,7 @@ export default function FalseNegatives({
                     <div>
                       <Label className='mb-0'>Job Name</Label>
                       <span
-                        className='text-muted-foreground block mb-1'
+                        className='mb-1 block text-muted-foreground'
                         style={{ fontSize: '12px' }}
                       >
                         Modify this to display a different name for the job in
@@ -923,7 +937,7 @@ export default function FalseNegatives({
                 )}
 
                 <div
-                  className='border border-dark shadow-sm p-2'
+                  className='border border-dark p-2 shadow-sm'
                   style={{ backgroundColor: '#697582' }}
                 >
                   <div className='text-white' style={{ fontSize: '12px' }}>
@@ -936,10 +950,10 @@ export default function FalseNegatives({
                       {poolSize} launched (
                       {poolSize > 0
                         ? (
-                          ((totalLaunched + additionalSampleCount) /
-                            poolSize) *
-                          100
-                        ).toFixed(1)
+                            ((totalLaunched + additionalSampleCount) /
+                              poolSize) *
+                            100
+                          ).toFixed(1)
                         : '0.0'}
                       %)
                     </div>
@@ -970,14 +984,17 @@ export default function FalseNegatives({
           // ── First launch mode UI ──
           <>
             <div
-              className='border border-dark shadow-sm p-2'
+              className='border border-dark p-2 shadow-sm'
               style={{ backgroundColor: '#697582' }}
             >
               <p className='mb-0 text-white'>
                 <strong>{globalTileCount}</strong> tiles available for false
                 negative sampling.
               </p>
-              <p className='mb-0 mt-1 text-muted-foreground' style={{ fontSize: '12px' }}>
+              <p
+                className='mt-1 mb-0 text-muted-foreground'
+                style={{ fontSize: '12px' }}
+              >
                 To modify tiles, go to Edit Survey &gt; Manage Tiles.
               </p>
             </div>
@@ -1004,7 +1021,9 @@ export default function FalseNegatives({
                 <Switch
                   id={advancedSwitchId}
                   checked={showAdvancedOptions}
-                  onCheckedChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  onCheckedChange={() =>
+                    setShowAdvancedOptions(!showAdvancedOptions)
+                  }
                   disabled={launching}
                 />
                 <Label htmlFor={advancedSwitchId} className='mb-0'>
@@ -1015,13 +1034,13 @@ export default function FalseNegatives({
 
             {showAdvancedOptions && (
               <div
-                className='flex flex-col gap-4 border border-dark shadow-sm p-2'
+                className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
                 style={{ backgroundColor: '#697582' }}
               >
                 <div>
                   <Label className='mb-0'>Batch Size</Label>
                   <span
-                    className='text-muted-foreground block mb-1'
+                    className='mb-1 block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
                     The number of annotation jobs a user can pick up at a time.
@@ -1030,9 +1049,7 @@ export default function FalseNegatives({
                     type='number'
                     value={batchSize}
                     onChange={(e) =>
-                      setBatchSize(
-                        Number((e.target as HTMLInputElement).value)
-                      )
+                      setBatchSize(Number((e.target as HTMLInputElement).value))
                     }
                     disabled={launching}
                   />
@@ -1040,7 +1057,7 @@ export default function FalseNegatives({
                 <div>
                   <Label className='mb-0'>Job Name</Label>
                   <span
-                    className='text-muted-foreground block mb-1'
+                    className='mb-1 block text-muted-foreground'
                     style={{ fontSize: '12px' }}
                   >
                     Modify this to display a different name for the job in the
@@ -1059,7 +1076,7 @@ export default function FalseNegatives({
             )}
 
             <div
-              className='border border-dark shadow-sm p-2'
+              className='border border-dark p-2 shadow-sm'
               style={{ backgroundColor: '#697582' }}
             >
               <div className='flex items-center justify-between'>
@@ -1087,7 +1104,10 @@ export default function FalseNegatives({
                 </Button>
               </div>
               {summaryMessage && (
-                <div className='mt-2 text-muted-foreground' style={{ fontSize: '12px' }}>
+                <div
+                  className='mt-2 text-muted-foreground'
+                  style={{ fontSize: '12px' }}
+                >
                   {summaryMessage}
                 </div>
               )}
@@ -1103,7 +1123,7 @@ export default function FalseNegatives({
 // Returns a map of imageId -> array of tile bounds (locations that were observed)
 async function fetchObservationPointsDetailed(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<
   Map<string, Array<{ x: number; y: number; width: number; height: number }>>
 > {
@@ -1131,7 +1151,7 @@ async function fetchObservationPointsDetailed(
           ] as const,
           limit: 10000,
           nextToken,
-        }
+        },
       );
     for (const item of data || []) {
       const location = (item as any)?.location;
@@ -1157,7 +1177,7 @@ async function fetchObservationPointsDetailed(
 // rather than checking geometric overlap which can match nearby tiles.
 async function fetchObservedLocationIds(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<Set<string>> {
   const ids = new Set<string>();
   let nextToken: string | null | undefined = undefined;
@@ -1169,7 +1189,7 @@ async function fetchObservedLocationIds(
           selectionSet: ['locationId'] as const,
           limit: 10000,
           nextToken,
-        }
+        },
       );
     for (const item of data || []) {
       const locationId = (item as any)?.locationId as string | undefined;
@@ -1184,7 +1204,7 @@ async function fetchObservedLocationIds(
 
 async function fetchAnnotationPointsDetailed(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<Map<string, Array<{ x: number; y: number }>>> {
   const map = new Map<string, Array<{ x: number; y: number }>>();
   let nextToken: string | null | undefined = undefined;
@@ -1196,7 +1216,7 @@ async function fetchAnnotationPointsDetailed(
           selectionSet: ['imageId', 'x', 'y'] as const,
           limit: 10000,
           nextToken,
-        }
+        },
       );
     for (const item of data || []) {
       const imageId = item?.imageId as string | undefined;
@@ -1219,7 +1239,7 @@ const PAYLOAD_SIZE_THRESHOLD = 200 * 1024; // 200KB
 
 async function sendLaunchFalseNegativesRequest(
   client: DataClient,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ) {
   const payloadStr = JSON.stringify(payload);
   const payloadSize = new Blob([payloadStr]).size;
@@ -1231,7 +1251,7 @@ async function sendLaunchFalseNegativesRequest(
     const s3Key = await uploadWorkflowFile(
       'launch-payload',
       String(payload.projectId),
-      payloadStr
+      payloadStr,
     );
     requestPayload = JSON.stringify({ payloadS3Key: s3Key });
   } else {
@@ -1239,9 +1259,12 @@ async function sendLaunchFalseNegativesRequest(
   }
 
   try {
-    await (client as any).mutations.launchFalseNegatives({
-      request: requestPayload,
-    }, { retry: false });
+    await (client as any).mutations.launchFalseNegatives(
+      {
+        request: requestPayload,
+      },
+      { retry: false },
+    );
   } catch (error: any) {
     if (shouldIgnoreLaunchError(error)) {
       console.warn('Ignoring launch lambda timeout response', error);
@@ -1260,7 +1283,7 @@ function shouldIgnoreLaunchError(error: any): boolean {
     }
   }
   return messages.some((msg) =>
-    /timed out|timeout|Task timed out|socket hang up/i.test(msg)
+    /timed out|timeout|Task timed out|socket hang up/i.test(msg),
   );
 }
 
@@ -1274,7 +1297,7 @@ type MinimalTileForCheck = {
 function isInsideTile(
   px: number,
   py: number,
-  tile: MinimalTileForCheck
+  tile: MinimalTileForCheck,
 ): boolean {
   const halfW = tile.width / 2;
   const halfH = tile.height / 2;

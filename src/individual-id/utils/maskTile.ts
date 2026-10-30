@@ -3,7 +3,7 @@ import { TILE_SIZE, tileMaskRects, type Tile } from './tiles';
 export async function maskTile(
   blob: Blob,
   tile: Tile,
-  maxZ: number
+  maxZ: number,
 ): Promise<Blob> {
   const rects = tileMaskRects(tile, maxZ);
   if (!rects) return blob;
@@ -23,7 +23,7 @@ export async function maskTile(
           masked
             ? resolve(masked)
             : reject(new Error('Cannot encode masked tile')),
-        'image/png'
+        'image/png',
       );
     });
   } finally {

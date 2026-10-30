@@ -1,19 +1,19 @@
-import { useContext, useEffect, useState, useMemo, useRef } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { GlobalContext } from '../Context';
-import { Schema } from '../amplify/client-schema';
-import { fetchAllPaginatedResults } from '../utils';
-import { Download } from 'lucide-react';
 import exportFromJSON from 'export-from-json';
+import { Download } from 'lucide-react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { neutraliseCsvRows } from '../../shared/csv';
+import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
-import MyTable from '../Table';
+import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
+import MyTable from '../Table';
+import { fetchAllPaginatedResults } from '../utils';
 
 export default function Logs({ projectId }: { projectId: string }) {
   const { client, showModal } = useContext(GlobalContext)!;
@@ -23,12 +23,15 @@ export default function Logs({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const userMap = useMemo(() => {
-    return users.reduce((acc, user) => {
-      acc[user.id] = user.name ?? '';
-      return acc;
-    }, {} as Record<string, string>);
+    return users.reduce(
+      (acc, user) => {
+        acc[user.id] = user.name ?? '';
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
   }, [users]);
-  
+
   // Date range filters
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -79,7 +82,7 @@ export default function Logs({ projectId }: { projectId: string }) {
           },
           selectionSet: ['id', 'userId', 'message', 'createdAt', 'projectId'],
           signal,
-        }
+        },
       ).catch(async (err) => {
         if (signal.aborted) throw err;
         // Fallback: if query fails, try listing all and filtering client-side
@@ -91,7 +94,7 @@ export default function Logs({ projectId }: { projectId: string }) {
             },
             selectionSet: ['id', 'userId', 'message', 'createdAt', 'projectId'],
             signal,
-          }
+          },
         );
         return allProjectLogs.filter((log) => {
           const logDate = new Date(log.createdAt ?? '');
@@ -169,41 +172,41 @@ export default function Logs({ projectId }: { projectId: string }) {
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className='flex flex-col gap-4'>
       <Card>
         <CardHeader>
-          <h5 className="mb-0">Filter Logs</h5>
+          <h5 className='mb-0'>Filter Logs</h5>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col md:flex-row gap-4 md:items-end">
-            <div className="grow">
+          <div className='flex flex-col gap-4 md:flex-row md:items-end'>
+            <div className='grow'>
               <Label>Start Date</Label>
               <Input
-                type="date"
+                type='date'
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </div>
-            <div className="grow">
+            <div className='grow'>
               <Label>Start Time</Label>
               <Input
-                type="time"
+                type='time'
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
               />
             </div>
-            <div className="grow">
+            <div className='grow'>
               <Label>End Date</Label>
               <Input
-                type="date"
+                type='date'
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
-            <div className="grow">
+            <div className='grow'>
               <Label>End Time</Label>
               <Input
-                type="time"
+                type='time'
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
               />
@@ -212,7 +215,7 @@ export default function Logs({ projectId }: { projectId: string }) {
               <Button onClick={fetchLogs} disabled={loading}>
                 {loading ? (
                   <>
-                    <Spinner size="sm" />
+                    <Spinner size='sm' />
                     Loading...
                   </>
                 ) : (
@@ -224,18 +227,14 @@ export default function Logs({ projectId }: { projectId: string }) {
         </CardContent>
       </Card>
 
-      {error && (
-        <Alert variant="danger">
-          {error}
-        </Alert>
-      )}
+      {error && <Alert variant='danger'>{error}</Alert>}
 
       <Card>
-        <CardHeader className="flex justify-between items-center">
-          <h5 className="mb-0">Admin Action Logs</h5>
+        <CardHeader className='flex items-center justify-between'>
+          <h5 className='mb-0'>Admin Action Logs</h5>
           <Button
-            variant="primary"
-            size="sm"
+            variant='primary'
+            size='sm'
             onClick={handleDownload}
             disabled={logs.length === 0}
           >
@@ -245,7 +244,7 @@ export default function Logs({ projectId }: { projectId: string }) {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-6">
+            <div className='py-6 text-center'>
               <Spinner />
             </div>
           ) : (
@@ -254,7 +253,7 @@ export default function Logs({ projectId }: { projectId: string }) {
               tableData={tableData}
               pagination={true}
               itemsPerPage={25}
-              emptyMessage="No logs found for the selected date range."
+              emptyMessage='No logs found for the selected date range.'
             />
           )}
         </CardContent>

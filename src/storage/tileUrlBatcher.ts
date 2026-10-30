@@ -22,7 +22,7 @@ export interface SignedTileBatch {
 export type SignTiles = (
   context: TileContext,
   sourceKey: string,
-  tiles: TileCoordinate[]
+  tiles: TileCoordinate[],
 ) => Promise<SignedTileBatch>;
 type Deferred = {
   resolve: (value: TileUrl) => void;
@@ -43,7 +43,7 @@ function deferred(): Deferred {
 export function tileImageKey(
   scope: string,
   context: TileContext,
-  sourceKey: string
+  sourceKey: string,
 ): string {
   return JSON.stringify([
     scope,
@@ -67,7 +67,10 @@ export class TileUrlBatcher {
   >();
   private generation = 0;
 
-  constructor(private sign: SignTiles, private now = Date.now) {}
+  constructor(
+    private sign: SignTiles,
+    private now = Date.now,
+  ) {}
 
   private imageKey(scope: string, context: TileContext, sourceKey: string) {
     return tileImageKey(scope, context, sourceKey);
@@ -85,17 +88,17 @@ export class TileUrlBatcher {
     scope: string,
     context: TileContext,
     sourceKey: string,
-    tile: TileCoordinate
+    tile: TileCoordinate,
   ) {
     this.cache.delete(
-      `${this.imageKey(scope, context, sourceKey)}:${tileId(tile)}`
+      `${this.imageKey(scope, context, sourceKey)}:${tileId(tile)}`,
     );
   }
   get(
     scope: string,
     context: TileContext,
     sourceKey: string,
-    tile: TileCoordinate
+    tile: TileCoordinate,
   ): Promise<TileUrl> {
     if (!validTile(tile, context))
       return Promise.reject(new Error('Tile outside image bounds'));
@@ -118,7 +121,7 @@ export class TileUrlBatcher {
     scope: string,
     context: TileContext,
     sourceKey: string,
-    tile: TileCoordinate
+    tile: TileCoordinate,
   ) {
     let queue = this.queues.get(imageKey);
     if (!queue) {

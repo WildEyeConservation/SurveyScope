@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface FolderStructureProps {
   files: File[];
@@ -24,7 +24,7 @@ export default function FolderStructure({
       });
       const deepest = dirArrays.reduce(
         (prev, curr) => (curr.length > prev.length ? curr : prev),
-        [] as string[]
+        [] as string[],
       );
       setSegments(deepest);
       const initialIdx =
@@ -74,7 +74,7 @@ export default function FolderStructure({
               'border px-2 py-0.5 transition-colors',
               idx === selectedLevel
                 ? 'border-primary bg-primary text-white'
-                : 'border-white/30 text-muted-foreground hover:bg-white/10'
+                : 'border-white/30 text-muted-foreground hover:bg-white/10',
             )}
           >
             {seg}

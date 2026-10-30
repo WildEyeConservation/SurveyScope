@@ -1,4 +1,3 @@
-import { useCallback, useMemo, useState } from 'react';
 import {
   Dialog,
   DialogBody,
@@ -7,12 +6,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Check, Copy, LayoutGrid, Share2, Square } from 'lucide-react';
-import { ChainGrid } from '../ChainGrid';
-import { ChainTilePaginator } from './ChainTilePaginator';
-import { buildChains } from '../utils/chainBuilder';
-import { useChainTileMeta } from '../hooks/useChainTileMeta';
+import { useCallback, useMemo, useState } from 'react';
 import { nameFor } from '../../individual-id/utils/identity';
+import { ChainGrid } from '../ChainGrid';
+import { useChainTileMeta } from '../hooks/useChainTileMeta';
 import type { AnnotationImageMeta, ChainAnnotation } from '../types';
+import { buildChains } from '../utils/chainBuilder';
+import { ChainTilePaginator } from './ChainTilePaginator';
 
 const DEFAULT_COLOR = '#ff8c1a';
 
@@ -51,9 +51,7 @@ export function ChainTilesModal({
 }: Props) {
   const chain = useMemo(() => {
     if (!show || !chainId) return null;
-    const members = annotations.filter(
-      (a) => (a.objectId ?? a.id) === chainId
-    );
+    const members = annotations.filter((a) => (a.objectId ?? a.id) === chainId);
     return buildChains(members)[0] ?? null;
   }, [show, chainId, annotations]);
 
@@ -63,7 +61,7 @@ export function ChainTilesModal({
   const loading = metaOverride ? !!metaLoadingOverride : live.loading;
 
   const [cameraRotations, setCameraRotations] = useState<Map<string, number>>(
-    () => new Map()
+    () => new Map(),
   );
   const rotateByKey = useCallback((key: string) => {
     setCameraRotations((prev) => {
@@ -77,7 +75,7 @@ export function ChainTilesModal({
   // held inside ChainTile) so a tile's zoom survives paginator navigation and
   // grid/paginator view switches, which remount the tile.
   const [tileZoom, setTileZoom] = useState<Map<string, number>>(
-    () => new Map()
+    () => new Map(),
   );
   const setZoomFor = useCallback((annotationId: string, next: number) => {
     setTileZoom((prev) => {
@@ -114,14 +112,16 @@ export function ChainTilesModal({
     <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
       <DialogContent size='lg' centered scrollable>
         <DialogHeader closeButton>
-          <DialogTitle className='grow flex flex-col'>
+          <DialogTitle className='flex grow flex-col'>
             <span style={{ fontSize: 16 }}>Chain tiles</span>
             {chain && (
               <span
                 className='flex items-center gap-2'
                 style={{ fontSize: 13 }}
               >
-                <span style={{ fontWeight: 600 }}>{nameFor(chain.primaryId)}</span>
+                <span style={{ fontWeight: 600 }}>
+                  {nameFor(chain.primaryId)}
+                </span>
                 <button
                   type='button'
                   onClick={copyId}
@@ -178,26 +178,26 @@ export function ChainTilesModal({
                 role='group'
                 aria-label='Tile view'
               >
-              <button
-                type='button'
-                className={view === 'grid' ? 'active' : ''}
-                onClick={() => setView('grid')}
-                aria-pressed={view === 'grid'}
-                title='Grid view — all tiles at once'
-              >
-                <LayoutGrid size={14} strokeWidth={2.5} />
-                <span>Grid</span>
-              </button>
-              <button
-                type='button'
-                className={view === 'paginator' ? 'active' : ''}
-                onClick={() => setView('paginator')}
-                aria-pressed={view === 'paginator'}
-                title='Paginator view — one tile at a time'
-              >
-                <Square size={14} strokeWidth={2.5} />
-                <span>Paginator</span>
-              </button>
+                <button
+                  type='button'
+                  className={view === 'grid' ? 'active' : ''}
+                  onClick={() => setView('grid')}
+                  aria-pressed={view === 'grid'}
+                  title='Grid view — all tiles at once'
+                >
+                  <LayoutGrid size={14} strokeWidth={2.5} />
+                  <span>Grid</span>
+                </button>
+                <button
+                  type='button'
+                  className={view === 'paginator' ? 'active' : ''}
+                  onClick={() => setView('paginator')}
+                  aria-pressed={view === 'paginator'}
+                  title='Paginator view — one tile at a time'
+                >
+                  <Square size={14} strokeWidth={2.5} />
+                  <span>Paginator</span>
+                </button>
               </div>
             </div>
           )}
@@ -234,7 +234,9 @@ export function ChainTilesModal({
               />
             )
           ) : (
-            <div className='text-muted-foreground text-center p-6'>No chain selected.</div>
+            <div className='p-6 text-center text-muted-foreground'>
+              No chain selected.
+            </div>
           )}
         </DialogBody>
       </DialogContent>

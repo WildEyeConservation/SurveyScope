@@ -29,11 +29,10 @@ export function ReunionDialog({ show, count, onConfirm }: Props) {
           <DialogTitle>Review reunions</DialogTitle>
         </DialogHeader>
         <DialogBody>
-          Every direct image pair is complete. We found{' '}
-          <strong>{count}</strong>{' '}
+          Every direct image pair is complete. We found <strong>{count}</strong>{' '}
           {count === 1 ? 'image pair' : 'image pairs'} further along the
-          transect where an animal may have reappeared after going out of
-          view. Review each one to finish the transect.
+          transect where an animal may have reappeared after going out of view.
+          Review each one to finish the transect.
         </DialogBody>
         <DialogFooter>
           <Button variant='primary' onClick={onConfirm}>

@@ -1,9 +1,9 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { GlobalContext, ProjectContext } from './Context';
-import AnnotationWorkspace from './AnnotationWorkspace';
-import { TaskBuffer } from './TaskBuffer';
-import BufferSource from './BufferSource';
 import { Spinner } from '@/components/ui/spinner';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import AnnotationWorkspace from './AnnotationWorkspace';
+import BufferSource from './BufferSource';
+import { GlobalContext, ProjectContext } from './Context';
+import { TaskBuffer } from './TaskBuffer';
 import { useInfoTagData } from './useInfoTags';
 
 type LabeledValue = { label: string; value: string };
@@ -53,7 +53,7 @@ export default function ReviewCarousel({
   const [bufferSource, setBufferSource] = useState<BufferSource | null>(null);
 
   const { namesFor } = useInfoTagData(
-    selectedAnnotationSet ? [selectedAnnotationSet] : []
+    selectedAnnotationSet ? [selectedAnnotationSet] : [],
   );
 
   // When none selected, assume all categories from the selected set
@@ -68,7 +68,9 @@ export default function ReviewCarousel({
 
   // Helper to extract userId from owner field
   // If contains "::", take the part before it; otherwise the whole field is the userId
-  const extractUserIdFromOwner = (owner: string | null | undefined): string | null => {
+  const extractUserIdFromOwner = (
+    owner: string | null | undefined,
+  ): string | null => {
     if (!owner) return null;
     if (owner.includes('::')) {
       return owner.split('::')[0];
@@ -79,7 +81,7 @@ export default function ReviewCarousel({
   // Set of selected user IDs for filtering
   const selectedUserIds = useMemo(
     () => new Set(selectedUsers.map((u) => u.value)),
-    [selectedUsers]
+    [selectedUsers],
   );
 
   useEffect(() => {
@@ -110,7 +112,7 @@ export default function ReviewCarousel({
                   ],
                   filter: { setId: { eq: selectedAnnotationSet } },
                   nextToken: nextNextToken,
-                }
+                },
               );
             const { data, nextToken } = result as {
               data: Array<{
@@ -194,7 +196,7 @@ export default function ReviewCarousel({
                   ],
                   filter: { setId: { eq: selectedAnnotationSet } },
                   nextToken: nextNextToken,
-                }
+                },
               );
             const { data, nextToken } = result as {
               data: Array<{
@@ -250,7 +252,7 @@ export default function ReviewCarousel({
         }
         if (cancelled) return;
         const locations = Array.from(byImage.values()).sort(
-          (a, b) => a.location.image.timestamp - b.location.image.timestamp
+          (a, b) => a.location.image.timestamp - b.location.image.timestamp,
         );
         setAnnotations(locations);
       } finally {
@@ -275,7 +277,13 @@ export default function ReviewCarousel({
     return () => {
       cancelled = true;
     };
-  }, [client, selectedAnnotationSet, effectiveCategories, selectedUserIds, imageBased]);
+  }, [
+    client,
+    selectedAnnotationSet,
+    effectiveCategories,
+    selectedUserIds,
+    imageBased,
+  ]);
 
   // Applied after fetching (rather than as part of it) so toggling a tag
   // re-slices what is already loaded instead of re-running the queries.
@@ -286,9 +294,9 @@ export default function ReviewCarousel({
     return annotations.filter((item) =>
       item.annotationIds.some((annotationId) =>
         namesFor(selectedAnnotationSet, annotationId).some((name) =>
-          wanted.has(name)
-        )
-      )
+          wanted.has(name),
+        ),
+      ),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotations, infoTagKey, namesFor, selectedAnnotationSet]);
@@ -303,7 +311,7 @@ export default function ReviewCarousel({
 
   if (!selectedAnnotationSet) {
     return (
-      <div className='flex flex-col items-center justify-center h-full w-full'>
+      <div className='flex h-full w-full flex-col items-center justify-center'>
         Select an annotation set to begin.
       </div>
     );
@@ -312,9 +320,9 @@ export default function ReviewCarousel({
   return (
     <>
       {!annotations.length && isLoading ? (
-        <div className='flex flex-col items-center justify-center h-full w-full p-6'>
+        <div className='flex h-full w-full flex-col items-center justify-center p-6'>
           <div className='text-center'>
-            <div className='flex flex-row items-center justify-center h-full w-full'>
+            <div className='flex h-full w-full flex-row items-center justify-center'>
               <Spinner size='sm' />
               <span className='ms-2'>
                 {locationsLoaded > 0
@@ -327,7 +335,7 @@ export default function ReviewCarousel({
       ) : (
         bufferSource &&
         (filteredAnnotations.length ? (
-          <div className='flex flex-col items-center h-full w-full mt-4'>
+          <div className='mt-4 flex h-full w-full flex-col items-center'>
             <TaskBuffer
               key={
                 selectedAnnotationSet +
@@ -367,7 +375,7 @@ export default function ReviewCarousel({
             </div>
           </div>
         ) : (
-          <div className='flex flex-col items-center justify-center h-full w-full'>
+          <div className='flex h-full w-full flex-col items-center justify-center'>
             No images match the selected info tags.
           </div>
         ))

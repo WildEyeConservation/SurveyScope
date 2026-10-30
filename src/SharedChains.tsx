@@ -1,6 +1,6 @@
-import { useContext, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
@@ -24,15 +24,18 @@ export default function SharedChains() {
 
   useEffect(() => {
     (async () => {
-      const rows = (await fetchAllPaginatedResults(client.models.ChainShare.list, {
-        selectionSet: [
-          'shareId',
-          'surveyName',
-          'annotationSetName',
-          'status',
-        ] as const,
-        limit: 10000,
-      })) as ShareRow[];
+      const rows = (await fetchAllPaginatedResults(
+        client.models.ChainShare.list,
+        {
+          selectionSet: [
+            'shareId',
+            'surveyName',
+            'annotationSetName',
+            'status',
+          ] as const,
+          limit: 10000,
+        },
+      )) as ShareRow[];
       setShares(rows.filter((s) => s.status === 'active'));
     })();
   }, [client]);
@@ -47,7 +50,7 @@ export default function SharedChains() {
       }}
     >
       <Card>
-        <CardHeader className='flex justify-between items-center gap-2'>
+        <CardHeader className='flex items-center justify-between gap-2'>
           <CardTitle className='mb-0'>
             <h4 className='mb-0'>Shared Chain Reviews</h4>
           </CardTitle>
@@ -57,7 +60,7 @@ export default function SharedChains() {
             shares.map((share) => (
               <div
                 key={share.shareId}
-                className='flex flex-row justify-between items-center gap-2 border border-dark p-4'
+                className='flex flex-row items-center justify-between gap-2 border border-dark p-4'
               >
                 <div>
                   <p className='mb-0'>Survey: {share.surveyName ?? '—'}</p>

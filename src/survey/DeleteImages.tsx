@@ -1,25 +1,27 @@
+import * as maplibregl from 'maplibre-gl';
 import {
-  useState,
-  useEffect,
   useCallback,
-  useRef,
-  useMemo,
   useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
-import * as maplibregl from 'maplibre-gl';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { booleanPointInPolygon } from '@turf/turf';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
-import { booleanPointInPolygon } from '@turf/turf';
-import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
-import { Alert } from '@/components/ui/alert';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import { fetchAllPaginatedResults } from '../utils';
 import {
   BASE_STYLE,
@@ -27,7 +29,9 @@ import {
   escapeHtml,
   type FeatureCollection,
 } from './surveyMapStyle';
+
 import './surveyMap.css';
+
 import { loadProjectImages } from '../projectImages';
 
 type ImageData = {
@@ -104,7 +108,7 @@ function errToString(err: any): string {
   if (!err) return '';
   if (typeof err === 'string') return err;
   const parts = [err.errorType, err.name, err.code, err.message].filter(
-    Boolean
+    Boolean,
   );
   if (Array.isArray(err.errors)) {
     for (const e of err.errors) {
@@ -181,7 +185,7 @@ interface RunOpOpts {
  */
 async function runOp<T>(
   fn: () => Promise<T>,
-  opts: RunOpOpts = {}
+  opts: RunOpOpts = {},
 ): Promise<T> {
   const { retries = 5, baseDelay = 300, signal } = opts;
   let attempt = 0;
@@ -200,13 +204,17 @@ async function runOp<T>(
     }
     const errors = (res as any)?.errors as any[] | null | undefined;
     if (errors && errors.length) {
-      if (!signal?.aborted && attempt < retries && errors.some(isTransientError)) {
+      if (
+        !signal?.aborted &&
+        attempt < retries &&
+        errors.some(isTransientError)
+      ) {
         attempt += 1;
         await sleep(backoffDelay(attempt, baseDelay), signal);
         continue;
       }
       const e: any = new Error(
-        errors.map((x) => x?.message || x?.errorType || String(x)).join('; ')
+        errors.map((x) => x?.message || x?.errorType || String(x)).join('; '),
       );
       e.graphQLErrors = errors;
       throw e;
@@ -238,7 +246,7 @@ async function runPool<T>(
   items: T[],
   worker: (item: T, index: number) => Promise<void>,
   concurrency: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   let cursor = 0;
   const workerCount = Math.max(1, Math.min(concurrency, items.length));
@@ -257,7 +265,7 @@ async function runPool<T>(
             // backstop so an unexpected throw doesn't kill the pool.
           }
         }
-      })()
+      })(),
     );
   }
   await Promise.all(runners);
@@ -277,7 +285,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     phase: string;
   } | null>(null);
   const [deleteResult, setDeleteResult] = useState<DeletionCounters | null>(
-    null
+    null,
   );
   const [showInstructions, setShowInstructions] = useState(false);
   const [shapefileCoords, setShapefileCoords] = useState<
@@ -333,9 +341,9 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
                 selectionSet: ['id', 'latitude', 'longitude', 'originalPath'],
                 limit: 10000,
               },
-              onProgress
+              onProgress,
             ),
-        }
+        },
       )) as Array<{
         id: string;
         latitude?: number | null;
@@ -353,7 +361,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             typeof img.latitude === 'number' &&
             typeof img.longitude === 'number' &&
             Number.isFinite(img.latitude) &&
-            Number.isFinite(img.longitude)
+            Number.isFinite(img.longitude),
         )
         .map((img) => ({
           id: img.id,
@@ -365,16 +373,18 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       setImages(gpsImages);
       setSelectedIds(new Set());
       setLoadingStatus(
-        `Loaded ${gpsImages.length} images with GPS coordinates (${allImages.length - gpsImages.length
-        } without GPS)`
+        `Loaded ${gpsImages.length} images with GPS coordinates (${
+          allImages.length - gpsImages.length
+        } without GPS)`,
       );
       return gpsImages;
     } catch (err) {
       if (signal.aborted) return [];
       console.error('Failed to fetch images:', err);
       setError(
-        `Failed to fetch images: ${err instanceof Error ? err.message : String(err)
-        }`
+        `Failed to fetch images: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
       return [];
     } finally {
@@ -401,16 +411,16 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           () =>
             (client.models.Shapefile.shapefilesByProjectId as any)(
               { projectId },
-              { signal }
+              { signal },
             ),
-          { signal }
+          { signal },
         )) as any;
         const data = (result?.data ?? []) as Array<{
           coordinates: (number | null)[] | null;
         }>;
         if (data.length > 0 && data[0].coordinates) {
           const flat = data[0].coordinates.filter(
-            (n): n is number => typeof n === 'number' && Number.isFinite(n)
+            (n): n is number => typeof n === 'number' && Number.isFinite(n),
           );
           const coords: [number, number][] = [];
           for (let i = 0; i + 1 < flat.length; i += 2) {
@@ -452,7 +462,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       }
       return inside;
     },
-    []
+    [],
   );
 
   // Select images outside the loaded shapefile
@@ -479,7 +489,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         geometry: { type: 'Point', coordinates: [img.longitude, img.latitude] },
       })),
     }),
-    [images]
+    [images],
   );
 
   // -----------------------------------------------------------------------
@@ -500,11 +510,11 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
 
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right'
+      'top-right',
     );
     map.addControl(
       new maplibregl.ScaleControl({ unit: 'metric' }),
-      'bottom-left'
+      'bottom-left',
     );
 
     map.on('load', () => {
@@ -582,7 +592,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         const img = imagesRef.current.find((im) => im.id === id);
         const [lng, lat] = (feature.geometry as any).coordinates as [
           number,
-          number
+          number,
         ];
         const path = img?.originalPath || 'Unknown';
         new maplibregl.Popup({ closeButton: true })
@@ -592,7 +602,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
               <strong>Path:</strong> ${escapeHtml(path)}<br/>
               <strong>Lat:</strong> ${lat.toFixed(6)}<br/>
               <strong>Lng:</strong> ${lng.toFixed(6)}
-            </div>`
+            </div>`,
           )
           .addTo(map);
       });
@@ -622,7 +632,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
               if (
                 booleanPointInPolygon(
                   [img.longitude, img.latitude],
-                  feature as any
+                  feature as any,
                 )
               ) {
                 newSelected.add(img.id);
@@ -669,8 +679,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     if (!mapLoaded) return;
     const map = mapRef.current;
     const src = map?.getSource(SRC_IMAGES) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!map || !src) return;
     src.setData(imagesFC as any);
     appliedSelectionRef.current = new Set();
@@ -715,8 +724,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!mapLoaded) return;
     const src = mapRef.current?.getSource(SRC_SHAPEFILE) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!src) return;
     if (showShapefile && shapefileCoords && shapefileCoords.length >= 3) {
       const ring = shapefileCoords.map(([lat, lng]) => [lng, lat]);
@@ -762,7 +770,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         [minLng, minLat],
         [maxLng, maxLat],
       ],
-      { padding: 50, maxZoom: 16, duration: 0 }
+      { padding: 50, maxZoom: 16, duration: 0 },
     );
   }, [mapLoaded, images]);
 
@@ -804,7 +812,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     async (
       imageIds: string[],
       signal: AbortSignal,
-      failedToFetch: Set<string>
+      failedToFetch: Set<string>,
     ): Promise<Map<string, ImageAggregate>> => {
       const imageMap = new Map<string, ImageAggregate>();
       let totalMemberships = 0;
@@ -828,7 +836,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       // survey, hence the per-page retry.
       const imageSets = (await fetchAllPaginatedResults(
         makeRetrying(client.models.ImageSet.imageSetsByProjectId, signal),
-        { projectId, selectionSet: ['id'], limit: 10000 }
+        { projectId, selectionSet: ['id'], limit: 10000 },
       )) as Array<{ id?: string | null }>;
 
       const membershipByImageId = new Map<
@@ -841,13 +849,13 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         const memberships = (await fetchAllPaginatedResults(
           makeRetrying(
             client.models.ImageSetMembership.imageSetMembershipsByImageSetId,
-            signal
+            signal,
           ),
           {
             imageSetId: imageSet.id,
             selectionSet: ['id', 'imageId', 'imageSetId'],
             limit: 10000,
-          }
+          },
         )) as Array<{
           id?: string | null;
           imageId?: string | null;
@@ -871,49 +879,54 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           if (signal.aborted) return;
           try {
             const membershipRecords = membershipByImageId.get(imageId) ?? [];
-            const [annotations, locations, files, leftNeighbours, rightNeighbours] =
-              await Promise.all([
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.Annotation.annotationsByImageIdAndSetId,
-                    signal
-                  ),
-                  { imageId, selectionSet: ['id', 'setId'], limit: 10000 }
+            const [
+              annotations,
+              locations,
+              files,
+              leftNeighbours,
+              rightNeighbours,
+            ] = await Promise.all([
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.Annotation.annotationsByImageIdAndSetId,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.Location.locationsByImageKey,
-                    signal
-                  ),
-                  { imageId, selectionSet: ['id'], limit: 10000 }
+                { imageId, selectionSet: ['id', 'setId'], limit: 10000 },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.Location.locationsByImageKey,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(client.models.ImageFile.imagesByimageId, signal),
-                  { imageId, selectionSet: ['id'], limit: 10000 }
+                { imageId, selectionSet: ['id'], limit: 10000 },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(client.models.ImageFile.imagesByimageId, signal),
+                { imageId, selectionSet: ['id'], limit: 10000 },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.ImageNeighbour.imageNeighboursByImage1key,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.ImageNeighbour.imageNeighboursByImage1key,
-                    signal
-                  ),
-                  {
-                    image1Id: imageId,
-                    selectionSet: ['image1Id', 'image2Id'],
-                    limit: 10000,
-                  }
+                {
+                  image1Id: imageId,
+                  selectionSet: ['image1Id', 'image2Id'],
+                  limit: 10000,
+                },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.ImageNeighbour.imageNeighboursByImage2key,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.ImageNeighbour.imageNeighboursByImage2key,
-                    signal
-                  ),
-                  {
-                    image2Id: imageId,
-                    selectionSet: ['image1Id', 'image2Id'],
-                    limit: 10000,
-                  }
-                ),
-              ]);
+                {
+                  image2Id: imageId,
+                  selectionSet: ['image1Id', 'image2Id'],
+                  limit: 10000,
+                },
+              ),
+            ]);
 
             const agg: ImageAggregate = {
               id: imageId,
@@ -986,7 +999,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           }
         },
         FETCH_CONCURRENCY,
-        signal
+        signal,
       );
 
       setDeleteProgress({
@@ -997,7 +1010,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
 
       return imageMap;
     },
-    [client, images, projectId]
+    [client, images, projectId],
   );
 
   // -----------------------------------------------------------------------
@@ -1099,7 +1112,9 @@ This action cannot be undone.`;
             for (const annotationId of agg.annotationIds) {
               if (
                 await del(() =>
-                  (client as any).models.Annotation.delete({ id: annotationId })
+                  (client as any).models.Annotation.delete({
+                    id: annotationId,
+                  }),
                 )
               )
                 counters.annotationsDeleted += 1;
@@ -1107,7 +1122,7 @@ This action cannot be undone.`;
             for (const locationId of agg.locationIds) {
               if (
                 await del(() =>
-                  (client as any).models.Location.delete({ id: locationId })
+                  (client as any).models.Location.delete({ id: locationId }),
                 )
               )
                 counters.locationsDeleted += 1;
@@ -1117,7 +1132,7 @@ This action cannot be undone.`;
                 await del(() =>
                   (client as any).models.ImageSetMembership.delete({
                     id: membership.id,
-                  })
+                  }),
                 )
               ) {
                 counters.membershipsDeleted += 1;
@@ -1128,7 +1143,7 @@ This action cannot be undone.`;
             for (const file of agg.fileRecords) {
               if (
                 await del(() =>
-                  (client as any).models.ImageFile.delete({ id: file.id })
+                  (client as any).models.ImageFile.delete({ id: file.id }),
                 )
               )
                 counters.filesDeleted += 1;
@@ -1141,7 +1156,7 @@ This action cannot be undone.`;
                   (client as any).models.ImageNeighbour.delete({
                     image1Id: neighbour.image1Id,
                     image2Id: neighbour.image2Id,
-                  })
+                  }),
                 )
               )
                 counters.neighboursDeleted += 1;
@@ -1152,7 +1167,7 @@ This action cannot be undone.`;
             if (!imageFailed && !signal.aborted) {
               if (
                 await del(() =>
-                  (client as any).models.Image.delete({ id: agg.id })
+                  (client as any).models.Image.delete({ id: agg.id }),
                 )
               )
                 counters.imagesDeleted += 1;
@@ -1169,7 +1184,7 @@ This action cannot be undone.`;
             }
           },
           DELETE_CONCURRENCY,
-          signal
+          signal,
         );
 
         if (signal.aborted) counters.cancelled = true;
@@ -1188,9 +1203,9 @@ This action cannot be undone.`;
                 makeRetrying(
                   (client as any).models.ImageSetMembership
                     .imageSetMembershipsByImageSetId,
-                  signal
+                  signal,
                 ),
-                { imageSetId, selectionSet: ['id'], limit: 10000 }
+                { imageSetId, selectionSet: ['id'], limit: 10000 },
               )) as Array<{ id: string }>;
               await runOp(
                 () =>
@@ -1198,7 +1213,7 @@ This action cannot be undone.`;
                     id: imageSetId,
                     imageCount: memberships.length,
                   }),
-                { signal }
+                { signal },
               );
               counters.imageSetsUpdated += 1;
             } catch (err) {
@@ -1224,7 +1239,7 @@ This action cannot be undone.`;
           });
           try {
             await runOp(() =>
-              client.mutations.updateProjectMemberships({ projectId })
+              client.mutations.updateProjectMemberships({ projectId }),
             );
           } catch (err) {
             console.warn('Failed to notify other users', err);
@@ -1238,8 +1253,8 @@ This action cannot be undone.`;
         const targetSet = new Set(imageIds);
         setSelectedIds(
           new Set(
-            remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id)
-          )
+            remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id),
+          ),
         );
         setDeleteProgress(null);
       } catch (err) {
@@ -1252,15 +1267,16 @@ This action cannot be undone.`;
           const targetSet = new Set(imageIds);
           setSelectedIds(
             new Set(
-              remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id)
-            )
+              remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id),
+            ),
           );
           setDeleteProgress(null);
         } else {
           console.error('Delete operation failed:', err);
           setError(
-            `Delete operation failed: ${err instanceof Error ? err.message : String(err)
-            }`
+            `Delete operation failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
           );
           setDeleteProgress(null);
         }
@@ -1269,7 +1285,7 @@ This action cannot be undone.`;
         abortRef.current = null;
       }
     },
-    [selectedIds, images, fetchImageData, fetchImages, client, projectId]
+    [selectedIds, images, fetchImageData, fetchImages, client, projectId],
   );
 
   const cancelDelete = useCallback(() => {
@@ -1291,12 +1307,12 @@ This action cannot be undone.`;
 
   return (
     <>
-      <div className='p-4 flex flex-col gap-4'>
+      <div className='flex flex-col gap-4 p-4'>
         {/* Selection header + toolbar */}
-        <div className='flex justify-between items-center flex-wrap gap-2'>
+        <div className='flex flex-wrap items-center justify-between gap-2'>
           <div className='flex items-baseline gap-2'>
             <div
-              className='uppercase font-semibold text-muted-foreground'
+              className='font-semibold text-muted-foreground uppercase'
               style={{ letterSpacing: 0.5, fontSize: 12 }}
             >
               Selection
@@ -1304,13 +1320,13 @@ This action cannot be undone.`;
             <span className='text-muted-foreground' style={{ fontSize: 13 }}>
               {images.length} loaded {' · '}
               <span
-                className={selectedCount > 0 ? 'text-danger font-semibold' : ''}
+                className={selectedCount > 0 ? 'font-semibold text-danger' : ''}
               >
                 {selectedCount} selected
               </span>
             </span>
           </div>
-          <div className='flex gap-2 flex-wrap'>
+          <div className='flex flex-wrap gap-2'>
             <Button
               size='sm'
               variant='outline-secondary'
@@ -1349,7 +1365,7 @@ This action cannot be undone.`;
         <div>
           <button
             type='button'
-            className='text-muted-foreground flex items-center gap-1'
+            className='flex items-center gap-1 text-muted-foreground'
             onClick={() => setShowInstructions((v) => !v)}
             style={{
               background: 'none',
@@ -1371,15 +1387,18 @@ This action cannot be undone.`;
             Instructions
           </button>
           {showInstructions && (
-            <ul className='mt-2 mb-0 text-muted-foreground' style={{ fontSize: 13 }}>
+            <ul
+              className='mt-2 mb-0 text-muted-foreground'
+              style={{ fontSize: 13 }}
+            >
               <li>Click on an image marker to select it</li>
               <li>
                 Hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + click to select multiple
                 images
               </li>
               <li>
-                Use the <strong>Draw selection</strong> button, then click on the
-                map to outline an area (click the first point to finish)
+                Use the <strong>Draw selection</strong> button, then click on
+                the map to outline an area (click the first point to finish)
               </li>
               <li>Right-click on a marker to view image details</li>
               <li>Blue markers = unselected, Red markers = selected</li>
@@ -1389,9 +1408,9 @@ This action cannot be undone.`;
 
         {/* Shapefile controls */}
         {(loadingShapefile || shapefileCoords) && (
-          <div className='flex items-center gap-2 flex-wrap'>
+          <div className='flex flex-wrap items-center gap-2'>
             {loadingShapefile && (
-              <span className='text-muted-foreground text-sm flex items-center gap-1'>
+              <span className='flex items-center gap-1 text-sm text-muted-foreground'>
                 <Spinner animation='border' size='sm' />
                 Loading shapefile...
               </span>
@@ -1426,7 +1445,7 @@ This action cannot be undone.`;
 
         {/* Loading status */}
         {loadingStatus && !error && (
-          <div className='text-muted-foreground text-sm'>{loadingStatus}</div>
+          <div className='text-sm text-muted-foreground'>{loadingStatus}</div>
         )}
 
         {/* Error display */}
@@ -1439,7 +1458,9 @@ This action cannot be undone.`;
         {/* Delete progress */}
         {deleteProgress && (
           <div>
-            <div className='text-muted-foreground text-sm mb-1'>{deleteProgress.phase}</div>
+            <div className='mb-1 text-sm text-muted-foreground'>
+              {deleteProgress.phase}
+            </div>
             <Progress
               value={
                 deleteProgress.total > 0
@@ -1472,7 +1493,7 @@ This action cannot be undone.`;
                 ? 'Deletion cancelled:'
                 : 'Deletion complete:'}
             </strong>
-            <ul className='mb-0 mt-2'>
+            <ul className='mt-2 mb-0'>
               <li>Images deleted: {deleteResult.imagesDeleted}</li>
               <li>Annotations deleted: {deleteResult.annotationsDeleted}</li>
               <li>Locations deleted: {deleteResult.locationsDeleted}</li>
@@ -1504,7 +1525,12 @@ This action cannot be undone.`;
         <div className='survey-map'>
           <div
             ref={mapContainerRef}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+            }}
           />
 
           {/* Draw selection control */}
@@ -1524,7 +1550,7 @@ This action cannot be undone.`;
               </Button>
               {drawing && (
                 <div
-                  className='mt-1 text-sm bg-white px-2 py-1 shadow-sm'
+                  className='mt-1 bg-white px-2 py-1 text-sm shadow-sm'
                   style={{ color: '#000' }}
                 >
                   Click to add boundary points; click the first point to finish.
@@ -1536,7 +1562,7 @@ This action cannot be undone.`;
           {/* No-images overlay */}
           {!hasImages && !loading && (
             <div
-              className='flex justify-center items-center text-muted-foreground'
+              className='flex items-center justify-center text-muted-foreground'
               style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
             >
               No images with GPS coordinates found

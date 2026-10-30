@@ -6,22 +6,22 @@ import {
   type TileCoordinate,
 } from '../shared/imageTiles';
 import {
-  storageOperation,
   GENERATE_TILE,
   SIGN_TILES,
   SIGN_TILE_PACK,
+  storageOperation,
 } from './storage/api';
 import { loadAuthorizedTile } from './storage/tileLoader';
 import {
+  TilePackRegistry,
   loadPackTile,
   openSignedTilePack,
-  TilePackRegistry,
 } from './storage/tilePackSource';
 import {
   TileUrlBatcher,
   tileImageKey,
-  type TileContext,
   type SignedTileBatch,
+  type TileContext,
 } from './storage/tileUrlBatcher';
 
 export type { TileContext } from './storage/tileUrlBatcher';
@@ -49,8 +49,8 @@ const urls = new TileUrlBatcher((context, sourceKey, tiles) =>
       sourceKey,
       tiles: JSON.stringify(tiles),
     },
-    'signImageTiles'
-  )
+    'signImageTiles',
+  ),
 );
 
 // Only a change of user rejects in-flight tiles; token refreshes must not.
@@ -136,7 +136,7 @@ const generationQueues = new Map<string, PendingTile[]>();
 async function flushGeneration(
   batch: PendingTile[],
   sourceKey: string,
-  context: TileContext
+  context: TileContext,
 ) {
   for (
     let offset = 0;
@@ -155,7 +155,7 @@ async function flushGeneration(
           rows: chunk.map((t) => t.row),
           cols: chunk.map((t) => t.col),
         },
-        'generateTile'
+        'generateTile',
       );
       chunk.forEach((entry, i) => {
         if (result[i]) entry.resolve(base64ToBlob(result[i]));
@@ -171,7 +171,7 @@ function generateTile(
   sourceKey: string,
   context: TileContext,
   tile: TileCoordinate,
-  scope: string
+  scope: string,
 ): Promise<Blob> {
   const key = tileImageKey(scope, context, sourceKey);
   return new Promise((resolve, reject) => {
@@ -199,9 +199,9 @@ function signTilePack(context: TileContext, sourceKey: string) {
       sharedImageId: context.sharedImageId,
       sourceKey,
     },
-    'signImageTilePack'
+    'signImageTilePack',
   ).then((signed) =>
-    signed.url ? { url: signed.url, expiresAt: signed.expiresAt } : null
+    signed.url ? { url: signed.url, expiresAt: signed.expiresAt } : null,
   );
 }
 
@@ -210,7 +210,7 @@ const blobsInFlight = new Map<string, Promise<Blob>>();
 
 export async function getTileBlob(
   path: string,
-  context: TileContext
+  context: TileContext,
 ): Promise<Blob> {
   const match = TILE_PATH.exec(path);
   if (!match || !context.imageId) {
@@ -248,7 +248,7 @@ export async function getTileBlob(
     tile,
     open: () =>
       packs.get(imageKey, () =>
-        openSignedTilePack(() => signTilePack(context, sourceKey), context)
+        openSignedTilePack(() => signTilePack(context, sourceKey), context),
       ),
     forget: () => packs.forget(imageKey),
     legacy,

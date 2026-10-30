@@ -30,7 +30,7 @@ export function splitCallOptions(args: unknown[]): {
 export function startCancellable<T>(
   start: () => T,
   signal: AbortSignal | undefined,
-  cancel: (request: Promise<unknown>) => void
+  cancel: (request: Promise<unknown>) => void,
 ): T {
   signal?.throwIfAborted();
   const request = start();
@@ -38,6 +38,6 @@ export function startCancellable<T>(
   const onAbort = () => cancel(request);
   signal.addEventListener('abort', onAbort, { once: true });
   return request.finally(() =>
-    signal.removeEventListener('abort', onAbort)
+    signal.removeEventListener('abort', onAbort),
   ) as T;
 }

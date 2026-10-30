@@ -3,10 +3,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { Schema } from '../amplify/client-schema';
-import { useState, useContext } from 'react';
+import { useContext, useState } from 'react';
 import { GlobalContext } from '../Context';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
+import { Schema } from '../amplify/client-schema';
 import LabelEditor from './LabelEditor';
 
 export default function AddAnnotationSetModal({
@@ -25,7 +25,12 @@ export default function AddAnnotationSetModal({
   const { client } = useContext(GlobalContext)!;
   const [name, setName] = useState('');
   const [saveLabels, setSaveLabels] = useState<
-    ((annotationSetId: string, projectId: string, group: string) => Promise<void>) | null
+    | ((
+        annotationSetId: string,
+        projectId: string,
+        group: string,
+      ) => Promise<void>)
+    | null
   >(null);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedAnnotationSet, setSelectedAnnotationSet] =
@@ -75,7 +80,7 @@ export default function AddAnnotationSetModal({
   }
 
   async function handleAnnotationSetChange(
-    e: React.ChangeEvent<HTMLSelectElement>
+    e: React.ChangeEvent<HTMLSelectElement>,
   ) {
     const annotationSetId = e.target.value;
     setSelectedAnnotationSet(annotationSetId);
@@ -107,7 +112,7 @@ export default function AddAnnotationSetModal({
           <div>
             <Label className='mb-0'>Name</Label>
             <span
-              className='text-muted-foreground block mb-1'
+              className='mb-1 block text-muted-foreground'
               style={{ fontSize: '12px' }}
             >
               A descriptive name for your annotation set to help you identify
@@ -123,7 +128,7 @@ export default function AddAnnotationSetModal({
           <div>
             <Label className='mb-0'>Load Labels</Label>
             <span
-              className='text-muted-foreground block mb-1'
+              className='mb-1 block text-muted-foreground'
               style={{ fontSize: '12px' }}
             >
               Load labels from a previous annotation set.
@@ -172,7 +177,10 @@ export default function AddAnnotationSetModal({
         </form>
         <Footer>
           {statusMessage && (
-            <span className='text-muted-foreground me-auto flex items-center gap-2' style={{ fontSize: 12 }}>
+            <span
+              className='me-auto flex items-center gap-2 text-muted-foreground'
+              style={{ fontSize: 12 }}
+            >
               <Spinner size='sm' />
               {statusMessage}
             </span>

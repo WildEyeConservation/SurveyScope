@@ -1,5 +1,5 @@
-import { toast } from 'sonner';
 import { useCallback, useContext, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { GlobalContext, UserContext } from '../../Context';
 import { fetchAllPaginatedResults } from '../../utils';
 
@@ -22,12 +22,12 @@ type FeedbackRow = {
 };
 
 function isConditionalCheckError(
-  errors: ReadonlyArray<{ message?: string; errorType?: string }>
+  errors: ReadonlyArray<{ message?: string; errorType?: string }>,
 ): boolean {
   return errors.some(
     (e) =>
       e.errorType === 'DynamoDB:ConditionalCheckFailedException' ||
-      /conditional (request|check)/i.test(e.message ?? '')
+      /conditional (request|check)/i.test(e.message ?? ''),
   );
 }
 
@@ -42,7 +42,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
 
   // Net overlay per snapshot annotation id, plus which row ids already exist.
   const [overlay, setOverlay] = useState<Map<string, FeedbackOverlay>>(
-    () => new Map()
+    () => new Map(),
   );
   const [existingIds, setExistingIds] = useState<Set<string>>(() => new Set());
   const [loaded, setLoaded] = useState(false);
@@ -65,7 +65,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
             'comment',
           ] as const,
           limit: 10000,
-        }
+        },
       )) as FeedbackRow[];
       if (cancelled) return;
       const nextOverlay = new Map<string, FeedbackOverlay>();
@@ -96,7 +96,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
   const rowId = useCallback(
     (sharedAnnotationId: string, kind: FeedbackKind) =>
       `${shareId}#${userSub}#${sharedAnnotationId}#${kind}`,
-    [shareId, userSub]
+    [shareId, userSub],
   );
 
   const persist = useCallback(
@@ -108,7 +108,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         proposedObscured?: boolean;
         proposedCategoryId?: string;
         comment?: string;
-      }
+      },
     ) => {
       if (!shareId) return;
       const id = rowId(sharedAnnotationId, kind);
@@ -133,13 +133,13 @@ export function useChainReviewFeedback(shareId: string | undefined) {
       }
       if (res?.errors?.length) {
         throw new Error(
-          res.errors.map((e: { message: string }) => e.message).join('; ')
+          res.errors.map((e: { message: string }) => e.message).join('; '),
         );
       }
       if (!res?.data) throw new Error('Feedback was not saved');
       setExistingIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
     },
-    [client, existingIds, rowId, shareId]
+    [client, existingIds, rowId, shareId],
   );
 
   /** Record the reviewer's obscured opinion for one annotation. */
@@ -147,7 +147,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
     async (
       sharedAnnotationId: string,
       chainId: string | null,
-      proposedObscured: boolean
+      proposedObscured: boolean,
     ) => {
       try {
         await persist(sharedAnnotationId, chainId, 'obscured', {
@@ -157,7 +157,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         toast.error(
           `Feedback was not saved: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
         return;
       }
@@ -170,7 +170,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         return next;
       });
     },
-    [persist]
+    [persist],
   );
 
   /** Record the reviewer's label opinion for one annotation. */
@@ -178,7 +178,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
     async (
       sharedAnnotationId: string,
       chainId: string | null,
-      proposedCategoryId: string
+      proposedCategoryId: string,
     ) => {
       try {
         await persist(sharedAnnotationId, chainId, 'relabel', {
@@ -188,7 +188,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         toast.error(
           `Feedback was not saved: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
         return;
       }
@@ -201,7 +201,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         return next;
       });
     },
-    [persist]
+    [persist],
   );
 
   /** Record (or update) the reviewer's free-text comment for one annotation. */
@@ -209,7 +209,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
     async (
       sharedAnnotationId: string,
       chainId: string | null,
-      comment: string
+      comment: string,
     ) => {
       try {
         await persist(sharedAnnotationId, chainId, 'comment', { comment });
@@ -217,7 +217,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         toast.error(
           `Feedback was not saved: ${
             error instanceof Error ? error.message : String(error)
-          }`
+          }`,
         );
         return;
       }
@@ -230,7 +230,7 @@ export function useChainReviewFeedback(shareId: string | undefined) {
         return next;
       });
     },
-    [persist]
+    [persist],
   );
 
   return { overlay, loaded, setObscured, setRelabel, setComment };

@@ -1,13 +1,13 @@
-import type { GlobalContextType } from '../../Context';
-import type { ImageType } from '../../schemaTypes';
 import {
   selectSourceKeyForImage,
   type ImageFileRow,
 } from '../../chain-viewer/utils/imageSourceKey';
+import type { GlobalContextType } from '../../Context';
+import type { ImageType } from '../../schemaTypes';
 
 export function imageSourceQuery(
   client: GlobalContextType['client'],
-  image: Pick<ImageType, 'id' | 'originalPath'>
+  image: Pick<ImageType, 'id' | 'originalPath'>,
 ) {
   return {
     queryKey: ['individual-id-image-source', image.id, image.originalPath],
@@ -18,7 +18,7 @@ export function imageSourceQuery(
       do {
         const result = await client.models.ImageFile.imagesByimageId(
           { imageId: image.id },
-          { nextToken }
+          { nextToken },
         );
         if (result.errors?.length) throw new Error(result.errors[0].message);
         files.push(...result.data);

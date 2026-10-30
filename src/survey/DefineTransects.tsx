@@ -1,39 +1,43 @@
-import {
-  useState,
-  useEffect,
-  useContext,
-  useRef,
-  useMemo,
-  useCallback,
-} from 'react';
-import { GlobalContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
+import { Alert } from '@/components/ui/alert';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Alert } from '@/components/ui/alert';
-import { Footer } from '../Modal';
 import * as maplibregl from 'maplibre-gl';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { GlobalContext } from '../Context';
+import { Footer } from '../Modal';
+import { fetchAllPaginatedResults } from '../utils';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+import * as turf from '@turf/turf';
 import {
   TerraDraw,
   TerraDrawPolygonMode,
   TerraDrawRenderMode,
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
-import * as turf from '@turf/turf';
 import { detectTransects } from '../../amplify/functions/shared/detectTransects';
 import { BASE_STYLE, EMPTY_FC } from './surveyMapStyle';
+
 import './surveyMap.css';
+
+import {
+  loadSurveyArea,
+  recomputeBoundaryStatus,
+} from '../utils/shapefileUtils';
 import BoundaryRecomputeGate from './BoundaryRecomputeGate';
 import {
   runSurveySave,
   surveySaveSettled,
   useSurveySaving,
 } from './surveySaves';
-import {
-  loadSurveyArea,
-  recomputeBoundaryStatus,
-} from '../utils/shapefileUtils';
 import {
   clearJollyResults,
   closedLngLatRing,
@@ -89,7 +93,7 @@ function DefineTransectsEditor({
   const [strata, setStrata] = useState<SavedStratum[]>([]);
   const [segmentedImages, setSegmentedImages] = useState<SegmentedImage[]>([]);
   const [selectedTransectIds, setSelectedTransectIds] = useState<Set<number>>(
-    new Set()
+    new Set(),
   );
   const [pendingPolygon, setPendingPolygon] = useState<{
     id: string | number;
@@ -185,14 +189,14 @@ function DefineTransectsEditor({
     // Spreading every image into Math.max overflows the stack on large surveys.
     const currentMax = segmentedImages.reduce(
       (max, si) => Math.max(max, si.transectId),
-      -1
+      -1,
     );
     const newTransectId = currentMax + 1;
     const enclosedIds = pending.enclosedImageIds;
     setSegmentedImages((prev) =>
       prev.map((si) =>
-        enclosedIds.has(si.id) ? { ...si, transectId: newTransectId } : si
-      )
+        enclosedIds.has(si.id) ? { ...si, transectId: newTransectId } : si,
+      ),
     );
     setSelectedTransectIds(new Set([newTransectId]));
     try {
@@ -210,8 +214,8 @@ function DefineTransectsEditor({
       prev.map((si) =>
         selectedTransectIdsRef.current.has(si.transectId)
           ? { ...si, transectId: targetTransectId }
-          : si
-      )
+          : si,
+      ),
     );
     setSelectedTransectIds(new Set());
   }, []);
@@ -247,7 +251,7 @@ function DefineTransectsEditor({
             detectTransects(images).map(({ id, transectIndex }) => ({
               ...imagesById.get(id)!,
               transectId: transectIndex,
-            }))
+            })),
           );
         }
         setLoading(false);
@@ -311,7 +315,7 @@ function DefineTransectsEditor({
                     latitude: img.latitude,
                     longitude: img.longitude,
                   }
-                : { id: img.id, transectId: trId }
+                : { id: img.id, transectId: trId },
             );
           } else if (dbTransectIds.get(img.id)) {
             imageUpdates.push({ id: img.id, transectId: null });
@@ -327,7 +331,7 @@ function DefineTransectsEditor({
           imageUpdates.map(async (update) => {
             await (client.models.Image.update as any)(update);
             setSavingProgress((p) => p + 1);
-          })
+          }),
         );
         const savedTransectIds = new Map(dbTransectIds);
         for (const update of imageUpdates) {
@@ -337,14 +341,14 @@ function DefineTransectsEditor({
 
         const allTransects = (await fetchAllPaginatedResults(
           client.models.Transect.transectsByProjectId as any,
-          { projectId, limit: 10000, selectionSet: ['id'] } as any
+          { projectId, limit: 10000, selectionSet: ['id'] } as any,
         )) as any[];
         const usedTransectIds = new Set(Object.values(transectMap));
         await Promise.all(
           allTransects
             .map((t) => t.id as string)
             .filter((id) => !usedTransectIds.has(id))
-            .map((id) => (client.models.Transect.delete as any)({ id }))
+            .map((id) => (client.models.Transect.delete as any)({ id })),
         );
 
         setStrata(currentStrata);
@@ -383,7 +387,7 @@ function DefineTransectsEditor({
         };
       }),
     }),
-    [segmentedImages, adjustedPositions, selectedTransectIds]
+    [segmentedImages, adjustedPositions, selectedTransectIds],
   );
 
   const boundaryFC = useMemo(() => {
@@ -412,7 +416,7 @@ function DefineTransectsEditor({
         geometry: { type: 'LineString', coordinates: closedLngLatRing(coords) },
       })),
     }),
-    [exclusions]
+    [exclusions],
   );
 
   const strataFC = useMemo(
@@ -430,7 +434,7 @@ function DefineTransectsEditor({
         },
       })),
     }),
-    [strata]
+    [strata],
   );
 
   useEffect(() => {
@@ -446,7 +450,7 @@ function DefineTransectsEditor({
     mapRef.current = map;
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right'
+      'top-right',
     );
 
     const showPopup = (lngLat: maplibregl.LngLatLike, node: HTMLElement) => {
@@ -459,14 +463,14 @@ function DefineTransectsEditor({
 
     const handleEncloseFinish = (
       id: string | number,
-      feature: ReturnType<TerraDraw['getSnapshotFeature']>
+      feature: ReturnType<TerraDraw['getSnapshotFeature']>,
     ) => {
       const draw = drawRef.current;
       if (!draw || !feature || feature.geometry.type !== 'Polygon') return;
 
       // Use jittered screen positions for lasso hit testing.
       const screenPolygon = feature.geometry.coordinates[0].map(([lng, lat]) =>
-        map.project([lng, lat])
+        map.project([lng, lat]),
       );
       const isInsideScreenPolygon = (x: number, y: number) => {
         let inside = false;
@@ -506,7 +510,7 @@ function DefineTransectsEditor({
       }
       const center = turf.centerOfMass(feature as any).geometry.coordinates as [
         number,
-        number
+        number,
       ];
       setPendingPolygon({
         id,
@@ -619,7 +623,7 @@ function DefineTransectsEditor({
         if (!f) return;
         const imageId = String(f.id ?? (f.properties as any)?.id ?? '');
         const image = segmentedImagesRef.current.find(
-          (candidate) => String(candidate.id) === imageId
+          (candidate) => String(candidate.id) === imageId,
         );
         const tid = Number(image?.transectId);
         if (!Number.isFinite(tid)) return;
@@ -646,7 +650,7 @@ function DefineTransectsEditor({
         e.originalEvent.preventDefault();
         const imageId = String(f.id ?? (f.properties as any)?.id ?? '');
         const image = segmentedImagesRef.current.find(
-          (candidate) => String(candidate.id) === imageId
+          (candidate) => String(candidate.id) === imageId,
         );
         const tid = Number(image?.transectId);
         if (!Number.isFinite(tid)) return;
@@ -803,7 +807,7 @@ function DefineTransectsEditor({
     <>
       <form className='flex flex-col gap-4 p-4'>
         <div
-          className='uppercase font-semibold text-muted-foreground'
+          className='font-semibold text-muted-foreground uppercase'
           style={{ letterSpacing: 0.5, fontSize: 12 }}
         >
           Define Transects
@@ -811,7 +815,7 @@ function DefineTransectsEditor({
         <div>
           <button
             type='button'
-            className='text-muted-foreground flex items-center gap-1'
+            className='flex items-center gap-1 text-muted-foreground'
             onClick={() => setShowInstructions((v) => !v)}
             style={{
               background: 'none',
@@ -833,7 +837,10 @@ function DefineTransectsEditor({
             Instructions
           </button>
           {showInstructions && (
-            <ul className='mt-2 mb-0 text-muted-foreground' style={{ fontSize: '14px' }}>
+            <ul
+              className='mt-2 mb-0 text-muted-foreground'
+              style={{ fontSize: '14px' }}
+            >
               <li>
                 Single-click a point to select its transect (Ctrl/⌘-click for
                 multi-select). Clicking a selected transect deselects it.
@@ -862,7 +869,7 @@ function DefineTransectsEditor({
           )}
         </div>
 
-        <div className='flex gap-2 flex-wrap'>
+        <div className='flex flex-wrap gap-2'>
           <Button
             size='sm'
             variant={activeTool === 'enclose' ? 'primary' : 'outline-primary'}
@@ -931,7 +938,9 @@ function DefineTransectsEditor({
           )}
         </div>
         {loadError && (
-          <Alert variant='danger' className='mb-0'>{loadError}</Alert>
+          <Alert variant='danger' className='mb-0'>
+            {loadError}
+          </Alert>
         )}
         {!loading && !loadError && !boundary && strata.length === 0 && (
           <Alert variant='warning' className='mb-0'>
@@ -939,10 +948,12 @@ function DefineTransectsEditor({
           </Alert>
         )}
         {saveError && (
-          <Alert variant='danger' className='mb-0'>{saveError}</Alert>
+          <Alert variant='danger' className='mb-0'>
+            {saveError}
+          </Alert>
         )}
         {saving && (
-          <div className='flex justify-center items-center mt-4'>
+          <div className='mt-4 flex items-center justify-center'>
             <Spinner animation='border' size='sm' />
             <span className='ms-2'>
               Saving images to transects:{' '}

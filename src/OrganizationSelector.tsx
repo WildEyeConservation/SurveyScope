@@ -1,7 +1,3 @@
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext, UserContext } from './Context';
-import { Schema } from './amplify/client-schema';
-import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,6 +5,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ChevronDown } from 'lucide-react';
+import { useContext, useEffect, useState } from 'react';
+import { GlobalContext, UserContext } from './Context';
+import { Schema } from './amplify/client-schema';
 
 function OrganizationSelector({
   organization,
@@ -33,7 +33,7 @@ function OrganizationSelector({
     if (!myOrganizations?.length) return;
 
     const adminMemberships = myOrganizations.filter(
-      (membership) => membership.isAdmin
+      (membership) => membership.isAdmin,
     );
     if (!adminMemberships.length) return;
 
@@ -55,11 +55,11 @@ function OrganizationSelector({
             await client.models.Organization.get({
               id: membership.organizationId,
             })
-          ).data
-      )
+          ).data,
+      ),
     ).then((allOrganizations) => {
       const validOrganizations = allOrganizations.filter(
-        (organization) => organization !== null
+        (organization) => organization !== null,
       );
       setOrganizations(validOrganizations);
 

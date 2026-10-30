@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useState } from 'react';
 import ZoomPreviewModal from './ZoomPreviewModal';
 import {
   DEFAULT_ZOOM_OFFSET,
@@ -27,13 +27,16 @@ export default function ZoomSetting({
     zoom !== undefined
       ? `Level ${zoom}`
       : mode === 'level'
-      ? 'Auto'
-      : `Level ${DEFAULT_ZOOM_OFFSET} (default)`;
+        ? 'Auto'
+        : `Level ${DEFAULT_ZOOM_OFFSET} (default)`;
 
   return (
     <div>
       <Label className='mb-0'>Zoom Level</Label>
-      <span className='text-muted-foreground block mb-1' style={{ fontSize: '12px' }}>
+      <span
+        className='mb-1 block text-muted-foreground'
+        style={{ fontSize: '12px' }}
+      >
         {mode === 'level'
           ? 'The zoom level images open at in the job. Auto fits each location to the screen.'
           : 'How far the job zooms in on each annotation when it opens.'}

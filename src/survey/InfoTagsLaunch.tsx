@@ -1,25 +1,25 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { LoadingProgressCard } from './LoadingProgressCard';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import type { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
 import { loadRows } from '../rowChunks';
-import type { DataClient } from '../../amplify/shared/data-schema.generated';
+import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
-import { shouldIgnoreLaunchError } from './QCReview';
 import { parseLaunchResponse } from './launchResponse';
+import { LoadingProgressCard } from './LoadingProgressCard';
+import { shouldIgnoreLaunchError } from './QCReview';
 import { pickZoomPreviewCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
 
 type LaunchHandler = {
   execute: (
     onProgress: (message: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 };
 
@@ -83,8 +83,9 @@ export default function InfoTagsLaunch({
         limit: 1000,
       },
       (count) => {
-        if (mounted) setLoadStatus((state) => ({ ...state, categories: count }));
-      }
+        if (mounted)
+          setLoadStatus((state) => ({ ...state, categories: count }));
+      },
     ).then((rows) => {
       if (mounted) {
         setLoadStatus((state) => ({
@@ -102,9 +103,10 @@ export default function InfoTagsLaunch({
       ['categoryId', 'imageId', 'infoTaggedBy'],
       {
         onProgress: (count) => {
-          if (mounted) setLoadStatus((state) => ({ ...state, annotations: count }));
+          if (mounted)
+            setLoadStatus((state) => ({ ...state, annotations: count }));
         },
-      }
+      },
     ).then((rows) => {
       if (mounted) {
         setLoadStatus((state) => ({
@@ -124,7 +126,7 @@ export default function InfoTagsLaunch({
       },
       (count) => {
         if (mounted) setLoadStatus((state) => ({ ...state, infoTags: count }));
-      }
+      },
     ).then((rows) => {
       if (mounted) {
         setLoadStatus((state) => ({
@@ -151,12 +153,14 @@ export default function InfoTagsLaunch({
                     infoTaggedBy: row.infoTaggedBy ?? null,
                   },
                 ]
-              : []
-          )
+              : [],
+          ),
         );
         setInfoTagCount(infoTagRows.length);
       })
-      .catch((error) => console.error('Failed to load info tag launch data', error))
+      .catch((error) =>
+        console.error('Failed to load info tag launch data', error),
+      )
       .finally(() => {
         if (mounted) setLoading(false);
       });
@@ -168,11 +172,17 @@ export default function InfoTagsLaunch({
   const availableCategories = useMemo(() => {
     const counts = new Map<string, number>();
     for (const annotation of annotations) {
-      counts.set(annotation.categoryId, (counts.get(annotation.categoryId) ?? 0) + 1);
+      counts.set(
+        annotation.categoryId,
+        (counts.get(annotation.categoryId) ?? 0) + 1,
+      );
     }
     return categories
       .filter((category) => counts.has(category.id))
-      .map((category) => ({ ...category, count: counts.get(category.id) ?? 0 }));
+      .map((category) => ({
+        ...category,
+        count: counts.get(category.id) ?? 0,
+      }));
   }, [annotations, categories]);
 
   const selected = useMemo(() => {
@@ -181,9 +191,11 @@ export default function InfoTagsLaunch({
   }, [annotations, selectedCategoryIds]);
   const selectedImageCount = useMemo(
     () => new Set(selected.map((annotation) => annotation.imageId)).size,
-    [selected]
+    [selected],
   );
-  const taggedCount = selected.filter((annotation) => annotation.infoTaggedBy).length;
+  const taggedCount = selected.filter(
+    (annotation) => annotation.infoTaggedBy,
+  ).length;
   const untaggedCount = selected.length - taggedCount;
 
   useEffect(() => {
@@ -192,7 +204,7 @@ export default function InfoTagsLaunch({
         infoTagCount === 0 ||
         selectedCategoryIds.length === 0 ||
         untaggedCount === 0 ||
-        launching
+        launching,
     );
   }, [
     infoTagCount,
@@ -224,7 +236,7 @@ export default function InfoTagsLaunch({
         const categoryIds = selectionRef.current;
         if (categoryIds.length === 0) return;
         const categoryNames = categoryIds.map(
-          (id) => categories.find((category) => category.id === id)?.name ?? id
+          (id) => categories.find((category) => category.id === id)?.name ?? id,
         );
         onLaunchConfirmed();
         onProgress('Submitting informational tagging request...');
@@ -243,7 +255,7 @@ export default function InfoTagsLaunch({
           user.userId,
           `Launched Info Tags for ${categoryNames.join(', ')} in annotation set "${annotationSet.name}"`,
           project.id,
-          project.organizationId
+          project.organizationId,
         ).catch(console.error);
       },
     });
@@ -260,8 +272,8 @@ export default function InfoTagsLaunch({
   ]);
 
   return (
-    <div className='px-4 pb-4 pt-1'>
-      <div className='flex flex-col gap-4 mt-2'>
+    <div className='px-4 pt-1 pb-4'>
+      <div className='mt-2 flex flex-col gap-4'>
         {loading ? (
           <LoadingProgressCard
             title='Loading Info Tags data...'
@@ -295,7 +307,10 @@ export default function InfoTagsLaunch({
           <>
             <div>
               <Label className='mb-0'>Labels to tag</Label>
-              <span className='text-muted-foreground block mb-1' style={{ fontSize: 12 }}>
+              <span
+                className='mb-1 block text-muted-foreground'
+                style={{ fontSize: 12 }}
+              >
                 Select one or more species whose annotations should be tagged.
               </span>
               <div
@@ -303,7 +318,10 @@ export default function InfoTagsLaunch({
                 style={{ maxHeight: 220, overflowY: 'auto' }}
               >
                 {availableCategories.map((category) => (
-                  <label key={category.id} className='mb-0.5 flex items-center gap-2'>
+                  <label
+                    key={category.id}
+                    className='mb-0.5 flex items-center gap-2'
+                  >
                     <Checkbox
                       checked={selectedCategoryIds.includes(category.id)}
                       disabled={launching}
@@ -311,7 +329,7 @@ export default function InfoTagsLaunch({
                         setSelectedCategoryIds((current) =>
                           checked === true
                             ? [...current, category.id]
-                            : current.filter((id) => id !== category.id)
+                            : current.filter((id) => id !== category.id),
                         )
                       }
                     />
@@ -323,12 +341,13 @@ export default function InfoTagsLaunch({
 
             {selected.length > 0 && (
               <div
-                className='border border-dark shadow-sm p-2 text-white'
+                className='border border-dark p-2 text-white shadow-sm'
                 style={{ backgroundColor: '#697582', fontSize: 12 }}
               >
-                <strong>{selected.length.toLocaleString()}</strong> annotations across{' '}
-                <strong>{selectedImageCount.toLocaleString()}</strong> images -{' '}
-                <strong>{taggedCount.toLocaleString()}</strong> already tagged
+                <strong>{selected.length.toLocaleString()}</strong> annotations
+                across <strong>{selectedImageCount.toLocaleString()}</strong>{' '}
+                images - <strong>{taggedCount.toLocaleString()}</strong> already
+                tagged
                 {untaggedCount === 0 && (
                   <div className='mt-1 text-warning'>
                     All selected annotations have already been tagged.
@@ -348,26 +367,33 @@ export default function InfoTagsLaunch({
             <label className='mb-0 flex items-center gap-2'>
               <Switch
                 checked={showAdvancedOptions}
-                onCheckedChange={() => setShowAdvancedOptions((value) => !value)}
+                onCheckedChange={() =>
+                  setShowAdvancedOptions((value) => !value)
+                }
                 disabled={launching}
               />
               Show Advanced Options
             </label>
             {showAdvancedOptions && (
               <div
-                className='flex flex-col gap-4 border border-dark shadow-sm p-2'
+                className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
                 style={{ backgroundColor: '#697582' }}
               >
                 <div>
                   <Label className='mb-0'>Batch Size</Label>
-                  <span className='text-muted-foreground block mb-1' style={{ fontSize: 12 }}>
+                  <span
+                    className='mb-1 block text-muted-foreground'
+                    style={{ fontSize: 12 }}
+                  >
                     The number of images a user can pick up at a time.
                   </span>
                   <Input
                     type='number'
                     min={1}
                     value={batchSize}
-                    onChange={(event) => setBatchSize(Number(event.target.value))}
+                    onChange={(event) =>
+                      setBatchSize(Number(event.target.value))
+                    }
                     disabled={launching}
                   />
                 </div>
@@ -390,14 +416,17 @@ export default function InfoTagsLaunch({
 
 async function sendLaunchRequest(
   client: DataClient,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ): Promise<string | undefined> {
   try {
     const result = await client.mutations.launchInfoTags(
       { request: JSON.stringify(payload) },
-      { retry: false }
+      { retry: false },
     );
-    const body = parseLaunchResponse(result, 'Informational tagging launch failed');
+    const body = parseLaunchResponse(
+      result,
+      'Informational tagging launch failed',
+    );
     return typeof body.message === 'string' ? body.message : undefined;
   } catch (error) {
     // A timeout does not mean the launch failed - the Lambda keeps going.

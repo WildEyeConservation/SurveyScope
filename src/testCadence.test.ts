@@ -40,7 +40,7 @@ test('an annotation resets the consecutive unannotated count', () => {
       config: { testType: 'interval', interval: 10 },
       jobsCompleted: 9,
     }),
-    { nextUnannotatedJobs: 0, shouldInsertTest: false }
+    { nextUnannotatedJobs: 0, shouldInsertTest: false },
   );
 });
 
@@ -54,7 +54,7 @@ test('a completed test does not count toward the next interval', () => {
       config: { testType: 'interval', interval: 10 },
       jobsCompleted: 10,
     }),
-    { nextUnannotatedJobs: 0, shouldInsertTest: false }
+    { nextUnannotatedJobs: 0, shouldInsertTest: false },
   );
 });
 

@@ -1,12 +1,12 @@
-import { Modal, Body, Header, Footer, Title } from '../Modal';
-import MyTable from '../Table';
-import { useCallback, useContext, useEffect, useState } from 'react';
-import { GlobalContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
-import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { useCallback, useContext, useEffect, useState } from 'react';
+import { GlobalContext } from '../Context';
 import LabeledToggleSwitch from '../LabeledToggleSwitch';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
+import MyTable from '../Table';
+import { fetchAllPaginatedResults } from '../utils';
+import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
 
 type Permission = {
   membershipId: string | null;
@@ -31,7 +31,7 @@ export default function ExceptionsModal({
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [originalPermissions, setOriginalPermissions] = useState<Permission[]>(
-    []
+    [],
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,11 +52,11 @@ export default function ExceptionsModal({
               eq: organization.id,
             },
           },
-        }
+        },
       );
 
       const validProjects = projects.filter(
-        (project) => project.status !== 'deleted'
+        (project) => project.status !== 'deleted',
       );
 
       if (validProjects.length > 0) {
@@ -65,12 +65,12 @@ export default function ExceptionsModal({
           {
             userId: user.id,
             selectionSet: ['id', 'projectId', 'isAdmin'],
-          }
+          },
         );
 
         const projectPermissions = validProjects.map((project) => {
           const membership = userProjectMemberships.find(
-            (m) => m.projectId === project.id
+            (m) => m.projectId === project.id,
           );
           return {
             projectName: project.name,
@@ -105,15 +105,15 @@ export default function ExceptionsModal({
         (op) =>
           op.projectId === p.projectId &&
           op.annotationAccess === p.annotationAccess &&
-          op.isAdmin === p.isAdmin
-      )
+          op.isAdmin === p.isAdmin,
+      ),
   );
 
   const handleClose = () => {
     if (
       hasChanges &&
       !window.confirm(
-        'You have unsaved changes. Close without saving? Click Save first to apply them.'
+        'You have unsaved changes. Close without saving? Click Save first to apply them.',
       )
     ) {
       return;
@@ -141,8 +141,8 @@ export default function ExceptionsModal({
             permissions.map((p) =>
               p.projectId === permission.projectId
                 ? { ...p, annotationAccess: checked }
-                : p
-            )
+                : p,
+            ),
           );
         }}
       />,
@@ -158,8 +158,8 @@ export default function ExceptionsModal({
             permissions.map((p) =>
               p.projectId === permission.projectId
                 ? { ...p, isAdmin: checked, annotationAccess: true }
-                : p
-            )
+                : p,
+            ),
           );
         }}
       />,
@@ -176,8 +176,8 @@ export default function ExceptionsModal({
           (op) =>
             op.projectId === p.projectId &&
             op.annotationAccess === p.annotationAccess &&
-            op.isAdmin === p.isAdmin
-        )
+            op.isAdmin === p.isAdmin,
+        ),
     );
 
     // Keep going past a failed survey so one rejection doesn't silently skip
@@ -196,7 +196,7 @@ export default function ExceptionsModal({
       } catch (err) {
         console.error(
           `Failed to save access to survey ${permission.projectId} for user ${user.id}`,
-          err
+          err,
         );
         failed.push(permission.projectName);
       }
@@ -215,7 +215,7 @@ export default function ExceptionsModal({
             variant: 'danger',
             message: `Could not save access for: ${failed.join(', ')}. Please try again.`,
           }
-        : { variant: 'success', message: 'Access saved.' }
+        : { variant: 'success', message: 'Access saved.' },
     );
     setIsSaving(false);
   };
@@ -229,7 +229,10 @@ export default function ExceptionsModal({
       </Header>
       <Body>
         <div className='p-4'>
-          <div className='text-muted-foreground mb-4' style={{ lineHeight: 1.2 }}>
+          <div
+            className='mb-4 text-muted-foreground'
+            style={{ lineHeight: 1.2 }}
+          >
             <span style={{ fontSize: 16 }}>Instructions</span>
             <br />
             <span style={{ fontSize: 12 }}>

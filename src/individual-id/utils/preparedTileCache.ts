@@ -5,7 +5,7 @@ export function preparedTileKey(
   context: TileContext,
   sourceKey: string,
   tile: Tile,
-  maxZ: number
+  maxZ: number,
 ) {
   return JSON.stringify([
     context.imageId,
@@ -22,7 +22,7 @@ export function preparedTileKey(
 export function createPreparedTileCache(
   fetchTile: (path: string, context: TileContext) => Promise<Blob>,
   prepare: (blob: Blob, tile: Tile, maxZ: number) => Promise<Blob>,
-  maxBytes = 64 * 1024 * 1024
+  maxBytes = 64 * 1024 * 1024,
 ) {
   const ready = new Map<string, Blob>();
   const pending = new Map<string, Promise<Blob>>();
@@ -33,7 +33,7 @@ export function createPreparedTileCache(
     context: TileContext,
     sourceKey: string,
     tile: Tile,
-    maxZ: number
+    maxZ: number,
   ): Promise<Blob> => {
     const key = preparedTileKey(context, sourceKey, tile, maxZ);
     const cached = ready.get(key);

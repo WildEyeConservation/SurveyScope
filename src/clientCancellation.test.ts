@@ -1,5 +1,5 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { splitCallOptions, startCancellable } from './clientCancellation';
 
 test('signal and retry are stripped while Amplify options pass through', () => {
@@ -37,8 +37,8 @@ test('an aborted signal stops the request from starting', () => {
         return Promise.resolve();
       },
       controller.signal,
-      () => {}
-    )
+      () => {},
+    ),
   );
   assert.equal(started, false);
 });
@@ -50,7 +50,7 @@ test('aborting cancels the original in-flight request', async () => {
   startCancellable(
     () => request,
     controller.signal,
-    (r) => cancelled.push(r)
+    (r) => cancelled.push(r),
   );
   controller.abort();
   assert.deepEqual(cancelled, [request]);
@@ -61,7 +61,7 @@ test('requests without a signal are never cancelled', async () => {
   const result = await startCancellable(
     () => Promise.resolve('saved'),
     undefined,
-    (r) => cancelled.push(r)
+    (r) => cancelled.push(r),
   );
   assert.equal(result, 'saved');
   assert.equal(cancelled.length, 0);

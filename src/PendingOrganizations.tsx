@@ -1,18 +1,21 @@
-import MyTable from './Table';
+import { Button } from '@/components/ui/button';
 import { useContext, useState } from 'react';
-import { GlobalContext } from './Context';
-import { useOptimisticUpdates } from './useOptimisticUpdates';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
-import { Button } from '@/components/ui/button';
+import { GlobalContext } from './Context';
 import CreateOrganization from './organization/CreateOrganization';
+import MyTable from './Table';
+import { useOptimisticUpdates } from './useOptimisticUpdates';
 
 export default function PendingOrganizations() {
   const { client, showModal, modalToShow } = useContext(GlobalContext);
   const { users } = useUsers();
 
   const [selectedRequest, setSelectedRequest] = useState<
-    (Schema['OrganizationRegistration']['type'] & { requestedByEmail: string }) | null
+    | (Schema['OrganizationRegistration']['type'] & {
+        requestedByEmail: string;
+      })
+    | null
   >(null);
 
   const { data: requests } = useOptimisticUpdates<
@@ -21,7 +24,7 @@ export default function PendingOrganizations() {
   >('OrganizationRegistration', async (nextToken) =>
     client.models.OrganizationRegistration.list({
       nextToken,
-    })
+    }),
   );
 
   const tableData = requests
@@ -72,7 +75,7 @@ export default function PendingOrganizations() {
         itemsPerPage={10}
         emptyMessage='No pending organisations'
       />
-      <div className='flex justify-center items-center border-t pt-4 border-dark mt-4'>
+      <div className='mt-4 flex items-center justify-center border-t border-dark pt-4'>
         <Button
           variant='primary'
           onClick={() => showModal('createOrganization')}

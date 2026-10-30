@@ -29,7 +29,7 @@ function assertWritten(result: unknown, action: string) {
 /** Creates, updates or deletes one project membership to match `change`. */
 export async function applyProjectMembershipChange(
   client: DataClient,
-  change: ProjectMembershipChange
+  change: ProjectMembershipChange,
 ): Promise<void> {
   const wantsMembership = change.annotationAccess || change.isAdmin;
 
@@ -39,7 +39,7 @@ export async function applyProjectMembershipChange(
         await client.models.UserProjectMembership.delete({
           id: change.membershipId,
         }),
-        'Removing access'
+        'Removing access',
       );
     } else {
       assertWritten(
@@ -47,7 +47,7 @@ export async function applyProjectMembershipChange(
           id: change.membershipId,
           isAdmin: change.isAdmin,
         }),
-        'Updating access'
+        'Updating access',
       );
     }
     return;
@@ -62,13 +62,13 @@ export async function applyProjectMembershipChange(
     {
       userId: change.userId,
       filter: { projectId: { eq: change.projectId } },
-    }
+    },
   );
 
   if (existingRows.length > 0) {
     if (existingRows.length > 1) {
       console.warn(
-        `Found ${existingRows.length} memberships for user ${change.userId} in project ${change.projectId}`
+        `Found ${existingRows.length} memberships for user ${change.userId} in project ${change.projectId}`,
       );
     }
     assertWritten(
@@ -76,7 +76,7 @@ export async function applyProjectMembershipChange(
         id: existingRows[0].id,
         isAdmin: change.isAdmin,
       }),
-      'Updating access'
+      'Updating access',
     );
     return;
   }
@@ -88,6 +88,6 @@ export async function applyProjectMembershipChange(
       isAdmin: change.isAdmin,
       group: change.group,
     }),
-    'Granting access'
+    'Granting access',
   );
 }

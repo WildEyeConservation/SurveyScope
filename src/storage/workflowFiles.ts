@@ -34,7 +34,7 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 export async function readFalseNegativeFile<T>(
   annotationSetId: string,
   kind: FalseNegativeFileKind,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<T | null> {
   const file = await storageOperation<FileUrl>(
     `query FalseNegativeFileUrl($annotationSetId: ID!, $kind: String!) {
@@ -42,35 +42,35 @@ export async function readFalseNegativeFile<T>(
   }`,
     { annotationSetId, kind },
     'falseNegativeFileUrl',
-    signal
+    signal,
   );
   if (!file.exists || !file.url) return null;
   return fetchJson<T>(file.url, signal);
 }
 
 export async function deleteFalseNegativeFiles(
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<void> {
   await storageOperation<boolean>(
     `mutation DeleteFalseNegativeFiles($annotationSetId: ID!) {
     deleteFalseNegativeFiles(annotationSetId: $annotationSetId)
   }`,
     { annotationSetId },
-    'deleteFalseNegativeFiles'
+    'deleteFalseNegativeFiles',
   );
 }
 
 export async function readJollyStatus<T>(
   surveyId: string,
   annotationSetId: string,
-  jobId: string
+  jobId: string,
 ): Promise<T> {
   const file = await storageOperation<FileUrl>(
     `query JollyStatusUrl($surveyId: ID!, $annotationSetId: ID!, $jobId: ID!) {
     jollyStatusUrl(surveyId: $surveyId, annotationSetId: $annotationSetId, jobId: $jobId)
   }`,
     { surveyId, annotationSetId, jobId },
-    'jollyStatusUrl'
+    'jollyStatusUrl',
   );
   if (!file.url) throw new Error('Results status is not available yet');
   return fetchJson<T>(file.url);
@@ -80,14 +80,14 @@ export async function readJollyStatus<T>(
 export async function uploadWorkflowFile(
   kind: WorkflowUploadKind,
   projectId: string,
-  body: string
+  body: string,
 ): Promise<string> {
   const grant = await storageOperation<UploadGrant>(
     `mutation PrepareWorkflowUpload($kind: String!, $projectId: ID!) {
     prepareWorkflowUpload(kind: $kind, projectId: $projectId)
   }`,
     { kind, projectId },
-    'prepareWorkflowUpload'
+    'prepareWorkflowUpload',
   );
   const response = await fetch(grant.url, {
     method: 'PUT',

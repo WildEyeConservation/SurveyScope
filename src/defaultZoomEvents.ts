@@ -9,12 +9,12 @@ export function publishSharedDefaultZoom(detail: SharedDefaultZoomDetail) {
   window.dispatchEvent(
     new CustomEvent<SharedDefaultZoomDetail>(SHARED_DEFAULT_ZOOM_EVENT, {
       detail,
-    })
+    }),
   );
 }
 
 export function subscribeToSharedDefaultZoom(
-  listener: (detail: SharedDefaultZoomDetail) => void
+  listener: (detail: SharedDefaultZoomDetail) => void,
 ) {
   const handleEvent = (event: Event) => {
     listener((event as CustomEvent<SharedDefaultZoomDetail>).detail);

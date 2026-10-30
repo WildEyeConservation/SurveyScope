@@ -1,4 +1,3 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,8 +8,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { GlobalContext } from './Context';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import AnnotationWorkspace from './AnnotationWorkspace';
+import { GlobalContext } from './Context';
 
 export default function AnnotationViewerModal({
   show,
@@ -43,7 +43,7 @@ export default function AnnotationViewerModal({
       }
       const resp: any = await (client as any).models.Image.get(
         { id: imageId },
-        { selectionSet: ['id', 'width', 'height', 'timestamp'] }
+        { selectionSet: ['id', 'width', 'height', 'timestamp'] },
       );
       const data = (resp?.data ?? null) as {
         id: string;
@@ -52,7 +52,7 @@ export default function AnnotationViewerModal({
       } | null;
       if (!cancelled) {
         setImageMeta(
-          data ? { id: data.id, width: data.width, height: data.height } : null
+          data ? { id: data.id, width: data.width, height: data.height } : null,
         );
       }
     }
@@ -64,7 +64,7 @@ export default function AnnotationViewerModal({
 
   const currentIndex = useMemo(
     () => (imageId ? imageIds.indexOf(imageId) : -1),
-    [imageId, imageIds]
+    [imageId, imageIds],
   );
   const hasPrevious = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < imageIds.length - 1;
@@ -88,7 +88,7 @@ export default function AnnotationViewerModal({
         </DialogHeader>
         <DialogBody style={{ height: '75vh' }}>
           {imageId && imageMeta ? (
-            <div className='w-full h-full' style={{ position: 'relative' }}>
+            <div className='h-full w-full' style={{ position: 'relative' }}>
               <AnnotationWorkspace
                 visible={true}
                 hideZoomSetting={true}
@@ -114,7 +114,7 @@ export default function AnnotationViewerModal({
         <DialogFooter className='flex justify-between'>
           <div className='flex flex-row gap-2'>
             <Button
-              className='flex flex-row items-center justify-center h-full'
+              className='flex h-full flex-row items-center justify-center'
               variant='primary'
               onClick={handlePrevious}
               disabled={!hasPrevious}
@@ -124,7 +124,7 @@ export default function AnnotationViewerModal({
               <span className='hidden sm:block'>Previous</span>
             </Button>
             <Button
-              className='flex flex-row items-center justify-center h-full'
+              className='flex h-full flex-row items-center justify-center'
               variant='primary'
               onClick={handleNext}
               disabled={!hasNext}

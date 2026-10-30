@@ -1,32 +1,34 @@
-import { useState, useEffect, useContext, useRef, useMemo } from 'react';
-import * as maplibregl from 'maplibre-gl';
 import type { ExpressionSpecification, StyleSpecification } from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useQueries } from '@tanstack/react-query';
-import { pointOnFeature } from '@turf/turf';
-import { fetchAllPaginatedResults } from './utils';
-import { GlobalContext } from './Context';
-import ImageViewerModal from './ImageViewerModal';
-import AnnotationViewerModal from './AnnotationViewerModal';
-import {
-  uniqueNamesGenerator,
-  adjectives,
-  names,
-} from 'unique-names-generator';
+
 import { buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { useInfoTagData } from './useInfoTags';
-import { formatInfoTagsForDisplay } from './infoTags';
-import { loadProjectImages } from './projectImages';
-import { loadRows } from './rowChunks';
+import { useQueries } from '@tanstack/react-query';
+import { pointOnFeature } from '@turf/turf';
+import {
+  adjectives,
+  names,
+  uniqueNamesGenerator,
+} from 'unique-names-generator';
+import AnnotationViewerModal from './AnnotationViewerModal';
+import { GlobalContext } from './Context';
 import {
   DEFAULT_HEAT_RADIUS_KM,
   HEAT_COLOR_RAMP,
   heatIntensity,
   heatRadiusExpression,
 } from './densityHeat';
+import ImageViewerModal from './ImageViewerModal';
+import { formatInfoTagsForDisplay } from './infoTags';
+import { loadProjectImages } from './projectImages';
+import { loadRows } from './rowChunks';
+import { useInfoTagData } from './useInfoTags';
+import { fetchAllPaginatedResults } from './utils';
 
 /**
  * A single (survey, annotation set) pair whose annotations should be plotted.
@@ -67,7 +69,7 @@ interface DensityMapProps {
    * transect filter that stays consistent with the map's labels/colours.
    */
   onTransectsLoaded?: (
-    transects: { id: string; surveyId: string; number: number }[]
+    transects: { id: string; surveyId: string; number: number }[],
   ) => void;
   highlightedStratumId?: string | null;
   onStratumHover?: (stratumId: string | null) => void;
@@ -97,8 +99,16 @@ const LYR_EXCLUSIONS_FILL = 'exclusions-fill';
 const LYR_EXCLUSIONS_LINE = 'exclusions-line';
 
 const TRANSECT_COLORS = [
-  '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF8',
-  '#FFA833', '#8B33FF', '#FF3380', '#33FF8B', '#FFD133',
+  '#FF5733',
+  '#33FF57',
+  '#3357FF',
+  '#F333FF',
+  '#33FFF8',
+  '#FFA833',
+  '#8B33FF',
+  '#FF3380',
+  '#33FF8B',
+  '#FFD133',
 ];
 
 // OpenStreetMap raster basemap. Glyphs are needed for the cluster-count labels
@@ -132,7 +142,7 @@ const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 // If contains "::", the userId is the part before it; otherwise the whole field.
 function extractUserIdFromOwner(
-  owner: string | null | undefined
+  owner: string | null | undefined,
 ): string | null {
   if (!owner) return null;
   return owner.includes('::') ? owner.split('::')[0] : owner;
@@ -158,14 +168,18 @@ function escapeHtml(value: string): string {
         '>': '&gt;',
         '"': '&quot;',
         "'": '&#39;',
-      })[character]!
+      })[character]!,
   );
 }
 
 function isValidLatLng(lat: number, lng: number): boolean {
   return (
-    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
-    !isNaN(lat) && !isNaN(lng)
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !isNaN(lat) &&
+    !isNaN(lng)
   );
 }
 
@@ -219,13 +233,13 @@ export default function DensityMap({
   // key (and therefore the query order) stable regardless of selection order.
   const uniqueSurveyIds = useMemo(
     () => Array.from(new Set(effectiveSources.map((s) => s.surveyId))).sort(),
-    [effectiveSources]
+    [effectiveSources],
   );
   const uniqueSetSources = useMemo(() => {
     const seen = new Map<string, DensitySource>();
     for (const s of effectiveSources) seen.set(s.annotationSetId, s);
     return Array.from(seen.values()).sort((a, b) =>
-      a.annotationSetId.localeCompare(b.annotationSetId)
+      a.annotationSetId.localeCompare(b.annotationSetId),
     );
   }, [effectiveSources]);
 
@@ -269,7 +283,7 @@ export default function DensityMap({
               projectId: sid,
               limit: 10000,
               selectionSet: ['id', 'name', 'coordinates'],
-            }
+            },
           ),
           fetchAllPaginatedResults<Outline>(
             client.models.ShapefileExclusions.shapefileExclusionsByProjectId,
@@ -277,7 +291,7 @@ export default function DensityMap({
               projectId: sid,
               limit: 10000,
               selectionSet: ['id', 'coordinates'],
-            }
+            },
           ),
         ]);
         return { surveyId: sid, images, strata, exclusions };
@@ -286,31 +300,36 @@ export default function DensityMap({
   });
 
   const annotationQueries = useQueries({
-    queries: uniqueSetSources.map(({ surveyId: sid, annotationSetId: setId }) => ({
-      queryKey: ['densitymap', 'annotations', setId],
-      staleTime: 30 * 60 * 1000,
-      queryFn: async () => {
-        const [rows, surveyCategories] = await Promise.all([
-          loadRows(client, 'annotationsByAnnotationSetId', setId, [
-            'imageId',
-            'categoryId',
-            'objectId',
-            'source',
-            'owner',
-          ]),
-          loadRows(client, 'categoriesByProjectId', sid, ['name']),
-        ]);
-        const categories = new Map(
-          surveyCategories.map((c) => [c.id, { id: c.id, name: c.name ?? '' }])
-        );
-        const annotations = rows.map((a) => ({
-          ...a,
-          setId,
-          category: (a.categoryId && categories.get(a.categoryId)) || null,
-        }));
-        return { surveyId: sid, annotationSetId: setId, annotations };
-      },
-    })),
+    queries: uniqueSetSources.map(
+      ({ surveyId: sid, annotationSetId: setId }) => ({
+        queryKey: ['densitymap', 'annotations', setId],
+        staleTime: 30 * 60 * 1000,
+        queryFn: async () => {
+          const [rows, surveyCategories] = await Promise.all([
+            loadRows(client, 'annotationsByAnnotationSetId', setId, [
+              'imageId',
+              'categoryId',
+              'objectId',
+              'source',
+              'owner',
+            ]),
+            loadRows(client, 'categoriesByProjectId', sid, ['name']),
+          ]);
+          const categories = new Map(
+            surveyCategories.map((c) => [
+              c.id,
+              { id: c.id, name: c.name ?? '' },
+            ]),
+          );
+          const annotations = rows.map((a) => ({
+            ...a,
+            setId,
+            category: (a.categoryId && categories.get(a.categoryId)) || null,
+          }));
+          return { surveyId: sid, annotationSetId: setId, annotations };
+        },
+      }),
+    ),
   });
 
   // Informational tags for every set on the map: used both to filter and to
@@ -336,7 +355,7 @@ export default function DensityMap({
     .join('|');
   const annotationDataSig = annotationQueries
     .map((q) =>
-      q.data ? `${q.data.annotationSetId}:${q.data.annotations.length}` : ''
+      q.data ? `${q.data.annotationSetId}:${q.data.annotations.length}` : '',
     )
     .join('|');
 
@@ -388,8 +407,10 @@ export default function DensityMap({
         const radius = group.length > 1 ? 0.00005 : 0;
         positions.set(id, {
           lat: img.lat + radius * Math.sin(angle),
-          lng: img.lng + (radius * Math.cos(angle)) /
-            Math.max(Math.cos((img.lat * Math.PI) / 180), 1e-6),
+          lng:
+            img.lng +
+            (radius * Math.cos(angle)) /
+              Math.max(Math.cos((img.lat * Math.PI) / 180), 1e-6),
         });
       });
     }
@@ -402,7 +423,7 @@ export default function DensityMap({
       Array.from(imageById.entries())
         .sort((a, b) => a[1].timestamp - b[1].timestamp)
         .map(([id]) => id),
-    [imageById]
+    [imageById],
   );
 
   // Transects discovered in the images, numbered per survey in image-appearance
@@ -425,7 +446,12 @@ export default function DensityMap({
         if (!t || lookup.has(t)) continue;
         const color = TRANSECT_COLORS[next % TRANSECT_COLORS.length];
         lookup.set(t, { number: next + 1, color });
-        flat.push({ id: t, surveyId: q.data.surveyId, number: next + 1, color });
+        flat.push({
+          id: t,
+          surveyId: q.data.surveyId,
+          number: next + 1,
+          color,
+        });
         next++;
       }
     }
@@ -440,7 +466,7 @@ export default function DensityMap({
         id,
         surveyId: sid,
         number,
-      }))
+      })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transectInfo]);
@@ -469,7 +495,8 @@ export default function DensityMap({
           primaryOnly &&
           !(
             a.id === a.objectId &&
-            (!dropFalseNegatives || !(a.source ?? '').includes('false-negative'))
+            (!dropFalseNegatives ||
+              !(a.source ?? '').includes('false-negative'))
           )
         ) {
           continue;
@@ -600,7 +627,7 @@ export default function DensityMap({
         properties: f.properties,
       })),
     }),
-    [strataFC]
+    [strataFC],
   );
 
   const exclusionsFC = useMemo<FeatureCollection>(() => {
@@ -633,7 +660,9 @@ export default function DensityMap({
   const openViewerRef = useRef(openViewer);
   openViewerRef.current = openViewer;
 
-  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(null);
+  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(
+    null,
+  );
   const onStratumHoverRef = useRef(onStratumHover);
   onStratumHoverRef.current = onStratumHover;
 
@@ -658,9 +687,15 @@ export default function DensityMap({
     const resizeObserver = new ResizeObserver(() => map.resize());
     resizeObserver.observe(container);
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: false }),
+      'top-right',
+    );
     map.addControl(new maplibregl.FullscreenControl(), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+    map.addControl(
+      new maplibregl.ScaleControl({ unit: 'metric' }),
+      'bottom-left',
+    );
 
     map.on('load', () => {
       // Sources (start empty; data is pushed via setData below).
@@ -752,12 +787,22 @@ export default function DensityMap({
         filter: ['has', 'point_count'],
         paint: {
           'circle-color': [
-            'step', ['get', 'point_count'],
-            '#51bbd6', 100, '#f1f075', 750, '#f28cb1',
+            'step',
+            ['get', 'point_count'],
+            '#51bbd6',
+            100,
+            '#f1f075',
+            750,
+            '#f28cb1',
           ],
           'circle-radius': [
-            'step', ['get', 'point_count'],
-            15, 100, 20, 750, 25,
+            'step',
+            ['get', 'point_count'],
+            15,
+            100,
+            20,
+            750,
+            25,
           ],
           'circle-opacity': 0.85,
         },
@@ -827,7 +872,7 @@ export default function DensityMap({
         title: string,
         rows: string,
         imageId: string,
-        setId: string
+        setId: string,
       ) => {
         const node = document.createElement('div');
         node.innerHTML = `<div style="min-width:160px;color:#000">
@@ -842,7 +887,9 @@ export default function DensityMap({
             size: 'sm',
             className: 'mt-2',
           });
-          btn.addEventListener('click', () => openViewerRef.current(imageId, setId));
+          btn.addEventListener('click', () =>
+            openViewerRef.current(imageId, setId),
+          );
         }
         new maplibregl.Popup({ closeButton: true })
           .setLngLat(coordinates)
@@ -868,7 +915,7 @@ export default function DensityMap({
               ? `<div><strong>Info tags:</strong> ${escapeHtml(p.infoTags)}</div>`
               : ''),
           p.imageId,
-          p.setId
+          p.setId,
         );
       });
 
@@ -882,7 +929,7 @@ export default function DensityMap({
           `Transect ${p.transect}`,
           `<div><strong>Coordinates:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>`,
           p.imageId,
-          ''
+          '',
         );
       });
 
@@ -894,7 +941,7 @@ export default function DensityMap({
           .setHTML(
             `<div style="color:#000"><strong>Stratum:</strong> ${
               f.properties?.name ?? ''
-            }</div>`
+            }</div>`,
           )
           .addTo(map);
       });
@@ -908,7 +955,12 @@ export default function DensityMap({
       });
       map.on('mouseleave', LYR_STRATA_FILL, () => hoverStratum(null));
 
-      for (const lyr of [LYR_CLUSTERS, LYR_POINTS, LYR_IMAGES, LYR_STRATA_LINE]) {
+      for (const lyr of [
+        LYR_CLUSTERS,
+        LYR_POINTS,
+        LYR_IMAGES,
+        LYR_STRATA_LINE,
+      ]) {
         map.on('mouseenter', lyr, () => {
           map.getCanvas().style.cursor = 'pointer';
         });
@@ -933,17 +985,19 @@ export default function DensityMap({
   // -----------------------------------------------------------------------
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource)?.setData(
-      annotationsFC
-    );
+    (
+      mapRef.current?.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource
+    )?.setData(annotationsFC);
   }, [mapLoaded, annotationsFC]);
 
   const heatPoints = useMemo(
     () =>
       annotationsFC.features
-        .map((f) => (f.geometry as GeoJSON.Point).coordinates as [number, number])
+        .map(
+          (f) => (f.geometry as GeoJSON.Point).coordinates as [number, number],
+        )
         .filter((c) => isValidLatLng(c[1], c[0])),
-    [annotationsFC]
+    [annotationsFC],
   );
   const heatScale = useMemo(() => {
     if (!showHeatmap || heatPoints.length === 0) return null;
@@ -958,7 +1012,7 @@ export default function DensityMap({
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_HEAT) as maplibregl.GeoJSONSource)?.setData(
-      annotationsFC
+      annotationsFC,
     );
   }, [mapLoaded, annotationsFC]);
 
@@ -971,19 +1025,19 @@ export default function DensityMap({
 
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_IMAGES) as maplibregl.GeoJSONSource)?.setData(
-      imagesFC
-    );
+    (
+      mapRef.current?.getSource(SRC_IMAGES) as maplibregl.GeoJSONSource
+    )?.setData(imagesFC);
   }, [mapLoaded, imagesFC]);
 
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_STRATA) as maplibregl.GeoJSONSource)?.setData(
-      strataFC
-    );
-    (mapRef.current?.getSource(SRC_STRATA_LABELS) as maplibregl.GeoJSONSource)?.setData(
-      strataLabelsFC
-    );
+    (
+      mapRef.current?.getSource(SRC_STRATA) as maplibregl.GeoJSONSource
+    )?.setData(strataFC);
+    (
+      mapRef.current?.getSource(SRC_STRATA_LABELS) as maplibregl.GeoJSONSource
+    )?.setData(strataLabelsFC);
   }, [mapLoaded, strataFC, strataLabelsFC]);
 
   const activeStratumId = mapHoveredStratumId ?? highlightedStratumId;
@@ -999,9 +1053,9 @@ export default function DensityMap({
 
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_EXCLUSIONS) as maplibregl.GeoJSONSource)?.setData(
-      exclusionsFC
-    );
+    (
+      mapRef.current?.getSource(SRC_EXCLUSIONS) as maplibregl.GeoJSONSource
+    )?.setData(exclusionsFC);
   }, [mapLoaded, exclusionsFC]);
 
   // -----------------------------------------------------------------------
@@ -1029,7 +1083,10 @@ export default function DensityMap({
   // Fit bounds to the data whenever the displayed extent changes.
   // -----------------------------------------------------------------------
   const boundsKey = useMemo(() => {
-    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    let minLng = Infinity,
+      minLat = Infinity,
+      maxLng = -Infinity,
+      maxLat = -Infinity;
     const consume = (fc: FeatureCollection) => {
       for (const f of fc.features) {
         if (f.geometry.type !== 'Point') continue;
@@ -1057,23 +1114,31 @@ export default function DensityMap({
         [boundsKey[0], boundsKey[1]],
         [boundsKey[2], boundsKey[3]],
       ],
-      { padding: 40, maxZoom: 16, duration: 0 }
+      { padding: 40, maxZoom: 16, duration: 0 },
     );
   }, [mapLoaded, boundsKey]);
 
   return (
-    <div className='w-full h-full' style={{ position: 'relative', minHeight: 0 }}>
+    <div
+      className='h-full w-full'
+      style={{ position: 'relative', minHeight: 0 }}
+    >
       <div
         ref={mapContainerRef}
-        style={{ height: '100%', width: '100%', position: 'absolute', inset: 0 }}
+        style={{
+          height: '100%',
+          width: '100%',
+          position: 'absolute',
+          inset: 0,
+        }}
       />
 
       {/* Layer toggles */}
       <div
-        className='absolute bg-white shadow-sm p-2'
+        className='absolute bg-white p-2 shadow-sm'
         style={{ top: 10, left: 10, zIndex: 1, minWidth: 140, color: '#000' }}
       >
-        <div className='font-bold mb-1' style={{ fontSize: 12 }}>
+        <div className='mb-1 font-bold' style={{ fontSize: 12 }}>
           Layers
         </div>
         <LayerCheck
@@ -1123,7 +1188,12 @@ export default function DensityMap({
       {(loading || !mapLoaded) && (
         <div
           className='absolute flex flex-col items-center justify-center'
-          style={{ inset: 0, zIndex: 2, background: 'rgba(255,255,255,0.85)', color: '#000' }}
+          style={{
+            inset: 0,
+            zIndex: 2,
+            background: 'rgba(255,255,255,0.85)',
+            color: '#000',
+          }}
         >
           <Spinner />
           <span className='mt-2' style={{ fontSize: 14 }}>
@@ -1133,8 +1203,13 @@ export default function DensityMap({
       )}
       {!loading && mapLoaded && fetching && (
         <div
-          className='absolute bg-white shadow-sm px-2 py-1 flex items-center'
-          style={{ top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }}
+          className='absolute flex items-center bg-white px-2 py-1 shadow-sm'
+          style={{
+            top: 10,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1,
+          }}
         >
           <Spinner size='sm' />
           <span className='ms-2' style={{ fontSize: 13, color: '#000' }}>
@@ -1145,8 +1220,14 @@ export default function DensityMap({
 
       {!loading && effectiveSources.length === 0 && (
         <div
-          className='absolute bg-white shadow-sm px-4 py-2'
-          style={{ top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1, color: '#000' }}
+          className='absolute bg-white px-4 py-2 shadow-sm'
+          style={{
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%,-50%)',
+            zIndex: 1,
+            color: '#000',
+          }}
         >
           Select an annotation set to begin.
         </div>

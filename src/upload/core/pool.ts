@@ -3,7 +3,7 @@ export async function runPool<T>(
   items: Iterable<T>,
   concurrency: number,
   worker: (item: T) => Promise<void>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   const iterator = items[Symbol.iterator]();
   let firstError: unknown;

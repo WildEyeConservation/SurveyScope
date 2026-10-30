@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Table } from '@/components/ui/table';
 import { AlertTriangle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { BlockedItem } from './core/types';
 import {
   downloadFailedImagesCsv,
@@ -88,7 +88,7 @@ export default function BlockedUploadModal({
 
           <div
             style={{ maxHeight: 260, overflowY: 'auto' }}
-            className='border border-secondary '
+            className='border border-secondary'
           >
             <Table size='sm' variant='dark' className='m-0'>
               <thead>

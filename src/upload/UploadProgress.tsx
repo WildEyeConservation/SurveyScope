@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { AlertTriangle, Pause, Play, WifiOff, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import BlockedUploadModal from './BlockedUploadModal';
 import { uploadOrchestrator } from './core/UploadOrchestrator';
 import { useUploadStatus, useUploadUi } from './uploadUi';
@@ -43,7 +43,7 @@ export default function UploadProgress() {
 
   if (resumingProjectId) {
     return (
-      <div className='px-2 flex flex-row items-center gap-2'>
+      <div className='flex flex-row items-center gap-2 px-2'>
         <Spinner animation='border' size='sm' />
         <p className='m-0'>Finding files to resume upload...</p>
       </div>
@@ -58,7 +58,7 @@ export default function UploadProgress() {
 
   if (offline) {
     return (
-      <div className='px-2 flex flex-row items-center gap-2'>
+      <div className='flex flex-row items-center gap-2 px-2'>
         <WifiOff className='text-warning' />
         <p className='m-0 text-warning'>Waiting for connection...</p>
       </div>
@@ -84,28 +84,28 @@ export default function UploadProgress() {
     bytesTotal > 0
       ? Math.min(100, Math.floor((bytesUploaded / bytesTotal) * 100))
       : total > 0
-      ? Math.floor((processed / total) * 100)
-      : 0;
+        ? Math.floor((processed / total) * 100)
+        : 0;
   const remaining = total - processed;
 
   const dotColor =
     phase === 'failed'
       ? 'red'
       : phase === 'blocked'
-      ? 'orange'
-      : phase === 'waiting-retry' || phase === 'paused'
-      ? 'yellow'
-      : 'lime';
+        ? 'orange'
+        : phase === 'waiting-retry' || phase === 'paused'
+          ? 'yellow'
+          : 'lime';
 
   const controlButton = (
     icon: React.ReactNode,
     title: string,
-    onClick: () => void
+    onClick: () => void,
   ) => (
     <Button
       size='sm'
       variant='outline-light'
-      className='py-0 px-1 border-0'
+      className='border-0 px-1 py-0'
       title={title}
       onClick={onClick}
     >
@@ -120,7 +120,7 @@ export default function UploadProgress() {
     case 'preparing':
       statusContent = <p className='m-0'>Preparing upload...</p>;
       controls = controlButton(<Pause size={16} />, 'Pause upload', () =>
-        uploadOrchestrator.pause('user')
+        uploadOrchestrator.pause('user'),
       );
       break;
     case 'uploading':
@@ -145,7 +145,7 @@ export default function UploadProgress() {
         </div>
       );
       controls = controlButton(<Pause size={16} />, 'Pause upload', () =>
-        uploadOrchestrator.pause('user')
+        uploadOrchestrator.pause('user'),
       );
       break;
     case 'waiting-retry':
@@ -153,7 +153,7 @@ export default function UploadProgress() {
         <p className='m-0'>{`Retrying... (attempt ${attempt})`}</p>
       );
       controls = controlButton(<Pause size={16} />, 'Pause upload', () =>
-        uploadOrchestrator.pause('user')
+        uploadOrchestrator.pause('user'),
       );
       break;
     case 'finalizing':
@@ -166,10 +166,10 @@ export default function UploadProgress() {
       controls = (
         <>
           {controlButton(<Play size={16} />, 'Resume upload', () =>
-            uploadOrchestrator.resume(projectId)
+            uploadOrchestrator.resume(projectId),
           )}
           {controlButton(<X size={16} />, 'Dismiss', () =>
-            uploadOrchestrator.discard()
+            uploadOrchestrator.discard(),
           )}
         </>
       );
@@ -185,7 +185,7 @@ export default function UploadProgress() {
       controls = controlButton(
         <AlertTriangle size={16} className='text-warning' />,
         'Review the images that could not be uploaded',
-        () => setShowBlocked(true)
+        () => setShowBlocked(true),
       );
       break;
     case 'failed':
@@ -193,10 +193,10 @@ export default function UploadProgress() {
       controls = (
         <>
           {controlButton(<Play size={16} />, 'Retry upload', () =>
-            uploadOrchestrator.resume(projectId)
+            uploadOrchestrator.resume(projectId),
           )}
           {controlButton(<X size={16} />, 'Dismiss', () =>
-            uploadOrchestrator.discard()
+            uploadOrchestrator.discard(),
           )}
         </>
       );
@@ -211,12 +211,12 @@ export default function UploadProgress() {
   const onPillClick = isBlocked
     ? () => setShowBlocked(true)
     : hasDetails
-    ? () => setShowDetails((s) => !s)
-    : undefined;
+      ? () => setShowDetails((s) => !s)
+      : undefined;
 
   return (
     <>
-      <div className='px-2 relative'>
+      <div className='relative px-2'>
         <div
           className='flex flex-row items-center gap-2'
           style={{ cursor: onPillClick ? 'pointer' : undefined }}
@@ -245,7 +245,7 @@ export default function UploadProgress() {
         </div>
         {showDetails && hasDetails && (
           <div
-            className='absolute bg-dark text-light border border-secondary p-2'
+            className='absolute border border-secondary bg-dark p-2 text-light'
             style={{
               top: '100%',
               right: 0,

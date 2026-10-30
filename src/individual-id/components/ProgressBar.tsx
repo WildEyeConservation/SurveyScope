@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PairCompletionState } from '../types';
-import type { Lane } from '../utils/lanes';
 import { completionColor } from '../utils/completion';
+import type { Lane } from '../utils/lanes';
 
 interface Props {
   /** Completion state for each pair, in flat (global) display order. */
@@ -139,8 +139,7 @@ function LaneBar({
         ctx.fillRect(PADDING_X + col, top, 1, barH);
       }
       if (activeLocal >= 0 && activeLocal < states.length) {
-        const x =
-          PADDING_X + Math.floor((activeLocal / states.length) * cols);
+        const x = PADDING_X + Math.floor((activeLocal / states.length) * cols);
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1;
         ctx.strokeRect(x - 0.5, top - 1.5, 2, barH + 3);
@@ -192,16 +191,16 @@ export function ProgressBar({
   onSimpleViewChange,
 }: Props) {
   const [hover, setHover] = useState<{ lane: number; local: number } | null>(
-    null
+    null,
   );
 
   const acceptedCount = useMemo(
     () =>
       states.reduce(
         (n, s) => n + (s.status === 'complete' || s.status === 'empty' ? 1 : 0),
-        0
+        0,
       ),
-    [states]
+    [states],
   );
 
   const multi = lanes.length > 1;
@@ -225,7 +224,7 @@ export function ProgressBar({
         color: '#f8f9fa',
         userSelect: 'none',
       }}
-      className='w-full flex flex-col pt-2 pb-4'
+      className='flex w-full flex-col pt-2 pb-4'
     >
       <div
         className='flex flex-row items-center px-4 pb-1'
@@ -235,9 +234,7 @@ export function ProgressBar({
         <span style={{ flex: 1, textAlign: 'center', opacity: 0.75 }}>
           click to jump
         </span>
-        <div
-          style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}
-        >
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
           <div
             className='flex items-center gap-2'
             title='Simple view: show only pairs that still need attention plus their 3 nearest neighbours on each side. Turn off to see every pair.'
@@ -266,16 +263,14 @@ export function ProgressBar({
           const laneDone = laneStates.reduce(
             (n, s) =>
               n + (s.status === 'complete' || s.status === 'empty' ? 1 : 0),
-            0
+            0,
           );
           return (
             <div
               key={lane.key}
               style={{
                 borderLeft: multi
-                  ? `3px solid ${
-                      isActiveLane ? '#f8f9fa' : 'transparent'
-                    }`
+                  ? `3px solid ${isActiveLane ? '#f8f9fa' : 'transparent'}`
                   : undefined,
               }}
             >
@@ -287,8 +282,7 @@ export function ProgressBar({
                   <span
                     style={{
                       fontWeight: isActiveLane ? 600 : 400,
-                      fontStyle:
-                        lane.kind === 'overlap' ? 'italic' : 'normal',
+                      fontStyle: lane.kind === 'overlap' ? 'italic' : 'normal',
                     }}
                   >
                     {lane.label}

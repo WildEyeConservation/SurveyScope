@@ -11,7 +11,7 @@ export type LaunchResponseBody = Record<string, unknown>;
 
 export function parseLaunchResponse(
   result: LaunchMutationResult | null | undefined,
-  description: string
+  description: string,
 ): LaunchResponseBody {
   const graphqlError = result?.errors?.[0]?.message;
   if (graphqlError) throw new Error(`${description}: ${graphqlError}`);
@@ -46,7 +46,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
 
 function stringField(
   body: Record<string, unknown>,
-  key: string
+  key: string,
 ): string | undefined {
   const value = body[key];
   return typeof value === 'string' && value ? value : undefined;

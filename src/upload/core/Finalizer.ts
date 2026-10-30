@@ -1,7 +1,7 @@
+import { loadRows } from '../../rowChunks';
 import { registerImageFile } from '../../storage/api';
 import type { CreatedImage } from '../../types/ImageData';
 import { fetchAllPaginatedResults } from '../../utils';
-import { loadRows } from '../../rowChunks';
 import { logAdminAction } from '../../utils/adminActionLogger';
 import { DETECTOR_DISPATCH } from './modelDispatch';
 import type { UploadStateStore } from './persistence';
@@ -76,7 +76,7 @@ export class Finalizer {
           'files.type',
         ],
         limit: 10000,
-      }
+      },
     )) as DbImage[];
 
     const imagesByPath = new Map<string, DbImage[]>();
@@ -94,7 +94,7 @@ export class Finalizer {
     imagesByPath.forEach((images) => {
       if (images.length <= 1) return;
       images.sort((a, b) =>
-        (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
+        (a.createdAt ?? '').localeCompare(b.createdAt ?? ''),
       );
       for (let i = 1; i < images.length; i++) {
         duplicateImages.push(images[i]);
@@ -103,7 +103,7 @@ export class Finalizer {
 
     if (duplicateImages.length > 0) {
       console.warn(
-        `Removing ${duplicateImages.length} duplicate Image record(s) for project ${projectId}`
+        `Removing ${duplicateImages.length} duplicate Image record(s) for project ${projectId}`,
       );
       await runPool(duplicateImages, DUP_CONCURRENCY, async (dupImage) => {
         try {
@@ -117,7 +117,7 @@ export class Finalizer {
         } catch (err) {
           console.error(
             `Failed to delete duplicate image ${dupImage.id}:`,
-            err
+            err,
           );
         }
       });
@@ -125,7 +125,7 @@ export class Finalizer {
 
     // Deduplicated list from authoritative DB records (after cleanup).
     const dedupedDbImages = Array.from(imagesByPath.values()).map(
-      (images) => images[0]
+      (images) => images[0],
     );
 
     // Reconcile orphaned records: Images missing their Membership or
@@ -133,12 +133,12 @@ export class Finalizer {
     // failed even after retries.
     const orphanedImages = dedupedDbImages.filter(
       (img) =>
-        (img.memberships ?? []).length === 0 || (img.files ?? []).length === 0
+        (img.memberships ?? []).length === 0 || (img.files ?? []).length === 0,
     );
 
     if (orphanedImages.length > 0) {
       console.warn(
-        `Reconciling ${orphanedImages.length} image(s) with missing membership/file records`
+        `Reconciling ${orphanedImages.length} image(s) with missing membership/file records`,
       );
       await runPool(orphanedImages, RECONCILE_CONCURRENCY, async (img) => {
         try {
@@ -148,11 +148,13 @@ export class Finalizer {
                 imageId: img.id,
                 imageSetId,
                 group: organizationId,
-              })
+              }),
             );
           }
           if ((img.files ?? []).length === 0) {
-            await withRetry(() => registerImageFile(projectId, img.id, img.originalPath));
+            await withRetry(() =>
+              registerImageFile(projectId, img.id, img.originalPath),
+            );
           }
         } catch (err) {
           console.error(`Failed to reconcile image ${img.id}:`, err);
@@ -204,7 +206,7 @@ export class Finalizer {
           dedupedDbImages.length === 1 ? '' : 's'
         } now in survey`,
         projectId,
-        organizationId
+        organizationId,
       );
     }
 
@@ -214,7 +216,7 @@ export class Finalizer {
   /** Dispatches unmarked images, confirms via markers, retries the rest. */
   private async dispatchRegistration(
     allProjectImages: CreatedImage[],
-    masks: number[][][]
+    masks: number[][][],
   ): Promise<void> {
     const { signal, onProgress } = this.ctx;
 
@@ -223,24 +225,24 @@ export class Finalizer {
       onProgress?.('Checking image registration...');
       const dispatched = await this.fetchDispatchedImageIds();
       const candidates = allProjectImages.filter(
-        (img) => !dispatched.has(img.id)
+        (img) => !dispatched.has(img.id),
       );
       if (candidates.length === 0) return;
 
       const registrationImages = computeRegistrationImages(
         allProjectImages,
-        candidates
+        candidates,
       );
       const candidateIds = new Set(candidates.map((img) => img.id));
       const batches = buildRegistrationBatches(registrationImages);
       console.info(
-        `Registration round ${round}: ${candidates.length} image(s) not yet dispatched in ${batches.length} batch(es)`
+        `Registration round ${round}: ${candidates.length} image(s) not yet dispatched in ${batches.length} batch(es)`,
       );
 
       let done = 0;
       const unconfirmed: RegistrationBatch[] = [];
       onProgress?.(
-        `Starting image registration (0/${batches.length} batches)...`
+        `Starting image registration (0/${batches.length} batches)...`,
       );
       await runPool(
         batches,
@@ -250,16 +252,16 @@ export class Finalizer {
           if (!ok) unconfirmed.push(batch);
           done += 1;
           onProgress?.(
-            `Starting image registration (${done}/${batches.length} batches)...`
+            `Starting image registration (${done}/${batches.length} batches)...`,
           );
         },
-        signal
+        signal,
       );
       if (signal?.aborted) return;
 
       if (unconfirmed.length > 0) {
         onProgress?.(
-          `Waiting for ${unconfirmed.length} registration batch(es) to confirm...`
+          `Waiting for ${unconfirmed.length} registration batch(es) to confirm...`,
         );
         await this.awaitBatchMarkers(unconfirmed);
       }
@@ -268,13 +270,13 @@ export class Finalizer {
     if (signal?.aborted) return;
     const dispatched = await this.fetchDispatchedImageIds();
     const remaining = allProjectImages.filter(
-      (img) => !dispatched.has(img.id)
+      (img) => !dispatched.has(img.id),
     ).length;
     if (remaining > 0) {
       throw new Error(
         `All images are uploaded, but image registration could not be started for ${remaining} image${
           remaining === 1 ? '' : 's'
-        }. Resume the upload to retry.`
+        }. Resume the upload to retry.`,
       );
     }
   }
@@ -291,10 +293,10 @@ export class Finalizer {
       'processedByProjectIdAndSource',
       projectId,
       ['source'],
-      { beginsWith: source }
+      { beginsWith: source },
     );
     return new Set(
-      rows.filter((row) => row.source === source).map((row) => row.imageId)
+      rows.filter((row) => row.source === source).map((row) => row.imageId),
     );
   }
 
@@ -302,7 +304,7 @@ export class Finalizer {
   private async invokeRegistration(
     batch: RegistrationBatch,
     candidateIds: Set<string>,
-    masks: number[][][]
+    masks: number[][][],
   ): Promise<boolean> {
     const { client, backend, projectId } = this.ctx;
     const payload = batch.payload.map((img) => ({
@@ -329,13 +331,13 @@ export class Finalizer {
           }),
           queueUrl: backend.custom.lightglueTaskQueueUrl,
         },
-        { retry: false }
+        { retry: false },
       );
       return isRegistrationSuccess(result?.data);
     } catch (err) {
       console.warn(
         `runImageRegistration batch did not confirm (${batch.payload.length} images):`,
-        err
+        err,
       );
       return false;
     }
@@ -352,7 +354,7 @@ export class Finalizer {
         for (const imageId of batch.probeIds) {
           const { data } = await client.models.ImageProcessedBy.get(
             { imageId, source: REGISTRATION_DISPATCH_SOURCE },
-            { selectionSet: ['imageId'] }
+            { selectionSet: ['imageId'] },
           );
           if (!data) {
             marked = false;
@@ -364,14 +366,14 @@ export class Finalizer {
     }
     if (pending.size > 0) {
       console.warn(
-        `${pending.size} registration batch(es) still unconfirmed after ${MARKER_POLL_TIMEOUT_MS / 1000}s`
+        `${pending.size} registration batch(es) still unconfirmed after ${MARKER_POLL_TIMEOUT_MS / 1000}s`,
       );
     }
   }
 
   private async dispatchDetector(
     model: string,
-    allProjectImages: CreatedImage[]
+    allProjectImages: CreatedImage[],
   ): Promise<void> {
     const { client, backend, projectId, keyInfo } = this.ctx;
     const config = DETECTOR_DISPATCH[model];
@@ -393,16 +395,16 @@ export class Finalizer {
     }
     if (!locationSetId) {
       throw new FatalUploadError(
-        `Failed to create location set '${setName}' for model dispatch`
+        `Failed to create location set '${setName}' for model dispatch`,
       );
     }
 
     // Skip images the detector has already processed.
     const processedImageIds = await this.fetchProcessedImageIds(
-      config.processedSource
+      config.processedSource,
     );
     const unprocessedImages = allProjectImages.filter(
-      (img) => !processedImageIds.has(img.id)
+      (img) => !processedImageIds.has(img.id),
     );
 
     for (let i = 0; i < unprocessedImages.length; i += BATCH_SIZE) {
@@ -410,7 +412,7 @@ export class Finalizer {
       config.dispatch(client, {
         projectId,
         images: batch.map(
-          (image) => `${image.id}---${keyInfo.makeKey(image.originalPath)}`
+          (image) => `${image.id}---${keyInfo.makeKey(image.originalPath)}`,
         ),
         setId: locationSetId,
         bucket: backend.storage.buckets[1].bucket_name,
@@ -436,7 +438,7 @@ export class Finalizer {
         {
           selectionSet: ['id', 'name'],
           limit: 10000,
-        }
+        },
       );
       const match =
         res.data?.find((ls: { name?: string | null }) => ls?.name === name) ??
@@ -460,7 +462,7 @@ export class Finalizer {
       (d) =>
         `- ${d.originalPath} matches ${d.matchedPath} (${
           d.scope === 'db' ? 'already in survey' : 'within this upload'
-        })`
+        })`,
     );
     let message = `${header}\n${lines.join('\n')}`;
     if (message.length > MAX_MESSAGE_CHARS) {
@@ -484,7 +486,7 @@ export class Finalizer {
       userId,
       message,
       projectId,
-      keyInfo.organizationId
+      keyInfo.organizationId,
     );
   }
 }
@@ -506,7 +508,7 @@ function isRegistrationSuccess(data: unknown): boolean {
 export function buildRegistrationBatches(
   registrationImages: CreatedImage[],
   batchSize = BATCH_SIZE,
-  overlapCount = BATCH_OVERLAP
+  overlapCount = BATCH_OVERLAP,
 ): RegistrationBatch[] {
   const batches: RegistrationBatch[] = [];
   for (let i = 0; i < registrationImages.length; i += batchSize) {
@@ -514,7 +516,7 @@ export function buildRegistrationBatches(
     const overlap =
       i > 0 ? registrationImages.slice(Math.max(0, i - overlapCount), i) : [];
     const probeIds = Array.from(
-      new Set([fresh[0].id, fresh[fresh.length - 1].id])
+      new Set([fresh[0].id, fresh[fresh.length - 1].id]),
     );
     batches.push({ payload: overlap.concat(fresh), probeIds });
   }
@@ -524,7 +526,7 @@ export function buildRegistrationBatches(
 // Adds adjacent already-dispatched images so pairs bridge dispatch batches.
 export function computeRegistrationImages(
   allProjectImages: CreatedImage[],
-  sessionImages: CreatedImage[]
+  sessionImages: CreatedImage[],
 ): CreatedImage[] {
   const sessionIdsForReg = new Set(sessionImages.map((img) => img.id));
 

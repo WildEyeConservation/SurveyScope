@@ -6,8 +6,8 @@ import type {
   Polygon,
   Position,
 } from 'geojson';
-import { simplifyPolygonToRange } from '../../utils/shapefileUtils';
 import { createBoundaryClassifier } from '../../../shared/boundaryStatus';
+import { simplifyPolygonToRange } from '../../utils/shapefileUtils';
 import type { StrataNetwork } from '../strataNetwork';
 
 // Rings are open and ordered [lat, lng].
@@ -109,7 +109,7 @@ function featureName(properties: unknown): string | null {
 // GeoJSON holes become separate exclusion candidates.
 export function polygonsFromGeoJson(
   geojson: unknown,
-  source: string
+  source: string,
 ): Omit<ImportedPolygon, 'role'>[] {
   const found: Named[] = [];
   collectGeometries(geojson, found);
@@ -119,14 +119,15 @@ export function polygonsFromGeoJson(
       geometry.type === 'Polygon'
         ? [geometry.coordinates]
         : geometry.type === 'MultiPolygon'
-        ? geometry.coordinates
-        : [];
+          ? geometry.coordinates
+          : [];
     const baseName = featureName(properties);
     for (const rings of parts) {
       (rings ?? []).forEach((rawRing, ringIndex) => {
-        const lngLat = (rawRing ?? []).map(
-          (position): LngLat => [Number(position[0]), Number(position[1])]
-        );
+        const lngLat = (rawRing ?? []).map((position): LngLat => [
+          Number(position[0]),
+          Number(position[1]),
+        ]);
         for (const [lng, lat] of lngLat) {
           if (
             !Number.isFinite(lng) ||
@@ -135,7 +136,7 @@ export function polygonsFromGeoJson(
             Math.abs(lat) > 90
           ) {
             throw new Error(
-              `${source} is not in latitude/longitude (WGS84) coordinates.`
+              `${source} is not in latitude/longitude (WGS84) coordinates.`,
             );
           }
         }
@@ -161,7 +162,7 @@ export function polygonsFromGeoJson(
 
 function insidePolygon(
   point: { lat: number; lng: number },
-  polygon: AreaFeature
+  polygon: AreaFeature,
 ) {
   return turf.booleanPointInPolygon([point.lng, point.lat], polygon);
 }
@@ -181,7 +182,7 @@ const MAX_EXCLUSION_IMAGE_SHARE = 0.2;
 export function suggestRoles(
   polygons: Omit<ImportedPolygon, 'role'>[],
   points: { lat: number; lng: number }[],
-  existingBoundary: LatLng[] | null
+  existingBoundary: LatLng[] | null,
 ): ImportedPolygon[] {
   const stride = Math.max(1, Math.ceil(points.length / ROLE_SAMPLE_SIZE));
   const sample = points.filter((_, index) => index % stride === 0);
@@ -219,18 +220,18 @@ export function suggestRoles(
       polygon.id === boundaryId
         ? 'boundary'
         : boundary &&
-          polygon.areaKm2 < boundaryKm2 * MAX_EXCLUSION_AREA_SHARE &&
-          count <= sample.length * MAX_EXCLUSION_IMAGE_SHARE &&
-          ringInside(polygon.ring, boundary)
-        ? 'exclusion'
-        : 'ignore',
+            polygon.areaKm2 < boundaryKm2 * MAX_EXCLUSION_AREA_SHARE &&
+            count <= sample.length * MAX_EXCLUSION_IMAGE_SHARE &&
+            ringInside(polygon.ring, boundary)
+          ? 'exclusion'
+          : 'ignore',
   }));
 }
 
 export function setImportRole(
   polygons: ImportedPolygon[],
   id: string,
-  role: AreaRole
+  role: AreaRole,
 ): ImportedPolygon[] {
   return polygons.map((polygon) => {
     if (polygon.id === id) return { ...polygon, role };
@@ -243,7 +244,7 @@ export function setImportRole(
 
 export function applyImport(
   area: SurveyArea,
-  polygons: ImportedPolygon[]
+  polygons: ImportedPolygon[],
 ): SurveyArea {
   const boundary = polygons.find((polygon) => polygon.role === 'boundary');
   return {
@@ -263,7 +264,7 @@ export function outsideAreaKeys<T extends { lat: number; lng: number }>(
   rows: T[],
   boundary: LatLng[] | null,
   marginM: number,
-  keyOf: (row: T) => string
+  keyOf: (row: T) => string,
 ): Set<string> {
   const outside = new Set<string>();
   if (!boundary) return outside;
@@ -279,12 +280,12 @@ export function outsideAreaKeys<T extends { lat: number; lng: number }>(
 }
 
 export function pruneOutsideArea<
-  T extends { originalPath: string; latitude: number; longitude: number }
+  T extends { originalPath: string; latitude: number; longitude: number },
 >(
   images: T[],
   boundary: LatLng[] | null,
   marginM: number,
-  keepPaths: Set<string>
+  keepPaths: Set<string>,
 ): T[] {
   const outside = outsideAreaKeys(
     images.map((image) => ({
@@ -294,11 +295,11 @@ export function pruneOutsideArea<
     })),
     boundary,
     marginM,
-    (row) => row.path
+    (row) => row.path,
   );
   return images.filter(
     (image) =>
-      keepPaths.has(image.originalPath) || !outside.has(image.originalPath)
+      keepPaths.has(image.originalPath) || !outside.has(image.originalPath),
   );
 }
 
@@ -306,14 +307,14 @@ const TRACE_MARGIN_M = 250;
 
 export function traceAroundPoints(
   points: { lat: number; lng: number }[],
-  marginM = TRACE_MARGIN_M
+  marginM = TRACE_MARGIN_M,
 ): LatLng[] | null {
   const valid = points.filter(
-    (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)
+    (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
   );
   if (valid.length === 0) return null;
   const collection = turf.featureCollection(
-    valid.map((point) => turf.point([point.lng, point.lat]))
+    valid.map((point) => turf.point([point.lng, point.lat])),
   );
   // Collinear or single positions have no hull; buffer their extent instead.
   const base =

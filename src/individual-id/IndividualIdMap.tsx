@@ -1,31 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as maplibregl from 'maplibre-gl';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
 import * as jdenticon from 'jdenticon';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { RotateCw, Layers, Copy, Check, EyeOff } from 'lucide-react';
+import { Check, Copy, EyeOff, Layers, RotateCw } from 'lucide-react';
 import pLimit from 'p-limit';
-import { imageTileContext } from '../StorageLayer';
-import {
-  annotationTiles,
-  baseTiles,
-  baseZoom,
-  getPyramidInfo,
-  tileMaskKey,
-  TILE_SIZE,
-  type Tile,
-  type TilePoint,
-} from './utils/tiles';
-import { visibleImageTiles, mergeTileRequests } from './utils/viewportTiles';
-import { getZoomRingTile } from './utils/zoomRingTiles';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { ImageType } from '../schemaTypes';
-import type { CandidateStatus, PixelTransform } from './types';
-import { nameFor } from './utils/identity';
+import { imageTileContext } from '../StorageLayer';
 import {
   MapLocationOverlay,
   type LocationOverlayRow,
   type LocationSourceConfig,
 } from './MapLocationOverlay';
+import type { CandidateStatus, PixelTransform } from './types';
+import { nameFor } from './utils/identity';
+import {
+  annotationTiles,
+  baseTiles,
+  baseZoom,
+  getPyramidInfo,
+  TILE_SIZE,
+  tileMaskKey,
+  type Tile,
+  type TilePoint,
+} from './utils/tiles';
+import { mergeTileRequests, visibleImageTiles } from './utils/viewportTiles';
+import { getZoomRingTile } from './utils/zoomRingTiles';
 
 /**
  * Visual classification of a marker.
@@ -86,7 +88,7 @@ export interface MapMarker {
 export type MapInstanceCallback = (
   map: maplibregl.Map | null,
   px2lngLat: (x: number, y: number) => [number, number],
-  lngLat2px: (lng: number, lat: number) => { x: number; y: number }
+  lngLat2px: (lng: number, lat: number) => { x: number; y: number },
 ) => void;
 
 interface Props {
@@ -220,7 +222,7 @@ const BASE_MARKER_SIZE = 20;
  * marker on every data change, so renderToStaticMarkup must not be in it.
  */
 const EYE_OFF_SVG = renderToStaticMarkup(
-  <EyeOff size={11} color='#1f2933' strokeWidth={2.75} />
+  <EyeOff size={11} color='#1f2933' strokeWidth={2.75} />,
 );
 const LENIENCY_SOURCE = 'individual-id-leniency';
 const LENIENCY_LAYER = 'individual-id-leniency-ring';
@@ -247,7 +249,7 @@ class RotateControl implements maplibregl.IControl {
     btn.style.alignItems = 'center';
     btn.style.justifyContent = 'center';
     btn.innerHTML = renderToStaticMarkup(
-      <RotateCw size={16} color='#333' strokeWidth={2.5} />
+      <RotateCw size={16} color='#333' strokeWidth={2.5} />,
     );
     btn.onclick = () => {
       const next = Math.round(map.getBearing() / 90) * 90 - 90;
@@ -285,7 +287,7 @@ class HomographyControl implements maplibregl.IControl {
     btn.style.alignItems = 'center';
     btn.style.justifyContent = 'center';
     btn.innerHTML = renderToStaticMarkup(
-      <Layers size={16} color='#333' strokeWidth={2.5} />
+      <Layers size={16} color='#333' strokeWidth={2.5} />,
     );
     btn.onclick = () => {
       this.visible = !this.visible;
@@ -327,7 +329,7 @@ function isCoveredByHigherRes(
   row: number,
   col: number,
   maxZ: number,
-  loadedTiles: Set<string>
+  loadedTiles: Set<string>,
 ): boolean {
   if (z >= maxZ) return false;
   const childZ = z + 1;
@@ -629,8 +631,16 @@ export function IndividualIdMap({
     return div;
   };
   const escape = (s: string) =>
-    s.replace(/[&<>"']/g, (c) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!)
+    s.replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[c]!,
     );
   const renderPopup = (key: string, mode: 'interactive' | 'passive') => {
     const data = markersRef.current.find((m) => m.candidateKey === key);
@@ -657,8 +667,8 @@ export function IndividualIdMap({
       data.kind === 'primary'
         ? 'Primary'
         : data.kind === 'secondary'
-        ? 'Secondary'
-        : 'Proposed';
+          ? 'Secondary'
+          : 'Proposed';
     const btnStyle =
       'margin-top:6px;color:#fff;border:none;border-radius:4px;' +
       'padding:4px 8px;cursor:pointer;font-size:11px;width:100%;';
@@ -693,12 +703,11 @@ export function IndividualIdMap({
       interactive && !isShadow && commentRef.current
         ? `<button data-action="comment" style="${btnStyle}background:#5B6977;">Comment</button>`
         : '';
-    const infoTagsHtml =
-      Array.isArray(data.infoTags)
-        ? `<div style="font-size:10px;opacity:0.85;margin-top:3px">Tags: ${escape(
-            data.infoTags.length > 0 ? data.infoTags.join(', ') : '—'
-          )}</div>`
-        : '';
+    const infoTagsHtml = Array.isArray(data.infoTags)
+      ? `<div style="font-size:10px;opacity:0.85;margin-top:3px">Tags: ${escape(
+          data.infoTags.length > 0 ? data.infoTags.join(', ') : '—',
+        )}</div>`
+      : '';
     el.innerHTML = `
       <div style="font-weight:600">${escape(nameFor(data.identityKey))}</div>
       <div style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.4px;margin-top:2px">
@@ -731,7 +740,7 @@ export function IndividualIdMap({
     `;
     if (viewChainTilesHtml) {
       const viewTilesBtn = el.querySelector(
-        'button[data-action="view-chain-tiles"]'
+        'button[data-action="view-chain-tiles"]',
       ) as HTMLButtonElement | null;
       if (viewTilesBtn) {
         viewTilesBtn.addEventListener('click', (ev) => {
@@ -743,7 +752,7 @@ export function IndividualIdMap({
     }
     if (commentHtml) {
       const commentBtn = el.querySelector(
-        'button[data-action="comment"]'
+        'button[data-action="comment"]',
       ) as HTMLButtonElement | null;
       if (commentBtn) {
         commentBtn.addEventListener('click', (ev) => {
@@ -755,7 +764,7 @@ export function IndividualIdMap({
     }
     if (viewChainHtml && data.chainViewerHref) {
       const viewChainBtn = el.querySelector(
-        'button[data-action="view-chain"]'
+        'button[data-action="view-chain"]',
       ) as HTMLButtonElement | null;
       if (viewChainBtn) {
         viewChainBtn.addEventListener('click', (ev) => {
@@ -767,7 +776,7 @@ export function IndividualIdMap({
     }
     if (showObscureToggle) {
       const obscuredBtn = el.querySelector(
-        'button[data-action="toggle-obscured"]'
+        'button[data-action="toggle-obscured"]',
       ) as HTMLButtonElement | null;
       if (obscuredBtn) {
         obscuredBtn.addEventListener('click', (ev) => {
@@ -779,7 +788,7 @@ export function IndividualIdMap({
     }
     if (moveToOovHtml) {
       const moveBtn = el.querySelector(
-        'button[data-action="move-to-oov"]'
+        'button[data-action="move-to-oov"]',
       ) as HTMLButtonElement | null;
       if (moveBtn) {
         moveBtn.addEventListener('click', (ev) => {
@@ -791,7 +800,7 @@ export function IndividualIdMap({
     }
     if (showChangeLabel) {
       const changeBtn = el.querySelector(
-        'button[data-action="change-label"]'
+        'button[data-action="change-label"]',
       ) as HTMLButtonElement | null;
       if (changeBtn) {
         changeBtn.addEventListener('click', (ev) => {
@@ -803,7 +812,7 @@ export function IndividualIdMap({
     }
     if (showFullActions) {
       const splitBtn = el.querySelector(
-        'button[data-action="split-chain"]'
+        'button[data-action="split-chain"]',
       ) as HTMLButtonElement | null;
       if (splitBtn) {
         splitBtn.addEventListener('click', (ev) => {
@@ -812,9 +821,9 @@ export function IndividualIdMap({
           hidePopup();
         });
       }
-      const deleteBtn = el.querySelector('button[data-action="delete"]') as
-        | HTMLButtonElement
-        | null;
+      const deleteBtn = el.querySelector(
+        'button[data-action="delete"]',
+      ) as HTMLButtonElement | null;
       if (deleteBtn) {
         deleteBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
@@ -869,15 +878,15 @@ export function IndividualIdMap({
 
   const scale = useMemo(
     () => getScale(image.width, image.height),
-    [image.width, image.height]
+    [image.width, image.height],
   );
   const px2lngLat = useCallback(
     (x: number, y: number): [number, number] => [x * scale, -y * scale],
-    [scale]
+    [scale],
   );
   const lngLat2px = useCallback(
     (lng: number, lat: number) => ({ x: lng / scale, y: -lat / scale }),
-    [scale]
+    [scale],
   );
 
   // Tile loader (same pattern as MapLibreImageViewer).
@@ -920,7 +929,7 @@ export function IndividualIdMap({
       const priority = annotationTiles(
         imageWidth,
         imageHeight,
-        priorityTilePointsRef.current ?? []
+        priorityTilePointsRef.current ?? [],
       );
       const requests: Tile[] = [...priority];
       if (priorityTilePointsRef.current !== undefined)
@@ -936,16 +945,16 @@ export function IndividualIdMap({
         for (const tile of visible) {
           exploredTilesRef.current.set(
             `tile-${tile.z}-${tile.row}-${tile.col}`,
-            tile
+            tile,
           );
         }
       }
       const priorityIds = new Set(
-        priority.map((t) => `tile-${t.z}-${t.row}-${t.col}`)
+        priority.map((t) => `tile-${t.z}-${t.row}-${t.col}`),
       );
       const desired = mergeTileRequests(
         requests,
-        exploredTilesRef.current.values()
+        exploredTilesRef.current.values(),
       );
       desiredTilesRef.current = desired;
       const renderedMasks = renderedMasksRef.current;
@@ -986,7 +995,7 @@ export function IndividualIdMap({
         const c2 = px2lngLat(x1, y1);
         const tileBounds = new maplibregl.LngLatBounds(
           [Math.min(c1[0], c2[0]), Math.min(c1[1], c2[1])],
-          [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])]
+          [Math.max(c1[0], c2[0]), Math.max(c1[1], c2[1])],
         );
         const isVisible =
           bounds.getWest() <= tileBounds.getEast() &&
@@ -1034,8 +1043,7 @@ export function IndividualIdMap({
                 else loadedTiles.delete(sourceId);
               };
               const source = m.getSource(sourceId) as
-                | maplibregl.ImageSource
-                | undefined;
+                maplibregl.ImageSource | undefined;
               if (source) {
                 source.updateImage({ url });
                 recordRendered();
@@ -1079,7 +1087,7 @@ export function IndividualIdMap({
                   source: sourceId,
                   paint: { 'raster-fade-duration': 0 },
                 },
-                beforeId
+                beforeId,
               );
               recordRendered();
               return;
@@ -1110,7 +1118,7 @@ export function IndividualIdMap({
       px2lngLat,
       scale,
       tileLimit,
-    ]
+    ],
   );
 
   // Initialise map.
@@ -1149,7 +1157,7 @@ export function IndividualIdMap({
     m.touchZoomRotate.disableRotation();
     m.addControl(
       new maplibregl.NavigationControl({ showCompass: false, showZoom: true }),
-      'top-left'
+      'top-left',
     );
     m.addControl(new RotateControl(onBearingChange), 'top-left');
     m.addControl(new HomographyControl(), 'top-left');
@@ -1210,10 +1218,10 @@ export function IndividualIdMap({
         },
       });
 
-      m.fitBounds(
-        [px2lngLat(0, image.height), px2lngLat(image.width, 0)],
-        { padding: 20, animate: false }
-      );
+      m.fitBounds([px2lngLat(0, image.height), px2lngLat(image.width, 0)], {
+        padding: 20,
+        animate: false,
+      });
       m.setBearing(bearing);
       updateVisibleTiles(m);
       mapForPopupRef.current = m;
@@ -1274,7 +1282,14 @@ export function IndividualIdMap({
       blobUrlsRef.current.forEach(URL.revokeObjectURL);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [image.id, sourceKey, px2lngLat, updateVisibleTiles, image.width, image.height]);
+  }, [
+    image.id,
+    sourceKey,
+    px2lngLat,
+    updateVisibleTiles,
+    image.width,
+    image.height,
+  ]);
 
   useEffect(() => {
     if (map && priorityTilePoints !== undefined) void updateVisibleTiles(map);
@@ -1303,8 +1318,7 @@ export function IndividualIdMap({
       if (cancelled) return;
       try {
         const src = map.getSource(PREVIEW_SOURCE) as
-          | maplibregl.GeoJSONSource
-          | undefined;
+          maplibregl.GeoJSONSource | undefined;
         if (!src) return;
         if (!previewTransform || !otherImage) {
           src.setData({ type: 'FeatureCollection', features: [] });
@@ -1328,9 +1342,7 @@ export function IndividualIdMap({
           properties: { type: 'outline' },
           geometry: {
             type: 'LineString',
-            coordinates: corners.map((c) =>
-              px2lngLat(...previewTransform(c))
-            ),
+            coordinates: corners.map((c) => px2lngLat(...previewTransform(c))),
           },
         });
         // Grid lines, sampled densely for smoothness.
@@ -1386,8 +1398,7 @@ export function IndividualIdMap({
     if (!map) return;
     try {
       const src = map.getSource(LENIENCY_SOURCE) as
-        | maplibregl.GeoJSONSource
-        | undefined;
+        maplibregl.GeoJSONSource | undefined;
       if (!src) return;
       if (!leniencyAnchor) {
         src.setData({ type: 'FeatureCollection', features: [] });
@@ -1425,10 +1436,7 @@ export function IndividualIdMap({
       const recompute = () => {
         try {
           const r =
-            (leniency ?? 0) *
-            scale *
-            (256 / 360) *
-            Math.pow(2, map.getZoom());
+            (leniency ?? 0) * scale * (256 / 360) * Math.pow(2, map.getZoom());
           map.setPaintProperty(LENIENCY_LAYER, 'circle-radius', r);
         } catch {
           /* map removed; ignore */
@@ -1534,13 +1542,12 @@ export function IndividualIdMap({
         // without this the ring would lag a drag of the active marker.
         mk.on('drag', () => {
           const mm = markersRef.current.find(
-            (x) => x.candidateKey === data.candidateKey
+            (x) => x.candidateKey === data.candidateKey,
           );
           if (!mm?.active) return;
           try {
             const src = map.getSource(LENIENCY_SOURCE) as
-              | maplibregl.GeoJSONSource
-              | undefined;
+              maplibregl.GeoJSONSource | undefined;
             if (!src) return;
             const ll = mk!.getLngLat();
             src.setData({
@@ -1570,7 +1577,7 @@ export function IndividualIdMap({
           dragRef.current(
             data.candidateKey,
             Math.round(px.x),
-            Math.round(px.y)
+            Math.round(px.y),
           );
         });
         markerRefs.current.set(data.candidateKey, mk);

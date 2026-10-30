@@ -1,13 +1,13 @@
-import { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { GlobalContext, UserContext, TestingContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { GlobalContext, TestingContext, UserContext } from '../Context';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
+import { fetchAllPaginatedResults } from '../utils';
 import LightLocationView from './LightLocationView';
 import ProjectContext from './ProjectContext';
 
@@ -87,7 +87,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
           'annotationSetId',
         ] as const,
         limit: 10000,
-      } as any
+      } as any,
     )) as any[];
 
     // If no filters, keep as-is
@@ -127,14 +127,14 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
             imageId: location.imageId,
             setId: { eq: loc.annotationSetId },
             selectionSet: ['x', 'y', 'categoryId'] as const,
-          } as any
+          } as any,
         )) as any[];
         const minX = location.x - location.width / 2;
         const minY = location.y - location.height / 2;
         const maxX = location.x + location.width / 2;
         const maxY = location.y + location.height / 2;
         const inside = anns.filter(
-          (a: any) => a.x >= minX && a.y >= minY && a.x <= maxX && a.y <= maxY
+          (a: any) => a.x >= minX && a.y >= minY && a.x <= maxX && a.y <= maxY,
         );
         if (
           selectedCategoryId &&
@@ -224,7 +224,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
         imageId: location.imageId,
         setId: { eq: cLocation.annotationSetId },
         selectionSet: ['categoryId', 'x', 'y'] as const,
-      } as any
+      } as any,
     )) as any[];
 
     const boundsxy: [number, number][] = [
@@ -291,7 +291,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
         </Header>
         <Body>
           <div
-            className='flex flex-col gap-4 px-4 pb-4 pt-0'
+            className='flex flex-col gap-4 px-4 pt-0 pb-4'
             style={{ height: '75vh' }}
           >
             {loading ? (
@@ -302,10 +302,10 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
             ) : locations.length === 0 ? (
               <p>No locations in this preset.</p>
             ) : (
-              <div className='flex flex-row gap-4 h-full'>
+              <div className='flex h-full flex-row gap-4'>
                 {/* Left controls column */}
                 <div
-                  className='flex flex-col gap-4 border-r border-dark mt-4 pe-4'
+                  className='mt-4 flex flex-col gap-4 border-r border-dark pe-4'
                   style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
                 >
                   <div className='flex flex-col gap-2'>
@@ -334,7 +334,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
                           setPendingMaxAnnotations(
                             e.target.value === ''
                               ? ''
-                              : Number(e.target.value) || ''
+                              : Number(e.target.value) || '',
                           )
                         }
                       />
@@ -350,7 +350,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
                 </div>
 
                 {/* Right image column */}
-                <div className='flex flex-col grow h-full w-full'>
+                <div className='flex h-full w-full grow flex-col'>
                   <div className='mt-4 h-full w-full'>
                     <TaskBuffer
                       index={index}
@@ -363,7 +363,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
                       )}
                     />
                   </div>
-                  <div className='flex flex-col w-full gap-2 pt-4'>
+                  <div className='flex w-full flex-col gap-2 pt-4'>
                     {locations[index] && (
                       <a
                         className={buttonVariants({ variant: 'outline-info' })}
@@ -408,13 +408,13 @@ function CategoryOptions({ annotationSetId }: { annotationSetId: string }) {
         {
           annotationSetId,
           selectionSet: ['id', 'name', 'annotationSetId'] as const,
-        }
+        },
       )) as any[];
       if (!cancelled) {
         setCats(
           categories
             ?.filter((c: any) => c.annotationSetId === annotationSetId)
-            ?.sort((a: any, b: any) => a.name.localeCompare(b.name)) || []
+            ?.sort((a: any, b: any) => a.name.localeCompare(b.name)) || [],
         );
       }
     })();

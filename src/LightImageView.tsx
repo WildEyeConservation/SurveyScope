@@ -1,14 +1,14 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
-import { GlobalContext } from './Context';
-import { fetchAllPaginatedResults } from './utils';
 import { Spinner } from '@/components/ui/spinner';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import { buildAnnotationFeatureProperties } from './annotator/annotationFeatures';
 import MapLibreLightViewer, {
   LightAnnotation,
 } from './annotator/MapLibreLightViewer';
-import { useImageInfoTags } from './useInfoTags';
+import { GlobalContext } from './Context';
 import { formatInfoTagsForDisplay } from './infoTags';
-import { buildAnnotationFeatureProperties } from './annotator/annotationFeatures';
 import type { ExtendedAnnotationType } from './schemaTypes';
+import { useImageInfoTags } from './useInfoTags';
+import { fetchAllPaginatedResults } from './utils';
 
 type AnnotationItem = {
   id: string;
@@ -88,7 +88,7 @@ export default function LightImageView({
             'category.name',
           ] as const,
           limit: 10000,
-        }
+        },
       )) as AnnotationItem[];
       if (cancelled) return;
       setAnnotations(anns || []);
@@ -103,7 +103,7 @@ export default function LightImageView({
   const filteredAnnotations = useMemo(() => {
     if (categoryIds.length === 0) return annotations;
     return annotations.filter((annotation) =>
-      categoryIds.includes(annotation.category?.id || '')
+      categoryIds.includes(annotation.category?.id || ''),
     );
   }, [annotations, categoryIds]);
 
@@ -150,7 +150,7 @@ export default function LightImageView({
         return {
           ...buildAnnotationFeatureProperties(
             a as ExtendedAnnotationType,
-            () => categoryColors.get(categoryId) || '#999999'
+            () => categoryColors.get(categoryId) || '#999999',
           ),
           x: a.x,
           y: a.y,
@@ -163,12 +163,12 @@ export default function LightImageView({
           ],
         };
       }),
-    [filteredAnnotations, categoryColors, infoTagsByAnnotation]
+    [filteredAnnotations, categoryColors, infoTagsByAnnotation],
   );
 
   if (!imageMeta || !sourceKey || !annotationsLoaded)
     return (
-      <div className='w-full h-full flex items-center justify-center'>
+      <div className='flex h-full w-full items-center justify-center'>
         <Spinner size='sm' />
         <span className='ms-2'>Loading...</span>
       </div>

@@ -40,7 +40,7 @@ const PALETTE = [
 function runColorsForLane(
   entries: number[],
   chainSets: Set<string>[],
-  herdIds: string[]
+  herdIds: string[],
 ): string[] {
   const colors: string[] = [];
   let runIdx = 0;
@@ -211,21 +211,19 @@ export function HerdNavBar({
   onJump,
 }: Props) {
   const [hover, setHover] = useState<{ lane: number; local: number } | null>(
-    null
+    null,
   );
 
   const colorsByLane = useMemo(
     () =>
-      lanes.map((lane) =>
-        runColorsForLane(lane.entries, chainSets, herdIds)
-      ),
-    [lanes, chainSets, herdIds]
+      lanes.map((lane) => runColorsForLane(lane.entries, chainSets, herdIds)),
+    [lanes, chainSets, herdIds],
   );
 
   const multi = lanes.length > 1;
   const totalPairs = useMemo(
     () => lanes.reduce((n, l) => n + l.entries.length, 0),
-    [lanes]
+    [lanes],
   );
 
   const headerLeft = (() => {
@@ -245,7 +243,7 @@ export function HerdNavBar({
         color: '#f8f9fa',
         userSelect: 'none',
       }}
-      className='w-full flex flex-col pt-2 pb-4'
+      className='flex w-full flex-col pt-2 pb-4'
     >
       <div
         className='flex flex-row items-center px-4 pb-1'

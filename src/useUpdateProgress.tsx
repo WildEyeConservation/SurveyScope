@@ -1,12 +1,12 @@
+import humanizeDuration from 'humanize-duration';
+import { DateTime } from 'luxon';
 import {
-  useContext,
-  useState,
-  useEffect,
   Dispatch,
   SetStateAction,
+  useContext,
+  useEffect,
+  useState,
 } from 'react';
-import { DateTime } from 'luxon';
-import humanizeDuration from 'humanize-duration';
 import { ProgressContext } from './Context';
 
 interface UseUpdateProgressParams {
@@ -23,7 +23,7 @@ export function useUpdateProgress({
   stepFormatter,
 }: UseUpdateProgressParams): [
   Dispatch<SetStateAction<number>>,
-  Dispatch<SetStateAction<number>>
+  Dispatch<SetStateAction<number>>,
 ] {
   // Use context with type checking
   const { setProgress } = useContext(ProgressContext)!;
@@ -60,7 +60,7 @@ export function useUpdateProgress({
                 {determinateTaskName}
                 <br />
                 {`Done with ${stepFormatter(stepsCompleted)}/${stepFormatter(
-                  totalSteps
+                  totalSteps,
                 )}`}
                 <br />
                 {`Elapsed time: ${humanizeDuration(millis, {
@@ -76,7 +76,7 @@ export function useUpdateProgress({
                 })}`}
                 <br />
                 {`Average rate ${stepFormatter(
-                  (stepsCompleted / millis) * 1000
+                  (stepsCompleted / millis) * 1000,
                 )}/s`}
                 <br />
               </p>

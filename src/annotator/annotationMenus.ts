@@ -54,7 +54,7 @@ export function buildAnnotationMenuItems({
 
 export function buildImageMenuItems(
   baseItems: ImageMenuItem[],
-  confidence?: number | null
+  confidence?: number | null,
 ): ImageMenuItem[] {
   if (confidence == null) return [...baseItems];
   return [

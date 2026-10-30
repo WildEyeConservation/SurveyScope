@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
 import { ScanEye } from 'lucide-react';
-import { fetchCenteredCrop, getCropZoomRange } from '../utils/tileCrop';
+import { useEffect, useRef, useState } from 'react';
 import type { AnnotationImageMeta } from '../types';
+import { fetchCenteredCrop, getCropZoomRange } from '../utils/tileCrop';
 
 interface Props {
   meta: AnnotationImageMeta | undefined;
@@ -83,7 +83,7 @@ export function AnnotationCrop({
     () => () => {
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
     },
-    []
+    [],
   );
 
   const boxStyle: React.CSSProperties = {
@@ -114,7 +114,12 @@ export function AnnotationCrop({
         <img
           src={imgSrc}
           alt='annotation crop'
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            display: 'block',
+          }}
         />
       </div>
     );

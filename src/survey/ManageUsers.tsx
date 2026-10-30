@@ -1,4 +1,3 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -9,13 +8,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
+import LabeledToggleSwitch from '../LabeledToggleSwitch';
+import { Footer } from '../Modal';
+import MyTable from '../Table';
 import { useUsers } from '../apiInterface';
 import { fetchAllPaginatedResults } from '../utils';
 import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
-import MyTable from '../Table';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
-import { Footer } from '../Modal';
 
 type UserPermission = {
   userId: string;
@@ -49,69 +49,71 @@ export default function ManageUsers({
     message: string;
   } | null>(null);
 
-  const fetchData = useCallback(async function fetchData(signal?: AbortSignal) {
-    if (!users) return;
-    setIsLoading(true);
+  const fetchData = useCallback(
+    async function fetchData(signal?: AbortSignal) {
+      if (!users) return;
+      setIsLoading(true);
 
-    try {
-      const [orgMemberships, projectMemberships] = await Promise.all([
-        fetchAllPaginatedResults(
-          client.models.OrganizationMembership
-            .membershipsByOrganizationId,
-          {
-            organizationId,
-            selectionSet: ['userId', 'isAdmin'] as const,
-            signal,
-          }
-        ),
-        fetchAllPaginatedResults(
-          client.models.UserProjectMembership
-            .userProjectMembershipsByProjectId,
-          {
-            projectId,
-            selectionSet: ['id', 'userId', 'isAdmin'] as const,
-            signal,
-          }
-        ),
-      ]);
+      try {
+        const [orgMemberships, projectMemberships] = await Promise.all([
+          fetchAllPaginatedResults(
+            client.models.OrganizationMembership.membershipsByOrganizationId,
+            {
+              organizationId,
+              selectionSet: ['userId', 'isAdmin'] as const,
+              signal,
+            },
+          ),
+          fetchAllPaginatedResults(
+            client.models.UserProjectMembership
+              .userProjectMembershipsByProjectId,
+            {
+              projectId,
+              selectionSet: ['id', 'userId', 'isAdmin'] as const,
+              signal,
+            },
+          ),
+        ]);
 
-      const userPermissions: UserPermission[] = orgMemberships.map(
-        (orgMembership) => {
-          const user = users.find((u) => u.id === orgMembership.userId);
-          const projectMembership = projectMemberships.find(
-            (pm) => pm.userId === orgMembership.userId
-          );
+        const userPermissions: UserPermission[] = orgMemberships.map(
+          (orgMembership) => {
+            const user = users.find((u) => u.id === orgMembership.userId);
+            const projectMembership = projectMemberships.find(
+              (pm) => pm.userId === orgMembership.userId,
+            );
 
-          return {
-            userId: orgMembership.userId,
-            userName: user?.name ?? 'Unknown',
-            userEmail: user?.email ?? '',
-            membershipId: projectMembership?.id ?? null,
-            annotationAccess: !!projectMembership,
-            isAdmin: !!projectMembership?.isAdmin,
-            isOrgAdmin: !!orgMembership.isAdmin,
-          };
-        }
-      );
+            return {
+              userId: orgMembership.userId,
+              userName: user?.name ?? 'Unknown',
+              userEmail: user?.email ?? '',
+              membershipId: projectMembership?.id ?? null,
+              annotationAccess: !!projectMembership,
+              isAdmin: !!projectMembership?.isAdmin,
+              isOrgAdmin: !!orgMembership.isAdmin,
+            };
+          },
+        );
 
-      // Sort: org admins first, then alphabetically by name
-      userPermissions.sort((a, b) => {
-        if (a.isOrgAdmin !== b.isOrgAdmin)
-          return a.isOrgAdmin ? -1 : 1;
-        return a.userName.localeCompare(b.userName);
-      });
+        // Sort: org admins first, then alphabetically by name
+        userPermissions.sort((a, b) => {
+          if (a.isOrgAdmin !== b.isOrgAdmin) return a.isOrgAdmin ? -1 : 1;
+          return a.userName.localeCompare(b.userName);
+        });
 
-      setPermissions(userPermissions);
-      setOriginalPermissions(userPermissions);
-    } finally {
-      if (!signal?.aborted) setIsLoading(false);
-    }
-  }, [users, client, projectId, organizationId]);
+        setPermissions(userPermissions);
+        setOriginalPermissions(userPermissions);
+      } finally {
+        if (!signal?.aborted) setIsLoading(false);
+      }
+    },
+    [users, client, projectId, organizationId],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
     fetchData(controller.signal).catch((error) => {
-      if (!controller.signal.aborted) console.error('Failed to load users', error);
+      if (!controller.signal.aborted)
+        console.error('Failed to load users', error);
     });
     return () => controller.abort();
   }, [fetchData]);
@@ -122,8 +124,8 @@ export default function ManageUsers({
         (op) =>
           op.userId === p.userId &&
           op.annotationAccess === p.annotationAccess &&
-          op.isAdmin === p.isAdmin
-      )
+          op.isAdmin === p.isAdmin,
+      ),
   );
 
   // Returns true only when every change was written.
@@ -137,8 +139,8 @@ export default function ManageUsers({
           (op) =>
             op.userId === p.userId &&
             op.annotationAccess === p.annotationAccess &&
-            op.isAdmin === p.isAdmin
-        )
+            op.isAdmin === p.isAdmin,
+        ),
     );
 
     // Keep going past a failed user so one rejection doesn't silently skip
@@ -157,7 +159,7 @@ export default function ManageUsers({
       } catch (err) {
         console.error(
           `Failed to save survey access for user ${permission.userId}`,
-          err
+          err,
         );
         failed.push(permission.userName);
       }
@@ -176,7 +178,7 @@ export default function ManageUsers({
             variant: 'danger',
             message: `Could not save access for: ${failed.join(', ')}. Please try again.`,
           }
-        : { variant: 'success', message: 'Access saved.' }
+        : { variant: 'success', message: 'Access saved.' },
     );
     setIsSaving(false);
     return failed.length === 0;
@@ -222,8 +224,8 @@ export default function ManageUsers({
             permissions.map((p) =>
               p.userId === permission.userId
                 ? { ...p, annotationAccess: checked }
-                : p
-            )
+                : p,
+            ),
           );
         }}
       />,
@@ -243,8 +245,8 @@ export default function ManageUsers({
                     isAdmin: checked,
                     annotationAccess: checked ? true : p.annotationAccess,
                   }
-                : p
-            )
+                : p,
+            ),
           );
         }}
       />,
@@ -254,7 +256,7 @@ export default function ManageUsers({
   return (
     <>
       <div className='p-4'>
-        <div className='text-muted-foreground mb-4' style={{ lineHeight: 1.2 }}>
+        <div className='mb-4 text-muted-foreground' style={{ lineHeight: 1.2 }}>
           <span style={{ fontSize: 16 }}>Manage User Access</span>
           <br />
           <span style={{ fontSize: 12 }}>
@@ -292,11 +294,7 @@ export default function ManageUsers({
         >
           {isSaving ? 'Saving...' : 'Save'}
         </Button>
-        <Button
-          variant='dark'
-          onClick={handleClose}
-          disabled={isSaving}
-        >
+        <Button variant='dark' onClick={handleClose} disabled={isSaving}>
           Close
         </Button>
       </Footer>

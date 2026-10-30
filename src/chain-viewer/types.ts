@@ -1,5 +1,5 @@
-import type { ImageNeighbourType, ImageType } from '../schemaTypes';
 import type { PixelTransform } from '../individual-id/types';
+import type { ImageNeighbourType, ImageType } from '../schemaTypes';
 
 /**
  * Minimal annotation shape pulled up-front for the chain viewer. Image and

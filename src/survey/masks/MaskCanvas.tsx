@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import * as maplibregl from 'maplibre-gl';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+import type { Polygon } from 'geojson';
 import {
   TerraDraw,
   TerraDrawPolygonMode,
@@ -11,14 +14,14 @@ import {
   type TerraDrawMouseEvent,
 } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
+import { makeCentredProjection } from '../../annotator/imageProjection';
 import {
   createImageMap,
   fitPxBounds,
   type ImageProjection,
 } from '../../annotator/imageTiles';
-import { makeCentredProjection } from '../../annotator/imageProjection';
-import type { Polygon } from 'geojson';
 import type { MaskPolygon } from '../../types/CameraMask';
+
 import '../surveyMap.css';
 
 const MASK_COLOR = '#97009c';
@@ -36,7 +39,7 @@ type Corners = [
   [number, number],
   [number, number],
   [number, number],
-  [number, number]
+  [number, number],
 ];
 
 const toFraction = (value: number) =>
@@ -44,7 +47,7 @@ const toFraction = (value: number) =>
 
 const imageCorners = (
   projection: ImageProjection,
-  { width, height }: Size
+  { width, height }: Size,
 ): Corners => [
   projection.px2lngLat(0, 0),
   projection.px2lngLat(width, 0),
@@ -59,7 +62,7 @@ function maskFeatures(draw: TerraDraw): GeoJSONStoreFeatures<Polygon>[] {
       (feature): feature is GeoJSONStoreFeatures<Polygon> =>
         feature.geometry.type === 'Polygon' &&
         feature.properties.mode === MODE_MASK &&
-        !feature.properties.currentlyDrawing
+        !feature.properties.currentlyDrawing,
     );
 }
 
@@ -102,7 +105,7 @@ export default function MaskCanvas({
       setSize((prev) =>
         prev?.width === img.naturalWidth && prev.height === img.naturalHeight
           ? prev
-          : { width: img.naturalWidth, height: img.naturalHeight }
+          : { width: img.naturalWidth, height: img.naturalHeight },
       );
     };
     img.src = imageUrl;
@@ -113,7 +116,7 @@ export default function MaskCanvas({
 
   const projection = useMemo(
     () => (size ? makeCentredProjection(size.width, size.height) : null),
-    [size]
+    [size],
   );
 
   const commit = useCallback((next: MaskPolygon[], fromDraw = false) => {
@@ -132,7 +135,7 @@ export default function MaskCanvas({
     const { clientWidth, clientHeight } = map.getContainer();
     const scale = Math.min(
       (clientWidth - FIT_PADDING_PX * 2) / size.width,
-      (clientHeight - FIT_PADDING_PX * 2) / size.height
+      (clientHeight - FIT_PADDING_PX * 2) / size.height,
     );
     if (scale <= 0) return;
     const padX = (clientWidth / scale - size.width) / 2;
@@ -143,7 +146,7 @@ export default function MaskCanvas({
       -padX,
       -padY,
       size.width + padX,
-      size.height + padY
+      size.height + padY,
     );
   }, [projection, size]);
 
@@ -154,7 +157,7 @@ export default function MaskCanvas({
     mapRef.current = map;
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right'
+      'top-right',
     );
 
     const snapToImage = (event: TerraDrawMouseEvent) => {
@@ -174,7 +177,7 @@ export default function MaskCanvas({
           ([lng, lat]) => {
             const { x, y } = projection.lngLat2px(lng, lat);
             return [toFraction(x / size.width), toFraction(y / size.height)];
-          }
+          },
         );
         ring.pop();
         return ring;
@@ -347,7 +350,7 @@ export default function MaskCanvas({
     if (syncedRef.current && polygons !== ownChangeRef.current) setHistory([]);
     stopTool();
     const stale = maskFeatures(draw).flatMap(({ id }) =>
-      id === undefined ? [] : [id]
+      id === undefined ? [] : [id],
     );
     if (stale.length) draw.removeFeatures(stale);
     const scale = 10 ** precisionRef.current;
@@ -356,7 +359,7 @@ export default function MaskCanvas({
       .filter((polygon) => polygon.length >= 3)
       .map((polygon) => {
         const ring = polygon.map(([x, y]) =>
-          projection.px2lngLat(x * size.width, y * size.height).map(round)
+          projection.px2lngLat(x * size.width, y * size.height).map(round),
         );
         return {
           id: draw.getFeatureId(),
@@ -390,7 +393,7 @@ export default function MaskCanvas({
     const draw = drawRef.current;
     if (!draw || !selectedId) return;
     const index = maskFeatures(draw).findIndex(
-      (feature) => String(feature.id) === selectedId
+      (feature) => String(feature.id) === selectedId,
     );
     if (index >= 0) commit(valueRef.current.filter((_, i) => i !== index));
   };
@@ -407,12 +410,12 @@ export default function MaskCanvas({
     activeTool === 'edit'
       ? 'Click a mask to select it, then drag its corners. Drag a midpoint to add a corner; right-click a corner to delete it.'
       : activeTool === 'draw'
-      ? 'Click to place corners, then click the first corner or press Enter to finish. Esc cancels. Clicks near or outside the image edge snap to it.'
-      : 'Choose Draw mask to outline areas to ignore. Scroll to zoom and drag to pan.';
+        ? 'Click to place corners, then click the first corner or press Enter to finish. Esc cancels. Clicks near or outside the image edge snap to it.'
+        : 'Choose Draw mask to outline areas to ignore. Scroll to zoom and drag to pan.';
 
   return (
     <div className='flex flex-col gap-2'>
-      <div className='flex gap-2 flex-wrap items-center'>
+      <div className='flex flex-wrap items-center gap-2'>
         <Button
           size='sm'
           variant={activeTool === 'draw' ? 'primary' : 'outline-primary'}

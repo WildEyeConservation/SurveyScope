@@ -4,13 +4,13 @@ import type {
   ImageType,
 } from '../../schemaTypes';
 import type { PixelTransform } from '../types';
-import { isOov } from './identity';
 import {
   buildAdjacency,
   buildChainedTransformsFromAdj,
   type ChainedTransform,
   type NeighbourAdjacency,
 } from './chainedTransforms';
+import { isOov } from './identity';
 
 /**
  * A "reunion" found at transect-completion time: a real annotation's chain
@@ -66,7 +66,7 @@ export interface FindReunionsInput {
  */
 function isOlder(
   a: Pick<ImageType, 'timestamp' | 'originalPath' | 'id'>,
-  b: Pick<ImageType, 'timestamp' | 'originalPath' | 'id'>
+  b: Pick<ImageType, 'timestamp' | 'originalPath' | 'id'>,
 ): boolean {
   const at = a.timestamp ?? null;
   const bt = b.timestamp ?? null;
@@ -182,7 +182,9 @@ export function findReunions(input: FindReunionsInput): ReunionCandidate[] {
     const sorted = reals
       .slice()
       .filter((a) => imagesById[a.imageId])
-      .sort((x, y) => (isOlder(imagesById[x.imageId], imagesById[y.imageId]) ? -1 : 1));
+      .sort((x, y) =>
+        isOlder(imagesById[x.imageId], imagesById[y.imageId]) ? -1 : 1,
+      );
     if (sorted.length === 0) continue;
     const endpoints =
       sorted.length === 1

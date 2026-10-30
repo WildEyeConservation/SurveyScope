@@ -1,4 +1,3 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,15 +13,18 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Minus, Plus } from 'lucide-react';
 import * as maplibregl from 'maplibre-gl';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
 import { GlobalContext } from '../Context';
 import {
-  makeProjection,
-  createImageMap,
   addImageTiles,
+  createImageMap,
   fitPxBounds,
-  storedZoomToMapZoom,
+  makeProjection,
   mapZoomToStoredZoom,
+  storedZoomToMapZoom,
 } from '../annotator/imageTiles';
 import {
   DEFAULT_ZOOM_OFFSET,
@@ -75,7 +77,7 @@ export default function ZoomPreviewModal({
 }) {
   const { client } = useContext(GlobalContext)!;
   const [candidates, setCandidates] = useState<ZoomPreviewCandidate[] | null>(
-    null
+    null,
   );
   const [index, setIndex] = useState(0);
   const [sample, setSample] = useState<Sample | null>(null);
@@ -131,7 +133,7 @@ export default function ZoomPreviewModal({
         if (point.x == null || point.y == null || !point.imageId) {
           const { data: annotation } = await client.models.Annotation.get(
             { id: target.id },
-            { selectionSet: ['id', 'x', 'y', 'imageId'] as const }
+            { selectionSet: ['id', 'x', 'y', 'imageId'] as const },
           );
           if (cancelled) return;
           if (!annotation) {
@@ -142,11 +144,11 @@ export default function ZoomPreviewModal({
         }
         const { data: image } = await client.models.Image.get(
           { id: point.imageId! },
-          { selectionSet: ['id', 'width', 'height'] as const }
+          { selectionSet: ['id', 'width', 'height'] as const },
         );
         const { data: files } = await client.models.ImageFile.imagesByimageId(
           { imageId: point.imageId },
-          { selectionSet: ['id', 'type', 'key'] as const }
+          { selectionSet: ['id', 'type', 'key'] as const },
         );
         const file =
           (files ?? []).find((f) => f.type === 'image/jpeg') ?? files?.[0];
@@ -181,14 +183,14 @@ export default function ZoomPreviewModal({
   const projection = useMemo(
     () =>
       sample ? makeProjection(sample.image.width, sample.image.height) : null,
-    [sample]
+    [sample],
   );
 
   const readValue = (map: maplibregl.Map) =>
     Math.round(
       mode === 'level'
         ? mapZoomToStoredZoom(map.getZoom())
-        : map.getZoom() - baseZoomRef.current
+        : map.getZoom() - baseZoomRef.current,
     );
 
   const toMapZoom = (next: number) =>
@@ -205,7 +207,7 @@ export default function ZoomPreviewModal({
       y - box.height * AUTO_FIT_SCALE,
       x + box.width * AUTO_FIT_SCALE,
       y + box.height * AUTO_FIT_SCALE,
-      OWN_ZOOM
+      OWN_ZOOM,
     );
   };
 
@@ -237,7 +239,7 @@ export default function ZoomPreviewModal({
     const map = createImageMap(
       containerRef.current,
       projection,
-      mode === 'offset' ? OFFSET_MAX_MAP_ZOOM : undefined
+      mode === 'offset' ? OFFSET_MAX_MAP_ZOOM : undefined,
     );
     mapRef.current = map;
     if (mode === 'level') map.setZoomSnap(1);
@@ -297,14 +299,14 @@ export default function ZoomPreviewModal({
         map.fitBounds(
           [px2lngLat(0, image.height), px2lngLat(image.width, 0)],
           { padding: WHOLE_IMAGE_PADDING, animate: false },
-          OWN_ZOOM
+          OWN_ZOOM,
         );
         baseZoomRef.current = map.getZoom();
       }
       if (!autoRef.current && pinnedRef.current != null) {
         map.jumpTo(
           { center: px2lngLat(x, y), zoom: toMapZoom(pinnedRef.current) },
-          OWN_ZOOM
+          OWN_ZOOM,
         );
       } else {
         fitAuto();
@@ -313,7 +315,7 @@ export default function ZoomPreviewModal({
     });
 
     const onZoom = (
-      event: maplibregl.MapLibreEvent & { ownZoom?: boolean }
+      event: maplibregl.MapLibreEvent & { ownZoom?: boolean },
     ) => {
       const byUser = !event.ownZoom;
       const ended = event.type === 'zoomend';
@@ -428,7 +430,7 @@ export default function ZoomPreviewModal({
             {ready && mode === 'level' && (
               <div
                 className={`px-2 py-1 ${
-                  auto ? 'bg-warning text-white font-bold' : 'text-dark'
+                  auto ? 'bg-warning font-bold text-white' : 'text-dark'
                 }`}
                 style={{ ...ZOOM_PANEL_STYLE, top: 12, right: 12 }}
               >
@@ -462,8 +464,8 @@ export default function ZoomPreviewModal({
             {!ready
               ? ''
               : auto
-              ? `Auto (Level ${value} for this sample)`
-              : `Level ${value}`}
+                ? `Auto (Level ${value} for this sample)`
+                : `Level ${value}`}
           </span>
           <Button
             variant='secondary'

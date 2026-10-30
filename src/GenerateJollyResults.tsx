@@ -1,5 +1,6 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
 import {
   Dialog,
   DialogBody,
@@ -11,12 +12,11 @@ import {
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
-import { GlobalContext } from './Context.tsx';
 import { useContext, useEffect, useMemo, useState } from 'react';
-import { Combobox } from '@/components/ui/combobox';
-import { fetchAllPaginatedResults } from './utils.tsx';
 import { useNavigate } from 'react-router-dom';
+import { GlobalContext } from './Context.tsx';
 import { readJollyStatus } from './storage/workflowFiles';
+import { fetchAllPaginatedResults } from './utils.tsx';
 
 interface LaunchResponse {
   jobId: string;
@@ -37,15 +37,10 @@ interface JollyJobStatus {
   error?: string | null;
 }
 
-const terminalStatuses = new Set([
-  'COMPLETED',
-  'FAILED',
-  'ROLLBACK_FAILED',
-]);
+const terminalStatuses = new Set(['COMPLETED', 'FAILED', 'ROLLBACK_FAILED']);
 
 function parseLaunchResponse(value: unknown): LaunchResponse {
-  const parsed =
-    typeof value === 'string' ? JSON.parse(value) : value;
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value;
   if (
     !parsed ||
     typeof parsed !== 'object' ||
@@ -64,8 +59,7 @@ export default function GenerateJollyResults({
   surveyId: string;
   annotationSetId: string;
 }) {
-  const { client, modalToShow, showModal } =
-    useContext(GlobalContext)!;
+  const { client, modalToShow, showModal } = useContext(GlobalContext)!;
   const navigate = useNavigate();
   const [categoryOptions, setCategoryOptions] = useState<
     { label: string; value: string }[]
@@ -74,10 +68,8 @@ export default function GenerateJollyResults({
     { label: string; value: string }[]
   >([]);
   const [launching, setLaunching] = useState(false);
-  const [activeJob, setActiveJob] =
-    useState<LaunchResponse | null>(null);
-  const [jobStatus, setJobStatus] =
-    useState<JollyJobStatus | null>(null);
+  const [activeJob, setActiveJob] = useState<LaunchResponse | null>(null);
+  const [jobStatus, setJobStatus] = useState<JollyJobStatus | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [pollWarning, setPollWarning] = useState('');
   const isOpen = modalToShow === 'generateJollyResults';
@@ -87,14 +79,14 @@ export default function GenerateJollyResults({
     const fetchCategories = async () => {
       const categories = await fetchAllPaginatedResults(
         client.models.Category.categoriesByAnnotationSetId,
-        { annotationSetId }
+        { annotationSetId },
       );
       if (mounted) {
         setCategoryOptions(
           categories.map((category) => ({
             label: category.name,
             value: category.id,
-          }))
+          })),
         );
       }
     };
@@ -121,7 +113,7 @@ export default function GenerateJollyResults({
       if (Date.now() - startedAt > 2 * 60 * 60 * 1000) {
         setActiveJob(null);
         setErrorMessage(
-          'Status polling timed out. The job may still be running; click Generate again to reconnect to it.'
+          'Status polling timed out. The job may still be running; click Generate again to reconnect to it.',
         );
         return;
       }
@@ -130,7 +122,7 @@ export default function GenerateJollyResults({
         const status = await readJollyStatus<JollyJobStatus>(
           surveyId,
           annotationSetId,
-          activeJob.jobId
+          activeJob.jobId,
         );
         if (cancelled) return;
         if (status.jobId !== activeJob.jobId) {
@@ -148,7 +140,7 @@ export default function GenerateJollyResults({
         } else {
           setErrorMessage(
             status.error ??
-              'The results job failed. Check the worker logs for details.'
+              'The results job failed. Check the worker logs for details.',
           );
         }
       } catch (error) {
@@ -159,7 +151,7 @@ export default function GenerateJollyResults({
         // misses before telling the user we have lost contact.
         if (consecutiveFailures >= 10) {
           setPollWarning(
-            'Cannot read the job status right now. The job is still running; this dialog will reconnect automatically.'
+            'Cannot read the job status right now. The job is still running; this dialog will reconnect automatically.',
           );
         }
       } finally {
@@ -173,14 +165,7 @@ export default function GenerateJollyResults({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [
-    isOpen,
-    activeJob,
-    annotationSetId,
-    navigate,
-    showModal,
-    surveyId,
-  ]);
+  }, [isOpen, activeJob, annotationSetId, navigate, showModal, surveyId]);
 
   const progressText = useMemo(() => {
     if (!jobStatus) {
@@ -208,13 +193,11 @@ export default function GenerateJollyResults({
       const response = await client.mutations.generateSurveyResults({
         surveyId,
         annotationSetId,
-        categoryIds: selectedCategories.map(
-          (category) => category.value
-        ),
+        categoryIds: selectedCategories.map((category) => category.value),
       });
       if (response.errors?.length) {
         throw new Error(
-          response.errors.map((error) => error.message).join('; ')
+          response.errors.map((error) => error.message).join('; '),
         );
       }
       setActiveJob(parseLaunchResponse(response.data));
@@ -222,7 +205,7 @@ export default function GenerateJollyResults({
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : 'Unable to start the results job'
+          : 'Unable to start the results job',
       );
     } finally {
       setLaunching(false);
@@ -236,10 +219,7 @@ export default function GenerateJollyResults({
       open={modalToShow === 'generateJollyResults'}
       onOpenChange={(o) => !o && showModal(null)}
     >
-      <DialogContent
-        size='lg'
-        onPointerDownOutside={(e) => e.preventDefault()}
-      >
+      <DialogContent size='lg' onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Generate Jolly Results</DialogTitle>
         </DialogHeader>
@@ -250,7 +230,7 @@ export default function GenerateJollyResults({
                 Labels
               </Label>
               <span
-                className='text-muted-foreground block mb-2'
+                className='mb-2 block text-muted-foreground'
                 style={{ fontSize: '14px' }}
               >
                 Select the labels to include in the Jolly results.
@@ -270,7 +250,7 @@ export default function GenerateJollyResults({
 
           {running && (
             <div className='mt-6'>
-              <div className='flex items-center gap-2 mb-2'>
+              <div className='mb-2 flex items-center gap-2'>
                 <Spinner animation='border' size='sm' />
                 <span>{progressText}</span>
               </div>
@@ -306,10 +286,7 @@ export default function GenerateJollyResults({
           >
             {launching ? 'Starting...' : 'Generate'}
           </Button>
-          <Button
-            variant='dark'
-            onClick={() => showModal(null)}
-          >
+          <Button variant='dark' onClick={() => showModal(null)}>
             Close
           </Button>
         </DialogFooter>

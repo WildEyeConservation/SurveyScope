@@ -1,21 +1,21 @@
-import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
-import { SQSClient } from '@aws-sdk/client-sqs';
 import { AuthUser, fetchAuthSession } from '@aws-amplify/auth';
+import { SQSClient } from '@aws-sdk/client-sqs';
+import { useQuery } from '@tanstack/react-query';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface.tsx';
 import {
   GlobalContext,
-  ProjectContext,
-  ProjectContextType,
-  UserContext,
-  UserContextType,
   ManagementContext,
   ManagementContextType,
   ProgressContext,
   ProgressType,
+  ProjectContext,
+  ProjectContextType,
+  UserContext,
+  UserContextType,
 } from './Context.tsx';
 import { useOptimisticUpdates, useQueues } from './useOptimisticUpdates.tsx';
-import { useQuery } from '@tanstack/react-query';
 
 // How long the user's own membership lists are trusted before a background refetch.
 const MEMBERSHIP_STALE_TIME = 60_000;
@@ -30,14 +30,14 @@ export function Project({
   const { client } = useContext(GlobalContext)!;
   const [expandLegend, setExpandLegend] = useState<boolean>(
     () =>
-      localStorage.getItem(`legendCollapsed-${currentPM.projectId}`) !== 'true'
+      localStorage.getItem(`legendCollapsed-${currentPM.projectId}`) !== 'true',
   );
   const { myMembershipHook } = useContext(UserContext)!;
   const subscriptionFilter = useMemo(
     () => ({
       filter: { projectId: { eq: currentPM?.projectId } },
     }),
-    [currentPM?.projectId]
+    [currentPM?.projectId],
   );
   //const [currentProject, setCurrentProject] = useState<Schema['Project']['type'] | undefined>(undefined)
   const categoriesHook = useOptimisticUpdates<
@@ -51,7 +51,7 @@ export function Project({
         nextToken,
         limit: 10000,
       }),
-    subscriptionFilter
+    subscriptionFilter,
   );
   const [currentCategory, setCurrentCategory] = useState<
     Schema['Category']['type'] | undefined
@@ -74,7 +74,7 @@ export function Project({
 
   useEffect(() => {
     setExpandLegend(
-      localStorage.getItem(`legendCollapsed-${currentPM.projectId}`) !== 'true'
+      localStorage.getItem(`legendCollapsed-${currentPM.projectId}`) !== 'true',
     );
   }, [currentPM.projectId]);
 
@@ -89,11 +89,13 @@ export function Project({
       <ProjectContext.Provider
         value={{
           project: currentProject,
-          categoriesHook: categoriesHook as unknown as ProjectContextType['categoriesHook'],
+          categoriesHook:
+            categoriesHook as unknown as ProjectContextType['categoriesHook'],
           // The shared list can lag a group the user was just added to.
           currentPM:
-            myMembershipHook.data.find((m) => m.projectId == currentProject.id) ??
-            currentPM,
+            myMembershipHook.data.find(
+              (m) => m.projectId == currentProject.id,
+            ) ?? currentPM,
           currentCategory,
           setCurrentCategory,
           expandLegend,
@@ -139,7 +141,7 @@ export function User({
     () => ({
       filter: { userId: { eq: user.username } },
     }),
-    [user.username]
+    [user.username],
   );
 
   // const myMembershipHook = useOptimisticMembership(
@@ -158,14 +160,14 @@ export function User({
     async (nextToken) =>
       client.models.UserProjectMembership.userProjectMembershipsByUserId(
         { userId: user!.username },
-        { nextToken }
+        { nextToken },
       ),
     subscriptionFilter,
     {
       compositeKey: (m) =>
         m.userId && m.projectId ? `${m.userId}:${m.projectId}` : m.id,
       staleTime: MEMBERSHIP_STALE_TIME,
-    }
+    },
   );
 
   const allOrganizationHook = useOptimisticUpdates<
@@ -176,20 +178,23 @@ export function User({
     async (nextToken) =>
       client.models.OrganizationMembership.organizationsByUserId(
         { userId: user!.username },
-        { nextToken }
+        { nextToken },
       ),
     subscriptionFilter,
     {
       compositeKey: (membership) =>
         `${membership.organizationId}:${membership.userId}`,
       staleTime: MEMBERSHIP_STALE_TIME,
-    }
+    },
   );
 
   // Filter memberships to only include organisations the user has active cognito groups for
   const activeCognitoOrgIds = useMemo(
-    () => new Set(cognitoGroups.filter((g) => g !== 'sysadmin' && g !== 'orgadmin')),
-    [cognitoGroups]
+    () =>
+      new Set(
+        cognitoGroups.filter((g) => g !== 'sysadmin' && g !== 'orgadmin'),
+      ),
+    [cognitoGroups],
   );
 
   const isSysadmin = cognitoGroups.includes('sysadmin');
@@ -199,14 +204,16 @@ export function User({
       ...allOrganizationHook,
       // Sysadmin users can access all organisations regardless of active cognito groups
       data: isSysadmin
-        ? allOrganizationHook.data ?? []
-        : allOrganizationHook.data?.filter((m) => activeCognitoOrgIds.has(m.organizationId)) ?? [],
+        ? (allOrganizationHook.data ?? [])
+        : (allOrganizationHook.data?.filter((m) =>
+            activeCognitoOrgIds.has(m.organizationId),
+          ) ?? []),
     }),
-    [allOrganizationHook, activeCognitoOrgIds, isSysadmin]
+    [allOrganizationHook, activeCognitoOrgIds, isSysadmin],
   );
 
   const isOrganizationAdmin = myOrganizationHook.data?.some(
-    (membership) => membership.isAdmin
+    (membership) => membership.isAdmin,
   );
 
   // useEffect(() => {
@@ -251,8 +258,10 @@ export function User({
         setCurrentTaskTag,
         currentAnnoCount,
         setCurrentAnnoCount,
-        myMembershipHook: myMembershipHook as unknown as UserContextType['myMembershipHook'],
-        myOrganizationHook: myOrganizationHook as unknown as UserContextType['myOrganizationHook'],
+        myMembershipHook:
+          myMembershipHook as unknown as UserContextType['myMembershipHook'],
+        myOrganizationHook:
+          myOrganizationHook as unknown as UserContextType['myOrganizationHook'],
         isOrganizationAdmin,
         isAnnotatePath,
         setIsAnnotatePath,
@@ -273,7 +282,7 @@ export function Management({ children }: { children: React.ReactNode }) {
   //   { projectId: { eq: project.id } }), [project.id]);
   const subscriptionFilter = useMemo(
     () => ({ filter: { projectId: { eq: project.id } } }),
-    [project.id]
+    [project.id],
   );
   //const {items: projectMemberships} = useObserveQuery('UserProjectMembership',{ filter: { projectId: { eq: project.id } } });
   // const projectMembershipHook = useOptimisticMembership(
@@ -289,7 +298,7 @@ export function Management({ children }: { children: React.ReactNode }) {
         filter: subscriptionFilter.filter,
         nextToken,
       }),
-    subscriptionFilter
+    subscriptionFilter,
   );
   const imageSetsHook = useOptimisticUpdates<
     Schema['ImageSet']['type'],
@@ -301,7 +310,7 @@ export function Management({ children }: { children: React.ReactNode }) {
         filter: subscriptionFilter.filter,
         nextToken,
       }),
-    subscriptionFilter
+    subscriptionFilter,
   );
   const locationSetsHook = useOptimisticUpdates<
     Schema['LocationSet']['type'],
@@ -313,7 +322,7 @@ export function Management({ children }: { children: React.ReactNode }) {
         filter: subscriptionFilter.filter,
         nextToken,
       }),
-    subscriptionFilter
+    subscriptionFilter,
   );
   const annotationSetsHook = useOptimisticUpdates<
     Schema['AnnotationSet']['type'],
@@ -325,7 +334,7 @@ export function Management({ children }: { children: React.ReactNode }) {
         filter: subscriptionFilter.filter,
         nextToken,
       }),
-    subscriptionFilter
+    subscriptionFilter,
   );
   const queuesHook = useQueues();
 
@@ -333,11 +342,16 @@ export function Management({ children }: { children: React.ReactNode }) {
     <ManagementContext.Provider
       value={{
         allUsers,
-        projectMembershipHook: projectMembershipHook as unknown as ManagementContextType['projectMembershipHook'],
-        imageSetsHook: imageSetsHook as unknown as ManagementContextType['imageSetsHook'],
-        locationSetsHook: locationSetsHook as unknown as ManagementContextType['locationSetsHook'],
-        annotationSetsHook: annotationSetsHook as unknown as ManagementContextType['annotationSetsHook'],
-        queuesHook: queuesHook as unknown as ManagementContextType['queuesHook'],
+        projectMembershipHook:
+          projectMembershipHook as unknown as ManagementContextType['projectMembershipHook'],
+        imageSetsHook:
+          imageSetsHook as unknown as ManagementContextType['imageSetsHook'],
+        locationSetsHook:
+          locationSetsHook as unknown as ManagementContextType['locationSetsHook'],
+        annotationSetsHook:
+          annotationSetsHook as unknown as ManagementContextType['annotationSetsHook'],
+        queuesHook:
+          queuesHook as unknown as ManagementContextType['queuesHook'],
       }}
     >
       {allUsers &&

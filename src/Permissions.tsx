@@ -6,12 +6,12 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Tabs, Tab } from './Tabs';
+import { useContext, useState } from 'react';
+import { UserContext } from './Context';
+import Info from './organization/Info';
 import Users from './organization/Users';
 import OrganizationSelector from './OrganizationSelector';
-import { useState, useContext } from 'react';
-import Info from './organization/Info';
-import { UserContext } from './Context';
+import { Tab, Tabs } from './Tabs';
 
 export default function Permissions() {
   const { isOrganizationAdmin } = useContext(UserContext)!;
@@ -38,7 +38,7 @@ export default function Permissions() {
       }}
     >
       <Card>
-        <CardHeader className='flex justify-between mb-0'>
+        <CardHeader className='mb-0 flex justify-between'>
           <CardTitle className='mb-0'>
             <h4 className='mb-0'>Permissions</h4>
           </CardTitle>
@@ -58,10 +58,7 @@ export default function Permissions() {
         </CardContent>
         {onClick && (
           <CardFooter className='flex justify-center'>
-            <Button
-              variant='primary'
-              onClick={onClick.function}
-            >
+            <Button variant='primary' onClick={onClick.function}>
               {onClick.name}
             </Button>
           </CardFooter>

@@ -1,9 +1,9 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Footer } from '../Modal';
+import { useQueryClient } from '@tanstack/react-query';
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
-import { useQueryClient } from '@tanstack/react-query';
+import { Footer } from '../Modal';
 import { loadProjectImages } from '../projectImages';
 import SurveyStructure, { Camera } from './SurveyStructure';
 
@@ -59,7 +59,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
       const { data: project } = await client.models.Project.get(
         { id: projectId },
-        { signal }
+        { signal },
       );
 
       if (project) {
@@ -73,11 +73,10 @@ export default function EditInformation({ projectId }: { projectId: string }) {
       setStructureFetching(true);
 
       try {
-        const { data: cameras } =
-          await client.models.Camera.camerasByProjectId(
-            { projectId },
-            { signal }
-          );
+        const { data: cameras } = await client.models.Camera.camerasByProjectId(
+          { projectId },
+          { signal },
+        );
 
         const images = await loadProjectImages(
           client,
@@ -91,7 +90,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
             'altitude_wgs84',
             'timestamp',
           ],
-          { signal }
+          { signal },
         );
 
         const surveyCameras =
@@ -160,7 +159,8 @@ export default function EditInformation({ projectId }: { projectId: string }) {
     }
 
     const reportError = (error: unknown) => {
-      if (!signal.aborted) console.error('Failed to load survey information', error);
+      if (!signal.aborted)
+        console.error('Failed to load survey information', error);
     };
     getProject().catch(reportError);
     buildSurveyStructure().catch(reportError);
@@ -172,7 +172,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
       <form className='flex flex-col gap-4 p-4'>
         <div className='flex flex-col'>
           <label
-            className='uppercase font-semibold text-muted-foreground mb-1'
+            className='mb-1 font-semibold text-muted-foreground uppercase'
             style={{ letterSpacing: 0.5, fontSize: 12 }}
           >
             Survey Name
@@ -187,7 +187,10 @@ export default function EditInformation({ projectId }: { projectId: string }) {
         </div>
         <hr
           className='m-0'
-          style={{ borderTop: '1px solid rgba(255, 255, 255, 0.12)', opacity: 1 }}
+          style={{
+            borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+            opacity: 1,
+          }}
         />
         <SurveyStructure
           cameras={structure}

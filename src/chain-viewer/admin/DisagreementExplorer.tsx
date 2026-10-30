@@ -1,21 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { ExternalLink } from 'lucide-react';
-import { Combobox } from '@/components/ui/combobox';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUsers } from '../../apiInterface';
 import { useSharedChainData } from '../shared/useSharedChainData';
-import { useActiveShares, ownerToUserId } from './useActiveShares';
+import { AnnotationCrop } from './AnnotationCrop';
+import { divergesCategory, divergesObscured } from './shareStats';
+import { ownerToUserId, useActiveShares } from './useActiveShares';
 import {
   foldFeedbackRows,
   useAllChainReviewFeedback,
 } from './useAllChainReviewFeedback';
-import { divergesCategory, divergesObscured } from './shareStats';
-import { AnnotationCrop } from './AnnotationCrop';
 
 type Option = { label: string; value: string };
 
@@ -41,15 +41,20 @@ export default function DisagreementExplorer() {
 
   const [shareId, setShareId] = useState<string | undefined>(undefined);
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
-  const [kinds, setKinds] = useState({ relabel: true, obscured: true, comment: true });
+  const [kinds, setKinds] = useState({
+    relabel: true,
+    obscured: true,
+    comment: true,
+  });
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-  const { data: chainData, isLoading: chainLoading } = useSharedChainData(shareId);
+  const { data: chainData, isLoading: chainLoading } =
+    useSharedChainData(shareId);
   const { data: feedbackRows, isLoading: feedbackLoading } =
     useAllChainReviewFeedback(shareId);
   const feedback = useMemo(
     () => foldFeedbackRows(feedbackRows ?? []),
-    [feedbackRows]
+    [feedbackRows],
   );
 
   const userNameById = useMemo(() => {
@@ -60,7 +65,7 @@ export default function DisagreementExplorer() {
   const ownerLabel = useCallback(
     (owner: string) =>
       userNameById.get(ownerToUserId(owner)) ?? ownerToUserId(owner),
-    [userNameById]
+    [userNameById],
   );
 
   const shareOptions: Option[] = (shares ?? []).map((s) => ({
@@ -118,7 +123,8 @@ export default function DisagreementExplorer() {
     }> = [];
 
     for (const ann of annotations) {
-      if (categoryFilter !== 'all' && ann.categoryId !== categoryFilter) continue;
+      if (categoryFilter !== 'all' && ann.categoryId !== categoryFilter)
+        continue;
       const divergences: Divergence[] = [];
       for (const owner of selectedOwners) {
         const overlay = feedback.overlayByOwner.get(owner);
@@ -180,14 +186,16 @@ export default function DisagreementExplorer() {
           <h4 className='mb-0'>Disagreement Explorer</h4>
         </CardHeader>
         <CardContent>
-          <div className='flex flex-row flex-wrap gap-4 items-end'>
+          <div className='flex flex-row flex-wrap items-end gap-4'>
             <div style={{ minWidth: 280, flex: 1 }}>
               <Label>Share</Label>
               <Combobox
                 value={shareOptions.find((o) => o.value === shareId) ?? null}
                 onChange={(option) => setShareId(option?.value)}
                 options={shareOptions}
-                placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
+                placeholder={
+                  sharesLoading ? 'Loading shares…' : 'Select a share…'
+                }
                 loading={sharesLoading}
                 clearable
                 name='Share'
@@ -197,8 +205,12 @@ export default function DisagreementExplorer() {
               <Label>Reviewers</Label>
               <Combobox
                 multiple
-                value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
-                onChange={(options) => setSelectedOwners(options.map((o) => o.value))}
+                value={ownerOptions.filter((o) =>
+                  selectedOwners.includes(o.value),
+                )}
+                onChange={(options) =>
+                  setSelectedOwners(options.map((o) => o.value))
+                }
                 options={ownerOptions}
                 placeholder='All reviewers'
                 disabled={!shareId || ownerOptions.length === 0}
@@ -208,17 +220,18 @@ export default function DisagreementExplorer() {
             <div style={{ minWidth: 180 }}>
               <Label>Label</Label>
               <Combobox
-                value={categoryOptions.find((o) => o.value === categoryFilter) ?? null}
-                onChange={(option) =>
-                  setCategoryFilter(option?.value ?? 'all')
+                value={
+                  categoryOptions.find((o) => o.value === categoryFilter) ??
+                  null
                 }
+                onChange={(option) => setCategoryFilter(option?.value ?? 'all')}
                 options={categoryOptions}
                 disabled={!shareId}
                 name='Label'
               />
             </div>
           </div>
-          <div className='flex flex-row gap-4 mt-2'>
+          <div className='mt-2 flex flex-row gap-4'>
             {(['relabel', 'obscured', 'comment'] as const).map((k) => (
               <div key={k} className='flex items-center gap-2'>
                 <Checkbox
@@ -238,7 +251,9 @@ export default function DisagreementExplorer() {
       </Card>
 
       {!shareId ? (
-        <p className='text-muted-foreground'>Select a share to explore disagreements.</p>
+        <p className='text-muted-foreground'>
+          Select a share to explore disagreements.
+        </p>
       ) : busy ? (
         <Spinner animation='border' />
       ) : rows.length === 0 ? (
@@ -248,7 +263,8 @@ export default function DisagreementExplorer() {
       ) : (
         <>
           <p className='text-muted-foreground'>
-            {rows.length} annotation{rows.length === 1 ? '' : 's'} with divergences
+            {rows.length} annotation{rows.length === 1 ? '' : 's'} with
+            divergences
             {rows.length > MAX_ROWS && ` (showing first ${MAX_ROWS})`}.
           </p>
           <div className='flex flex-col gap-2'>
@@ -260,16 +276,19 @@ export default function DisagreementExplorer() {
                     x={row.x}
                     y={row.y}
                     oov={row.oov}
-                    markerColor={catColorById.get(row.baselineCategoryId) ?? '#facc15'}
+                    markerColor={
+                      catColorById.get(row.baselineCategoryId) ?? '#facc15'
+                    }
                   />
                   <div className='grow'>
-                    <div className='flex flex-row items-center gap-2 mb-2'>
+                    <div className='mb-2 flex flex-row items-center gap-2'>
                       <span>
                         Baseline:{' '}
                         <Badge
                           style={{
                             background:
-                              catColorById.get(row.baselineCategoryId) ?? '#888',
+                              catColorById.get(row.baselineCategoryId) ??
+                              '#888',
                           }}
                         >
                           {catNameById.get(row.baselineCategoryId) ??
@@ -308,7 +327,9 @@ export default function DisagreementExplorer() {
                           {d.relabel && (
                             <span className='ml-2'>
                               relabel: {d.relabel.from} →{' '}
-                              <span className='text-warning'>{d.relabel.to}</span>
+                              <span className='text-warning'>
+                                {d.relabel.to}
+                              </span>
                             </span>
                           )}
                           {d.obscured && (

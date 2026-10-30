@@ -9,7 +9,7 @@ export function loadProjectImages<F extends ImageField>(
   client: unknown,
   projectId: string,
   fields: readonly F[],
-  options: LoadImagesOptions = {}
+  options: LoadImagesOptions = {},
 ): Promise<ImageRow<F>[]> {
   return loadRows(client, 'imagesByProjectId', projectId, fields, options);
 }

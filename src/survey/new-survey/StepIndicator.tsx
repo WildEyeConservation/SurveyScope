@@ -16,7 +16,7 @@ export default function StepIndicator({
   onSelect,
 }: StepIndicatorProps) {
   return (
-    <div className='flex items-center mb-4' style={{ gap: 4 }}>
+    <div className='mb-4 flex items-center' style={{ gap: 4 }}>
       {steps.map((title, index) => {
         const reachable = index <= furthestIndex;
         const isCurrent = index === currentIndex;
@@ -49,8 +49,8 @@ export default function StepIndicator({
                   backgroundColor: isCurrent
                     ? '#DF6919'
                     : done
-                    ? '#198754'
-                    : 'rgba(255,255,255,0.25)',
+                      ? '#198754'
+                      : 'rgba(255,255,255,0.25)',
                   flex: '0 0 auto',
                 }}
               >
@@ -69,13 +69,11 @@ export default function StepIndicator({
             </button>
             {index < steps.length - 1 && (
               <div
-                className='grow mx-2'
+                className='mx-2 grow'
                 style={{
                   height: 2,
                   backgroundColor:
-                    index < currentIndex
-                      ? '#198754'
-                      : 'rgba(255,255,255,0.2)',
+                    index < currentIndex ? '#198754' : 'rgba(255,255,255,0.2)',
                   minWidth: 12,
                 }}
               />

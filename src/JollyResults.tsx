@@ -1,16 +1,6 @@
-import { useState, useEffect, useContext, useMemo } from 'react';
-import { Combobox } from '@/components/ui/combobox';
-import { useParams } from 'react-router-dom';
-import { GlobalContext, UserContext } from './Context.tsx';
-import { fetchAllPaginatedResults } from './utils.tsx';
-import MyTable from './Table.tsx';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -18,15 +8,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import DensityMap from './DensityMap.tsx';
 import exportFromJSON from 'export-from-json';
-import { neutraliseCsvRows } from '../shared/csv';
-import { useUsers } from './apiInterface';
 import { X } from 'lucide-react';
-import { createToken, verifyToken } from './utils/jwt';
 import { DateTime } from 'luxon';
-import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { neutraliseCsvRows } from '../shared/csv';
 import { Schema } from './amplify/client-schema';
+import { useUsers } from './apiInterface';
+import { GlobalContext, UserContext } from './Context.tsx';
+import DensityMap from './DensityMap.tsx';
+import MyTable from './Table.tsx';
+import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
+import { fetchAllPaginatedResults } from './utils.tsx';
+import { createToken, verifyToken } from './utils/jwt';
 // @ts-ignore
 import * as jStat from 'jstat';
 import { useNavigate } from 'react-router-dom';
@@ -57,7 +52,7 @@ export default function JollyResults() {
   const [currentToken, setCurrentToken] = useState<string | null>(null);
   const [tokenExpiry, setTokenExpiry] = useState<Date | null>(null);
   const [expiration, setExpiration] = useState(
-    DateTime.now().plus({ days: 1 }).toMillis()
+    DateTime.now().plus({ days: 1 }).toMillis(),
   );
   const [isCopying, setIsCopying] = useState(false);
   const [moreInfo, setMoreInfo] = useState(false);
@@ -65,9 +60,9 @@ export default function JollyResults() {
   const [tableHoveredStratumId, setTableHoveredStratumId] = useState<
     string | null
   >(null);
-  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<
-    string | null
-  >(null);
+  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(
+    null,
+  );
   const { users } = useUsers();
   const adminProjects = myProjectsHook.data?.filter((p) => p.isAdmin);
   const isProjectAdmin = adminProjects?.some((p) => p.projectId === surveyId);
@@ -80,7 +75,7 @@ export default function JollyResults() {
         annotationSetId: { eq: annotationSetId },
       },
     }),
-    [surveyId, annotationSetId]
+    [surveyId, annotationSetId],
   );
 
   const sharedResultsHook = useOptimisticUpdates<
@@ -97,7 +92,7 @@ export default function JollyResults() {
       });
       return { data: result.data, nextToken: result.nextToken ?? undefined };
     },
-    subscriptionFilter
+    subscriptionFilter,
   );
 
   useEffect(() => {
@@ -148,10 +143,12 @@ export default function JollyResults() {
     const token = await createToken(
       payload,
       DateTime.fromMillis(expiration).toJSDate(),
-      secret
+      secret,
     );
 
-    const { data: surveyProject } = await client.models.Project.get({ id: surveyId });
+    const { data: surveyProject } = await client.models.Project.get({
+      id: surveyId,
+    });
     await client.models.ResultSharingToken.create({
       surveyId,
       annotationSetId,
@@ -195,7 +192,7 @@ export default function JollyResults() {
       userId,
     });
     setResultsMemberships(
-      resultsMemberships.filter((m) => m.userId !== userId)
+      resultsMemberships.filter((m) => m.userId !== userId),
     );
   }
 
@@ -211,23 +208,26 @@ export default function JollyResults() {
           categoryId,
           selectionSet: ['source'],
           limit: 10000,
-        }
+        },
       );
 
       annotations.push(...annotationsForCategory);
     }
 
     //count false negatives per category by reducing annotations into a map of categoryId to count
-    const falseNegatives = annotations.reduce((acc, annotation) => {
-      const categoryId = annotation.categoryId;
-      if (annotation.source.includes('false-negative')) {
-        if (!acc[categoryId]) {
-          acc[categoryId] = 0;
+    const falseNegatives = annotations.reduce(
+      (acc, annotation) => {
+        const categoryId = annotation.categoryId;
+        if (annotation.source.includes('false-negative')) {
+          if (!acc[categoryId]) {
+            acc[categoryId] = 0;
+          }
+          acc[categoryId]++;
         }
-        acc[categoryId]++;
-      }
-      return acc;
-    }, {} as { [categoryId: string]: number });
+        return acc;
+      },
+      {} as { [categoryId: string]: number },
+    );
 
     //add false negatives to results
     const resultsWithFalseNegatives = results.map((r) => ({
@@ -237,25 +237,27 @@ export default function JollyResults() {
 
     const filteredResults = categoryIds.length
       ? resultsWithFalseNegatives.filter((r) =>
-        categoryIds.includes(r.categoryId)
-      )
+          categoryIds.includes(r.categoryId),
+        )
       : resultsWithFalseNegatives;
 
     exportFromJSON({
-      data: neutraliseCsvRows(filteredResults.map((r) => ({
-        stratumName: r.stratumName,
-        label: categoryOptions.find((c) => c.value === r.categoryId)?.label,
-        animals: r.animals,
-        areaSurveyed: r.areaSurveyed,
-        estimate: r.estimate,
-        density: r.density,
-        variance: r.variance,
-        standardError: r.standardError,
-        numSamples: r.numSamples,
-        lowerBound95: r.lowerBound95,
-        upperBound95: r.upperBound95,
-        falseNegatives: r.falseNegatives,
-      }))),
+      data: neutraliseCsvRows(
+        filteredResults.map((r) => ({
+          stratumName: r.stratumName,
+          label: categoryOptions.find((c) => c.value === r.categoryId)?.label,
+          animals: r.animals,
+          areaSurveyed: r.areaSurveyed,
+          estimate: r.estimate,
+          density: r.density,
+          variance: r.variance,
+          standardError: r.standardError,
+          numSamples: r.numSamples,
+          lowerBound95: r.lowerBound95,
+          upperBound95: r.upperBound95,
+          falseNegatives: r.falseNegatives,
+        })),
+      ),
       fileName: `${surveyName} - ${annotationSetName} - Jolly Results`,
       exportType: exportFromJSON.types.csv,
     });
@@ -289,11 +291,11 @@ export default function JollyResults() {
               'lowerBound95',
               'upperBound95',
             ],
-          }
+          },
         );
         if (mounted) {
           const filtered = data.filter(
-            (r) => r.annotationSetId === annotationSetId
+            (r) => r.annotationSetId === annotationSetId,
           );
 
           if (filtered.length === 0) {
@@ -307,7 +309,7 @@ export default function JollyResults() {
             {
               projectId: surveyId,
               selectionSet: ['id', 'name'],
-            }
+            },
           );
           const resultsWithStratumName = filtered.map((r) => {
             const stratum = stratumNames.find((s) => s.id === r.stratumId);
@@ -322,7 +324,7 @@ export default function JollyResults() {
           const { data: annotationSet } = await client.models.AnnotationSet.get(
             {
               id: annotationSetId,
-            }
+            },
           );
           setAnnotationSetName(annotationSet?.name ?? '');
 
@@ -337,11 +339,11 @@ export default function JollyResults() {
           }));
 
           const resultCategories = resultsWithStratumName.map(
-            (r) => r.categoryId
+            (r) => r.categoryId,
           );
 
           const filterOptions = catOptions.filter((c) =>
-            resultCategories.includes(c.value)
+            resultCategories.includes(c.value),
           );
 
           setCategoryOptions(filterOptions);
@@ -362,7 +364,8 @@ export default function JollyResults() {
             }
             setCurrentToken(sharingLink.jwt);
             const { exp } = await verifyToken(sharingLink.jwt, secret);
-            if (exp != null) setTokenExpiry(DateTime.fromMillis(exp * 1000).toJSDate());
+            if (exp != null)
+              setTokenExpiry(DateTime.fromMillis(exp * 1000).toJSDate());
           }
         }
       } catch (error) {
@@ -413,15 +416,15 @@ export default function JollyResults() {
   // Add totals calculation for multiple strata
   const totalEstimate = filteredResults.reduce(
     (sum, r) => sum + Number(r.estimate),
-    0
+    0,
   );
   const totalVariance = filteredResults.reduce(
     (sum, r) => sum + Number(r.variance),
-    0
+    0,
   );
   const totalSamples = filteredResults.reduce(
     (sum, r) => sum + Number(r.numSamples),
-    0
+    0,
   );
   const totalStdError = Math.sqrt(totalVariance);
   const tValue = getTValue(totalSamples);
@@ -431,12 +434,12 @@ export default function JollyResults() {
   const rowId = (r: { stratumId: string; categoryId: string }) =>
     `${r.stratumId}-${r.categoryId}`;
   const rowStratumIds = new Map(
-    filteredResults.map((r) => [rowId(r), r.stratumId])
+    filteredResults.map((r) => [rowId(r), r.stratumId]),
   );
   const highlightedRowIds = new Set(
     filteredResults
       .filter((r) => r.stratumId === mapHoveredStratumId)
-      .map(rowId)
+      .map(rowId),
   );
 
   const tableData = filteredResults.map((r) => ({
@@ -465,7 +468,7 @@ export default function JollyResults() {
         marginBottom: '16px',
       }}
     >
-      <div className='flex flex-row gap-2 w-full h-full'>
+      <div className='flex h-full w-full flex-row gap-2'>
         <div className='flex flex-col gap-2' style={{ width: '300px' }}>
           <Card>
             <CardHeader>
@@ -511,14 +514,14 @@ export default function JollyResults() {
                   <div>
                     <Button
                       variant='link'
-                      className='p-0 mb-1'
+                      className='mb-1 p-0'
                       onClick={() => setMoreInfo(!moreInfo)}
                     >
                       {moreInfo ? 'Less Info' : 'Click for more info...'}
                     </Button>
                     {moreInfo && (
                       <span
-                        className='text-muted-foreground block mb-2 mt-0'
+                        className='mt-0 mb-2 block text-muted-foreground'
                         style={{ fontSize: '14px' }}
                       >
                         After copying the link, it will remain valid until the
@@ -530,12 +533,10 @@ export default function JollyResults() {
                         choose the shortest expiration date possible.
                       </span>
                     )}
-                    <Label className='mb-0 block'>
-                      Expiration Date:
-                    </Label>
+                    <Label className='mb-0 block'>Expiration Date:</Label>
                     {tokenExpiry && (
                       <span
-                        className='text-muted-foreground block mb-2 mt-0'
+                        className='mt-0 mb-2 block text-muted-foreground'
                         style={{ fontSize: '14px' }}
                       >
                         Link still valid until{' '}
@@ -547,14 +548,14 @@ export default function JollyResults() {
                       disabled={true}
                       placeholder='Expiration'
                       value={DateTime.fromMillis(expiration).toFormat(
-                        'yyyy-MM-dd'
+                        'yyyy-MM-dd',
                       )}
                       onChange={(e) =>
                         setExpiration(
                           DateTime.fromFormat(
                             e.target.value,
-                            'yyyy-MM-dd'
-                          ).toMillis()
+                            'yyyy-MM-dd',
+                          ).toMillis(),
                         )
                       }
                       min={DateTime.now().toFormat('yyyy-MM-dd')}
@@ -583,7 +584,7 @@ export default function JollyResults() {
                     {resultsMemberships.length > 0 ? (
                       resultsMemberships.map((m) => (
                         <div
-                          className='mb-2 w-full flex justify-between items-center'
+                          className='mb-2 flex w-full items-center justify-between'
                           style={{
                             border: '1px solid #ccc',
                             borderRadius: '4px',
@@ -625,14 +626,14 @@ export default function JollyResults() {
             </CardContent>
           </Card>
         </div>
-        <div className='flex flex-col gap-2 grow'>
+        <div className='flex grow flex-col gap-2'>
           <Card className='grow'>
             <CardHeader>
               <CardTitle>
                 <h4 className='mb-0'>Density Map</h4>
               </CardTitle>
             </CardHeader>
-            <CardContent className='p-0 overflow-hidden'>
+            <CardContent className='overflow-hidden p-0'>
               <div style={{ height: 'clamp(400px, 55vh, 650px)' }}>
                 <DensityMap
                   surveyId={surveyId}
@@ -651,7 +652,7 @@ export default function JollyResults() {
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className='flex justify-between items-center gap-2'>
+            <CardHeader className='flex items-center justify-between gap-2'>
               <CardTitle className='mb-0 w-full' style={{ maxWidth: '300px' }}>
                 <h4 className='mb-0'>Jolly Results</h4>
               </CardTitle>
@@ -664,12 +665,12 @@ export default function JollyResults() {
                 emptyMessage='No Jolly results found.'
                 onRowHover={(id) =>
                   setTableHoveredStratumId(
-                    id ? rowStratumIds.get(id) ?? null : null
+                    id ? (rowStratumIds.get(id) ?? null) : null,
                   )
                 }
                 highlightedRowIds={highlightedRowIds}
               />
-              <div className='mt-4 p-2 border-t'>
+              <div className='mt-4 border-t p-2'>
                 <h5>Totals</h5>
                 <div className='flex flex-wrap gap-6'>
                   <div>

@@ -33,14 +33,14 @@ test('a rectangle past the image edge stays centred on its tile', () => {
 test('edge and interior tiles fit at the same zoom', () => {
   assert.equal(
     centrePx(-512, -512, 1024, 1024).zoom,
-    centrePx(3000, 3000, 4536, 4536).zoom
+    centrePx(3000, 3000, 4536, 4536).zoom,
   );
 });
 
 test('an empty viewport or rectangle yields no camera', () => {
   assert.equal(
     pxBoundsCamera(projection, { width: 0, height: 0 }, 0, 0, 512, 512),
-    null
+    null,
   );
   assert.equal(pxBoundsCamera(projection, viewport, 100, 100, 100, 100), null);
 });

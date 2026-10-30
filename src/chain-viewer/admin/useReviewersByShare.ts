@@ -1,8 +1,8 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useContext } from 'react';
+import type { UserType } from '../../../amplify/shared/types';
 import { GlobalContext } from '../../Context';
 import { checkShareResponse } from './shareResponse';
-import type { UserType } from '../../../amplify/shared/types';
 
 const PREFIX = 'chainshare-';
 
@@ -55,7 +55,7 @@ export function useReviewersByShare(users: UserType[]) {
             list.push(user);
             byShare[shareId] = list;
           }
-        })
+        }),
       );
       return byShare;
     },

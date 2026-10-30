@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { loadAuthorizedTile } from './tileLoader';
 function fixture() {
   const events: string[] = [];
@@ -58,7 +58,7 @@ test('only a missing object invokes generation', async () => {
     assert(!events.includes('generate'));
     assert.equal(
       events.filter((e) => e === 'sign').length,
-      status === 403 ? 2 : 1
+      status === 403 ? 2 : 1,
     );
   }
 });

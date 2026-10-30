@@ -114,7 +114,7 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className='flex flex-row items-center gap-4 mb-4'>
+    <div className='mb-4 flex flex-row items-center gap-4'>
       <div>{demo}</div>
       <div>
         <strong>{label}</strong>
@@ -174,18 +174,15 @@ export function HelpModal({ show, onHide }: Props) {
             </Row>
             <Row demo={<DemoMarker kind='shadow' />} label='Proposed'>
               A position the system predicts for the animal but with no
-              annotation yet. Distinct white border and slightly faded. Confirming
-              it creates the real annotation.
+              annotation yet. Distinct white border and slightly faded.
+              Confirming it creates the real annotation.
             </Row>
-            <Row
-              demo={<DemoMarker kind='primary' obscured />}
-              label='Obscured'
-            >
-              An eye-off badge in the top-right corner. The object{' '}
-              <em>is</em> physically in this image, but something in front of it
-              blocks the view — for example an animal standing behind a tree. The
-              marker still sits at the object's real position on the map; toggle
-              the flag from the marker's popup. This is <em>not</em> the same as
+            <Row demo={<DemoMarker kind='primary' obscured />} label='Obscured'>
+              An eye-off badge in the top-right corner. The object <em>is</em>{' '}
+              physically in this image, but something in front of it blocks the
+              view — for example an animal standing behind a tree. The marker
+              still sits at the object's real position on the map; toggle the
+              flag from the marker's popup. This is <em>not</em> the same as
               out-of-view (explained below).
             </Row>
           </Section>
@@ -193,21 +190,17 @@ export function HelpModal({ show, onHide }: Props) {
           <Section title='Markers from other labels'>
             <Row
               demo={
-                <DemoMarker
-                  kind='primary'
-                  color='#E0A33D'
-                  seed='other-label'
-                />
+                <DemoMarker kind='primary' color='#E0A33D' seed='other-label' />
               }
               label='Informational marker'
             >
-              A marker in a <em>different colour</em> belongs to another
-              label. It is shown only so you can see that animal is already
-              marked — it is <strong>not part of this task</strong> and is
-              ignored by linking, accepting and pair completion. You can still
-              drag it, or use its popup to change its label or delete it.
-              Changing its label to the label you are working on promotes it
-              into the workflow as a normal marker.
+              A marker in a <em>different colour</em> belongs to another label.
+              It is shown only so you can see that animal is already marked — it
+              is <strong>not part of this task</strong> and is ignored by
+              linking, accepting and pair completion. You can still drag it, or
+              use its popup to change its label or delete it. Changing its label
+              to the label you are working on promotes it into the workflow as a
+              normal marker.
             </Row>
           </Section>
 
@@ -225,7 +218,7 @@ export function HelpModal({ show, onHide }: Props) {
           </Section>
 
           <Section title='Map controls'>
-            <div className='flex flex-row items-center gap-4 mb-4'>
+            <div className='mb-4 flex flex-row items-center gap-4'>
               <div
                 style={{
                   width: 52,
@@ -245,8 +238,8 @@ export function HelpModal({ show, onHide }: Props) {
                 <div style={{ opacity: 0.85, fontSize: 13 }}>
                   Projects the other image of the pair onto this one as an
                   outline + grid, so you can see where an animal on the other
-                  image should fall here. Toggle it on while hunting for a match,
-                  off when it gets in the way.
+                  image should fall here. Toggle it on while hunting for a
+                  match, off when it gets in the way.
                 </div>
               </div>
             </div>
@@ -278,25 +271,32 @@ export function HelpModal({ show, onHide }: Props) {
             <ol style={{ opacity: 0.9, fontSize: 14, paddingLeft: 18 }}>
               <li className='mb-2'>
                 Press <strong>Space</strong>. The next candidate becomes active
-                (orange) and both images pan to it. Drag the real marker and
-                the proposed marker to line them up precisely.
+                (orange) and both images pan to it. Drag the real marker and the
+                proposed marker to line them up precisely.
               </li>
               <li className='mb-2'>
-                Press <strong>Space</strong> again to{' '}
-                <strong>accept</strong> the pair (green ring) — the two markers
-                are now linked, and focus advances to the next candidate.
+                Press <strong>Space</strong> again to <strong>accept</strong>{' '}
+                the pair (green ring) — the two markers are now linked, and
+                focus advances to the next candidate.
               </li>
             </ol>
             <p style={{ opacity: 0.85, fontSize: 14 }}>
               <strong>Manual linking:</strong> select a marker (orange active
               border), then on the <em>other</em> image{' '}
-              <strong>Ctrl/⌘ + left-click</strong> a real marker to link the
-              two directly.
+              <strong>Ctrl/⌘ + left-click</strong> a real marker to link the two
+              directly.
             </p>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 6 }}>
               <strong>Keyboard shortcuts</strong>
             </p>
-            <ul style={{ opacity: 0.9, fontSize: 14, paddingLeft: 18, marginBottom: 0 }}>
+            <ul
+              style={{
+                opacity: 0.9,
+                fontSize: 14,
+                paddingLeft: 18,
+                marginBottom: 0,
+              }}
+            >
               <li>
                 <strong>Space</strong> — focus the next candidate, or accept the
                 focused one.
@@ -321,22 +321,23 @@ export function HelpModal({ show, onHide }: Props) {
           <Section title='Navigating pairs'>
             <p style={{ opacity: 0.85, fontSize: 14 }}>
               Move freely between image pairs with the{' '}
-              <strong>←/→ arrow buttons</strong> in the toolbar, or by clicking a
-              pair marker in the <strong>progress bar</strong> below it. Your
+              <strong>←/→ arrow buttons</strong> in the toolbar, or by clicking
+              a pair marker in the <strong>progress bar</strong> below it. Your
               changes are always preserved when you move.
             </p>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
               <strong>Simple view</strong> is on by default: it shows only the
               pairs that still need your attention, plus the three pairs on each
-              side for continuity. Turn it off to see every pair in the transect.
+              side for continuity. Turn it off to see every pair in the
+              transect.
             </p>
           </Section>
 
           <Section title='Finishing a pair'>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
               Once every marker pair on the current images is accepted, a dialog
-              appears offering to jump to the next pair that needs attention — or
-              you can choose to stay on the current pair.
+              appears offering to jump to the next pair that needs attention —
+              or you can choose to stay on the current pair.
             </p>
           </Section>
 
@@ -351,17 +352,17 @@ export function HelpModal({ show, onHide }: Props) {
             </p>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
               Finishing a reunion round may merge chains and expose new
-              reunions, so the system re-checks each time. Only when nothing
-              new is found does the transect actually complete.
+              reunions, so the system re-checks each time. Only when nothing new
+              is found does the transect actually complete.
             </p>
           </Section>
 
           <Section title='Working alongside others'>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
-              Concurrency is handled by isolating transects. The transect you are
-              looking at now is <strong>yours</strong> — no one else can touch it
-              while you work. It is only released back to the worker pool for
-              someone else to continue if you are inactive for{' '}
+              Concurrency is handled by isolating transects. The transect you
+              are looking at now is <strong>yours</strong> — no one else can
+              touch it while you work. It is only released back to the worker
+              pool for someone else to continue if you are inactive for{' '}
               <strong>30 minutes</strong>.
             </p>
           </Section>

@@ -15,9 +15,9 @@ test('a failed launch is reported instead of passing for success', () => {
             }),
           },
         },
-        'Launch failed'
+        'Launch failed',
       ),
-    /Launch failed: PRETILE_QUEUE_URL not set/
+    /Launch failed: PRETILE_QUEUE_URL not set/,
   );
 });
 
@@ -31,9 +31,9 @@ test('a stringified envelope is unwrapped before it is checked', () => {
             body: { message: 'Unauthorized' },
           }),
         },
-        'Launch failed'
+        'Launch failed',
       ),
-    /Launch failed: Unauthorized/
+    /Launch failed: Unauthorized/,
   );
 });
 
@@ -42,9 +42,9 @@ test('GraphQL errors are surfaced', () => {
     () =>
       parseLaunchResponse(
         { data: null, errors: [{ message: 'Not Authorized to access' }] },
-        'Launch failed'
+        'Launch failed',
       ),
-    /Launch failed: Not Authorized to access/
+    /Launch failed: Not Authorized to access/,
   );
 });
 
@@ -58,12 +58,15 @@ test('a successful launch returns its body', () => {
         }),
       },
     },
-    'Launch failed'
+    'Launch failed',
   );
   assert.equal(body.message, 'Project is already launching or processing');
 });
 
 test('an unparseable response is treated as success rather than crashing', () => {
-  assert.deepEqual(parseLaunchResponse({ data: 'not json' }, 'Launch failed'), {});
+  assert.deepEqual(
+    parseLaunchResponse({ data: 'not json' }, 'Launch failed'),
+    {},
+  );
   assert.deepEqual(parseLaunchResponse(undefined, 'Launch failed'), {});
 });

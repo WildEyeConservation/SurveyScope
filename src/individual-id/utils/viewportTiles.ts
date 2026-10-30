@@ -11,7 +11,7 @@ export function visibleImageTiles(
   width: number,
   height: number,
   z: number,
-  bounds: PixelBounds
+  bounds: PixelBounds,
 ): Tile[] {
   const { pyramidSize } = getPyramidInfo({ width, height });
   const coverage = pyramidSize / 2 ** z;
@@ -40,7 +40,7 @@ export function visibleImageTiles(
 /** Explored tiles override ring masks. */
 export function mergeTileRequests(
   rings: readonly Tile[],
-  explored: Iterable<Tile>
+  explored: Iterable<Tile>,
 ): Map<string, Tile> {
   const requests = new Map<string, Tile>();
   for (const tile of rings)

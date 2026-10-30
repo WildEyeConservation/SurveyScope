@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   countMaskRegions,
   isPointMasked,
@@ -17,7 +17,7 @@ const corner: [number, number][] = [
 
 test('parses stored JSON and drops malformed polygons', () => {
   const parsed = parseCameraMasks(
-    JSON.stringify({ landscape: [corner, [[0, 0]]], portrait: 'nope' })
+    JSON.stringify({ landscape: [corner, [[0, 0]]], portrait: 'nope' }),
   );
   assert.deepEqual(parsed, { landscape: [corner] });
   assert.equal(countMaskRegions(parsed), 1);
@@ -29,7 +29,7 @@ test('serializes empty masks as null', () => {
   assert.equal(serializeCameraMasks({ landscape: [] }), null);
   assert.equal(
     serializeCameraMasks({ landscape: [corner] }),
-    JSON.stringify({ landscape: [corner] })
+    JSON.stringify({ landscape: [corner] }),
   );
 });
 

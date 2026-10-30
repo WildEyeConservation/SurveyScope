@@ -2,16 +2,16 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
-import { Footer } from '../Modal';
-import { useState, useContext, useEffect, useCallback, useRef } from 'react';
-import { GlobalContext } from '../Context';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Schema } from '../amplify/client-schema';
-import TileConfiguration from '../TileConfiguration';
-import type { TiledLaunchRequest } from '../types/LaunchTask';
+import { GlobalContext } from '../Context';
+import { Footer } from '../Modal';
 import {
   readFalseNegativeFile,
   uploadWorkflowFile,
 } from '../storage/workflowFiles';
+import TileConfiguration from '../TileConfiguration';
+import type { TiledLaunchRequest } from '../types/LaunchTask';
 
 // Threshold in bytes above which we upload the payload to S3.
 const PAYLOAD_SIZE_THRESHOLD = 200 * 1024; // 200KB
@@ -75,7 +75,7 @@ export default function ManageTiles({
       try {
         const { data } = await client.models.LocationSet.get(
           { id: tiledLocationSetId },
-          { selectionSet: ['locationCount'], signal }
+          { selectionSet: ['locationCount'], signal },
         );
         setCurrentTileCount(data?.locationCount ?? 0);
       } catch (err) {
@@ -96,8 +96,8 @@ export default function ManageTiles({
     async function checkActiveTilingTask() {
       if (!tiledLocationSetId) return;
       try {
-        const { data: tasks } = await
-          client.models.TilingTask.tilingTasksByProjectId(
+        const { data: tasks } =
+          await client.models.TilingTask.tilingTasksByProjectId(
             { projectId: project.id },
             {
               selectionSet: [
@@ -110,14 +110,14 @@ export default function ManageTiles({
               ],
               limit: 10,
               signal,
-            }
+            },
           );
 
         // Find active task for our location set
         const activeTask = tasks?.find(
           (t) =>
             t.locationSetId === tiledLocationSetId &&
-            (t.status === 'pending' || t.status === 'processing')
+            (t.status === 'pending' || t.status === 'processing'),
         );
 
         if (activeTask) {
@@ -149,14 +149,14 @@ export default function ManageTiles({
         const { data: annotationSets } =
           await client.models.AnnotationSet.annotationSetsByProjectId(
             { projectId: project.id },
-            { selectionSet: ['id'], limit: 100, signal }
+            { selectionSet: ['id'], limit: 100, signal },
           );
         if (!annotationSets?.length) return;
 
         for (const as of annotationSets) {
           if (signal.aborted) return;
           const pool = await readFalseNegativeFile(as.id, 'pool', signal).catch(
-            () => null
+            () => null,
           );
           if (pool) {
             if (!signal.aborted) setHasFnData(true);
@@ -187,22 +187,20 @@ export default function ManageTiles({
 
         const signal = pollAbortRef.current?.signal;
         try {
-          const { data: task } = await
-            client.models.TilingTask
-              .get(
-                { id: tilingTaskId },
-                {
-                  signal,
-                  selectionSet: [
-                    'id',
-                    'status',
-                    'totalBatches',
-                    'completedBatches',
-                    'totalLocations',
-                    'errorMessage',
-                  ],
-                }
-              );
+          const { data: task } = await client.models.TilingTask.get(
+            { id: tilingTaskId },
+            {
+              signal,
+              selectionSet: [
+                'id',
+                'status',
+                'totalBatches',
+                'completedBatches',
+                'totalLocations',
+                'errorMessage',
+              ],
+            },
+          );
 
           if (!task) return;
 
@@ -221,7 +219,7 @@ export default function ManageTiles({
             if (tiledLocationSetId) {
               const { data: ls } = await client.models.LocationSet.get(
                 { id: tiledLocationSetId },
-                { selectionSet: ['locationCount'], signal }
+                { selectionSet: ['locationCount'], signal },
               );
               setCurrentTileCount(ls?.locationCount ?? 0);
             }
@@ -239,7 +237,7 @@ export default function ManageTiles({
 
       pollingRef.current = pollInterval;
     },
-    [client.models.TilingTask, client.models.LocationSet, tiledLocationSetId]
+    [client.models.TilingTask, client.models.LocationSet, tiledLocationSetId],
   );
 
   // Poll for the tiling task to appear and get its ID
@@ -260,35 +258,35 @@ export default function ManageTiles({
       attempts++;
       const signal = pollAbortRef.current?.signal;
       try {
-        const { data: tasks } = await
-          client.models.TilingTask
-            .tilingTasksByProjectId(
-              { projectId: project.id },
-              {
-                signal,
-                selectionSet: [
-                  'id',
-                  'status',
-                  'totalBatches',
-                  'completedBatches',
-                  'totalLocations',
-                  'locationSetId',
-                  'createdAt',
-                ],
-                limit: 10,
-              }
-            );
+        const { data: tasks } =
+          await client.models.TilingTask.tilingTasksByProjectId(
+            { projectId: project.id },
+            {
+              signal,
+              selectionSet: [
+                'id',
+                'status',
+                'totalBatches',
+                'completedBatches',
+                'totalLocations',
+                'locationSetId',
+                'createdAt',
+              ],
+              limit: 10,
+            },
+          );
 
         // Find the most recent active task for our location set
         const activeTask = tasks
           ?.filter(
             (t) =>
               t.locationSetId === tiledLocationSetId &&
-              (t.status === 'pending' || t.status === 'processing')
+              (t.status === 'pending' || t.status === 'processing'),
           )
           .sort(
             (a, b) =>
-              new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
+              new Date(b.createdAt!).getTime() -
+              new Date(a.createdAt!).getTime(),
           )[0];
 
         if (activeTask) {
@@ -305,7 +303,7 @@ export default function ManageTiles({
           if (tiledLocationSetId) {
             const { data: ls } = await client.models.LocationSet.get(
               { id: tiledLocationSetId },
-              { selectionSet: ['locationCount'], signal }
+              { selectionSet: ['locationCount'], signal },
             );
             const newCount = ls?.locationCount ?? 0;
             if (newCount > 0 && newCount !== currentTileCount) {
@@ -344,7 +342,7 @@ export default function ManageTiles({
 
     if (!tiledLocationSetId) {
       setError(
-        'No tiled location set configured for this survey. Please contact support.'
+        'No tiled location set configured for this survey. Please contact support.',
       );
       return;
     }
@@ -400,7 +398,7 @@ export default function ManageTiles({
         const s3Key = await uploadWorkflowFile(
           'launch-payload',
           project.id,
-          payloadStr
+          payloadStr,
         );
         requestPayload = JSON.stringify({ payloadS3Key: s3Key });
       } else {
@@ -428,7 +426,7 @@ export default function ManageTiles({
             const body =
               typeof resultData?.body === 'string'
                 ? JSON.parse(resultData.body)
-                : resultData?.body ?? resultData;
+                : (resultData?.body ?? resultData);
 
             if (body?.tilingTaskId && isActiveRef.current) {
               // Clear the generic polling and start specific task polling
@@ -443,12 +441,18 @@ export default function ManageTiles({
               startPollingProgress(body.tilingTaskId);
             }
           } catch (parseErr) {
-            console.log('Could not parse lambda response, continuing with polling', parseErr);
+            console.log(
+              'Could not parse lambda response, continuing with polling',
+              parseErr,
+            );
           }
         })
         .catch((err) => {
           // Log the error but don't fail - polling will find the task
-          console.log('Lambda call error (expected due to timeout):', err?.message ?? err);
+          console.log(
+            'Lambda call error (expected due to timeout):',
+            err?.message ?? err,
+          );
         });
     } catch (err: any) {
       console.error('Failed to prepare tile request', err);
@@ -461,8 +465,8 @@ export default function ManageTiles({
   const progressPercent =
     tilingProgress && tilingProgress.totalBatches > 0
       ? Math.round(
-        (tilingProgress.completedBatches / tilingProgress.totalBatches) * 100
-      )
+          (tilingProgress.completedBatches / tilingProgress.totalBatches) * 100,
+        )
       : 0;
 
   return (
@@ -509,7 +513,7 @@ export default function ManageTiles({
         {processing && tilingStatus === 'processing' && (
           <div className='mb-4'>
             <Alert variant='info'>
-              <div className='flex items-center gap-2 mb-2'>
+              <div className='mb-2 flex items-center gap-2'>
                 <Spinner animation='border' size='sm' />
                 <span>{statusMessage || 'Processing...'}</span>
               </div>
@@ -522,8 +526,8 @@ export default function ManageTiles({
                   />
                   <small>
                     Batch {tilingProgress.completedBatches} of{' '}
-                    {tilingProgress.totalBatches} ({tilingProgress.totalLocations}{' '}
-                    total tiles)
+                    {tilingProgress.totalBatches} (
+                    {tilingProgress.totalLocations} total tiles)
                   </small>
                 </>
               )}
@@ -580,4 +584,3 @@ export default function ManageTiles({
     </>
   );
 }
-

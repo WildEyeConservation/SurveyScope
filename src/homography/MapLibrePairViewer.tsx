@@ -1,10 +1,21 @@
-import { useState, useCallback, useMemo, useRef, useContext, useEffect } from 'react';
 import * as maplibregl from 'maplibre-gl';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useParams } from 'react-router-dom';
+import { GlobalContext } from '../Context';
+import {
+  MapLibreImageViewer,
+  POINT_COLORS,
+  type MapLibreMenuItem,
+} from '../maplibre-viewer/MapLibreImageViewer';
 import type { ImageType } from '../schemaTypes';
 import type { Point } from './ManualHomographyEditor';
-import { MapLibreImageViewer, POINT_COLORS, type MapLibreMenuItem } from '../maplibre-viewer/MapLibreImageViewer';
-import { GlobalContext } from '../Context';
-import { useParams } from 'react-router-dom';
 
 type Props = {
   onImagesReady?: () => void;
@@ -14,19 +25,23 @@ type Props = {
     (updater: Point[] | ((prev: Point[]) => Point[])) => void,
     (updater: Point[] | ((prev: Point[]) => Point[])) => void,
   ];
-  previewTransforms: [
-    (c: [number, number]) => [number, number],
-    (c: [number, number]) => [number, number],
-  ] | null;
+  previewTransforms:
+    | [
+        (c: [number, number]) => [number, number],
+        (c: [number, number]) => [number, number],
+      ]
+    | null;
   /**
    * Optional independent overlay (red) drawn on each map showing the
    * homography currently saved in the DB. Purely visual — never used for
    * map sync.
    */
-  savedTransforms?: [
-    (c: [number, number]) => [number, number],
-    (c: [number, number]) => [number, number],
-  ] | null;
+  savedTransforms?:
+    | [
+        (c: [number, number]) => [number, number],
+        (c: [number, number]) => [number, number],
+      ]
+    | null;
   onAction: () => void;
   annotationSetId?: string;
 };
@@ -55,7 +70,10 @@ function PointContextMenu({
   // Close on outside click or Esc key
   useEffect(() => {
     const handleEvents = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof MouseEvent || (e instanceof KeyboardEvent && e.key === 'Escape')) {
+      if (
+        e instanceof MouseEvent ||
+        (e instanceof KeyboardEvent && e.key === 'Escape')
+      ) {
         onClose();
       }
     };
@@ -67,9 +85,7 @@ function PointContextMenu({
     };
   }, [onClose]);
 
-  const swapTargets = points
-    .map((_, i) => i)
-    .filter((i) => i !== pointIndex);
+  const swapTargets = points.map((_, i) => i).filter((i) => i !== pointIndex);
 
   return (
     <div
@@ -101,7 +117,13 @@ function PointContextMenu({
       </div>
       <button
         className='block w-full text-left text-sm leading-normal'
-        style={{ padding: '8px 12px', textDecoration: 'none', color: '#d9534f', background: 'transparent', border: 'none' }}
+        style={{
+          padding: '8px 12px',
+          textDecoration: 'none',
+          color: '#d9534f',
+          background: 'transparent',
+          border: 'none',
+        }}
         onClick={() => {
           onRemove(imageIndex, pointIndex);
           onClose();
@@ -129,13 +151,25 @@ function PointContextMenu({
             <button
               key={targetIdx}
               className='block w-full text-left text-sm leading-normal'
-              style={{ padding: '8px 12px', textDecoration: 'none', color: '#333', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center' }}
+              style={{
+                padding: '8px 12px',
+                textDecoration: 'none',
+                color: '#333',
+                background: 'transparent',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+              }}
               onClick={() => {
                 onSwap(imageIndex, pointIndex, targetIdx);
                 onClose();
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#f5f5f5')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = '#f5f5f5')
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = 'transparent')
+              }
             >
               <span
                 style={{
@@ -168,24 +202,39 @@ export function MapLibrePairViewer({
 }: Props) {
   const { client } = useContext(GlobalContext)!;
   const readyImagesRef = useRef(new Set<number>());
-  const markImageReady = useCallback((index: number) => {
-    readyImagesRef.current.add(index);
-    if (readyImagesRef.current.size === 2) onImagesReady?.();
-  }, [onImagesReady]);
+  const markImageReady = useCallback(
+    (index: number) => {
+      readyImagesRef.current.add(index);
+      if (readyImagesRef.current.size === 2) onImagesReady?.();
+    },
+    [onImagesReady],
+  );
   const { surveyId, annotationSetId: annotationSetIdParam } = useParams();
   const annotationSetId = annotationSetIdProp || annotationSetIdParam;
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
-  const [sourceKeys, setSourceKeys] = useState<[string | undefined, string | undefined]>([
-    undefined,
-    undefined,
-  ]);
+  const [sourceKeys, setSourceKeys] = useState<
+    [string | undefined, string | undefined]
+  >([undefined, undefined]);
 
-  const mapsRef = useRef<([maplibregl.Map, (x: number, y: number) => [number, number], (lng: number, lat: number) => { x: number; y: number }] | null)[]>([null, null]);
+  const mapsRef = useRef<
+    (
+      | [
+          maplibregl.Map,
+          (x: number, y: number) => [number, number],
+          (lng: number, lat: number) => { x: number; y: number },
+        ]
+      | null
+    )[]
+  >([null, null]);
   const [mapsReady, setMapsReady] = useState(0);
 
   const onMapInstance0 = useCallback(
-    (m: maplibregl.Map | null, px2l: (x: number, y: number) => [number, number], l2px: (lng: number, lat: number) => { x: number; y: number }) => {
+    (
+      m: maplibregl.Map | null,
+      px2l: (x: number, y: number) => [number, number],
+      l2px: (lng: number, lat: number) => { x: number; y: number },
+    ) => {
       const wasNull = mapsRef.current[0] === null;
       if (m) {
         mapsRef.current[0] = [m, px2l, l2px];
@@ -195,11 +244,15 @@ export function MapLibrePairViewer({
       // Only bump when mount/unmount changes
       if (wasNull !== (m === null)) setMapsReady((c) => c + 1);
     },
-    []
+    [],
   );
 
   const onMapInstance1 = useCallback(
-    (m: maplibregl.Map | null, px2l: (x: number, y: number) => [number, number], l2px: (lng: number, lat: number) => { x: number; y: number }) => {
+    (
+      m: maplibregl.Map | null,
+      px2l: (x: number, y: number) => [number, number],
+      l2px: (lng: number, lat: number) => { x: number; y: number },
+    ) => {
       const wasNull = mapsRef.current[1] === null;
       if (m) {
         mapsRef.current[1] = [m, px2l, l2px];
@@ -208,7 +261,7 @@ export function MapLibrePairViewer({
       }
       if (wasNull !== (m === null)) setMapsReady((c) => c + 1);
     },
-    []
+    [],
   );
 
   // Fetch source keys for each image
@@ -219,17 +272,17 @@ export function MapLibrePairViewer({
         const resp = await client.models.ImageFile.imagesByimageId({
           imageId: img.id,
         });
-        const jpgFile = resp.data.find(
-          (f: any) => f.type === 'image/jpeg'
-        );
+        const jpgFile = resp.data.find((f: any) => f.type === 'image/jpeg');
         return jpgFile?.key as string | undefined;
-      })
+      }),
     ).then((keys) => {
       if (!cancelled) {
         setSourceKeys(keys as [string | undefined, string | undefined]);
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [images[0].id, images[1].id, client]);
 
   // Map Synchronization
@@ -257,7 +310,9 @@ export function MapLibrePairViewer({
       // Check distance to avoid unnecessary updates/jitters
       const currentTLngLat = tMap.getCenter();
       const currentTPx = tLngLat2px(currentTLngLat.lng, currentTLngLat.lat);
-      const dist = Math.sqrt(Math.pow(currentTPx.x - tPx[0], 2) + Math.pow(currentTPx.y - tPx[1], 2));
+      const dist = Math.sqrt(
+        Math.pow(currentTPx.x - tPx[0], 2) + Math.pow(currentTPx.y - tPx[1], 2),
+      );
 
       if (dist > 0.5 || Math.abs(sMap.getZoom() - tMap.getZoom()) > 0.001) {
         isSyncing = true;
@@ -295,7 +350,7 @@ export function MapLibrePairViewer({
         return [...prev.filter((_, i) => i !== pointIndex), orphan];
       });
     },
-    [setPoints, onAction]
+    [setPoints, onAction],
   );
 
   const handleSwap = useCallback(
@@ -307,29 +362,38 @@ export function MapLibrePairViewer({
         return next;
       });
     },
-    [setPoints, onAction]
+    [setPoints, onAction],
   );
 
-  const containerRefs = [useCallback((el: HTMLDivElement | null) => {
-    containerEls.current[0] = el;
-  }, []), useCallback((el: HTMLDivElement | null) => {
-    containerEls.current[1] = el;
-  }, [])];
+  const containerRefs = [
+    useCallback((el: HTMLDivElement | null) => {
+      containerEls.current[0] = el;
+    }, []),
+    useCallback((el: HTMLDivElement | null) => {
+      containerEls.current[1] = el;
+    }, []),
+  ];
   const containerEls = useRef<(HTMLDivElement | null)[]>([null, null]);
 
-  const contextMenuHandlers = useMemo(() => [0, 1].map((imageIndex) =>
-    (pointIndex: number, screenPos: { x: number; y: number }) => {
-      const rect = containerEls.current[imageIndex]?.getBoundingClientRect();
-      setContextMenu({
-        imageIndex,
-        pointIndex,
-        screenPos: {
-          x: (rect?.left ?? 0) + screenPos.x,
-          y: (rect?.top ?? 0) + screenPos.y,
-        },
-      });
-    }
-  ), []);
+  const contextMenuHandlers = useMemo(
+    () =>
+      [0, 1].map(
+        (imageIndex) =>
+          (pointIndex: number, screenPos: { x: number; y: number }) => {
+            const rect =
+              containerEls.current[imageIndex]?.getBoundingClientRect();
+            setContextMenu({
+              imageIndex,
+              pointIndex,
+              screenPos: {
+                x: (rect?.left ?? 0) + screenPos.x,
+                y: (rect?.top ?? 0) + screenPos.y,
+              },
+            });
+          },
+      ),
+    [],
+  );
 
   // Fetch temporal neighbours (prev/next by timestamp) for each image
   const [neighbours, setNeighbours] = useState<
@@ -341,8 +405,12 @@ export function MapLibrePairViewer({
     Promise.all(
       images.map(async (img) => {
         const [fwd, bwd] = await Promise.all([
-          client.models.ImageNeighbour.imageNeighboursByImage1key({ image1Id: img.id }),
-          client.models.ImageNeighbour.imageNeighboursByImage2key({ image2Id: img.id }),
+          client.models.ImageNeighbour.imageNeighboursByImage1key({
+            image1Id: img.id,
+          }),
+          client.models.ImageNeighbour.imageNeighboursByImage2key({
+            image2Id: img.id,
+          }),
         ]);
         const allNeighbourIds = [
           ...fwd.data.map((n: any) => n.image2Id),
@@ -351,26 +419,33 @@ export function MapLibrePairViewer({
         // Fetch timestamps for neighbours to determine prev/next
         const uniqueIds = [...new Set(allNeighbourIds)];
         const metas = await Promise.all(
-          uniqueIds.map((id) => client.models.Image.get({ id }))
+          uniqueIds.map((id) => client.models.Image.get({ id })),
         );
         const metaMap = new Map(
-          metas.filter((m) => m.data).map((m) => [m.data!.id, m.data!])
+          metas.filter((m) => m.data).map((m) => [m.data!.id, m.data!]),
         );
         const sorted = uniqueIds
           .filter((id) => metaMap.has(id))
           .sort(
             (a, b) =>
-              (metaMap.get(a)!.timestamp ?? 0) - (metaMap.get(b)!.timestamp ?? 0)
+              (metaMap.get(a)!.timestamp ?? 0) -
+              (metaMap.get(b)!.timestamp ?? 0),
           );
         const myTs = img.timestamp ?? 0;
-        const prev = sorted.filter((id) => (metaMap.get(id)!.timestamp ?? 0) < myTs).pop();
-        const next = sorted.find((id) => (metaMap.get(id)!.timestamp ?? 0) > myTs);
+        const prev = sorted
+          .filter((id) => (metaMap.get(id)!.timestamp ?? 0) < myTs)
+          .pop();
+        const next = sorted.find(
+          (id) => (metaMap.get(id)!.timestamp ?? 0) > myTs,
+        );
         return { prev, next };
-      })
+      }),
     ).then((result) => {
       if (!cancelled) setNeighbours(result as any);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [images[0].id, images[1].id, client]);
 
   const buildImageUrl = useCallback(
@@ -384,7 +459,7 @@ export function MapLibrePairViewer({
       }
       return `${origin}/image/${imageId}`;
     },
-    [surveyId, annotationSetId]
+    [surveyId, annotationSetId],
   );
 
   const buildMenuItems = useCallback(
@@ -416,14 +491,20 @@ export function MapLibrePairViewer({
         },
       ];
     },
-    [neighbours, buildImageUrl]
+    [neighbours, buildImageUrl],
   );
 
   return (
-    <div className='w-full h-full flex flex-row gap-4' style={{
-      position: 'relative',
-      flexDirection: (images[0].timestamp ?? 0) > (images[1].timestamp ?? 0) ? 'row-reverse' : undefined,
-    }}>
+    <div
+      className='flex h-full w-full flex-row gap-4'
+      style={{
+        position: 'relative',
+        flexDirection:
+          (images[0].timestamp ?? 0) > (images[1].timestamp ?? 0)
+            ? 'row-reverse'
+            : undefined,
+      }}
+    >
       {images.map((image, i) => (
         <div
           className='w-1/2'

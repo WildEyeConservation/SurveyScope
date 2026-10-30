@@ -1,12 +1,13 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { Schema } from './amplify/client-schema';
 import { GlobalContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
-import type { Schema } from './amplify/client-schema';
+
 import './AdminSurveys.css';
 
 type ProjectType = Schema['Project']['type'];
@@ -24,10 +25,13 @@ export default function AdminSurveys() {
   const [orgNames, setOrgNames] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [banner, setBanner] = useState<
-    { variant: 'success' | 'danger'; text: string } | null
-  >(null);
-  const [updatingProjectId, setUpdatingProjectId] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{
+    variant: 'success' | 'danger';
+    text: string;
+  } | null>(null);
+  const [updatingProjectId, setUpdatingProjectId] = useState<string | null>(
+    null,
+  );
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -57,7 +61,7 @@ export default function AdminSurveys() {
           {
             selectionSet: ['id', 'name'],
             limit: 10000,
-          }
+          },
         ),
       ]);
 
@@ -66,7 +70,7 @@ export default function AdminSurveys() {
           if (org.id) acc[org.id] = org.name || 'Unnamed organization';
           return acc;
         },
-        {}
+        {},
       );
 
       setProjects(allProjects);
@@ -101,10 +105,10 @@ export default function AdminSurveys() {
         acc[orgId].surveys.push(project);
         return acc;
       },
-      {}
+      {},
     );
     return Object.values(groups).sort((a, b) =>
-      a.orgName.localeCompare(b.orgName)
+      a.orgName.localeCompare(b.orgName),
     );
   }, [projects, orgNames]);
 
@@ -117,7 +121,7 @@ export default function AdminSurveys() {
         const matchingSurveys = orgMatches
           ? group.surveys
           : group.surveys.filter((s) =>
-              (s.name ?? '').toLowerCase().includes(searchLower)
+              (s.name ?? '').toLowerCase().includes(searchLower),
             );
         if (matchingSurveys.length === 0) return null;
         return { ...group, surveys: matchingSurveys };
@@ -147,7 +151,7 @@ export default function AdminSurveys() {
     if (!client || !project.id) return;
     const nextStatus = window.prompt(
       `Update status for "${project.name}"`,
-      project.status ?? ''
+      project.status ?? '',
     );
     if (nextStatus === null) return;
     const trimmedStatus = nextStatus.trim();
@@ -176,7 +180,9 @@ export default function AdminSurveys() {
       setBanner({
         variant: 'danger',
         text:
-          err instanceof Error ? err.message : 'Unable to update survey status.',
+          err instanceof Error
+            ? err.message
+            : 'Unable to update survey status.',
       });
     } finally {
       setUpdatingProjectId(null);
@@ -191,10 +197,7 @@ export default function AdminSurveys() {
     );
   }
 
-  const totalSurveys = filteredGroups.reduce(
-    (n, g) => n + g.surveys.length,
-    0
-  );
+  const totalSurveys = filteredGroups.reduce((n, g) => n + g.surveys.length, 0);
 
   return (
     <div className='admin-surveys'>
@@ -232,8 +235,8 @@ export default function AdminSurveys() {
         </Button>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: 'var(--ss-text-dim)' }}>
-          {filteredGroups.length} org{filteredGroups.length === 1 ? '' : 's'} {'|'}{' '}
-          {totalSurveys} survey{totalSurveys === 1 ? '' : 's'}
+          {filteredGroups.length} org{filteredGroups.length === 1 ? '' : 's'}{' '}
+          {'|'} {totalSurveys} survey{totalSurveys === 1 ? '' : 's'}
         </span>
         <Button
           variant='link'
@@ -344,7 +347,7 @@ export default function AdminSurveys() {
                           .sort(
                             (a, b) =>
                               new Date(b.createdAt || 0).getTime() -
-                              new Date(a.createdAt || 0).getTime()
+                              new Date(a.createdAt || 0).getTime(),
                           )
                           .map((survey) => (
                             <tr key={survey.id}>
@@ -409,4 +412,3 @@ function formatImageCount(project: ProjectType): string {
   const total = sets.reduce((sum, set) => sum + (set.imageCount ?? 0), 0);
   return total.toLocaleString();
 }
-

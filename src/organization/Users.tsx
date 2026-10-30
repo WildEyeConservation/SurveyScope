@@ -1,15 +1,15 @@
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { Maximize2, Minimize2, RefreshCw } from 'lucide-react';
+import { useContext, useEffect, useState } from 'react';
+import ConfirmationModal from '../ConfirmationModal';
+import { GlobalContext, UserContext } from '../Context';
+import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import MyTable from '../Table';
 import { Schema } from '../amplify/client-schema';
-import { useContext, useState, useEffect } from 'react';
-import { GlobalContext, UserContext } from '../Context';
 import { useUsers } from '../apiInterface';
-import InviteUserModal from './InviteUserModal';
 import ExceptionsModal from './ExceptionsModal';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
-import ConfirmationModal from '../ConfirmationModal';
-import { Minimize2, Maximize2, RefreshCw } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import InviteUserModal from './InviteUserModal';
 
 const STORAGE_KEY_COMPACT_MODE = 'usersCompactMode';
 
@@ -24,16 +24,22 @@ export default function Users({
   const { user: authUser } = useContext(UserContext)!;
   const { users } = useUsers();
 
-  const { data: memberships, isLoading: membershipsLoading, refetch, isFetching } = useQuery<Schema['OrganizationMembership']['type'][]>({
+  const {
+    data: memberships,
+    isLoading: membershipsLoading,
+    refetch,
+    isFetching,
+  } = useQuery<Schema['OrganizationMembership']['type'][]>({
     queryKey: ['OrganizationMembership', organization.id],
     queryFn: async () => {
       const allItems: Schema['OrganizationMembership']['type'][] = [];
       let nextToken: string | undefined;
       do {
-        const result = await client.models.OrganizationMembership.membershipsByOrganizationId(
-          { organizationId: organization.id },
-          { nextToken }
-        );
+        const result =
+          await client.models.OrganizationMembership.membershipsByOrganizationId(
+            { organizationId: organization.id },
+            { nextToken },
+          );
         allItems.push(...result.data);
         nextToken = result.nextToken ?? undefined;
       } while (nextToken);
@@ -98,67 +104,67 @@ export default function Users({
   const tableData = isLoading
     ? []
     : (memberships ?? []).map((membership) => {
-      const user = users.find((user) => user.id === membership.userId);
-      return {
-        id: membership.organizationId + membership.userId,
-        rowData: [
-          user?.name,
-          user?.email,
-          <LabeledToggleSwitch
-            className='mb-0'
-            leftLabel='No'
-            rightLabel='Yes'
-            checked={membership.isAdmin ?? false}
-            disabled={isMutating || membership.userId === authUser.userId}
-            onChange={(checked) => {
-              updateUser(membership.userId, checked);
-            }}
-          />,
-          <div className='flex justify-center'>
-            <Button
-              size={compactMode ? 'sm' : undefined}
-              className='w-[200px]'
-              disabled={
-                process.env.NODE_ENV === 'development'
-                  ? false
-                  : membership.isAdmin
-                    ? true
-                    : false
-              }
-              variant={'info'}
-              onClick={() => {
-                setUserToEdit({
-                  id: user?.id || '',
-                  name: user?.name || '',
-                  organizationName: organization.name,
-                });
-                showModal('exceptions');
-              }}
-            >
-              Edit
-            </Button>
-          </div>,
-          <div className='flex justify-center'>
-            <Button
-              size={compactMode ? 'sm' : undefined}
-              className='w-[200px]'
-              variant='danger'
+        const user = users.find((user) => user.id === membership.userId);
+        return {
+          id: membership.organizationId + membership.userId,
+          rowData: [
+            user?.name,
+            user?.email,
+            <LabeledToggleSwitch
+              className='mb-0'
+              leftLabel='No'
+              rightLabel='Yes'
+              checked={membership.isAdmin ?? false}
               disabled={isMutating || membership.userId === authUser.userId}
-              onClick={() => {
-                setUserToEdit({
-                  id: user?.id || '',
-                  name: user?.name || '',
-                  organizationName: organization.name,
-                });
-                showModal('removeUser');
+              onChange={(checked) => {
+                updateUser(membership.userId, checked);
               }}
-            >
-              Remove user
-            </Button>
-          </div>,
-        ],
-      };
-    });
+            />,
+            <div className='flex justify-center'>
+              <Button
+                size={compactMode ? 'sm' : undefined}
+                className='w-[200px]'
+                disabled={
+                  process.env.NODE_ENV === 'development'
+                    ? false
+                    : membership.isAdmin
+                      ? true
+                      : false
+                }
+                variant={'info'}
+                onClick={() => {
+                  setUserToEdit({
+                    id: user?.id || '',
+                    name: user?.name || '',
+                    organizationName: organization.name,
+                  });
+                  showModal('exceptions');
+                }}
+              >
+                Edit
+              </Button>
+            </div>,
+            <div className='flex justify-center'>
+              <Button
+                size={compactMode ? 'sm' : undefined}
+                className='w-[200px]'
+                variant='danger'
+                disabled={isMutating || membership.userId === authUser.userId}
+                onClick={() => {
+                  setUserToEdit({
+                    id: user?.id || '',
+                    name: user?.name || '',
+                    organizationName: organization.name,
+                  });
+                  showModal('removeUser');
+                }}
+              >
+                Remove user
+              </Button>
+            </div>,
+          ],
+        };
+      });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -211,8 +217,10 @@ export default function Users({
 
   return (
     <>
-      <div className={`flex flex-col ${compactMode ? 'gap-1' : 'gap-2'} mt-4 w-full overflow-x-auto overflow-y-visible`}>
-        <div className='flex justify-between items-center'>
+      <div
+        className={`flex flex-col ${compactMode ? 'gap-1' : 'gap-2'} mt-4 w-full overflow-x-auto overflow-y-visible`}
+      >
+        <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>
             {compactMode ? (
               <h6 className='mb-0'>Organisation Users</h6>
@@ -227,7 +235,10 @@ export default function Users({
               disabled={isFetching}
               title='Refresh'
             >
-              <RefreshCw size={16} className={isFetching ? 'spinning' : undefined} />
+              <RefreshCw
+                size={16}
+                className={isFetching ? 'spinning' : undefined}
+              />
             </Button>
           </div>
           {!isMobile && (

@@ -28,7 +28,7 @@ export interface Lane {
  */
 export function buildLanes(
   pairs: NeighbourPairWithMeta[],
-  cameraNamesById: Record<string, string>
+  cameraNamesById: Record<string, string>,
 ): Lane[] {
   // Camera order is first appearance in the flat pair list.
   const cameraOrder: string[] = [];
@@ -77,16 +77,13 @@ export function buildLanes(
     (id && cameraNamesById[id]) || `Camera ${cameraIdx(id) + 1}`;
 
   // Timestamp of the image taken by `cameraId`, used to order a row left→right.
-  const tsForCamera = (
-    p: NeighbourPairWithMeta,
-    cameraId: string
-  ): number => {
+  const tsForCamera = (p: NeighbourPairWithMeta, cameraId: string): number => {
     const img = (p.imageA.cameraId ?? '') === cameraId ? p.imageA : p.imageB;
     return img.timestamp ?? 0;
   };
   const sortByCamera = (
     entries: number[],
-    cameraId: string
+    cameraId: string,
   ): { entries: number[]; timestamps: number[] } => {
     const sorted = entries.slice().sort((a, b) => {
       const ta = tsForCamera(pairs[a], cameraId);
@@ -148,7 +145,7 @@ export function filterLanesToAttention(
   lanes: Lane[],
   states: PairCompletionState[],
   keepIndex: number,
-  radius: number
+  radius: number,
 ): Lane[] {
   // Pass 1: per-lane attention mask.
   const masks: boolean[][] = lanes.map((lane) => {

@@ -1,16 +1,15 @@
-import { useContext, useEffect, useState } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { ProgressIndicators } from './ProgressIndicators.jsx';
-import { Outlet } from 'react-router-dom';
-import Notifications from './user/Notifications.tsx';
-import { UserContext, GlobalContext } from './Context.tsx';
-import Settings from './user/Settings.tsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Menu } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import UploadProgress from './upload/UploadProgress.tsx';
-import { verifyToken } from './utils/jwt.ts';
 import { useQueryClient } from '@tanstack/react-query';
+import { Menu } from 'lucide-react';
+import { useContext, useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { GlobalContext, UserContext } from './Context.tsx';
+import { ProgressIndicators } from './ProgressIndicators.jsx';
+import UploadProgress from './upload/UploadProgress.tsx';
+import Notifications from './user/Notifications.tsx';
+import Settings from './user/Settings.tsx';
+import { verifyToken } from './utils/jwt.ts';
 
 export default function MainNavigation({ signOut }: { signOut: () => void }) {
   const {
@@ -31,7 +30,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
   const navigate = useNavigate();
 
   const myAdminProjects = myProjectsHook.data?.filter(
-    (project) => project.isAdmin
+    (project) => project.isAdmin,
   );
 
   const belongsToOrganization = myOrganizationHook.data.length > 0;
@@ -39,9 +38,9 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
   useEffect(() => {
     setIsAnnotatePath(
       /^\/surveys\/[^/]+\/annotate$/.test(location.pathname) ||
-      /^\/surveys\/[^/]+\/qc-review\/[^/]+$/.test(location.pathname) ||
-      /^\/surveys\/[^/]+\/info-tags\/[^/]+$/.test(location.pathname) ||
-      /^\/surveys\/[^/]+\/homography\/[^/]+$/.test(location.pathname)
+        /^\/surveys\/[^/]+\/qc-review\/[^/]+$/.test(location.pathname) ||
+        /^\/surveys\/[^/]+\/info-tags\/[^/]+$/.test(location.pathname) ||
+        /^\/surveys\/[^/]+\/homography\/[^/]+$/.test(location.pathname),
     );
   }, [location.pathname]);
 
@@ -57,7 +56,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
       navigate(
         myAdminProjects?.length > 0 || isOrganizationAdmin
           ? '/surveys'
-          : '/jobs'
+          : '/jobs',
       );
     }
   }, [isOrganizationAdmin, myAdminProjects.length, belongsToOrganization]);
@@ -97,7 +96,9 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
               });
 
             if (!jollyResultsMembership) {
-              const { data: surveyProject } = await client.models.Project.get({ id: payload.surveyId });
+              const { data: surveyProject } = await client.models.Project.get({
+                id: payload.surveyId,
+              });
               await client.models.JollyResultsMembership.create({
                 surveyId: payload.surveyId,
                 annotationSetId: payload.annotationSetId,
@@ -150,8 +151,8 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
                 isOrganizationAdmin
                   ? '/surveys'
                   : belongsToOrganization
-                  ? '/jobs'
-                  : '/'
+                    ? '/jobs'
+                    : '/',
               );
             }
           }}
@@ -178,7 +179,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
           id='responsive-navbar-nav'
           className={cn(
             'w-full grow basis-full items-center lg:flex lg:basis-auto',
-            navOpen ? 'block' : 'hidden'
+            navOpen ? 'block' : 'hidden',
           )}
         >
           {!isAnnotatePath && (
@@ -186,40 +187,24 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
               {belongsToOrganization && (
                 <>
                   {(myAdminProjects?.length > 0 || isOrganizationAdmin) && (
-                    <NavItem to={`surveys`}>
-                      Surveys
-                    </NavItem>
+                    <NavItem to={`surveys`}>Surveys</NavItem>
                   )}
-                  <NavItem to={`jobs`}>
-                    Jobs
-                  </NavItem>
+                  <NavItem to={`jobs`}>Jobs</NavItem>
                 </>
               )}
-              <NavItem to={'workflow-statistics'}>
-                Workflow Statistics
-              </NavItem>
+              <NavItem to={'workflow-statistics'}>Workflow Statistics</NavItem>
               {isOrganizationAdmin && (
                 <>
-                  <NavItem to={`permissions`}>
-                    Permissions
-                  </NavItem>
-                  <NavItem to={`testing`}>
-                    User Testing
-                  </NavItem>
+                  <NavItem to={`permissions`}>Permissions</NavItem>
+                  <NavItem to={`testing`}>User Testing</NavItem>
                 </>
               )}
               {cognitoGroups.includes('sysadmin') && (
                 <>
-                  <NavItem to={`SSAdmin`}>
-                    Admin
-                  </NavItem>
-                  <NavItem to={`chain-share-admin`}>
-                    Chain Shares
-                  </NavItem>
+                  <NavItem to={`SSAdmin`}>Admin</NavItem>
+                  <NavItem to={`chain-share-admin`}>Chain Shares</NavItem>
                   {process.env.NODE_ENV === 'development' && (
-                    <NavItem to={`dev-actions`}>
-                      Dev Actions
-                    </NavItem>
+                    <NavItem to={`dev-actions`}>Dev Actions</NavItem>
                   )}
                 </>
               )}
@@ -244,13 +229,11 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
               */}
               {(cognitoGroups.includes('sysadmin') ||
                 cognitoGroups.some((g) => g.startsWith('chainshare-'))) && (
-                <NavItem to={`shared-chains`}>
-                  Shared Chains
-                </NavItem>
+                <NavItem to={`shared-chains`}>Shared Chains</NavItem>
               )}
             </div>
           )}
-          <div className='flex flex-col lg:flex-row grow items-center justify-end gap-4 lg:gap-0 mt-2 lg:mt-0'>
+          <div className='mt-2 flex grow flex-col items-center justify-end gap-4 lg:mt-0 lg:flex-row lg:gap-0'>
             <UploadProgress />
             <ProgressIndicators />
             <Settings signOut={signOut} />
@@ -261,14 +244,14 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
       <div className='mx-auto flex h-full w-full justify-center overflow-y-auto px-3'>
         {(!belongsToOrganization &&
           location.pathname === '/SSRegisterOrganization') ||
-          belongsToOrganization ||
-          location.pathname === '/workflow-statistics' ||
-          location.pathname.startsWith('/jolly') ||
-          location.pathname.startsWith('/shared-results') ||
-          location.pathname.startsWith('/shared-chains') ||
-          (cognitoGroups.includes('sysadmin') &&
-            (location.pathname === '/SSAdmin' ||
-              location.pathname.startsWith('/chain-share-admin'))) ? (
+        belongsToOrganization ||
+        location.pathname === '/workflow-statistics' ||
+        location.pathname.startsWith('/jolly') ||
+        location.pathname.startsWith('/shared-results') ||
+        location.pathname.startsWith('/shared-chains') ||
+        (cognitoGroups.includes('sysadmin') &&
+          (location.pathname === '/SSAdmin' ||
+            location.pathname.startsWith('/chain-share-admin'))) ? (
           <Outlet />
         ) : (
           <Card
@@ -286,9 +269,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p>
-                You are not currently a member of any organisation.
-              </p>
+              <p>You are not currently a member of any organisation.</p>
               <p className='mb-0'>
                 Please visit the{' '}
                 <a href='https://wildeyeconservation.org/surveyscope-registration/'>
@@ -341,7 +322,7 @@ function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
       className={({ isActive }) =>
         cn(
           'flex-auto px-2 py-2 text-center no-underline transition-colors hover:text-white',
-          isActive ? 'text-white' : 'text-white/75'
+          isActive ? 'text-white' : 'text-white/75',
         )
       }
     >

@@ -1,23 +1,23 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { useState, useContext } from 'react';
-import { Tabs, Tab } from '../Tabs';
+import { useContext, useState } from 'react';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext } from '../Context';
-import SpeciesLabelling from './SpeciesLabelling';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
+import { Tab, Tabs } from '../Tabs';
+import type { WorkflowType } from '../workflowRegistry';
 import FalseNegatives from './FalseNegatives';
-import QCReview from './QCReview';
-import InfoTagsLaunch from './InfoTagsLaunch';
 import HomographyLaunch from './HomographyLaunch';
 import IndividualId from './IndividualId';
-import type { WorkflowType } from '../workflowRegistry';
+import InfoTagsLaunch from './InfoTagsLaunch';
+import QCReview from './QCReview';
+import SpeciesLabelling from './SpeciesLabelling';
 
 type LaunchHandlerType = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 } | null;
 
@@ -32,7 +32,7 @@ export default function LaunchAnnotationSetModal({
   annotationSet: Schema['AnnotationSet']['type'];
   onOptimisticStatus?: (
     projectId: string,
-    status: Schema['Project']['type']['status']
+    status: Schema['Project']['type']['status'],
   ) => void;
 }) {
   const [taskType, setTaskType] = useState<WorkflowType>('species-labelling');
@@ -40,12 +40,18 @@ export default function LaunchAnnotationSetModal({
   const [progressMessage, setProgressMessage] = useState<string>('');
   const [launchError, setLaunchError] = useState<string>('');
   const [launchDisabled, setLaunchDisabled] = useState<boolean>(false);
-  const [speciesLaunchHandler, setSpeciesLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [falseNegativesLaunchHandler, setFalseNegativesLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [qcLaunchHandler, setQCLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [infoTagsLaunchHandler, setInfoTagsLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [homographyLaunchHandler, setHomographyLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [individualIdLaunchHandler, setIndividualIdLaunchHandler] = useState<LaunchHandlerType>(null);
+  const [speciesLaunchHandler, setSpeciesLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [falseNegativesLaunchHandler, setFalseNegativesLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [qcLaunchHandler, setQCLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [infoTagsLaunchHandler, setInfoTagsLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [homographyLaunchHandler, setHomographyLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [individualIdLaunchHandler, setIndividualIdLaunchHandler] =
+    useState<LaunchHandlerType>(null);
 
   const { showModal } = useContext(GlobalContext)! as any;
 
@@ -86,7 +92,10 @@ export default function LaunchAnnotationSetModal({
         case 'false-negatives':
           if (falseNegativesLaunchHandler) {
             setProgressMessage('Initializing launch...');
-            await falseNegativesLaunchHandler.execute(setProgressMessage, () => {});
+            await falseNegativesLaunchHandler.execute(
+              setProgressMessage,
+              () => {},
+            );
           }
           break;
         case 'qc-review':
@@ -110,7 +119,10 @@ export default function LaunchAnnotationSetModal({
         case 'individual-id':
           if (individualIdLaunchHandler) {
             setProgressMessage('Initializing launch...');
-            await individualIdLaunchHandler.execute(setProgressMessage, () => {});
+            await individualIdLaunchHandler.execute(
+              setProgressMessage,
+              () => {},
+            );
           }
           break;
       }
@@ -121,7 +133,7 @@ export default function LaunchAnnotationSetModal({
       onOptimisticStatus?.(project.id, originalStatus);
       setProgressMessage('');
       setLaunchError(
-        error instanceof Error ? error.message : 'Failed to launch the task'
+        error instanceof Error ? error.message : 'Failed to launch the task',
       );
       setLaunching(false);
       return;
@@ -160,7 +172,9 @@ export default function LaunchAnnotationSetModal({
                 annotationSet={annotationSet}
                 launching={launching}
                 setLaunchDisabled={setLaunchDisabled}
-                setFalseNegativesLaunchHandler={setFalseNegativesLaunchHandler as any}
+                setFalseNegativesLaunchHandler={
+                  setFalseNegativesLaunchHandler as any
+                }
               />
             </Tab>
             <Tab label='Review'>
@@ -209,7 +223,7 @@ export default function LaunchAnnotationSetModal({
           </Alert>
         )}
         {progressMessage && (
-          <div className='mt-4 text-center text-muted-foreground flex justify-center items-center gap-2'>
+          <div className='mt-4 flex items-center justify-center gap-2 text-center text-muted-foreground'>
             <span role='status' aria-live='polite'>
               <Spinner size='sm' className='me-2' />
               {progressMessage}
@@ -223,7 +237,8 @@ export default function LaunchAnnotationSetModal({
               launchDisabled ||
               launching ||
               (taskType === 'species-labelling' && !speciesLaunchHandler) ||
-              (taskType === 'false-negatives' && !falseNegativesLaunchHandler) ||
+              (taskType === 'false-negatives' &&
+                !falseNegativesLaunchHandler) ||
               (taskType === 'qc-review' && !qcLaunchHandler) ||
               (taskType === 'info-tags' && !infoTagsLaunchHandler) ||
               (taskType === 'homographies' && !homographyLaunchHandler) ||

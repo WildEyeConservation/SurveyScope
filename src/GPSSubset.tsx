@@ -1,11 +1,5 @@
-import React, {
-  useState,
-  useCallback,
-  useRef,
-  useEffect,
-  useMemo,
-  type ReactNode,
-} from 'react';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   EyeIcon,
   EyeOffIcon,
@@ -20,27 +14,34 @@ import {
   Undo2Icon,
   XIcon,
 } from 'lucide-react';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import * as maplibregl from 'maplibre-gl';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+import { booleanPointInPolygon } from '@turf/turf';
 import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
-import { booleanPointInPolygon } from '@turf/turf';
 import GPSSubsetImageViewerModal from './GPSSubsetImageViewerModal';
 import {
   BASE_STYLE,
   EMPTY_FC,
   type FeatureCollection,
 } from './survey/surveyMapStyle';
+
 import './survey/surveyMap.css';
+
 import { Kbd, MapButton } from './survey/mapControls';
 import { LIGHT_THEME, MAP_CONTROLS, MAP_DIVIDER } from './survey/mapTheme';
 import { gpsRowKey } from './survey/new-survey/gpsIndex';
-import {
-  ringToPolygon,
-  type SurveyArea,
-} from './survey/new-survey/surveyArea';
+import { ringToPolygon, type SurveyArea } from './survey/new-survey/surveyArea';
 
 // Define the GPS data structure
 export interface GPSData {
@@ -150,17 +151,17 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   const validGpsData = useMemo(
     () =>
       gpsData.filter(
-        (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng)
+        (point) => Number.isFinite(point.lat) && Number.isFinite(point.lng),
       ),
-    [gpsData]
+    [gpsData],
   );
 
   const validExistingImages = useMemo(
     () =>
       (existingImages || []).filter(
-        (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)
+        (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng),
       ),
-    [existingImages]
+    [existingImages],
   );
 
   const createPointKey = useCallback((p: GPSData) => gpsRowKey(p), []);
@@ -184,7 +185,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
 
   const visibleKeys = useMemo(
     () => new Set(currentFilteredPoints.map((p) => createPointKey(p))),
-    [currentFilteredPoints, createPointKey]
+    [currentFilteredPoints, createPointKey],
   );
 
   // Union of the initial snapshot, all removed points, and the visible set:
@@ -221,7 +222,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       }
     }
     const nextVisible = validGpsData.filter(
-      (p) => !manualRemovedKeys.has(createPointKey(p))
+      (p) => !manualRemovedKeys.has(createPointKey(p)),
     );
 
     // Only update if the filtered points have actually changed
@@ -229,7 +230,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       if (prev.length === nextVisible.length) {
         const prevKeys = new Set(prev.map((p) => createPointKey(p)));
         const unchanged = nextVisible.every((p) =>
-          prevKeys.has(createPointKey(p))
+          prevKeys.has(createPointKey(p)),
         );
         if (unchanged) return prev;
       }
@@ -264,7 +265,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       objectUrlCacheRef.current.set(key, url);
       return url;
     },
-    [fileByPath]
+    [fileByPath],
   );
 
   useEffect(() => {
@@ -302,7 +303,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       setCurrentFilteredPoints(newPoints);
       onFilter(newPoints);
     },
-    [onFilter]
+    [onFilter],
   );
 
   const handleRestorePoint = useCallback(
@@ -313,21 +314,21 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       setDeletedPointsStack((prev) =>
         prev
           .map((group) =>
-            group.filter((p) => createPointKey(p) !== keyToRestore)
+            group.filter((p) => createPointKey(p) !== keyToRestore),
           )
-          .filter((group) => group.length > 0)
+          .filter((group) => group.length > 0),
       );
 
       const prevPoints = currentPointsRef.current;
       const alreadyVisible = prevPoints.some(
-        (p) => createPointKey(p) === keyToRestore
+        (p) => createPointKey(p) === keyToRestore,
       );
       if (alreadyVisible) return;
       const newPoints = [...prevPoints, point];
       setCurrentFilteredPoints(newPoints);
       onFilter(newPoints);
     },
-    [onFilter, createPointKey]
+    [onFilter, createPointKey],
   );
 
   const handleUndo = useCallback(() => {
@@ -349,7 +350,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   actionsRef.current = {
     removeByKey: (key: string) => {
       const index = currentPointsRef.current.findIndex(
-        (p) => createPointKey(p) === key
+        (p) => createPointKey(p) === key,
       );
       if (index !== -1) handleRemovePoint(index);
       popupRef.current?.remove();
@@ -361,7 +362,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     },
     viewByKey: (key: string) => {
       const index = currentPointsRef.current.findIndex(
-        (p) => createPointKey(p) === key
+        (p) => createPointKey(p) === key,
       );
       if (index !== -1) {
         setCurrentImageIndex(index);
@@ -398,7 +399,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     name.style.cssText =
       'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     name.textContent = props.filepath
-      ? props.filepath.split('/').pop() ?? props.filepath
+      ? (props.filepath.split('/').pop() ?? props.filepath)
       : `${props.lat.toFixed(5)}, ${props.lng.toFixed(5)}`;
     if (props.filepath) name.title = props.filepath;
     container.appendChild(name);
@@ -407,8 +408,10 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     details.style.cssText = 'color:#6c757d;font-size:12px';
     details.textContent = [
       props.timestamp
-        ? new Date(props.timestamp).toISOString().slice(0, 19).replace('T', ' ') +
-          ' UTC'
+        ? new Date(props.timestamp)
+            .toISOString()
+            .slice(0, 19)
+            .replace('T', ' ') + ' UTC'
         : null,
       Number.isFinite(props.alt) ? `Alt ${props.alt}` : null,
     ]
@@ -492,7 +495,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
       })),
     }),
-    [allPointsByKey, visibleKeys, outsideAreaKeys]
+    [allPointsByKey, visibleKeys, outsideAreaKeys],
   );
 
   const areaFC = useMemo<FeatureCollection>(
@@ -509,7 +512,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         return polygon ? [{ ...polygon, properties: { role } }] : [];
       }),
     }),
-    [area]
+    [area],
   );
 
   const existingFC = useMemo<FeatureCollection>(
@@ -521,7 +524,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
       })),
     }),
-    [validExistingImages]
+    [validExistingImages],
   );
 
   // ---------------------------------------------------------------------
@@ -541,7 +544,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
 
     map.addControl(
       new maplibregl.ScaleControl({ unit: 'metric' }),
-      'bottom-left'
+      'bottom-left',
     );
 
     map.on('load', () => {
@@ -621,7 +624,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
                 outlineColor: SHAPE_COLOR[tool] as `#${string}`,
                 outlineWidth: 2,
               },
-            })
+            }),
         ),
       });
       draw.on('finish', (id) => {
@@ -665,8 +668,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     if (!mapLoaded) return;
     const map = mapRef.current;
     const src = map?.getSource(SRC_POINTS) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!map || !src) return;
     src.setData(pointsFC as any);
 
@@ -688,7 +690,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
           [minLng, minLat],
           [maxLng, maxLat],
         ],
-        { padding: 40, maxZoom: 16, duration: 0 }
+        { padding: 40, maxZoom: 16, duration: 0 },
       );
     }
   }, [mapLoaded, pointsFC]);
@@ -698,22 +700,20 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     if (!mapLoaded) return;
     const map = mapRef.current;
     const src = map?.getSource(SRC_EXISTING) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!map || !src) return;
     src.setData(existingFC as any);
     map.setLayoutProperty(
       LYR_EXISTING,
       'visibility',
-      showExistingImages ? 'visible' : 'none'
+      showExistingImages ? 'visible' : 'none',
     );
   }, [mapLoaded, existingFC, showExistingImages]);
 
   useEffect(() => {
     if (!mapLoaded) return;
     const src = mapRef.current?.getSource(SRC_AREA) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!src) return;
     src.setData(areaFC as any);
   }, [mapLoaded, areaFC]);
@@ -757,7 +757,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
         console.error('Failed to start drawing:', err);
       }
     },
-    [stopDrawing]
+    [stopDrawing],
   );
 
   applyShapeRef.current = (polygon) => {
@@ -793,7 +793,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
 
   const handlePrevImage = useCallback(() => {
     setCurrentImageIndex((prev) =>
-      prev === 0 ? currentFilteredPoints.length - 1 : prev - 1
+      prev === 0 ? currentFilteredPoints.length - 1 : prev - 1,
     );
   }, [currentFilteredPoints.length]);
 
@@ -815,7 +815,8 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     const map = mapRef.current;
     if (!map) return;
     const bounds = new maplibregl.LngLatBounds();
-    for (const p of allPointsByKeyRef.current.values()) bounds.extend([p.lng, p.lat]);
+    for (const p of allPointsByKeyRef.current.values())
+      bounds.extend([p.lng, p.lat]);
     if (bounds.isEmpty()) return;
     map.fitBounds(bounds, { padding: 40, maxZoom: 16, duration: 0 });
   }, []);
@@ -876,7 +877,13 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     { label: 'To upload', color: INCLUDED_COLOR, count: counts.included },
     { label: 'Removed', color: REMOVED_COLOR, count: counts.removed },
     ...(counts.outside > 0
-      ? [{ label: 'Outside survey area', color: OUTSIDE_COLOR, count: counts.outside }]
+      ? [
+          {
+            label: 'Outside survey area',
+            color: OUTSIDE_COLOR,
+            count: counts.outside,
+          },
+        ]
       : []),
   ];
 
@@ -884,27 +891,27 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     drawTool === 'keep'
       ? 'Draw around the images to keep · double-click to finish'
       : drawTool === 'remove'
-      ? 'Draw around the images to remove · double-click to finish'
-      : deletedPointsStack.length === 0
-      ? 'Click an image to inspect it, or draw a shape to keep or remove images'
-      : null;
+        ? 'Draw around the images to remove · double-click to finish'
+        : deletedPointsStack.length === 0
+          ? 'Click an image to inspect it, or draw a shape to keep or remove images'
+          : null;
 
   return (
     <>
       <div
         ref={frameRef}
-        className={cn('survey-map', fullscreen && 'h-full rounded-none border-0')}
+        className={cn(
+          'survey-map',
+          fullscreen && 'h-full rounded-none border-0',
+        )}
       >
         {/* Inline: maplibre's unlayered CSS overrides layered utilities here. */}
-        <div
-          ref={mapContainerRef}
-          style={{ position: 'absolute', inset: 0 }}
-        />
+        <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
 
         <div
           className={cn(
             'absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2',
-            MAP_CONTROLS
+            MAP_CONTROLS,
           )}
         >
           <MapButton
@@ -926,7 +933,10 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
             disabled={!mapLoaded}
             onClick={() => startDrawing('keep')}
           >
-            <PentagonIcon className='size-4' style={{ color: SHAPE_COLOR.keep }} />
+            <PentagonIcon
+              className='size-4'
+              style={{ color: SHAPE_COLOR.keep }}
+            />
           </MapButton>
           <MapButton
             tipSide='top'
@@ -936,7 +946,10 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
             disabled={!mapLoaded}
             onClick={() => startDrawing('remove')}
           >
-            <PentagonIcon className='size-4' style={{ color: SHAPE_COLOR.remove }} />
+            <PentagonIcon
+              className='size-4'
+              style={{ color: SHAPE_COLOR.remove }}
+            />
           </MapButton>
           <div className={MAP_DIVIDER} />
           <MapButton
@@ -950,7 +963,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
           </MapButton>
         </div>
 
-        <div className='absolute right-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] items-start'>
+        <div className='absolute top-3 right-3 z-10 flex max-h-[calc(100%-1.5rem)] items-start'>
           {panelOpen ? (
             <div
               className='flex max-h-full w-80 flex-col overflow-hidden bg-white text-foreground shadow-lg'
@@ -981,7 +994,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
                         style={{ background: color }}
                       />
                       <span className='flex-1'>{label}</span>
-                      <span className='tabular-nums text-muted-foreground'>
+                      <span className='text-muted-foreground tabular-nums'>
                         {count.toLocaleString()}
                       </span>
                     </div>
@@ -996,7 +1009,7 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
                         }}
                       />
                       <span className='flex-1'>Already in the survey</span>
-                      <span className='tabular-nums text-muted-foreground'>
+                      <span className='text-muted-foreground tabular-nums'>
                         {validExistingImages.length.toLocaleString()}
                       </span>
                       <button
@@ -1036,7 +1049,12 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
           )}
         </div>
 
-        <div className={cn('absolute left-3 top-3 z-10 flex flex-col', MAP_CONTROLS)}>
+        <div
+          className={cn(
+            'absolute top-3 left-3 z-10 flex flex-col',
+            MAP_CONTROLS,
+          )}
+        >
           <MapButton
             label={fullscreen ? 'Exit full screen' : 'Full screen'}
             shortcut={fullscreen ? 'Esc' : undefined}
@@ -1064,8 +1082,8 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
           <div className='pointer-events-none absolute bottom-[5.5rem] left-1/2 z-10 -translate-x-1/2'>
             <div
               className={cn(
-                'flex items-center gap-2 whitespace-nowrap border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
-                MAP_CONTROLS
+                'flex items-center gap-2 border border-black/10 px-3 py-1.5 text-xs whitespace-nowrap text-[#212529]',
+                MAP_CONTROLS,
               )}
             >
               {hint}

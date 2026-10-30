@@ -26,7 +26,10 @@ export function reviewWorkflowTask(input: {
     outcome,
     // Review is a short task: bound elapsed work time as for annotated locations.
     activeTimeMs: Math.min(900_000, Math.max(0, input.submittedAt - readyAt)),
-    waitingTimeMs: Math.min(600_000, Math.max(0, Math.min(readyAt, input.submittedAt) - visibleAt)),
+    waitingTimeMs: Math.min(
+      600_000,
+      Math.max(0, Math.min(readyAt, input.submittedAt) - visibleAt),
+    ),
     metrics: {
       approved: outcome === 'approved' ? 1 : 0,
       relabelled: outcome === 'relabelled' ? 1 : 0,

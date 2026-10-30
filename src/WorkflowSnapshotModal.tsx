@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,12 +11,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import exportFromJSON from 'export-from-json';
+import { useEffect, useMemo, useState } from 'react';
 import { neutraliseCsvRows } from '../shared/csv';
 import MyTable from './Table';
-import {
-  eventToContribution,
-  fetchAllWorkflowEvents,
-} from './workflowEvents';
+import { eventToContribution, fetchAllWorkflowEvents } from './workflowEvents';
 import {
   buildWorkflowSections,
   localDateString,
@@ -80,7 +77,8 @@ export default function WorkflowSnapshotModal({
     try {
       const lower = new Date(`${startString}T${startTime}:00`);
       const upper = new Date(`${endString}T${endTime}:59.999`);
-      if (upper < lower) throw new Error('The end of the window is before its start.');
+      if (upper < lower)
+        throw new Error('The end of the window is before its start.');
       const events = await fetchAllWorkflowEvents(
         client,
         {
@@ -89,14 +87,16 @@ export default function WorkflowSnapshotModal({
           startAt: lower.toISOString(),
           endAt: upper.toISOString(),
         },
-        setProgress
+        setProgress,
       );
-      setSections(buildWorkflowSections(events.map(eventToContribution), userName));
+      setSections(
+        buildWorkflowSections(events.map(eventToContribution), userName),
+      );
     } catch (snapshotError) {
       setError(
         snapshotError instanceof Error
           ? snapshotError.message
-          : 'Failed to load the snapshot'
+          : 'Failed to load the snapshot',
       );
     } finally {
       setLoading(false);
@@ -108,7 +108,7 @@ export default function WorkflowSnapshotModal({
       startString && endString
         ? `${startString} ${startTime} to ${endString} ${endTime}`
         : 'Set From and To dates on the statistics screen first.',
-    [startString, endString, startTime, endTime]
+    [startString, endString, startTime, endTime],
   );
 
   function exportSnapshot() {
@@ -116,10 +116,11 @@ export default function WorkflowSnapshotModal({
     sections.forEach((section) => {
       exportFromJSON({
         data: neutraliseCsvRows(sectionToCsvRows(section)),
-        fileName: `${projectLabel}_${section.label}_Snapshot_${startString}_${startTime}_${endString}_${endTime}`.replace(
-          /[\s:]/g,
-          '_'
-        ),
+        fileName:
+          `${projectLabel}_${section.label}_Snapshot_${startString}_${startTime}_${endString}_${endTime}`.replace(
+            /[\s:]/g,
+            '_',
+          ),
         exportType: exportFromJSON.types.csv,
       });
     });
@@ -127,100 +128,98 @@ export default function WorkflowSnapshotModal({
 
   return (
     <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
-      <DialogContent
-        size='xl'
-        onPointerDownOutside={(e) => e.preventDefault()}
-      >
-      <DialogHeader closeButton>
-        <DialogTitle>Snapshot for {projectLabel}</DialogTitle>
-      </DialogHeader>
-      <DialogBody>
-        <p className='text-muted-foreground mb-4'>
-          Totals for a time-of-day window, in local time. Window: {windowLabel}
-        </p>
-        <div className='flex items-end gap-4 flex-wrap'>
-          <div>
-            <Label htmlFor='snapshot-start-time' className='mb-1'>
-              Start time on {startString ?? '—'}
-            </Label>
-            <Input
-              id='snapshot-start-time'
-              type='time'
-              value={startTime}
-              onChange={(event) => setStartTime(event.target.value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor='snapshot-end-time' className='mb-1'>
-              End time on {endString ?? '—'}
-            </Label>
-            <Input
-              id='snapshot-end-time'
-              type='time'
-              value={endTime}
-              onChange={(event) => setEndTime(event.target.value)}
-            />
-          </div>
-          <Button
-            variant='primary'
-            onClick={runSnapshot}
-            disabled={loading || !canRun || !startTime || !endTime}
-          >
-            {loading ? `Loading… ${progress} events` : 'Run snapshot'}
-          </Button>
-        </div>
-
-        {error && (
-          <Alert variant='danger' className='mt-4'>
-            {error}
-          </Alert>
-        )}
-
-        {sections?.length === 0 && (
-          <Alert variant='info' className='mt-4'>
-            No completions in this window.
-          </Alert>
-        )}
-
-        {sections?.map((section) => (
-          <div key={section.workflowType} className='mt-6'>
-            <h5 className='mb-2'>{section.label}</h5>
-            <div className='overflow-x-auto'>
-              <MyTable
-                tableHeadings={section.headings}
-                tableData={[
-                  ...section.rows.map((row) => ({
-                    id: row.id,
-                    rowData: row.cells,
-                  })),
-                  ...(section.footer
-                    ? [
-                        {
-                          id: `${section.workflowType}:__total`,
-                          rowData: section.footer.map((cell, index) => (
-                            <strong key={index}>{cell}</strong>
-                          )),
-                        },
-                      ]
-                    : []),
-                ]}
+      <DialogContent size='xl' onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader closeButton>
+          <DialogTitle>Snapshot for {projectLabel}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <p className='mb-4 text-muted-foreground'>
+            Totals for a time-of-day window, in local time. Window:{' '}
+            {windowLabel}
+          </p>
+          <div className='flex flex-wrap items-end gap-4'>
+            <div>
+              <Label htmlFor='snapshot-start-time' className='mb-1'>
+                Start time on {startString ?? '—'}
+              </Label>
+              <Input
+                id='snapshot-start-time'
+                type='time'
+                value={startTime}
+                onChange={(event) => setStartTime(event.target.value)}
               />
             </div>
+            <div>
+              <Label htmlFor='snapshot-end-time' className='mb-1'>
+                End time on {endString ?? '—'}
+              </Label>
+              <Input
+                id='snapshot-end-time'
+                type='time'
+                value={endTime}
+                onChange={(event) => setEndTime(event.target.value)}
+              />
+            </div>
+            <Button
+              variant='primary'
+              onClick={runSnapshot}
+              disabled={loading || !canRun || !startTime || !endTime}
+            >
+              {loading ? `Loading… ${progress} events` : 'Run snapshot'}
+            </Button>
           </div>
-        ))}
-      </DialogBody>
-      <DialogFooter>
-        <Button
-          variant='success'
-          onClick={exportSnapshot}
-          disabled={loading || !sections || sections.length === 0}
-        >
-          Export snapshot
-        </Button>
-        <Button variant='dark' onClick={onHide}>
-          Close
-        </Button>
-      </DialogFooter>
+
+          {error && (
+            <Alert variant='danger' className='mt-4'>
+              {error}
+            </Alert>
+          )}
+
+          {sections?.length === 0 && (
+            <Alert variant='info' className='mt-4'>
+              No completions in this window.
+            </Alert>
+          )}
+
+          {sections?.map((section) => (
+            <div key={section.workflowType} className='mt-6'>
+              <h5 className='mb-2'>{section.label}</h5>
+              <div className='overflow-x-auto'>
+                <MyTable
+                  tableHeadings={section.headings}
+                  tableData={[
+                    ...section.rows.map((row) => ({
+                      id: row.id,
+                      rowData: row.cells,
+                    })),
+                    ...(section.footer
+                      ? [
+                          {
+                            id: `${section.workflowType}:__total`,
+                            rowData: section.footer.map((cell, index) => (
+                              <strong key={index}>{cell}</strong>
+                            )),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              </div>
+            </div>
+          ))}
+        </DialogBody>
+        <DialogFooter>
+          <Button
+            variant='success'
+            onClick={exportSnapshot}
+            disabled={loading || !sections || sections.length === 0}
+          >
+            Export snapshot
+          </Button>
+          <Button variant='dark' onClick={onHide}>
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
