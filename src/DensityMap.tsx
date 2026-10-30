@@ -126,7 +126,7 @@ const BASE_STYLE: StyleSpecification = {
 };
 
 type FeatureCollection = GeoJSON.FeatureCollection;
-type Outline = { id: string; coordinates: number[] | null };
+type Outline = { id: string; coordinates?: number[] | null };
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
