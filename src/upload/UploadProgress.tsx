@@ -308,9 +308,10 @@ export default function UploadProgress() {
 }
 
 function formatRate(bytesPerSecond: number): string {
-  const mbps = bytesPerSecond / (1024 * 1024);
-  if (mbps >= 1) return `${mbps.toFixed(1)} MB/s`;
-  return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+  const bitsPerSecond = bytesPerSecond * 8;
+  if (bitsPerSecond >= 1_000_000)
+    return `${(bitsPerSecond / 1_000_000).toFixed(0)} Mbps`;
+  return `${(bitsPerSecond / 1000).toFixed(0)} Kbps`;
 }
 
 function formatDuration(seconds: number): string {
