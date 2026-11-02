@@ -1,21 +1,16 @@
-import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
+import { SearchIcon } from 'lucide-react';
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import { Footer } from '../Modal';
-import MyTable from '../Table';
 import { useUsers } from '../apiInterface';
 import { fetchAllPaginatedResults } from '../utils';
 import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
+import { SectionTitle } from './SurveyStructure';
 
 type UserPermission = {
   userId: string;
@@ -26,6 +21,8 @@ type UserPermission = {
   isAdmin: boolean;
   isOrgAdmin: boolean;
 };
+
+const GRID = 'minmax(0, 1fr) minmax(0, 1.3fr) 110px 110px';
 
 export default function ManageUsers({
   projectId,
@@ -42,8 +39,9 @@ export default function ManageUsers({
     UserPermission[]
   >([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [showUnsavedPrompt, setShowUnsavedPrompt] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const [search, setSearch] = useState('');
   const [saveResult, setSaveResult] = useState<{
     variant: 'success' | 'danger';
     message: string;
@@ -118,30 +116,22 @@ export default function ManageUsers({
     return () => controller.abort();
   }, [fetchData]);
 
-  const hasChanges = permissions.some(
-    (p) =>
-      !originalPermissions.some(
-        (op) =>
-          op.userId === p.userId &&
-          op.annotationAccess === p.annotationAccess &&
-          op.isAdmin === p.isAdmin,
-      ),
-  );
+  const changed = (p: UserPermission) =>
+    !originalPermissions.some(
+      (op) =>
+        op.userId === p.userId &&
+        op.annotationAccess === p.annotationAccess &&
+        op.isAdmin === p.isAdmin,
+    );
+  const changedCount = permissions.filter(changed).length;
+  const hasChanges = changedCount > 0;
 
   // Returns true only when every change was written.
   const handleSave = async () => {
     setIsSaving(true);
     setSaveResult(null);
 
-    const permissionsToUpdate = permissions.filter(
-      (p) =>
-        !originalPermissions.some(
-          (op) =>
-            op.userId === p.userId &&
-            op.annotationAccess === p.annotationAccess &&
-            op.isAdmin === p.isAdmin,
-        ),
-    );
+    const permissionsToUpdate = permissions.filter(changed);
 
     // Keep going past a failed user so one rejection doesn't silently skip
     // everyone after it; report exactly who didn't save.
@@ -184,144 +174,190 @@ export default function ManageUsers({
     return failed.length === 0;
   };
 
-  const handleClose = () => {
-    if (hasChanges) {
-      setShowUnsavedPrompt(true);
-    } else {
-      showModal(null);
-    }
-  };
-
   const handleSaveAndClose = async () => {
-    setShowUnsavedPrompt(false);
+    setConfirmingClose(false);
     // Stay open on failure so the error is seen.
     if (await handleSave()) showModal(null);
   };
 
-  const handleDiscardAndClose = () => {
-    setShowUnsavedPrompt(false);
-    showModal(null);
+  const update = (userId: string, change: Partial<UserPermission>) => {
+    setSaveResult(null);
+    setPermissions((prev) =>
+      prev.map((p) => (p.userId === userId ? { ...p, ...change } : p)),
+    );
   };
 
-  const tableData = permissions.map((permission) => ({
-    id: permission.userId,
-    rowData: [
-      permission.userName,
-      permission.userEmail,
-      <LabeledToggleSwitch
-        className='mb-0'
-        leftLabel='No'
-        rightLabel='Yes'
-        checked={permission.annotationAccess}
-        disabled={permission.isOrgAdmin || isSaving}
-        onChange={(checked) => {
-          if (permission.isAdmin && !checked) {
-            // Can't remove annotation access while admin
-            return;
-          }
-          setSaveResult(null);
-          setPermissions(
-            permissions.map((p) =>
-              p.userId === permission.userId
-                ? { ...p, annotationAccess: checked }
-                : p,
-            ),
-          );
-        }}
-      />,
-      <LabeledToggleSwitch
-        className='mb-0'
-        leftLabel='No'
-        rightLabel='Yes'
-        checked={permission.isAdmin}
-        disabled={permission.isOrgAdmin || isSaving}
-        onChange={(checked) => {
-          setSaveResult(null);
-          setPermissions(
-            permissions.map((p) =>
-              p.userId === permission.userId
-                ? {
-                    ...p,
-                    isAdmin: checked,
-                    annotationAccess: checked ? true : p.annotationAccess,
-                  }
-                : p,
-            ),
-          );
-        }}
-      />,
-    ],
-  }));
+  const query = search.trim().toLowerCase();
+  const visible = query
+    ? permissions.filter(
+        (p) =>
+          p.userName.toLowerCase().includes(query) ||
+          p.userEmail.toLowerCase().includes(query),
+      )
+    : permissions;
 
   return (
     <>
-      <div className='p-4'>
-        <div className='mb-4 text-muted-foreground' style={{ lineHeight: 1.2 }}>
-          <span style={{ fontSize: 16 }}>Manage User Access</span>
-          <br />
-          <span style={{ fontSize: 12 }}>
-            Grant or revoke annotation and admin access for each organisation
-            member on this survey.
-            <br />
-            Organisation admins automatically have full access and cannot be
-            modified here.
-            <br />
-            Enabling admin access automatically grants annotation access.
-          </span>
+      <div className='flex flex-col gap-2 p-4'>
+        <SectionTitle className='border-b-0 pb-0'>Members</SectionTitle>
+        <div className='relative'>
+          <SearchIcon className='pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-[#6c757d]' />
+          <Input
+            type='search'
+            aria-label='Find a member'
+            placeholder='Find a member by name or email…'
+            className='pl-9'
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
-        <MyTable
-          tableHeadings={[
-            { content: 'Username', sort: true },
-            { content: 'Email', sort: true },
-            { content: 'Annotation Access' },
-            { content: 'Admin' },
-          ]}
-          tableData={tableData}
-          pagination={true}
-          emptyMessage={isLoading ? 'Loading...' : 'No users found'}
-        />
-        {saveResult && (
-          <Alert variant={saveResult.variant} className='mt-4 mb-0'>
-            {saveResult.message}
-          </Alert>
+        <div className='border border-white/15 bg-white/[0.07] text-sm'>
+          <div
+            className='grid gap-3 border-b border-white/15 bg-black/15 px-3 py-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
+            style={{ gridTemplateColumns: GRID }}
+          >
+            <span>Name</span>
+            <span>Email</span>
+            <span className='text-center'>Can annotate</span>
+            <span className='text-center'>Survey admin</span>
+          </div>
+          <div className='max-h-[26rem] overflow-y-auto'>
+            {isLoading ? (
+              <div className='flex items-center gap-2 px-3 py-3 text-muted-foreground'>
+                <Spinner animation='border' size='sm' />
+                Loading members...
+              </div>
+            ) : visible.length === 0 ? (
+              <div className='px-3 py-3 text-muted-foreground italic'>
+                {permissions.length ? 'No members match.' : 'No members found.'}
+              </div>
+            ) : (
+              visible.map((p) => (
+                <div
+                  key={p.userId}
+                  className={cn(
+                    'grid items-center gap-3 border-b border-white/[0.08] px-3 py-2 last:border-b-0',
+                    changed(p) && 'shadow-[inset_3px_0_0_var(--color-primary)]',
+                  )}
+                  style={{ gridTemplateColumns: GRID }}
+                >
+                  <span className='flex min-w-0 items-center gap-2'>
+                    <span className='truncate' title={p.userName}>
+                      {p.userName}
+                    </span>
+                    {p.isOrgAdmin && (
+                      <span className='shrink-0 border border-white/30 px-1.5 text-[11px] leading-5 text-muted-foreground'>
+                        Organisation admin
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className='truncate text-muted-foreground'
+                    title={p.userEmail}
+                  >
+                    {p.userEmail}
+                  </span>
+                  <span
+                    className='flex justify-center'
+                    title={
+                      p.isOrgAdmin
+                        ? 'Organisation admins always have full access'
+                        : p.isAdmin
+                          ? 'Survey admins can always annotate'
+                          : undefined
+                    }
+                  >
+                    <Switch
+                      aria-label={`${p.userName} can annotate`}
+                      checked={p.annotationAccess}
+                      disabled={p.isOrgAdmin || p.isAdmin || isSaving}
+                      onCheckedChange={(checked) =>
+                        update(p.userId, { annotationAccess: checked })
+                      }
+                    />
+                  </span>
+                  <span
+                    className='flex justify-center'
+                    title={
+                      p.isOrgAdmin
+                        ? 'Organisation admins always have full access'
+                        : undefined
+                    }
+                  >
+                    <Switch
+                      aria-label={`${p.userName} is a survey admin`}
+                      checked={p.isAdmin}
+                      disabled={p.isOrgAdmin || isSaving}
+                      onCheckedChange={(checked) =>
+                        update(p.userId, {
+                          isAdmin: checked,
+                          annotationAccess: checked || p.annotationAccess,
+                        })
+                      }
+                    />
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        {saveResult?.variant === 'danger' && (
+          <div className='text-xs text-danger'>{saveResult.message}</div>
         )}
       </div>
       <Footer>
-        <Button
-          variant='primary'
-          onClick={handleSave}
-          disabled={isSaving || !hasChanges}
-        >
-          {isSaving ? 'Saving...' : 'Save'}
-        </Button>
-        <Button variant='dark' onClick={handleClose} disabled={isSaving}>
-          Close
-        </Button>
-      </Footer>
-      <Dialog
-        open={showUnsavedPrompt}
-        onOpenChange={(o) => !o && setShowUnsavedPrompt(false)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Unsaved Changes</DialogTitle>
-          </DialogHeader>
-          <DialogBody>
-            You have unsaved changes. Would you like to save before closing?
-          </DialogBody>
-          <DialogFooter>
-            <Button variant='primary' onClick={handleSaveAndClose}>
-              Save & Close
+        {confirmingClose ? (
+          <>
+            <div className='mr-auto'>
+              <div>Close without saving?</div>
+              <div className='text-xs text-muted-foreground'>
+                {changedCount} member{changedCount === 1 ? '' : 's'} changed.
+              </div>
+            </div>
+            <Button
+              variant='outline-light'
+              onClick={() => setConfirmingClose(false)}
+            >
+              Keep editing
             </Button>
-            <Button variant='danger' onClick={handleDiscardAndClose}>
+            <Button variant='danger' onClick={() => showModal(null)}>
               Discard
             </Button>
-            <Button variant='dark' onClick={() => setShowUnsavedPrompt(false)}>
-              Cancel
+            <Button variant='primary' onClick={handleSaveAndClose}>
+              Save and close
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        ) : (
+          <>
+            <Button
+              variant='ghost'
+              className='mr-auto'
+              onClick={() =>
+                hasChanges ? setConfirmingClose(true) : showModal(null)
+              }
+              disabled={isSaving}
+            >
+              Close
+            </Button>
+            {hasChanges ? (
+              <span className='text-xs text-warning'>
+                ● {changedCount} member{changedCount === 1 ? '' : 's'} changed
+              </span>
+            ) : (
+              saveResult?.variant === 'success' && (
+                <span className='text-xs text-success'>Saved</span>
+              )
+            )}
+            <Button
+              variant='primary'
+              onClick={handleSave}
+              disabled={isSaving || !hasChanges}
+            >
+              {isSaving ? 'Saving...' : 'Save changes'}
+            </Button>
+          </>
+        )}
+      </Footer>
     </>
   );
 }

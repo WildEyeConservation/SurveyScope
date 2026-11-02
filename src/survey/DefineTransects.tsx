@@ -679,12 +679,6 @@ function DefineTransectsEditor({
             modeName: MODE_LASSO,
             // Default 40px snaps to corners while placing points near them.
             pointerDistance: 12,
-            styles: {
-              fillColor: '#000000',
-              fillOpacity: 0.05,
-              outlineColor: '#000000',
-              outlineWidth: 2,
-            },
           }),
           new TerraDrawRenderMode({ modeName: MODE_IDLE, styles: {} }),
         ],
@@ -920,7 +914,7 @@ function DefineTransectsEditor({
   ];
 
   const hint = lassoActive
-    ? 'Click to draw around points · double-click to finish'
+    ? 'Click to draw around points · click the first point to finish'
     : selectedTransectIds.size === 0 && segmentedImages.length > 0
       ? 'Click a point to select its transect · Shift-click to add more'
       : null;

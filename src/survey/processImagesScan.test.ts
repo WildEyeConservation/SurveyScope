@@ -6,7 +6,7 @@ import { ROW_SOURCES, type RowSourceName } from '../../shared/rowSources';
 import {
   MODELS,
   dispatchBatches,
-  findUnprocessedImages,
+  findUnprocessedByModel,
 } from './processImagesScan';
 
 const pack = (
@@ -43,27 +43,40 @@ test('finds images without an exact processedBy source match', async () => {
             : pack(
                 'processedByProjectIdAndSource',
                 ['imageId', 'source'],
-                [
-                  { imageId: 'a', source: 'mad-v2' },
-                  { imageId: 'b', source: 'mad-v2-test' },
-                ],
+                input.beginsWith === 'mad-v2'
+                  ? [
+                      { imageId: 'a', source: 'mad-v2' },
+                      { imageId: 'b', source: 'mad-v2-test' },
+                    ]
+                  : [{ imageId: 'c', source: 'owl-d' }],
               );
         return { data: JSON.stringify({ data, count: 3, cursor: null }) };
       },
     },
   };
   const progress: number[] = [];
-  const images = await findUnprocessedImages(client, 'p', 'mad-v2', {
-    onProgress: (count) => progress.push(count),
-  });
-  assert.deepEqual(images, [
+  const { total, unprocessed } = await findUnprocessedByModel(
+    client,
+    'p',
+    ['mad', 'owl-d'],
+    { onProgress: (count) => progress.push(count) },
+  );
+  assert.equal(total, 3);
+  assert.deepEqual(unprocessed.mad, [
     { id: 'b', originalPath: 'b.jpg' },
     { id: 'c', originalPath: 'c.jpg' },
   ]);
+  assert.deepEqual(
+    unprocessed['owl-d'].map((image) => image.id),
+    ['a', 'b'],
+  );
   assert.deepEqual(progress, [3]);
-  assert.equal(
-    calls.find((c) => c.source === 'processedByProjectIdAndSource')?.beginsWith,
-    'mad-v2',
+  assert.deepEqual(
+    calls
+      .filter((c) => c.source === 'processedByProjectIdAndSource')
+      .map((c) => c.beginsWith)
+      .sort(),
+    ['mad-v2', 'owl-d'],
   );
 });
 

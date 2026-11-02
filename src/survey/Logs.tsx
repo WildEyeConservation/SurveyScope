@@ -1,19 +1,60 @@
-import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import exportFromJSON from 'export-from-json';
-import { Download } from 'lucide-react';
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { DownloadIcon, SearchIcon } from 'lucide-react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { neutraliseCsvRows } from '../../shared/csv';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
-import MyTable from '../Table';
 import { fetchAllPaginatedResults } from '../utils';
+
+type Range = 'today' | 'week' | 'month' | 'all' | 'custom';
+
+const RANGES: { value: Range; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'Last 7 days' },
+  { value: 'month', label: 'Last 30 days' },
+  { value: 'all', label: 'All' },
+  { value: 'custom', label: 'Custom' },
+];
+
+const GRID = '170px 150px minmax(0, 1fr)';
+
+const isoDay = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`;
+
+// Bounds in UTC for the user's local days.
+function rangeBounds(range: Range, from: string, to: string) {
+  const startOfDay = (day: string) => new Date(`${day}T00:00:00`);
+  const endOfDay = (day: string) => new Date(`${day}T23:59:59.999`);
+  const today = isoDay(new Date());
+  const daysAgo = (days: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() - days);
+    return isoDay(date);
+  };
+  const [start, end] =
+    range === 'today'
+      ? [today, today]
+      : range === 'week'
+        ? [daysAgo(6), today]
+        : range === 'month'
+          ? [daysAgo(29), today]
+          : range === 'custom'
+            ? [from, to]
+            : [null, null];
+  if (!start || !end) return null;
+  return {
+    ge: startOfDay(start).toISOString(),
+    le: endOfDay(end).toISOString(),
+  };
+}
 
 export default function Logs({ projectId }: { projectId: string }) {
   const { client, showModal } = useContext(GlobalContext)!;
@@ -21,248 +62,234 @@ export default function Logs({ projectId }: { projectId: string }) {
   const [logs, setLogs] = useState<Schema['AdminActionLog']['type'][]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [range, setRange] = useState<Range>('month');
+  const [from, setFrom] = useState(() => isoDay(new Date()));
+  const [to, setTo] = useState(() => isoDay(new Date()));
+  const [search, setSearch] = useState('');
 
-  const userMap = useMemo(() => {
-    return users.reduce(
-      (acc, user) => {
-        acc[user.id] = user.name ?? '';
-        return acc;
-      },
-      {} as Record<string, string>,
-    );
-  }, [users]);
+  const userMap = useMemo(
+    () =>
+      Object.fromEntries(
+        users.map((user) => [user.id, user.name ?? '']),
+      ) as Record<string, string>,
+    [users],
+  );
 
-  // Date range filters
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [startTime, setStartTime] = useState<string>('00:00');
-  const [endTime, setEndTime] = useState<string>('23:59');
-
-  const abortRef = useRef(new AbortController());
   useEffect(() => {
+    const bounds = rangeBounds(range, from, to);
+    if (range === 'custom' && (!from || !to || from > to)) return;
     const controller = new AbortController();
-    abortRef.current = controller;
-    return () => controller.abort();
-  }, []);
-
-  // Set default date range to today
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    setStartDate(today);
-    setEndDate(today);
-  }, []);
-
-  const fetchLogs = async () => {
-    if (!startDate || !endDate) {
-      setError('Please select both start and end dates');
-      return;
-    }
-
-    const { signal } = abortRef.current;
+    const { signal } = controller;
+    const selectionSet = [
+      'id',
+      'userId',
+      'message',
+      'createdAt',
+      'projectId',
+    ] as const;
     setLoading(true);
     setError(null);
-
-    try {
-      // Build date-time strings for filtering
-      const startDateTime = `${startDate}T${startTime}:00.000Z`;
-      const endDateTime = `${endDate}T${endTime}:59.999Z`;
-
-      // Query logs by projectId with createdAt filter
-      // Note: We query all logs for the project, then filter by date range
-      // since the index has createdAt as sort key
-      const allLogs = await fetchAllPaginatedResults(
-        client.models.AdminActionLog.adminActionLogsByProjectId,
-        {
-          projectId,
-          filter: {
-            createdAt: {
-              ge: startDateTime,
-              le: endDateTime,
-            },
-          },
-          selectionSet: ['id', 'userId', 'message', 'createdAt', 'projectId'],
-          signal,
-        },
-      ).catch(async (err) => {
+    fetchAllPaginatedResults(
+      client.models.AdminActionLog.adminActionLogsByProjectId,
+      {
+        projectId,
+        ...(bounds ? { filter: { createdAt: bounds } } : {}),
+        selectionSet,
+        signal,
+      },
+    )
+      .catch(async (err) => {
         if (signal.aborted) throw err;
-        // Fallback: if query fails, try listing all and filtering client-side
+        // Fallback: list the project's logs and filter them here.
         const allProjectLogs = await fetchAllPaginatedResults(
           client.models.AdminActionLog.list,
-          {
-            filter: {
-              projectId: { eq: projectId },
-            },
-            selectionSet: ['id', 'userId', 'message', 'createdAt', 'projectId'],
-            signal,
-          },
+          { filter: { projectId: { eq: projectId } }, selectionSet, signal },
         );
-        return allProjectLogs.filter((log) => {
-          const logDate = new Date(log.createdAt ?? '');
-          const start = new Date(startDateTime);
-          const end = new Date(endDateTime);
-          return logDate >= start && logDate <= end;
-        });
+        return bounds
+          ? allProjectLogs.filter(
+              (log) =>
+                (log.createdAt ?? '') >= bounds.ge &&
+                (log.createdAt ?? '') <= bounds.le,
+            )
+          : allProjectLogs;
+      })
+      .then((allLogs) => {
+        if (signal.aborted) return;
+        setLogs(
+          [...allLogs].sort((a, b) =>
+            (b.createdAt ?? '').localeCompare(a.createdAt ?? ''),
+          ),
+        );
+      })
+      .catch((err) => {
+        if (signal.aborted) return;
+        console.error('Error fetching logs:', err);
+        setError('The logs could not be loaded. Please try again.');
+      })
+      .finally(() => {
+        if (!signal.aborted) setLoading(false);
       });
+    return () => controller.abort();
+  }, [client, projectId, range, from, to]);
 
-      // Sort by createdAt descending (newest first)
-      const sortedLogs = allLogs.sort((a, b) => {
-        const dateA = new Date(a.createdAt ?? '').getTime();
-        const dateB = new Date(b.createdAt ?? '').getTime();
-        return dateB - dateA;
-      });
-
-      setLogs(sortedLogs);
-    } catch (err) {
-      if (signal.aborted) return;
-      console.error('Error fetching logs:', err);
-      setError('Failed to fetch logs. Please try again.');
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (startDate && endDate) {
-      fetchLogs();
-    }
-  }, [projectId]); // Only fetch on mount or when projectId changes
+  const query = search.trim().toLowerCase();
+  const visible = query
+    ? logs.filter(
+        (log) =>
+          (log.message ?? '').toLowerCase().includes(query) ||
+          (userMap[log.userId] ?? '').toLowerCase().includes(query),
+      )
+    : logs;
 
   const handleDownload = () => {
-    if (logs.length === 0) {
-      alert('No logs to download');
-      return;
-    }
-
-    // Format logs for export
-    const exportData = logs.map((log) => ({
-      Timestamp: new Date(log.createdAt ?? '').toLocaleString(),
-      'User Name': userMap[log.userId] || log.userId,
-      'User ID': log.userId,
-      Message: log.message,
-      'Project ID': log.projectId || '',
-    }));
-
     exportFromJSON({
-      data: neutraliseCsvRows(exportData),
-      fileName: `admin-logs-${projectId}-${startDate}-to-${endDate}`,
+      data: neutraliseCsvRows(
+        visible.map((log) => ({
+          Timestamp: new Date(log.createdAt ?? '').toLocaleString(),
+          'User Name': userMap[log.userId] || log.userId,
+          'User ID': log.userId,
+          Message: log.message,
+          'Project ID': log.projectId || '',
+        })),
+      ),
+      fileName: `admin-logs-${projectId}-${range === 'custom' ? `${from}-to-${to}` : range}`,
       exportType: exportFromJSON.types.csv,
     });
   };
 
-  const formatTimestamp = (timestamp: string | null | undefined) => {
-    return new Date(timestamp ?? '').toLocaleString();
-  };
-
-  // Convert logs to tableData format
-  const tableData = useMemo(() => {
-    return logs.map((log) => ({
-      id: log.id,
-      rowData: [
-        formatTimestamp(log.createdAt),
-        userMap[log.userId] || log.userId,
-        <span style={{ whiteSpace: 'pre-wrap' }}>{log.message}</span>,
-      ],
-    }));
-  }, [logs, userMap]);
-
-  const tableHeadings = [
-    { content: 'Timestamp', sort: true },
-    { content: 'User', sort: true },
-    { content: 'Message', sort: false },
-  ];
+  const formatTimestamp = (timestamp: string | null | undefined) =>
+    new Date(timestamp ?? '').toLocaleString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
 
   return (
-    <div className='flex flex-col gap-4'>
-      <Card>
-        <CardHeader>
-          <h5 className='mb-0'>Filter Logs</h5>
-        </CardHeader>
-        <CardContent>
-          <div className='flex flex-col gap-4 md:flex-row md:items-end'>
-            <div className='grow'>
-              <Label>Start Date</Label>
-              <Input
-                type='date'
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className='grow'>
-              <Label>Start Time</Label>
-              <Input
-                type='time'
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-              />
-            </div>
-            <div className='grow'>
-              <Label>End Date</Label>
-              <Input
-                type='date'
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-            <div className='grow'>
-              <Label>End Time</Label>
-              <Input
-                type='time'
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-              />
-            </div>
-            <div>
-              <Button onClick={fetchLogs} disabled={loading}>
-                {loading ? (
-                  <>
-                    <Spinner size='sm' />
-                    Loading...
-                  </>
-                ) : (
-                  'Apply Filter'
-                )}
-              </Button>
-            </div>
+    <>
+      <div className='flex flex-col gap-3 p-4'>
+        <div className='flex flex-wrap items-center gap-3'>
+          <div className='relative min-w-48 flex-1'>
+            <SearchIcon className='pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-[#6c757d]' />
+            <Input
+              type='search'
+              size='sm'
+              aria-label='Search logs'
+              placeholder='Search messages or users…'
+              className='pl-9'
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-        </CardContent>
-      </Card>
-
-      {error && <Alert variant='danger'>{error}</Alert>}
-
-      <Card>
-        <CardHeader className='flex items-center justify-between'>
-          <h5 className='mb-0'>Admin Action Logs</h5>
+          <div
+            role='radiogroup'
+            aria-label='Date range'
+            className='inline-flex border border-white/30'
+          >
+            {RANGES.map((option) => (
+              <button
+                key={option.value}
+                type='button'
+                role='radio'
+                aria-checked={range === option.value}
+                onClick={() => setRange(option.value)}
+                className={cn(
+                  'px-3 py-1 text-sm leading-normal transition-colors',
+                  range === option.value
+                    ? 'bg-primary text-white'
+                    : 'hover:bg-white/10',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {range === 'custom' && (
+            <div className='flex items-center gap-2 text-sm'>
+              <Input
+                type='date'
+                size='sm'
+                aria-label='From'
+                className='w-40'
+                value={from}
+                max={to}
+                onChange={(e) => setFrom(e.target.value)}
+              />
+              <span className='text-muted-foreground'>to</span>
+              <Input
+                type='date'
+                size='sm'
+                aria-label='To'
+                className='w-40'
+                value={to}
+                min={from}
+                onChange={(e) => setTo(e.target.value)}
+              />
+            </div>
+          )}
           <Button
-            variant='primary'
+            variant='outline-light'
             size='sm'
             onClick={handleDownload}
-            disabled={logs.length === 0}
+            disabled={loading || visible.length === 0}
           >
-            <Download size={16} />
-            Download CSV
+            <DownloadIcon className='size-3.5' />
+            Export CSV
           </Button>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className='py-6 text-center'>
-              <Spinner />
-            </div>
-          ) : (
-            <MyTable
-              tableHeadings={tableHeadings}
-              tableData={tableData}
-              pagination={true}
-              itemsPerPage={25}
-              emptyMessage='No logs found for the selected date range.'
-            />
-          )}
-        </CardContent>
-      </Card>
+        </div>
+        <div className='border border-white/15 bg-white/[0.07] text-sm'>
+          <div
+            className='grid gap-3 border-b border-white/15 bg-black/15 px-3 py-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
+            style={{ gridTemplateColumns: GRID }}
+          >
+            <span>Time</span>
+            <span>User</span>
+            <span>Message</span>
+          </div>
+          <div className='max-h-[28rem] overflow-y-auto'>
+            {loading ? (
+              <div className='flex items-center gap-2 px-3 py-3 text-muted-foreground'>
+                <Spinner animation='border' size='sm' />
+                Loading logs...
+              </div>
+            ) : error ? (
+              <div className='px-3 py-3 text-danger'>{error}</div>
+            ) : visible.length === 0 ? (
+              <div className='px-3 py-3 text-muted-foreground italic'>
+                {logs.length
+                  ? 'No entries match your search.'
+                  : 'Nothing was logged in this period.'}
+              </div>
+            ) : (
+              visible.map((log) => (
+                <div
+                  key={log.id}
+                  className='grid gap-3 border-b border-white/[0.08] px-3 py-2 last:border-b-0'
+                  style={{ gridTemplateColumns: GRID }}
+                >
+                  <span className='text-muted-foreground tabular-nums'>
+                    {formatTimestamp(log.createdAt)}
+                  </span>
+                  <span className='truncate' title={userMap[log.userId]}>
+                    {userMap[log.userId] || log.userId}
+                  </span>
+                  <span className='whitespace-pre-wrap'>{log.message}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
       <Footer>
-        <Button variant='dark' onClick={() => showModal(null)}>
+        <Button
+          variant='ghost'
+          className='mr-auto'
+          onClick={() => showModal(null)}
+        >
           Close
         </Button>
       </Footer>
-    </div>
+    </>
   );
 }
