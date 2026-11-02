@@ -1333,10 +1333,10 @@ export default function SurveyAreaEditor({
           </div>
         )}
 
-        <div className='absolute top-3 right-3 z-10 flex max-h-[calc(100%-1.5rem)] items-start gap-2'>
+        <div className='pointer-events-none absolute top-3 right-3 bottom-3 z-10 flex items-start gap-2'>
           {layersOpen ? (
             <div
-              className='flex max-h-full w-80 flex-col overflow-hidden bg-white text-foreground shadow-lg'
+              className='pointer-events-auto flex max-h-full w-80 flex-col overflow-hidden bg-white text-foreground shadow-lg'
               style={LIGHT_THEME}
             >
               <div className='flex items-center gap-2 border-b border-black/10 px-3 py-2 text-sm'>
@@ -1358,7 +1358,7 @@ export default function SurveyAreaEditor({
                   <XIcon className='size-4' />
                 </button>
               </div>
-              <div className='flex flex-col overflow-y-auto'>
+              <div className='flex min-h-0 flex-col overflow-y-auto'>
                 {pendingImport ? (
                   <div className='flex flex-col gap-2 p-3'>
                     <FormText className='mt-0'>
@@ -1570,7 +1570,7 @@ export default function SurveyAreaEditor({
               label='Show panel'
               shortcut='L'
               tipSide='left'
-              className={controls}
+              className={cn('pointer-events-auto', controls)}
               onClick={() => setLayersOpen(true)}
             >
               <LayersIcon className='size-4' />

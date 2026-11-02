@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fetchAllPaginatedResults } from '../utils';
 import { ringToPolygon } from './new-survey/surveyArea';
-import { carryStrata, type LatLng } from './transectStrata';
+import {
+  assignTransectColours,
+  carryStrata,
+  type LatLng,
+} from './transectStrata';
 
 test('saved strata keep their name when a line moves', () => {
   const west: LatLng[] = [
@@ -172,4 +176,51 @@ test('default names are renumbered in list order', () => {
     ['Stratum 1', 'Stratum 2'],
   );
   assert.equal(carried.filter((st) => st.id === 'whole').length, 1);
+});
+
+test('neighbouring transects never share a colour', () => {
+  // 30 parallel east-west lines, more than the palette has colours.
+  const images = Array.from({ length: 30 }, (_, transectId) =>
+    Array.from({ length: 20 }, (_, i) => ({
+      transectId,
+      latitude: transectId * 0.01,
+      longitude: i * 0.015,
+    })),
+  ).flat();
+  const colours = assignTransectColours(images);
+  assert.equal(colours.size, 30);
+  for (let tid = 1; tid < 30; tid++) {
+    assert.notEqual(colours.get(tid), colours.get(tid - 1));
+  }
+});
+
+test('closely spaced transects still get distinct neighbour colours', () => {
+  // Two far-off transects stretch the extent so these 12 sit close together.
+  const line = (transectId: number, latitude: number) =>
+    Array.from({ length: 20 }, (_, i) => ({
+      transectId,
+      latitude,
+      longitude: i * 0.001,
+    }));
+  const images = [
+    ...Array.from({ length: 12 }, (_, tid) => line(tid, tid * 0.0005)).flat(),
+    ...line(12, 5),
+    ...line(13, -5),
+  ];
+  const colours = assignTransectColours(images);
+  for (let tid = 1; tid < 12; tid++) {
+    assert.notEqual(colours.get(tid), colours.get(tid - 1));
+  }
+});
+
+test('parallel transects use the whole palette, not two colours', () => {
+  const images = Array.from({ length: 12 }, (_, transectId) =>
+    Array.from({ length: 20 }, (_, i) => ({
+      transectId,
+      latitude: transectId * 0.01,
+      longitude: i * 0.006,
+    })),
+  ).flat();
+  const colours = assignTransectColours(images);
+  assert.equal(new Set(colours.values()).size, 12);
 });

@@ -20,16 +20,107 @@ export type SavedStratum = { id: string; name: string; coords: LatLng[] };
 
 export type SegmentedImage = SurveyImage & { transectId: number };
 
+// Dark enough to read on the light basemap.
 export const transectColors = [
-  'red',
-  'blue',
-  'green',
-  'orange',
-  'purple',
-  'brown',
-  'pink',
-  'cyan',
+  '#e6194b',
+  '#4363d8',
+  '#3cb44b',
+  '#f58231',
+  '#911eb4',
+  '#0097b8',
+  '#f032e6',
+  '#9a6324',
+  '#469990',
+  '#000075',
+  '#808000',
+  '#d4a000',
 ];
+
+// Neighbours extend to 2.5 times the nearest transect's distance.
+export function assignTransectColours(
+  images: { transectId: number; latitude: number; longitude: number }[],
+  palette: string[] = transectColors,
+): Map<number, string> {
+  const colours = new Map<number, string>();
+  if (!images.length) return colours;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  for (const { latitude, longitude } of images) {
+    minLat = Math.min(minLat, latitude);
+    maxLat = Math.max(maxLat, latitude);
+    minLng = Math.min(minLng, longitude);
+    maxLng = Math.max(maxLng, longitude);
+  }
+  const cellsAcross = 100;
+  const cell = Math.max(maxLat - minLat, maxLng - minLng, 1e-9) / cellsAcross;
+  const cells = new Map<number, Set<number>>();
+  const cellsOf = new Map<number, Set<number>>();
+  const keyOf = (row: number, col: number) => row * 1000 + col;
+  for (const { transectId, latitude, longitude } of images) {
+    const key = keyOf(
+      Math.floor((latitude - minLat) / cell),
+      Math.floor((longitude - minLng) / cell),
+    );
+    if (!cells.has(key)) cells.set(key, new Set());
+    cells.get(key)!.add(transectId);
+    if (!cellsOf.has(transectId)) cellsOf.set(transectId, new Set());
+    cellsOf.get(transectId)!.add(key);
+  }
+
+  const neighbours = (tid: number) => {
+    const own = [...cellsOf.get(tid)!].map((key) => [
+      Math.floor(key / 1000),
+      key % 1000,
+    ]);
+    const found = new Set<number>();
+    const visit = (row: number, col: number) => {
+      for (const other of cells.get(keyOf(row, col)) ?? []) {
+        if (other !== tid) found.add(other);
+      }
+    };
+    for (const [row, col] of own) visit(row, col);
+    let limit = found.size ? 2 : cellsAcross;
+    for (let r = 1; r <= limit; r++) {
+      for (const [row, col] of own) {
+        for (let d = -r; d <= r; d++) {
+          visit(row - r, col + d);
+          visit(row + r, col + d);
+          if (Math.abs(d) < r) {
+            visit(row + d, col - r);
+            visit(row + d, col + r);
+          }
+        }
+      }
+      if (found.size && limit === cellsAcross) limit = Math.ceil(r * 2.5);
+    }
+    return found;
+  };
+
+  const ids = [...cellsOf.keys()].sort((a, b) => a - b);
+  const uses = new Map(palette.map((colour) => [colour, 0]));
+  const leastUsed = (candidates: string[]) =>
+    candidates.reduce((best, colour) =>
+      uses.get(colour)! < uses.get(best)! ? colour : best,
+    );
+  for (const tid of ids) {
+    const used = new Map<string, number>();
+    for (const other of neighbours(tid)) {
+      const colour = colours.get(other);
+      if (colour) used.set(colour, (used.get(colour) ?? 0) + 1);
+    }
+    const free = palette.filter((colour) => !used.has(colour));
+    const colour = free.length
+      ? leastUsed(free)
+      : palette.reduce((best, c) =>
+          used.get(c)! < used.get(best)! ? c : best,
+        );
+    colours.set(tid, colour);
+    uses.set(colour, uses.get(colour)! + 1);
+  }
+  return colours;
+}
 
 export const strataColors = [
   '#e6b800',
@@ -126,6 +217,7 @@ export async function loadOnEffortImages(
   client: DataClient,
   projectId: string,
   signal?: AbortSignal,
+  onProgress?: (count: number) => void,
 ): Promise<{
   images: SurveyImage[];
   imputedIds: Set<string>;
@@ -142,7 +234,7 @@ export async function loadOnEffortImages(
       'transectId',
       'boundaryStatus',
     ],
-    { signal },
+    { signal, onProgress },
   )) as any[];
   const dbTransectIds = new Map<string, string | null>(
     rawImgs.map((img) => [img.id, img.transectId ?? null]),

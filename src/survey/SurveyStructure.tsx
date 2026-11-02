@@ -1,8 +1,10 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { DownloadIcon, SearchIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { escapeCsvValue } from '../../shared/csv';
 
 export type ImageInfo = {
@@ -45,11 +47,21 @@ type SurveyStructureProps = {
   cameras: Camera[];
   projectName: string;
   loading: boolean;
+  loadedCount?: number;
 };
 
 const LIST_ROW_HEIGHT = 37;
 const MAX_VISIBLE_ROWS = 10;
-const DIVIDER = '1px solid rgba(255, 255, 255, 0.12)';
+const FOLDER_COLOURS = [
+  '#f28c3c',
+  '#4fc3c9',
+  '#e5c454',
+  '#9b8ce0',
+  '#7cc576',
+  '#ef7aa1',
+  '#6fa8e8',
+  '#c9a27a',
+];
 
 function flattenRows(cameras: Camera[]): FlatRow[] {
   return cameras.flatMap((camera) =>
@@ -129,9 +141,9 @@ export default function SurveyStructure({
   cameras,
   projectName,
   loading,
+  loadedCount = 0,
 }: SurveyStructureProps) {
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'summary' | 'list'>('summary');
   const [sortBy, setSortBy] = useState<SortKey>('filename');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const listScrollRef = useRef<HTMLDivElement | null>(null);
@@ -169,7 +181,21 @@ export default function SurveyStructure({
     });
   }, [flatRows, search, sortBy, sortDir]);
 
-  const effectiveView = search.trim() ? 'list' : viewMode;
+  const searching = search.trim().length > 0;
+  const folderColour = useMemo(() => {
+    const colours = new Map<string, string>();
+    for (const camera of cameras) {
+      for (const folder of camera.folders) {
+        if (!colours.has(folder.path)) {
+          colours.set(
+            folder.path,
+            FOLDER_COLOURS[colours.size % FOLDER_COLOURS.length],
+          );
+        }
+      }
+    }
+    return colours;
+  }, [cameras]);
   const rowVirtualizer = useVirtualizer({
     count: filteredRows.length,
     getScrollElement: () => listScrollRef.current,
@@ -191,7 +217,7 @@ export default function SurveyStructure({
   };
 
   const gridColumns =
-    'minmax(160px, 2fr) minmax(120px, 1fr) minmax(120px, 1fr) minmax(160px, 1.4fr) minmax(160px, 1.2fr) minmax(90px, 0.8fr)';
+    'minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1.2fr) 180px 170px 84px';
   const headers: ReadonlyArray<readonly [SortKey | null, string]> = [
     ['filename', 'Filename'],
     ['camera', 'Camera'],
@@ -202,36 +228,33 @@ export default function SurveyStructure({
   ];
 
   return (
-    <div className='flex flex-col gap-4'>
-      <div className='flex flex-wrap items-center justify-between gap-2'>
-        <div
-          className='font-semibold text-muted-foreground uppercase'
-          style={{ letterSpacing: 0.5, fontSize: 12 }}
-        >
-          Survey Structure{' '}
-          <span className='ms-1 font-normal'>
-            {flatRows.length.toLocaleString()} image
-            {flatRows.length === 1 ? '' : 's'}
-          </span>
-        </div>
-        <Button
-          variant='secondary'
-          disabled={loading || filteredRows.length === 0}
-          onClick={() =>
-            downloadCsv(
-              `${projectName || 'survey'}-images${
-                search.trim() ? '-filtered' : ''
-              }.csv`,
-              filteredRows,
-            )
-          }
-        >
-          Export CSV
-        </Button>
-      </div>
+    <div className='mt-6 flex flex-col gap-3'>
+      <SectionTitle
+        action={
+          <Button
+            variant='outline-light'
+            size='sm'
+            disabled={loading || filteredRows.length === 0}
+            onClick={() =>
+              downloadCsv(
+                `${projectName || 'survey'}-images${
+                  searching ? '-filtered' : ''
+                }.csv`,
+                filteredRows,
+              )
+            }
+          >
+            <DownloadIcon className='size-3.5' />
+            Export CSV
+          </Button>
+        }
+      >
+        Cameras and folders
+      </SectionTitle>
       {loading ? (
         <div className='text-muted-foreground'>
-          <Spinner animation='border' size='sm' /> Loading structure...
+          <Spinner animation='border' size='sm' /> Loading images
+          {loadedCount > 0 && ` · ${loadedCount.toLocaleString()} loaded`}...
         </div>
       ) : flatRows.length === 0 ? (
         <div className='text-sm text-muted-foreground italic'>
@@ -239,36 +262,22 @@ export default function SurveyStructure({
         </div>
       ) : (
         <>
-          <div className='flex flex-wrap items-center gap-2'>
-            <Input
-              type='search'
-              placeholder='Search filename, folder, camera, or path...'
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              style={{ maxWidth: 360, flex: '1 1 240px' }}
-            />
-            {!search.trim() && (
-              <div className='ms-auto flex gap-2'>
-                <Button
-                  variant={viewMode === 'summary' ? 'primary' : 'outline-light'}
-                  active={viewMode === 'summary'}
-                  onClick={() => setViewMode('summary')}
-                >
-                  Summary
-                </Button>
-                <Button
-                  variant={viewMode === 'list' ? 'primary' : 'outline-light'}
-                  active={viewMode === 'list'}
-                  onClick={() => setViewMode('list')}
-                >
-                  List
-                </Button>
-              </div>
-            )}
-            {search.trim() && (
+          <div className='flex items-center gap-3'>
+            <div className='relative flex-1'>
+              <SearchIcon className='pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-[#6c757d]' />
+              <Input
+                type='search'
+                aria-label='Find an image'
+                placeholder='Find an image by name, folder or path…'
+                className='pl-9'
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+            {searching && (
               <>
                 <small className='text-muted-foreground'>
-                  {filteredRows.length} match
+                  {filteredRows.length.toLocaleString()} match
                   {filteredRows.length === 1 ? '' : 'es'}
                 </small>
                 <Button
@@ -283,71 +292,30 @@ export default function SurveyStructure({
             )}
           </div>
 
-          {effectiveView === 'summary' ? (
-            <div
-              className='overflow-auto'
-              style={{ maxHeight: 600, fontSize: 13 }}
-            >
-              {cameras.map((camera, index) => {
-                const total = camera.folders.reduce(
-                  (sum, folder) => sum + folder.images.length,
-                  0,
-                );
-
-                return (
-                  <div key={`${camera.name}-${index}`}>
-                    <div
-                      className='flex items-center justify-between gap-4 px-4 py-2 font-semibold'
-                      style={{ borderBottom: DIVIDER }}
-                    >
-                      <span>{camera.name}</span>
-                      <small className='text-right font-normal text-muted-foreground'>
-                        {camera.folders.length} folder
-                        {camera.folders.length === 1 ? '' : 's'} · {total} image
-                        {total === 1 ? '' : 's'}
-                      </small>
-                    </div>
-                    {camera.folders.length === 0 ? (
-                      <div
-                        className='py-2 ps-6 pe-4 text-sm text-muted-foreground italic'
-                        style={{ borderBottom: DIVIDER }}
-                      >
-                        No folders
-                      </div>
-                    ) : (
-                      camera.folders.map((folder) => (
-                        <div
-                          key={folder.path}
-                          className='flex justify-between gap-4 py-2 ps-6 pe-4'
-                          style={{ borderBottom: DIVIDER }}
-                        >
-                          <span>{folder.path}</span>
-                          <span className='text-muted-foreground'>
-                            {folder.imageCount} image
-                            {folder.imageCount === 1 ? '' : 's'}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                );
-              })}
+          {!searching ? (
+            <div className='flex flex-col gap-2'>
+              {cameras.map((camera, index) => (
+                <CameraSplit
+                  key={`${camera.name}-${index}`}
+                  camera={camera}
+                  colourFor={(path) => folderColour.get(path) ?? '#adb5bd'}
+                />
+              ))}
             </div>
           ) : (
-            <div>
+            <div className='border border-white/15 bg-white/[0.07] text-[13px]'>
               <div
-                className='grid font-semibold text-muted-foreground uppercase'
-                style={{
-                  gridTemplateColumns: gridColumns,
-                  fontSize: 11,
-                  letterSpacing: 0.4,
-                  borderBottom: DIVIDER,
-                }}
+                className='grid [scrollbar-gutter:stable] overflow-hidden border-b border-white/15 bg-black/15 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
+                style={{ gridTemplateColumns: gridColumns }}
               >
                 {headers.map(([key, label]) => (
                   <div
                     key={label}
-                    className='px-4 py-2'
+                    className={cn(
+                      'truncate px-3 py-2',
+                      key && 'cursor-pointer hover:text-foreground',
+                      label === 'Altitude' && 'text-right',
+                    )}
                     role={key ? 'button' : undefined}
                     tabIndex={key ? 0 : undefined}
                     onClick={key ? () => changeSort(key) : undefined}
@@ -371,84 +339,165 @@ export default function SurveyStructure({
                   </div>
                 ))}
               </div>
-              <div
-                ref={listScrollRef}
-                className='overflow-auto'
-                style={{
-                  height:
-                    Math.min(filteredRows.length, MAX_VISIBLE_ROWS) *
-                    LIST_ROW_HEIGHT,
-                }}
-              >
+              {filteredRows.length === 0 ? (
+                <div className='px-3 py-4 text-muted-foreground italic'>
+                  No images match your search.
+                </div>
+              ) : (
                 <div
+                  ref={listScrollRef}
+                  className='[scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.3)_transparent] [scrollbar-gutter:stable] overflow-auto'
                   style={{
-                    height: rowVirtualizer.getTotalSize(),
-                    position: 'relative',
-                    width: '100%',
+                    height:
+                      Math.min(filteredRows.length, MAX_VISIBLE_ROWS) *
+                      LIST_ROW_HEIGHT,
                   }}
                 >
-                  {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                    const row = filteredRows[virtualRow.index];
-                    return (
-                      <div
-                        key={row.id}
-                        ref={rowVirtualizer.measureElement}
-                        data-index={virtualRow.index}
-                        className='grid'
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          width: '100%',
-                          transform: `translateY(${virtualRow.start}px)`,
-                          gridTemplateColumns: gridColumns,
-                          fontSize: 13,
-                          borderBottom: DIVIDER,
-                        }}
-                      >
+                  <div
+                    className='relative w-full'
+                    style={{ height: rowVirtualizer.getTotalSize() }}
+                  >
+                    {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const row = filteredRows[virtualRow.index];
+                      return (
                         <div
-                          className='truncate px-4 py-2'
-                          title={row.originalPath}
+                          key={row.id}
+                          ref={rowVirtualizer.measureElement}
+                          data-index={virtualRow.index}
+                          className='absolute top-0 left-0 grid w-full border-b border-white/[0.08] whitespace-nowrap hover:bg-white/5 [&>div]:truncate [&>div]:px-3 [&>div]:py-2'
+                          style={{
+                            transform: `translateY(${virtualRow.start}px)`,
+                            gridTemplateColumns: gridColumns,
+                          }}
                         >
-                          {row.filename}
+                          <div title={row.originalPath}>{row.filename}</div>
+                          <div title={row.cameraName}>{row.cameraName}</div>
+                          <div title={row.folder}>{row.folder}</div>
+                          <div className='tabular-nums'>
+                            {row.timestamp
+                              ? new Date(row.timestamp * 1000).toLocaleString()
+                              : '—'}
+                          </div>
+                          <div className='text-muted-foreground tabular-nums'>
+                            {row.latitude !== null && row.longitude !== null
+                              ? `${row.latitude.toFixed(
+                                  5,
+                                )}, ${row.longitude.toFixed(5)}`
+                              : '—'}
+                          </div>
+                          <div className='text-right text-muted-foreground tabular-nums'>
+                            {row.altitude !== null
+                              ? `${row.altitude.toFixed(1)} m`
+                              : '—'}
+                          </div>
                         </div>
-                        <div className='px-4 py-2'>{row.cameraName}</div>
-                        <div className='px-4 py-2'>{row.folder}</div>
-                        <div className='px-4 py-2'>
-                          {row.timestamp
-                            ? new Date(row.timestamp * 1000).toLocaleString()
-                            : ''}
-                        </div>
-                        <div className='px-4 py-2 text-muted-foreground'>
-                          {row.latitude !== null && row.longitude !== null
-                            ? `${row.latitude.toFixed(
-                                5,
-                              )}, ${row.longitude.toFixed(5)}`
-                            : '—'}
-                        </div>
-                        <div className='px-4 py-2 text-muted-foreground'>
-                          {row.altitude !== null
-                            ? `${row.altitude.toFixed(1)} m`
-                            : '—'}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <small className='mt-2 block text-muted-foreground'>
-                {filteredRows.length.toLocaleString()} row
-                {filteredRows.length === 1 ? '' : 's'}
-              </small>
-              {filteredRows.length === 0 && (
-                <div className='mt-2 text-sm text-muted-foreground italic'>
-                  No images match your search.
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
           )}
         </>
       )}
+    </div>
+  );
+}
+
+export function SectionTitle({
+  children,
+  action,
+  className,
+}: {
+  children: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'mt-3 mb-1 flex items-center border-b border-white/10 pb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase first:mt-0',
+        className,
+      )}
+    >
+      {children}
+      {action && <div className='ml-auto normal-case'>{action}</div>}
+    </div>
+  );
+}
+
+function CameraSplit({
+  camera,
+  colourFor,
+}: {
+  camera: Camera;
+  colourFor: (path: string) => string;
+}) {
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barWidth, setBarWidth] = useState(0);
+  const total = camera.folders.reduce(
+    (sum, folder) => sum + folder.imageCount,
+    0,
+  );
+
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setBarWidth(entry.contentRect.width),
+    );
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className='flex flex-col gap-2 border border-white/15 bg-white/[0.07] px-4 py-3'>
+      <span className='truncate font-semibold' title={camera.name}>
+        {camera.name}
+      </span>
+      {total === 0 ? (
+        <span className='text-sm text-muted-foreground italic'>No images</span>
+      ) : (
+        <div ref={barRef} className='flex h-6 gap-0.5'>
+          {camera.folders
+            .filter((folder) => folder.imageCount > 0)
+            .map((folder) => {
+              const label = folder.imageCount.toLocaleString();
+              const width = (folder.imageCount / total) * barWidth;
+              return (
+                <div
+                  key={folder.path}
+                  className='flex min-w-1 items-center justify-center overflow-hidden text-xs font-bold whitespace-nowrap text-[#1d2731]'
+                  style={{
+                    flex: folder.imageCount,
+                    backgroundColor: colourFor(folder.path),
+                  }}
+                  title={`${folder.path} · ${label} image${
+                    folder.imageCount === 1 ? '' : 's'
+                  }`}
+                >
+                  {width >= label.length * 7 + 12 && label}
+                </div>
+              );
+            })}
+        </div>
+      )}
+      <div className='flex items-start gap-4'>
+        <div className='flex min-w-0 flex-1 flex-wrap gap-x-4 gap-y-1 text-sm'>
+          {camera.folders.map((folder) => (
+            <span key={folder.path} className='flex items-center gap-1.5'>
+              <span
+                className='size-2.5 shrink-0'
+                style={{ backgroundColor: colourFor(folder.path) }}
+              />
+              {folder.path}
+            </span>
+          ))}
+        </div>
+        <span className='shrink-0 text-xs text-muted-foreground'>
+          {total.toLocaleString()} image{total === 1 ? '' : 's'}
+        </span>
+      </div>
     </div>
   );
 }
