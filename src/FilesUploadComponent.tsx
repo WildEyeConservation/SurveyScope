@@ -957,7 +957,10 @@ export function FileUploadCore({
   }, [file]);
 
   const matchBy =
-    matchByChoice ?? (columnMapping.filepath ? 'filepath' : 'timestamp');
+    matchByChoice ??
+    (columnMapping.filepath && !columnMapping.timestamp
+      ? 'filepath'
+      : 'timestamp');
   const matchColumnMissing =
     matchBy === 'filepath' ? !columnMapping.filepath : !columnMapping.timestamp;
   const mappingPending = Boolean(file && headerFields && !mappingConfirmed);
@@ -3023,9 +3026,11 @@ export function FileUploadCore({
           // Apply user-defined column mapping
           const mappedData = (results.data as any[]).map((row: any) => {
             const newRow: any = { ...row };
+            delete newRow['Timestamp'];
+            delete newRow['FilePath'];
             if (columnMapping.timestamp)
               newRow['Timestamp'] = row[columnMapping.timestamp];
-            if (columnMapping.filepath)
+            if (matchBy === 'filepath' && columnMapping.filepath)
               newRow['FilePath'] = row[columnMapping.filepath];
             if (!useUtm) {
               if (columnMapping.lat)
