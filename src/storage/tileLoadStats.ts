@@ -12,8 +12,8 @@ export interface TileRequestTiming {
 export type TaskStep = 'receive' | 'hydrate' | 'fileLookup';
 
 export interface TileLoadMetrics {
-  /** First network request to last byte; idle time between them is included. */
-  spanMs: number;
+  /** Time with image requests in flight (lookup, signing, header, tiles); idle gaps excluded. */
+  imageBusyMs: number;
   receiveMs: number;
   hydrateMs: number;
   fileLookupMs: number;
@@ -36,6 +36,8 @@ export interface TileLoadMetrics {
   failedRequests: number;
   missingTiles: number;
   cacheHits: number;
+  /** Tiles another task was already fetching. */
+  sharedInFlight: number;
   generateCalls: number;
   generateMs: number;
   generatedTiles: number;
@@ -45,14 +47,13 @@ export interface TileLoadMetrics {
 
 type Entry = Omit<
   TileLoadMetrics,
-  'spanMs' | 'connectionRttMs' | 'connectionDownlinkMbps'
-> & { firstAt: number; lastAt: number };
+  'imageBusyMs' | 'connectionRttMs' | 'connectionDownlinkMbps'
+> & { busy: [number, number][] };
 
-const MAX_IMAGES = 100;
+const MAX_TASKS = 100;
 
 const blank = (): Entry => ({
-  firstAt: Infinity,
-  lastAt: -Infinity,
+  busy: [],
   receiveMs: 0,
   hydrateMs: 0,
   fileLookupMs: 0,
@@ -74,42 +75,52 @@ const blank = (): Entry => ({
   failedRequests: 0,
   missingTiles: 0,
   cacheHits: 0,
+  sharedInFlight: 0,
   generateCalls: 0,
   generateMs: 0,
   generatedTiles: 0,
 });
 
-export function createTileLoadStats(now: () => number = () => Date.now()) {
-  const images = new Map<string, Entry>();
+export function busyTime(intervals: [number, number][]) {
+  let total = 0;
+  let reach = -Infinity;
+  for (const [from, to] of [...intervals].sort((a, b) => a[0] - b[0])) {
+    if (to <= reach) continue;
+    total += to - Math.max(from, reach);
+    reach = to;
+  }
+  return total;
+}
 
-  // Cache reads must not extend the network span.
-  const entry = (imageId: string, startedAt?: number, touch = true) => {
-    const at = now();
-    let current = images.get(imageId);
+export function createTileLoadStats(now: () => number = () => Date.now()) {
+  const tasks = new Map<string, Entry>();
+
+  const entry = (taskId: string, busyMs?: number) => {
+    let current = tasks.get(taskId);
     if (!current) {
       current = blank();
-      images.set(imageId, current);
-      for (const oldest of images.keys()) {
-        if (images.size <= MAX_IMAGES) break;
-        images.delete(oldest);
+      tasks.set(taskId, current);
+      for (const oldest of tasks.keys()) {
+        if (tasks.size <= MAX_TASKS) break;
+        tasks.delete(oldest);
       }
     }
-    if (touch) {
-      current.firstAt = Math.min(current.firstAt, startedAt ?? at);
-      current.lastAt = Math.max(current.lastAt, at);
+    if (busyMs !== undefined) {
+      const at = now();
+      current.busy.push([at - busyMs, at]);
     }
     return current;
   };
 
   return {
-    sign(imageId: string, ms: number) {
-      const e = entry(imageId, now() - ms);
+    sign(taskId: string, ms: number) {
+      const e = entry(taskId, ms);
       e.signCalls++;
       e.signMs += ms;
       e.signMaxMs = Math.max(e.signMaxMs, ms);
     },
-    request(imageId: string, source: 'pack' | 'legacy', t: TileRequestTiming) {
-      const e = entry(imageId, now() - t.queueMs - t.totalMs);
+    request(taskId: string, source: 'pack' | 'legacy', t: TileRequestTiming) {
+      const e = entry(taskId, t.queueMs + t.totalMs);
       if (t.status === 404) e.missingTiles++;
       else if (t.status !== 200 && t.status !== 206) e.failedRequests++;
       if (t.kind === 'header') {
@@ -127,32 +138,38 @@ export function createTileLoadStats(now: () => number = () => Date.now()) {
       e.tileMaxMs = Math.max(e.tileMaxMs, t.totalMs);
       e.tileBytes += t.bytes;
     },
-    cacheHit(imageId: string) {
-      entry(imageId, undefined, false).cacheHits++;
+    cacheHit(taskId: string) {
+      entry(taskId).cacheHits++;
     },
-    step(imageId: string, step: TaskStep, ms: number, endedAgoMs = 0) {
-      entry(imageId, now() - endedAgoMs - ms)[`${step}Ms`] += ms;
+    sharedInFlight(taskId: string) {
+      entry(taskId).sharedInFlight++;
     },
-    markPrefetched(imageId: string) {
-      entry(imageId, undefined, false).prefetched = 1;
+    step(taskId: string, step: TaskStep, ms: number) {
+      // Queue steps happen before the image is needed, so they are not busy time.
+      entry(taskId, step === 'fileLookup' ? ms : undefined)[`${step}Ms`] += ms;
     },
-    generate(imageId: string, ms: number, tiles: number) {
-      const e = entry(imageId, now() - ms);
+    markPrefetched(taskId: string) {
+      entry(taskId).prefetched = 1;
+    },
+    generate(taskId: string, ms: number, tiles: number) {
+      const e = entry(taskId, ms);
       e.generateCalls++;
       e.generateMs += ms;
       e.generatedTiles += tiles;
     },
-    take(imageId: string): TileLoadMetrics | undefined {
-      const e = images.get(imageId);
+    take(taskId: string): TileLoadMetrics | undefined {
+      const e = tasks.get(taskId);
       if (!e) return undefined;
-      images.delete(imageId);
-      const { firstAt, lastAt, ...counts } = e;
-      const round = (v: number) => Math.round(v);
+      tasks.delete(taskId);
+      const { busy, ...counts } = e;
       const metrics = Object.fromEntries(
-        Object.entries(counts).map(([k, v]) => [k, round(v)])
-      ) as Omit<TileLoadMetrics, 'spanMs'>;
-      const spanMs = lastAt > firstAt ? round(lastAt - firstAt) : 0;
-      return { ...metrics, spanMs, ...connection() };
+        Object.entries(counts).map(([k, v]) => [k, Math.round(v)])
+      ) as Omit<TileLoadMetrics, 'imageBusyMs'>;
+      return {
+        ...metrics,
+        imageBusyMs: Math.round(busyTime(busy)),
+        ...connection(),
+      };
     },
   };
 }
@@ -169,11 +186,10 @@ function connection(): Pick<
             connection?: { rtt?: number; downlink?: number };
           }
         ).connection;
+  // Browsers report 0 when they have no estimate.
   return {
-    ...(typeof info?.rtt === 'number' ? { connectionRttMs: info.rtt } : {}),
-    ...(typeof info?.downlink === 'number'
-      ? { connectionDownlinkMbps: info.downlink }
-      : {}),
+    ...(info?.rtt ? { connectionRttMs: info.rtt } : {}),
+    ...(info?.downlink ? { connectionDownlinkMbps: info.downlink } : {}),
   };
 }
 

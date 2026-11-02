@@ -27,11 +27,11 @@ export function prefetchTask(
 ): Promise<void> {
   return warming
     .run(async () => {
-      const { image } = task.location;
-      tileLoadStats.markPrefetched(image.id);
-      const key = sourceKeyOf(await loadImageFiles(client, image.id));
+      const { image, id: taskId } = task.location;
+      if (taskId) tileLoadStats.markPrefetched(taskId);
+      const key = sourceKeyOf(await loadImageFiles(client, image.id, taskId));
       if (!key) return;
-      const context = imageTileContext(image);
+      const context = imageTileContext(image, taskId);
       const tiles = viewTiles({
         image,
         location: task.location,
