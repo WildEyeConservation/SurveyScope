@@ -1,9 +1,7 @@
-import { Alert } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
-import { Switch } from '@/components/ui/switch';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { Schema } from '../amplify/client-schema';
@@ -12,6 +10,13 @@ import { GlobalContext, UserContext } from '../Context';
 import { loadRows } from '../rowChunks';
 import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  LaunchSummary,
+  SettingRow,
+} from './launchParts';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { pickZoomPreviewCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
@@ -80,9 +85,7 @@ export default function QCReview({
   // Launch settings
   const [samplePercent, setSamplePercent] = useState<number>(10);
   const [batchSize, setBatchSize] = useState<number>(200);
-  const [hidden, setHidden] = useState(false);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   // Annotator filter
   const [selectedAnnotatorIds, setSelectedAnnotatorIds] = useState<string[]>(
@@ -251,8 +254,10 @@ export default function QCReview({
   // Refs for stable launch handler
   const selectedCategoryIdRef = useRef(selectedCategoryId);
   const samplePercentRef = useRef(samplePercent);
+  const [jobName, setJobName] = useState('');
+  const jobNameRef = useRef(jobName);
+  jobNameRef.current = jobName;
   const batchSizeRef = useRef(batchSize);
-  const hiddenRef = useRef(hidden);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const selectedAnnotatorIdsRef = useRef(selectedAnnotatorIds);
@@ -266,9 +271,6 @@ export default function QCReview({
   useEffect(() => {
     batchSizeRef.current = batchSize;
   }, [batchSize]);
-  useEffect(() => {
-    hiddenRef.current = hidden;
-  }, [hidden]);
   useEffect(() => {
     selectedAnnotatorIdsRef.current = selectedAnnotatorIds;
   }, [selectedAnnotatorIds]);
@@ -296,9 +298,10 @@ export default function QCReview({
           annotationSetId: annotationSet.id,
           categoryId,
           categoryName,
+          queueName: jobNameRef.current.trim() || undefined,
           samplePercent: samplePercentRef.current,
           batchSize: batchSizeRef.current,
-          hidden: hiddenRef.current,
+          hidden: false,
           zoom: zoomRef.current ?? null,
         };
         if (selectedAnnotatorIdsRef.current.length > 0) {
@@ -336,247 +339,164 @@ export default function QCReview({
     (c) => c.id === selectedCategoryId,
   );
 
+  const nothingLeft = !!selectedCategoryId && filteredUnreviewedCount === 0;
+  useLaunchLabel(
+    sampleCount ? `Launch ${plural(sampleCount, 'review')}` : null,
+    !loading && availableCategories.length === 0
+      ? 'There are no annotations to review yet'
+      : nothingLeft
+        ? 'Nothing left to review for this label'
+        : undefined,
+  );
+
   return (
-    <div className='px-4 pt-1 pb-4'>
-      <div className='mt-2 flex flex-col gap-4'>
-        {loading ? (
-          <LoadingProgressCard
-            title='Loading QC Review data…'
-            rows={[
-              {
-                label: 'Labels',
-                count: loadStatus.categories,
-                done: loadStatus.categoriesDone,
-              },
-              {
-                label: 'Annotations',
-                count: loadStatus.annotations,
-                done: loadStatus.annotationsDone,
-              },
-            ]}
-          />
-        ) : availableCategories.length === 0 ? (
-          <Alert variant='warning' className='mb-0'>
-            No labels with annotations found for this annotation set.
-          </Alert>
-        ) : (
-          <>
-            {/* Category selector */}
-            <div>
-              <Label className='mb-0'>Label to review</Label>
-              <span
-                className='mb-1 block text-muted-foreground'
-                style={{ fontSize: '12px' }}
-              >
-                Select the label whose annotations should be reviewed.
-              </span>
-              <NativeSelect
-                value={selectedCategoryId}
-                onChange={(e) => setSelectedCategoryId(e.target.value)}
-                disabled={launching}
-              >
-                <option value=''>Select a label...</option>
-                {availableCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                    {cat.complete ? ' (complete)' : ''}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
+    <div className='flex flex-col gap-4 p-4'>
+      {loading ? (
+        <LoadingProgressCard
+          title='Loading annotations...'
+          rows={[
+            {
+              label: 'Labels',
+              count: loadStatus.categories,
+              done: loadStatus.categoriesDone,
+            },
+            {
+              label: 'Annotations',
+              count: loadStatus.annotations,
+              done: loadStatus.annotationsDone,
+            },
+          ]}
+        />
+      ) : availableCategories.length === 0 ? (
+        <Banner tone='warning'>
+          This annotation set has no annotations to review yet.
+        </Banner>
+      ) : (
+        <>
+          <div>
+            <Label className='mb-1'>Label to review</Label>
+            <NativeSelect
+              value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              disabled={launching}
+            >
+              <option value=''>Select a label...</option>
+              {availableCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                  {cat.complete ? ' (complete)' : ''}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
 
-            {/* Annotation count stats */}
-            {selectedCategoryId && (
-              <div
-                className='border border-dark p-2 shadow-sm'
-                style={{ backgroundColor: '#697582' }}
-              >
-                <div className='text-white' style={{ fontSize: '12px' }}>
-                  <div>
-                    Total annotations for{' '}
-                    <strong>{selectedCategory?.name}</strong>:{' '}
-                    <strong>{totalCount}</strong>
-                  </div>
-                  <div>
-                    Not yet reviewed: <strong>{unreviewedCount}</strong>
-                    {selectedAnnotatorIds.length > 0 &&
-                      filteredUnreviewedCount !== unreviewedCount && (
-                        <span>
-                          {' '}
-                          (filtered: <strong>{filteredUnreviewedCount}</strong>)
-                        </span>
-                      )}
-                  </div>
-                  {sampleCount !== null &&
-                    filteredUnreviewedCount !== null &&
-                    filteredUnreviewedCount > 0 && (
-                      <div>
-                        Sample size ({samplePercent}%):{' '}
-                        <strong>{sampleCount}</strong>
-                      </div>
-                    )}
-                  {filteredUnreviewedCount === 0 && (
-                    <div className='mt-1 text-warning'>
-                      {selectedAnnotatorIds.length > 0
-                        ? 'No unreviewed annotations for the selected annotators.'
-                        : 'All annotations for this label have already been reviewed.'}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+          {selectedCategoryId &&
+            (nothingLeft ? (
+              <Banner tone='info'>
+                {selectedAnnotatorIds.length > 0
+                  ? 'The selected annotators have no unreviewed annotations for this label.'
+                  : `All ${plural(totalCount ?? 0, 'annotation')} for ${selectedCategory?.name} have been reviewed.`}
+              </Banner>
+            ) : (
+              <LaunchSummary value={sampleCount?.toLocaleString() ?? '—'}>
+                {sampleCount === 1 ? 'annotation' : 'annotations'} sampled (
+                {samplePercent}% of{' '}
+                {(filteredUnreviewedCount ?? 0).toLocaleString()} not yet
+                reviewed)
+                <br />
+                {plural(totalCount ?? 0, 'annotation')} of{' '}
+                {selectedCategory?.name} in total
+                {selectedAnnotatorIds.length > 0 &&
+                  `, ${unreviewedCount.toLocaleString()} unreviewed by anyone`}
+              </LaunchSummary>
+            ))}
 
-            {/* Sample percentage */}
-            {selectedCategoryId &&
-              filteredUnreviewedCount !== null &&
-              filteredUnreviewedCount > 0 && (
-                <>
-                  <div>
-                    <Label className='mb-0'>Sample size (%)</Label>
-                    <span
-                      className='mb-1 block text-muted-foreground'
-                      style={{ fontSize: '12px' }}
-                    >
-                      Percentage of unreviewed annotations to sample for review.
-                    </span>
+          {selectedCategoryId && !nothingLeft && (
+            <>
+              <div className='grid gap-3 sm:grid-cols-3'>
+                <div>
+                  <Label className='mb-1'>Sample size</Label>
+                  <div className='relative'>
                     <Input
                       type='number'
                       min={1}
                       max={100}
                       step={1}
+                      className='pr-8'
                       value={samplePercent}
-                      onChange={(e) =>
-                        setSamplePercent(
-                          Number((e.target as HTMLInputElement).value),
-                        )
-                      }
+                      onChange={(e) => setSamplePercent(Number(e.target.value))}
                       disabled={launching}
                     />
+                    <span className='pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#6c757d]'>
+                      %
+                    </span>
                   </div>
-
-                  <ZoomSetting
-                    mode='offset'
-                    zoom={zoom}
-                    onChange={setZoom}
-                    loadCandidates={async () =>
-                      pickZoomPreviewCandidates(categoryAnnotations)
-                    }
+                </div>
+                <div>
+                  <Label className='mb-1'>Batch size</Label>
+                  <Input
+                    type='number'
+                    title='The number of reviews a user can pick up at a time'
+                    value={batchSize}
+                    onChange={(e) => setBatchSize(Number(e.target.value))}
                     disabled={launching}
                   />
+                </div>
+                <ZoomSetting
+                  mode='offset'
+                  zoom={zoom}
+                  onChange={setZoom}
+                  loadCandidates={async () =>
+                    pickZoomPreviewCandidates(categoryAnnotations)
+                  }
+                  disabled={launching}
+                />
+              </div>
+            </>
+          )}
 
-                  {/* Advanced options toggle */}
-                  <div>
-                    <label className='mb-0 flex items-center gap-2'>
-                      <Switch
-                        checked={showAdvancedOptions}
-                        onCheckedChange={() =>
-                          setShowAdvancedOptions(!showAdvancedOptions)
-                        }
-                        disabled={launching}
-                      />
-                      Show Advanced Options
-                    </label>
-                  </div>
-
-                  {showAdvancedOptions && (
-                    <div
-                      className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
-                      style={{ backgroundColor: '#697582' }}
+          <AdvancedOptions disabled={launching}>
+            <SettingRow label='Job name' hint='Shown on the Jobs page'>
+              <Input
+                type='text'
+                aria-label='Job name'
+                placeholder={selectedCategory?.name || 'QC Review'}
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
+                disabled={launching}
+              />
+            </SettingRow>
+            {annotatorOptions.length > 1 && (
+              <SettingRow
+                label='Only review work by'
+                hint='Leave all unticked to include everyone.'
+              >
+                <div className='flex max-h-40 flex-col gap-1.5 overflow-y-auto border border-white/15 bg-white/[0.07] px-3 py-2 text-sm'>
+                  {annotatorOptions.map((ownerId) => (
+                    <label
+                      key={ownerId}
+                      className='mb-0 flex items-center gap-2'
                     >
-                      <div>
-                        <Label className='mb-0'>Batch Size</Label>
-                        <span
-                          className='mb-1 block text-muted-foreground'
-                          style={{ fontSize: '12px' }}
-                        >
-                          The number of reviews a user can pick up at a time.
-                        </span>
-                        <Input
-                          type='number'
-                          value={batchSize}
-                          onChange={(e) =>
-                            setBatchSize(
-                              Number((e.target as HTMLInputElement).value),
-                            )
-                          }
-                          disabled={launching}
-                        />
-                      </div>
-
-                      <div>
-                        <label className='mb-0 flex items-center gap-2'>
-                          <Switch
-                            checked={hidden}
-                            onCheckedChange={() => setHidden(!hidden)}
-                            disabled={launching}
-                          />
-                          Hide Job From Non-Admin Workers
-                        </label>
-                        <span
-                          className='block text-muted-foreground'
-                          style={{ fontSize: '12px' }}
-                        >
-                          When enabled, only organisation admins and admins of
-                          this survey will see this job on the Jobs page.
-                        </span>
-                      </div>
-
-                      {annotatorOptions.length > 1 && (
-                        <div>
-                          <Label className='mb-0'>Filter by Annotator</Label>
-                          <span
-                            className='mb-1 block text-muted-foreground'
-                            style={{ fontSize: '12px' }}
-                          >
-                            Only review annotations made by the selected
-                            annotators. Leave all unchecked to include everyone.
-                          </span>
-                          <div
-                            style={{
-                              maxHeight: '150px',
-                              overflowY: 'auto',
-                              backgroundColor: 'rgba(0,0,0,0.15)',
-                              borderRadius: '4px',
-                              padding: '6px 8px',
-                            }}
-                          >
-                            {annotatorOptions.map((ownerId) => (
-                              <label
-                                key={ownerId}
-                                className='mb-0.5 flex items-center gap-2'
-                                style={{ fontSize: '13px' }}
-                              >
-                                <Checkbox
-                                  checked={selectedAnnotatorIds.includes(
-                                    ownerId,
-                                  )}
-                                  disabled={launching}
-                                  onCheckedChange={(c) => {
-                                    if (c === true) {
-                                      setSelectedAnnotatorIds((prev) => [
-                                        ...prev,
-                                        ownerId,
-                                      ]);
-                                    } else {
-                                      setSelectedAnnotatorIds((prev) =>
-                                        prev.filter((id) => id !== ownerId),
-                                      );
-                                    }
-                                  }}
-                                />
-                                {userMap[ownerId] ?? ownerId}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-          </>
-        )}
-      </div>
+                      <Checkbox
+                        checked={selectedAnnotatorIds.includes(ownerId)}
+                        disabled={launching}
+                        onCheckedChange={(c) =>
+                          setSelectedAnnotatorIds((prev) =>
+                            c === true
+                              ? [...prev, ownerId]
+                              : prev.filter((id) => id !== ownerId),
+                          )
+                        }
+                      />
+                      {userMap[ownerId] ?? ownerId}
+                    </label>
+                  ))}
+                </div>
+              </SettingRow>
+            )}
+          </AdvancedOptions>
+        </>
+      )}
     </div>
   );
 }

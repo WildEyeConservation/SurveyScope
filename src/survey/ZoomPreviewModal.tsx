@@ -121,6 +121,7 @@ export default function ZoomPreviewModal({
   }, [show]);
 
   const candidate = candidates?.[index] ?? null;
+  const [tilesLoading, setTilesLoading] = useState(false);
 
   useEffect(() => {
     if (!candidate) return;
@@ -243,6 +244,9 @@ export default function ZoomPreviewModal({
     );
     mapRef.current = map;
     if (mode === 'level') map.setZoomSnap(1);
+    setTilesLoading(true);
+    map.on('dataloading', () => setTilesLoading(true));
+    map.on('idle', () => setTilesLoading(false));
 
     map.on('load', () => {
       addImageTiles(map, sample.sourceKey, image, projection);
@@ -342,7 +346,8 @@ export default function ZoomPreviewModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, sample, projection]);
 
-  const loading = !error && (candidates === null || (candidate && !sample));
+  const loading =
+    !error && (candidates === null || (candidate && !sample) || tilesLoading);
   const empty = candidates !== null && candidates.length === 0;
   const ready = !!sample && value != null;
 
@@ -429,9 +434,7 @@ export default function ZoomPreviewModal({
             )}
             {ready && mode === 'level' && (
               <div
-                className={`px-2 py-1 ${
-                  auto ? 'bg-warning font-bold text-white' : 'text-dark'
-                }`}
+                className='px-2 py-1 text-[#212529]'
                 style={{ ...ZOOM_PANEL_STYLE, top: 12, right: 12 }}
               >
                 <div className='flex items-center gap-2'>
@@ -440,20 +443,23 @@ export default function ZoomPreviewModal({
                     checked={auto}
                     onCheckedChange={(c) => toggleAuto(c)}
                   />
-                  <Label htmlFor='zoom-preview-auto' className='mb-0'>
+                  <Label
+                    htmlFor='zoom-preview-auto'
+                    className={`mb-0 text-[#212529] ${auto ? 'font-bold' : ''}`}
+                  >
                     Auto
                   </Label>
                 </div>
               </div>
             )}
             {(loading || empty || error) && (
-              <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center'>
+              <div className='pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center'>
                 {error ? (
                   error
                 ) : empty ? (
                   'Nothing matches the current launch settings to preview.'
                 ) : (
-                  <Spinner />
+                  <Spinner variant='primary' />
                 )}
               </div>
             )}

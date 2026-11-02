@@ -1,5 +1,3 @@
-import { Alert } from '@/components/ui/alert';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -10,6 +8,13 @@ import { GlobalContext, UserContext } from '../Context';
 import { loadRows } from '../rowChunks';
 import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  LaunchSummary,
+  SettingRow,
+} from './launchParts';
 import { parseLaunchResponse } from './launchResponse';
 import { LoadingProgressCard } from './LoadingProgressCard';
 import { shouldIgnoreLaunchError } from './QCReview';
@@ -51,9 +56,7 @@ export default function InfoTagsLaunch({
   const [infoTagCount, setInfoTagCount] = useState(0);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [batchSize, setBatchSize] = useState(200);
-  const [hidden, setHidden] = useState(false);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadStatus, setLoadStatus] = useState({
     categories: 0,
@@ -216,8 +219,10 @@ export default function InfoTagsLaunch({
   ]);
 
   const selectionRef = useRef(selectedCategoryIds);
+  const [jobName, setJobName] = useState('');
+  const jobNameRef = useRef(jobName);
+  jobNameRef.current = jobName;
   const batchSizeRef = useRef(batchSize);
-  const hiddenRef = useRef(hidden);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   useEffect(() => {
@@ -226,9 +231,6 @@ export default function InfoTagsLaunch({
   useEffect(() => {
     batchSizeRef.current = batchSize;
   }, [batchSize]);
-  useEffect(() => {
-    hiddenRef.current = hidden;
-  }, [hidden]);
 
   useEffect(() => {
     setInfoTagsLaunchHandler({
@@ -245,8 +247,9 @@ export default function InfoTagsLaunch({
           annotationSetId: annotationSet.id,
           categoryIds,
           categoryNames,
+          queueName: jobNameRef.current.trim() || undefined,
           batchSize: batchSizeRef.current,
-          hidden: hiddenRef.current,
+          hidden: false,
           zoom: zoomRef.current,
         });
         onProgress(message ?? 'Informational tagging launch submitted');
@@ -271,91 +274,109 @@ export default function InfoTagsLaunch({
     user.userId,
   ]);
 
+  useLaunchLabel(
+    selectedImageCount ? `Launch ${plural(selectedImageCount, 'image')}` : null,
+    !loading && infoTagCount === 0
+      ? 'Define info tags for this annotation set first'
+      : !loading && availableCategories.length === 0
+        ? 'There are no annotations to tag yet'
+        : !loading && selected.length === 0
+          ? 'Pick at least one label'
+          : undefined,
+  );
+
   return (
-    <div className='px-4 pt-1 pb-4'>
-      <div className='mt-2 flex flex-col gap-4'>
-        {loading ? (
-          <LoadingProgressCard
-            title='Loading Info Tags data...'
-            rows={[
-              {
-                label: 'Labels',
-                count: loadStatus.categories,
-                done: loadStatus.categoriesDone,
-              },
-              {
-                label: 'Annotations',
-                count: loadStatus.annotations,
-                done: loadStatus.annotationsDone,
-              },
-              {
-                label: 'Info Tags',
-                count: loadStatus.infoTags,
-                done: loadStatus.infoTagsDone,
-              },
-            ]}
-          />
-        ) : infoTagCount === 0 ? (
-          <Alert variant='warning' className='mb-0'>
-            Define Info Tags first - Edit annotation set → Info Tags.
-          </Alert>
-        ) : availableCategories.length === 0 ? (
-          <Alert variant='warning' className='mb-0'>
-            No labels with annotations found for this annotation set.
-          </Alert>
-        ) : (
-          <>
-            <div>
-              <Label className='mb-0'>Labels to tag</Label>
-              <span
-                className='mb-1 block text-muted-foreground'
-                style={{ fontSize: 12 }}
-              >
-                Select one or more species whose annotations should be tagged.
-              </span>
-              <div
-                className='border border-dark p-2'
-                style={{ maxHeight: 220, overflowY: 'auto' }}
-              >
-                {availableCategories.map((category) => (
+    <div className='flex flex-col gap-4 p-4'>
+      {loading ? (
+        <LoadingProgressCard
+          title='Loading annotations...'
+          rows={[
+            {
+              label: 'Labels',
+              count: loadStatus.categories,
+              done: loadStatus.categoriesDone,
+            },
+            {
+              label: 'Annotations',
+              count: loadStatus.annotations,
+              done: loadStatus.annotationsDone,
+            },
+            {
+              label: 'Info tags',
+              count: loadStatus.infoTags,
+              done: loadStatus.infoTagsDone,
+            },
+          ]}
+        />
+      ) : infoTagCount === 0 ? (
+        <Banner tone='warning'>
+          This annotation set has no info tags yet. Add them in Edit annotation
+          set › Info Tags.
+        </Banner>
+      ) : availableCategories.length === 0 ? (
+        <Banner tone='warning'>
+          This annotation set has no annotations to tag yet.
+        </Banner>
+      ) : (
+        <>
+          <div>
+            <Label className='mb-1'>Labels to tag</Label>
+            <div className='max-h-60 overflow-y-auto border border-dark bg-white/[0.07] text-sm'>
+              {availableCategories.map((category) => {
+                const checked = selectedCategoryIds.includes(category.id);
+                return (
                   <label
                     key={category.id}
-                    className='mb-0.5 flex items-center gap-2'
+                    className='mb-0 flex cursor-pointer items-center gap-3 border-b border-white/[0.08] px-3 py-2 last:border-b-0 hover:bg-white/5'
                   >
-                    <Checkbox
-                      checked={selectedCategoryIds.includes(category.id)}
+                    <Switch
+                      checked={checked}
                       disabled={launching}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(next) =>
                         setSelectedCategoryIds((current) =>
-                          checked === true
+                          next
                             ? [...current, category.id]
                             : current.filter((id) => id !== category.id),
                         )
                       }
                     />
-                    {`${category.name} (${category.count})`}
+                    <span className='flex-1'>{category.name}</span>
+                    <span className='text-muted-foreground tabular-nums'>
+                      {plural(category.count, 'annotation')}
+                    </span>
                   </label>
-                ))}
-              </div>
+                );
+              })}
             </div>
+          </div>
 
-            {selected.length > 0 && (
-              <div
-                className='border border-dark p-2 text-white shadow-sm'
-                style={{ backgroundColor: '#697582', fontSize: 12 }}
-              >
-                <strong>{selected.length.toLocaleString()}</strong> annotations
-                across <strong>{selectedImageCount.toLocaleString()}</strong>{' '}
-                images - <strong>{taggedCount.toLocaleString()}</strong> already
-                tagged
-                {untaggedCount === 0 && (
-                  <div className='mt-1 text-warning'>
-                    All selected annotations have already been tagged.
-                  </div>
-                )}
-              </div>
-            )}
+          {selected.length > 0 &&
+            (untaggedCount === 0 ? (
+              <Banner tone='info'>
+                All {plural(selected.length, 'selected annotation')} are already
+                tagged.
+              </Banner>
+            ) : (
+              <LaunchSummary value={selectedImageCount.toLocaleString()}>
+                {selectedImageCount === 1 ? 'image' : 'images'} with{' '}
+                {plural(selected.length, 'annotation')} to tag
+                <br />
+                {taggedCount.toLocaleString()} already tagged
+              </LaunchSummary>
+            ))}
 
+          <div className='grid gap-3 sm:grid-cols-2'>
+            <div>
+              <Label className='mb-1'>Batch size</Label>
+              <Input
+                type='number'
+                min={1}
+                title='The number of images a user can pick up at a time'
+                value={batchSize}
+                onChange={(event) => setBatchSize(Number(event.target.value))}
+                disabled={launching}
+              />
+            </div>
             <ZoomSetting
               mode='offset'
               zoom={zoom}
@@ -363,53 +384,27 @@ export default function InfoTagsLaunch({
               loadCandidates={async () => pickZoomPreviewCandidates(selected)}
               disabled={launching || selected.length === 0}
             />
+          </div>
 
-            <label className='mb-0 flex items-center gap-2'>
-              <Switch
-                checked={showAdvancedOptions}
-                onCheckedChange={() =>
-                  setShowAdvancedOptions((value) => !value)
+          <AdvancedOptions disabled={launching}>
+            <SettingRow label='Job name' hint='Shown on the Jobs page'>
+              <Input
+                type='text'
+                aria-label='Job name'
+                placeholder={
+                  categories
+                    .filter((c) => selectedCategoryIds.includes(c.id))
+                    .map((c) => c.name)
+                    .join(', ') || 'Info Tags'
                 }
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
                 disabled={launching}
               />
-              Show Advanced Options
-            </label>
-            {showAdvancedOptions && (
-              <div
-                className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
-                style={{ backgroundColor: '#697582' }}
-              >
-                <div>
-                  <Label className='mb-0'>Batch Size</Label>
-                  <span
-                    className='mb-1 block text-muted-foreground'
-                    style={{ fontSize: 12 }}
-                  >
-                    The number of images a user can pick up at a time.
-                  </span>
-                  <Input
-                    type='number'
-                    min={1}
-                    value={batchSize}
-                    onChange={(event) =>
-                      setBatchSize(Number(event.target.value))
-                    }
-                    disabled={launching}
-                  />
-                </div>
-                <label className='mb-0 flex items-center gap-2'>
-                  <Switch
-                    checked={hidden}
-                    onCheckedChange={() => setHidden((value) => !value)}
-                    disabled={launching}
-                  />
-                  Hide Job From Non-Admin Workers
-                </label>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+            </SettingRow>
+          </AdvancedOptions>
+        </>
+      )}
     </div>
   );
 }

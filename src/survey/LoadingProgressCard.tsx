@@ -1,8 +1,7 @@
 import { Spinner } from '@/components/ui/spinner';
+import { CheckIcon } from 'lucide-react';
 
-// Shared loading panel for launch modals: a header spinner plus one row per
-// parallel/sequential fetch, each showing its live count and a per-row
-// spinner→✓ so a slow load reads as "still working", not "frozen".
+// One row per fetch with its live count, so a slow load reads as working.
 export type LoadProgressRow = {
   label: string;
   count: number;
@@ -17,41 +16,29 @@ export function LoadingProgressCard({
   rows: LoadProgressRow[];
 }) {
   return (
-    <div
-      className='border border-dark p-4 shadow-sm'
-      style={{ backgroundColor: '#697582' }}
-    >
-      <div className='mb-2 flex items-center gap-2 text-white'>
+    <div className='flex flex-col gap-2 border border-white/15 bg-white/[0.07] px-4 py-3 text-sm'>
+      <span className='flex items-center gap-2'>
         <Spinner animation='border' size='sm' />
-        <span style={{ fontSize: '13px', fontWeight: 600 }}>{title}</span>
-      </div>
-      <div
-        className='flex flex-col gap-1 text-white'
-        style={{ fontSize: '12px', fontVariantNumeric: 'tabular-nums' }}
-      >
-        {rows.map((row) => (
-          <LoadRow key={row.label} {...row} />
+        {title}
+      </span>
+      <div className='flex flex-col gap-1 text-xs tabular-nums'>
+        {rows.map(({ label, count, done }) => (
+          <div key={label} className='flex items-center justify-between gap-6'>
+            <span className='flex items-center gap-2 text-muted-foreground'>
+              {done ? (
+                <CheckIcon className='size-3.5 text-success' />
+              ) : (
+                <Spinner
+                  animation='border'
+                  style={{ width: 12, height: 12, borderWidth: 2 }}
+                />
+              )}
+              {label}
+            </span>
+            <span className='font-semibold'>{count.toLocaleString()}</span>
+          </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function LoadRow({ label, count, done }: LoadProgressRow) {
-  return (
-    <div className='flex flex-row items-center justify-between gap-6'>
-      <span className='flex items-center gap-2'>
-        {done ? (
-          <span aria-hidden='true'>✓</span>
-        ) : (
-          <Spinner
-            animation='border'
-            style={{ width: 12, height: 12, borderWidth: 2 }}
-          />
-        )}
-        {label}
-      </span>
-      <span style={{ fontWeight: 600 }}>{count.toLocaleString()}</span>
     </div>
   );
 }

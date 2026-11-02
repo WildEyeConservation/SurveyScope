@@ -1,4 +1,4 @@
-import { Alert } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +18,13 @@ import type {
 import { uploadWorkflowFile } from '../storage/workflowFiles';
 import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  LaunchSummary,
+  SettingRow,
+} from './launchParts';
 import { LoadingProgressCard } from './LoadingProgressCard';
 
 const OUTSIDE_GROUP = 'outside-boundary';
@@ -330,6 +337,9 @@ export default function IndividualId({
     setLaunchDisabled,
   ]);
 
+  const [jobName, setJobName] = useState('');
+  const jobNameRef = useRef(jobName);
+  jobNameRef.current = jobName;
   const selectedCategoryIdRef = useRef(selectedCategoryId);
   const selectedImageIdsRef = useRef(selectedImageIds);
   const transectsExistRef = useRef(transectsExist);
@@ -381,6 +391,7 @@ export default function IndividualId({
           annotationSetId: annotationSet.id,
           categoryId,
           categoryName,
+          queueName: jobNameRef.current.trim() || undefined,
           annotatedImageIds: selectedImageIdsRef.current,
         };
         // Omitted when transects don't exist yet: the lambda detects/creates
@@ -422,100 +433,115 @@ export default function IndividualId({
     (c) => c.id === selectedCategoryId,
   );
 
+  const outstanding =
+    transectsExist && incompleteTransectIds !== null
+      ? incompleteTransectIds.length
+      : null;
+  useLaunchLabel(
+    outstanding ? `Launch ${plural(outstanding, 'transect')}` : null,
+    !loading && availableCategories.length === 0
+      ? 'There are no annotations to link yet'
+      : noWork
+        ? 'Every transect for this label is already linked'
+        : undefined,
+  );
+
   return (
-    <div className='px-4 pt-1 pb-4'>
-      <div className='mt-2 flex flex-col gap-4'>
-        {loading ? (
-          <LoadingProgressCard
-            title='Loading ChainLinker data…'
-            rows={[
-              {
-                label: 'Labels',
-                count: loadStatus.categories,
-                done: loadStatus.categoriesDone,
-              },
-              {
-                label: 'Annotations',
-                count: loadStatus.annotations,
-                done: loadStatus.annotationsDone,
-              },
-              {
-                label: 'Images & neighbours',
-                count: loadStatus.images,
-                done: loadStatus.imagesDone,
-              },
-            ]}
-          />
-        ) : availableCategories.length === 0 ? (
-          <Alert variant='warning' className='mb-0'>
-            No labels with annotations found for this annotation set.
-          </Alert>
-        ) : (
-          <>
-            <div>
-              <Label htmlFor='ii-category' className='mb-0'>
-                Label to identify
-              </Label>
-              <span
-                className='mb-1 block text-muted-foreground'
-                style={{ fontSize: '12px' }}
+    <div className='flex flex-col gap-4 p-4'>
+      {loading ? (
+        <LoadingProgressCard
+          title='Loading annotations and images...'
+          rows={[
+            {
+              label: 'Labels',
+              count: loadStatus.categories,
+              done: loadStatus.categoriesDone,
+            },
+            {
+              label: 'Annotations',
+              count: loadStatus.annotations,
+              done: loadStatus.annotationsDone,
+            },
+            {
+              label: 'Images and neighbours',
+              count: loadStatus.images,
+              done: loadStatus.imagesDone,
+            },
+          ]}
+        />
+      ) : availableCategories.length === 0 ? (
+        <Banner tone='warning'>
+          This annotation set has no annotations to link yet.
+        </Banner>
+      ) : (
+        <>
+          <div>
+            <Label htmlFor='ii-category' className='mb-1'>
+              Label to link across images
+            </Label>
+            <NativeSelect
+              id='ii-category'
+              value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              disabled={launching}
+            >
+              <option value=''>Select a label...</option>
+              {availableCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          {selectedCategoryId &&
+            selectedCategory &&
+            (noWork ? (
+              <Banner tone='info'>
+                Every transect with {selectedCategory.name} annotations is
+                already linked.
+              </Banner>
+            ) : analyzing ? (
+              <LaunchSummary value='…'>
+                checking which transects still need linking
+                <br />
+                {plural(selectedCategory.imageCount, 'image')} with{' '}
+                {selectedCategory.name}
+              </LaunchSummary>
+            ) : outstanding !== null ? (
+              <LaunchSummary value={outstanding.toLocaleString()}>
+                {outstanding === 1
+                  ? 'transect still needs'
+                  : 'transects still need'}{' '}
+                linking
+                <br />
+                {plural(selectedCategory.imageCount, 'image')} with{' '}
+                {selectedCategory.name}
+              </LaunchSummary>
+            ) : (
+              <LaunchSummary
+                value={selectedCategory.imageCount.toLocaleString()}
               >
-                Select the label whose individuals should be identified across
-                images.
-              </span>
-              <NativeSelect
-                id='ii-category'
-                value={selectedCategoryId}
-                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                {selectedCategory.imageCount === 1 ? 'image' : 'images'} with{' '}
+                {selectedCategory.name}
+                <br />
+                Their transects become ChainLinker jobs once tiling finishes.
+              </LaunchSummary>
+            ))}
+          <AdvancedOptions disabled={launching}>
+            <SettingRow label='Job name' hint='Shown on the Jobs page'>
+              <Input
+                type='text'
+                aria-label='Job name'
+                placeholder={selectedCategory?.name || 'ChainLinker'}
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
                 disabled={launching}
-              >
-                <option value=''>Select a label...</option>
-                {availableCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-
-            {selectedCategoryId && selectedCategory && (
-              <div
-                className='border border-dark p-2 shadow-sm'
-                style={{ backgroundColor: '#697582' }}
-              >
-                <div className='text-white' style={{ fontSize: '12px' }}>
-                  <div>
-                    Images with <strong>{selectedCategory.name}</strong>{' '}
-                    annotations: <strong>{selectedCategory.imageCount}</strong>
-                  </div>
-                  {analyzing ? (
-                    <div className='mt-1 text-muted-foreground'>
-                      Checking which transects still need identification…
-                    </div>
-                  ) : transectsExist && incompleteTransectIds !== null ? (
-                    <div className='mt-1 text-muted-foreground'>
-                      Transects with outstanding work:{' '}
-                      <strong>{incompleteTransectIds.length}</strong>
-                    </div>
-                  ) : (
-                    <div className='mt-1 text-muted-foreground'>
-                      Transects containing these images will be made available
-                      as ChainLinker jobs once tiling completes.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {noWork && (
-              <Alert variant='warning' className='mb-0'>
-                Every transect with <strong>{selectedCategory?.name}</strong>{' '}
-                annotations has already been fully identified
-              </Alert>
-            )}
-          </>
-        )}
-      </div>
+              />
+            </SettingRow>
+          </AdvancedOptions>
+        </>
+      )}
     </div>
   );
 }

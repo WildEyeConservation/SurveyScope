@@ -1,9 +1,8 @@
-import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   useCallback,
@@ -16,14 +15,21 @@ import {
 } from 'react';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import { useLaunchTask } from '../useLaunchTask';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  ChoiceCards,
+  SettingRow,
+  SwitchRow,
+} from './launchParts';
 import { loadLocationCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
 
 const defaultLowerConfidence = (modelValue?: string) =>
-  modelValue === 'owl-d' ? 0.2 : modelValue === 'stormfly-testing' ? 0.3 : 0.6;
+  modelValue === 'owl-d' ? 0.23 : modelValue === 'stormfly-testing' ? 0.3 : 0.6;
 
 export default function SpeciesLabelling({
   project,
@@ -50,8 +56,6 @@ export default function SpeciesLabelling({
   const switchId = useId();
 
   const [batchSize, setBatchSize] = useState<number>(200);
-  const [showAdvancedOptions, setShowAdvancedOptions] =
-    useState<boolean>(false);
   const [skipLocationsWithAnnotations, setSkipLocationsWithAnnotations] =
     useState<boolean>(true);
   const [
@@ -64,8 +68,7 @@ export default function SpeciesLabelling({
   const savedZoom = (project as any).defaultZoom as number | null | undefined;
   const [zoom, setZoom] = useState<number | undefined>(savedZoom ?? undefined);
   const [lowerLimit, setLowerLimit] = useState<number>(0.6);
-  const [upperLimit, setUpperLimit] = useState<number>(1);
-  const [hidden, setHidden] = useState<boolean>(false);
+  const upperLimit = 1;
   const [modelGuided, setModelGuided] = useState<boolean>(true);
   const [model, setModel] = useState<{ label: string; value: string }>();
   const [modelOptions, setModelOptions] = useState<
@@ -101,7 +104,6 @@ export default function SpeciesLabelling({
 
   // Load global tile count when switching to tiled mode
   useEffect(() => {
-    if (modelGuided) return;
     if (!tiledLocationSetId) {
       setGlobalTileCount(0);
       return;
@@ -133,7 +135,7 @@ export default function SpeciesLabelling({
     return () => {
       mounted = false;
     };
-  }, [client.models.LocationSet, tiledLocationSetId, modelGuided]);
+  }, [client.models.LocationSet, tiledLocationSetId]);
 
   // load model options from location sets
   useEffect(() => {
@@ -244,9 +246,7 @@ export default function SpeciesLabelling({
   const modelOptionsLengthRef = useRef(modelOptions.length);
   const locationSetsRef = useRef(locationSets);
   const launchTaskRef = useRef(launchTask);
-  const hiddenRef = useRef(hidden);
   const lowerLimitRef = useRef(lowerLimit);
-  const upperLimitRef = useRef(upperLimit);
   const batchSizeRef = useRef(batchSize);
   const skipLocationsWithAnnotationsRef = useRef(skipLocationsWithAnnotations);
   const allowAnnotationsOutsideLocationBoundariesRef = useRef(
@@ -274,14 +274,8 @@ export default function SpeciesLabelling({
     launchTaskRef.current = launchTask;
   }, [launchTask]);
   useEffect(() => {
-    hiddenRef.current = hidden;
-  }, [hidden]);
-  useEffect(() => {
     lowerLimitRef.current = lowerLimit;
   }, [lowerLimit]);
-  useEffect(() => {
-    upperLimitRef.current = upperLimit;
-  }, [upperLimit]);
   useEffect(() => {
     batchSizeRef.current = batchSize;
   }, [batchSize]);
@@ -340,7 +334,7 @@ export default function SpeciesLabelling({
           modelOptions.find((m) => m.value === currentModelValue)?.label ||
           currentModelValue;
         const settings = [
-          `Confidence: ${lowerLimitRef.current}-${upperLimitRef.current}`,
+          `Confidence: ${lowerLimitRef.current}-${upperLimit}`,
           `Batch size: ${batchSizeRef.current}`,
           `Skip locations with annotations: ${skipLocationsWithAnnotationsRef.current ? 'Yes' : 'No'}`,
           `Allow annotations outside boundaries: ${allowAnnotationsOutsideLocationBoundariesRef.current ? 'Yes' : 'No'}`,
@@ -373,7 +367,7 @@ export default function SpeciesLabelling({
           onProgress,
           queueOptions: {
             name: 'Tiled Annotation',
-            hidden: hiddenRef.current,
+            hidden: false,
             fifo: false,
           },
           onLaunchConfirmed,
@@ -431,19 +425,97 @@ export default function SpeciesLabelling({
     savedZoom,
   ]);
 
+  const noTiles = !tiledLocationSetId || globalTileCount === 0;
+  const launchCount =
+    launchImageIds && globalTileCount !== null ? null : globalTileCount;
+  useLaunchLabel(
+    modelGuided
+      ? model
+        ? `Launch with ${model.label}`
+        : null
+      : launchCount
+        ? `Launch ${plural(launchCount, 'tile')}`
+        : null,
+    modelGuided
+      ? !loadingLocationSets && modelOptions.length === 0
+        ? 'Process images with a model first'
+        : undefined
+      : !loadingTileCount && noTiles
+        ? 'Create tiles in Edit Survey › Manage Tiles first'
+        : undefined,
+  );
+
   return (
-    <div className='px-4 pt-1 pb-4'>
-      <div className='mt-2 flex flex-col gap-4'>
+    <div className='flex flex-col gap-4 p-4'>
+      <ChoiceCards
+        label='Locations to annotate'
+        value={modelGuided ? 'model' : 'tiled'}
+        onChange={(value) => setModelGuided(value === 'model')}
+        disabled={launching}
+        options={[
+          {
+            value: 'model',
+            title: 'Model guided',
+            detail: loadingLocationSets
+              ? 'Loading models...'
+              : modelOptions.length === 0
+                ? 'No processed images yet'
+                : 'Annotate the locations a model found',
+          },
+          {
+            value: 'tiled',
+            title: 'Tiled',
+            detail: loadingTileCount
+              ? 'Loading tiles...'
+              : noTiles
+                ? 'No tiles yet'
+                : `${plural(globalTileCount ?? 0, 'tile')} cover every image`,
+          },
+        ]}
+      />
+
+      {modelGuided
+        ? !loadingLocationSets &&
+          (modelOptions.length === 0 ? (
+            <Banner tone='warning'>
+              Process the images with a model in Edit Survey › Process Images
+              before launching a model guided task.
+            </Banner>
+          ) : (
+            modelOptions.length > 1 && (
+              <div>
+                <Label className='mb-1'>Model</Label>
+                <Combobox
+                  value={model ?? null}
+                  onChange={(option) => {
+                    setModel(option ?? undefined);
+                    setLowerLimit(defaultLowerConfidence(option?.value));
+                  }}
+                  options={modelOptions}
+                  placeholder='Select a model'
+                  disabled={launching}
+                  name='Model'
+                />
+              </div>
+            )
+          ))
+        : !loadingTileCount &&
+          noTiles && (
+            <Banner tone='warning'>
+              This survey has no tiles yet. Create them in Edit Survey › Manage
+              Tiles.
+            </Banner>
+          )}
+
+      <div className='grid gap-3 sm:grid-cols-2'>
         <div>
-          <Label className='mb-0'>Batch Size</Label>
-          <span
-            className='mb-1 block text-muted-foreground'
-            style={{ fontSize: '12px' }}
-          >
-            The number of annotation jobs a user can pick up at a time.
-          </span>
+          <Label className='mb-1' htmlFor={`${switchId}-batch`}>
+            Batch size
+          </Label>
           <Input
+            id={`${switchId}-batch`}
             type='number'
+            title='The number of annotation jobs a user can pick up at a time'
             value={batchSize}
             onChange={(e) => setBatchSize(Number(e.target.value))}
           />
@@ -465,285 +537,118 @@ export default function SpeciesLabelling({
         />
       </div>
 
-      <div className='mt-2 flex flex-col'>
-        <div>
-          <div className='mb-0.5 flex items-center gap-2'>
-            <Switch
-              id={`${switchId}-advanced`}
-              checked={showAdvancedOptions}
-              onCheckedChange={() =>
-                setShowAdvancedOptions(!showAdvancedOptions)
-              }
-            />
-            <Label htmlFor={`${switchId}-advanced`} className='mb-0'>
-              Show Advanced Options
-            </Label>
-          </div>
-        </div>
-      </div>
-
-      {showAdvancedOptions && (
-        <div
-          className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
-          style={{ backgroundColor: '#697582' }}
+      <AdvancedOptions>
+        <SettingRow
+          label='Job name'
+          hint='Shown on the Jobs page'
+          htmlFor={`${switchId}-name`}
         >
-          <div>
-            <Label className='mb-0'>Job Name</Label>
-            <span
-              className='mb-1 block text-muted-foreground'
-              style={{ fontSize: '12px' }}
-            >
-              Modify this to display a different name for the job in the jobs
-              page.
-            </span>
-            <Input
-              type='text'
-              value={taskTag}
-              onChange={(e) => setTaskTag(e.target.value)}
-            />
-          </div>
-          {modelGuided && (
-            <div>
-              <Label className='mb-0'>Filter by confidence value:</Label>
-              <span
-                className='mb-1 block text-muted-foreground'
-                style={{ fontSize: '12px' }}
-              >
-                Filter images by confidence value.
-              </span>
-              <div className='flex items-center gap-2'>
-                <Input
-                  type='number'
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={lowerLimit}
-                  onChange={(e) => setLowerLimit(Number(e.target.value))}
-                  style={{ width: '80px' }}
-                />
-                <span>to</span>
-                <Input
-                  type='number'
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={upperLimit}
-                  onChange={(e) => setUpperLimit(Number(e.target.value))}
-                  style={{ width: '80px' }}
-                />
-              </div>
-            </div>
-          )}
-          <div>
-            <div className='mb-0.5 flex items-center gap-2'>
-              <Switch
-                id={`${switchId}-skip`}
-                checked={skipLocationsWithAnnotations}
-                onCheckedChange={() =>
-                  setSkipLocationsWithAnnotations(!skipLocationsWithAnnotations)
-                }
+          <Input
+            id={`${switchId}-name`}
+            type='text'
+            value={taskTag}
+            onChange={(e) => setTaskTag(e.target.value)}
+          />
+        </SettingRow>
+        {modelGuided && (
+          <SettingRow
+            label='Minimum model confidence'
+            hint='Locations below this are left out'
+            htmlFor={`${switchId}-confidence`}
+          >
+            <div className='flex items-center gap-3'>
+              <Slider
+                aria-label='Minimum model confidence'
+                min={0}
+                max={1}
+                step={0.01}
+                value={[lowerLimit]}
+                onValueChange={([lower]) => setLowerLimit(lower)}
               />
-              <Label htmlFor={`${switchId}-skip`} className='mb-0'>
-                Skip Locations With Annotations
-              </Label>
-            </div>
-          </div>
-          <div>
-            <div className='mb-0.5 flex items-center gap-2'>
-              <Switch
-                id={`${switchId}-outside`}
-                checked={allowAnnotationsOutsideLocationBoundaries}
-                onCheckedChange={() =>
-                  setAllowAnnotationsOutsideLocationBoundaries(
-                    !allowAnnotationsOutsideLocationBoundaries,
+              <Input
+                id={`${switchId}-confidence`}
+                type='number'
+                min={0}
+                max={1}
+                step={0.01}
+                value={lowerLimit}
+                onChange={(e) =>
+                  setLowerLimit(
+                    Math.min(1, Math.max(0, Number(e.target.value))),
                   )
                 }
+                className='w-24 shrink-0'
               />
-              <Label htmlFor={`${switchId}-outside`} className='mb-0'>
-                Allow Annotations Outside Location Boundaries
-              </Label>
             </div>
-          </div>
-          <div>
-            <div className='mb-0.5 flex items-center gap-2'>
-              <Switch
-                id={`${switchId}-unobserved`}
-                checked={viewUnobservedLocationsOnly}
-                onCheckedChange={() =>
-                  setViewUnobservedLocationsOnly(!viewUnobservedLocationsOnly)
-                }
-              />
-              <Label htmlFor={`${switchId}-unobserved`} className='mb-0'>
-                View Unobserved Locations Only
-              </Label>
-            </div>
-          </div>
-          <div>
-            <div className='mb-0.5 flex items-center gap-2'>
-              <Switch
-                id={`${switchId}-hidden`}
-                checked={hidden}
-                onCheckedChange={() => setHidden(!hidden)}
-              />
-              <Label htmlFor={`${switchId}-hidden`} className='mb-0'>
-                Hide Job From Non-Admin Workers
-              </Label>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <LabeledToggleSwitch
-        className='m-0 mt-2 border-t border-dark pt-2'
-        leftLabel='Model Guided'
-        rightLabel='Tiled Annotation'
-        checked={!modelGuided}
-        onChange={(checked) => {
-          setModelGuided(!checked);
-        }}
-      />
-
-      {modelGuided ? (
-        loadingLocationSets ? (
-          <p
-            className='mt-2 mb-0 text-center text-muted-foreground'
-            style={{ fontSize: '12px' }}
+          </SettingRow>
+        )}
+        <SwitchRow
+          label='Skip locations that already have annotations'
+          checked={skipLocationsWithAnnotations}
+          onChange={setSkipLocationsWithAnnotations}
+        />
+        <SwitchRow
+          label='Allow annotations outside location boundaries'
+          checked={allowAnnotationsOutsideLocationBoundaries}
+          onChange={setAllowAnnotationsOutsideLocationBoundaries}
+        />
+        <SwitchRow
+          label='Only show locations nobody has viewed'
+          checked={viewUnobservedLocationsOnly}
+          onChange={setViewUnobservedLocationsOnly}
+        />
+        {!modelGuided && process.env.NODE_ENV === 'development' && (
+          <SettingRow
+            label='Limit to image IDs (dev builds only)'
+            hint={
+              launchImageIds
+                ? `${launchImageIds.length.toLocaleString()} image IDs loaded; only their tiles launch.`
+                : 'A JSON array of image IDs.'
+            }
           >
-            Loading models...
-          </p>
-        ) : modelOptions.length > 1 ? (
-          <div>
-            <Label className='mb-0'>Model</Label>
-            <Combobox
-              value={model ?? null}
-              onChange={(option) => {
-                setModel(option ?? undefined);
-                setLowerLimit(defaultLowerConfidence(option?.value));
-              }}
-              options={modelOptions}
-              placeholder='Select a model'
-              disabled={launching}
-              name='Model'
-            />
-          </div>
-        ) : (
-          modelOptions.length === 0 && (
-            <p
-              className='mt-2 mb-0 text-center text-muted-foreground'
-              style={{ fontSize: '12px' }}
-            >
-              You must first process your images before launching a model guided
-              task.
-            </p>
-          )
-        )
-      ) : (
-        <div className='mt-2'>
-          {loadingTileCount ? (
-            <p
-              className='mb-0 text-center text-muted-foreground'
-              style={{ fontSize: '12px' }}
-            >
-              Loading tile information...
-            </p>
-          ) : !tiledLocationSetId || globalTileCount === 0 ? (
-            <Alert variant='warning' className='mb-0'>
-              <strong>No tiles configured.</strong>
-              <p className='mt-1 mb-0' style={{ fontSize: '14px' }}>
-                Please go to <strong>Edit Survey &gt; Manage Tiles</strong> to
-                create tiles for this survey before launching a tiled annotation
-                task.
-              </p>
-            </Alert>
-          ) : (
-            <div
-              className='border border-dark p-2 shadow-sm'
-              style={{ backgroundColor: '#697582' }}
-            >
-              <p className='mb-0 text-white'>
-                <strong>{globalTileCount}</strong> tiles available for
-                annotation.
-              </p>
-              <p
-                className='mt-1 mb-0 text-muted-foreground'
-                style={{ fontSize: '12px' }}
-              >
-                To modify tiles, go to Edit Survey &gt; Manage Tiles.
-              </p>
-              {process.env.NODE_ENV === 'development' && (
-                <div className='mt-2'>
-                  <Label
-                    className='mb-0 text-white'
-                    style={{ fontSize: '13px' }}
-                  >
-                    Filter by Image IDs (optional)
-                  </Label>
-                  <span
-                    className='mb-1 block text-muted-foreground'
-                    style={{ fontSize: '12px' }}
-                  >
-                    Upload a JSON file containing an array of image IDs to only
-                    launch tiles from those images.
-                  </span>
-                  <div className='flex items-center gap-2'>
-                    <Input
-                      type='file'
-                      accept='.json'
-                      size='sm'
-                      disabled={launching}
-                      onChange={(
-                        event: React.ChangeEvent<HTMLInputElement>,
-                      ) => {
-                        const file = event.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = (e) => {
-                          try {
-                            const content = e.target?.result as string;
-                            const parsed = JSON.parse(content);
-                            if (
-                              Array.isArray(parsed) &&
-                              parsed.every((id) => typeof id === 'string')
-                            ) {
-                              setLaunchImageIds(parsed);
-                            } else {
-                              alert(
-                                'Invalid JSON format. Expected an array of image ID strings.',
-                              );
-                            }
-                          } catch {
-                            alert('Failed to parse JSON file.');
-                          }
-                        };
-                        reader.readAsText(file);
-                        event.target.value = '';
-                      }}
-                    />
-                    {launchImageIds && (
-                      <Button
-                        variant='outline-light'
-                        size='sm'
-                        onClick={() => setLaunchImageIds(null)}
-                      >
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-                  {launchImageIds && (
-                    <p
-                      className='mt-1 mb-0 text-white'
-                      style={{ fontSize: '12px' }}
-                    >
-                      <strong>{launchImageIds.length}</strong> image IDs loaded
-                      — only tiles from these images will be launched.
-                    </p>
-                  )}
-                </div>
+            <div className='flex items-center gap-3'>
+              <Input
+                type='file'
+                accept='.json'
+                disabled={launching}
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    try {
+                      const parsed = JSON.parse(e.target?.result as string);
+                      if (
+                        Array.isArray(parsed) &&
+                        parsed.every((id) => typeof id === 'string')
+                      ) {
+                        setLaunchImageIds(parsed);
+                      } else {
+                        alert(
+                          'Invalid JSON format. Expected an array of image ID strings.',
+                        );
+                      }
+                    } catch {
+                      alert('Failed to parse JSON file.');
+                    }
+                  };
+                  reader.readAsText(file);
+                  event.target.value = '';
+                }}
+              />
+              {launchImageIds && (
+                <Button
+                  variant='link'
+                  className='p-0'
+                  onClick={() => setLaunchImageIds(null)}
+                >
+                  Clear
+                </Button>
               )}
             </div>
-          )}
-        </div>
-      )}
+          </SettingRow>
+        )}
+      </AdvancedOptions>
     </div>
   );
 }

@@ -161,6 +161,7 @@ type LaunchIndividualIdPayload = {
   annotationSetId: string;
   categoryId: string;
   categoryName?: string;
+  queueName?: string;
   // Distinct image IDs that have at least one annotation of the chosen
   // category. Computed client-side from the full annotation scan.
   annotatedImageIds: string[];
@@ -293,6 +294,7 @@ async function handleLaunch(
   launchedBy: string
 ) {
   const { projectId, annotationSetId, categoryId, categoryName } = payload;
+  const jobName = payload.queueName || categoryName || 'ChainLinker';
   const annotatedImageIds = new Set(payload.annotatedImageIds);
 
   if (annotatedImageIds.size === 0) {
@@ -459,7 +461,7 @@ async function handleLaunch(
       projectId,
       annotationSetId,
       categoryId,
-      name: categoryName || 'ChainLinker',
+      name: jobName,
       status: 'launching',
       totalTransects: transectCount,
       remainingTransects: transectCount,
@@ -476,7 +478,7 @@ async function handleLaunch(
       workflowType: 'individual-id',
       projectId,
       annotationSetId,
-      displayName: categoryName || 'ChainLinker',
+      displayName: jobName,
       configuration: {
         categoryId,
         categoryName,
@@ -745,6 +747,10 @@ function parsePayload(request: unknown): LaunchIndividualIdPayload {
     annotationSetId: parsed.annotationSetId,
     categoryId: parsed.categoryId,
     categoryName: parsed.categoryName,
+    queueName:
+      typeof parsed.queueName === 'string'
+        ? parsed.queueName.trim() || undefined
+        : undefined,
     annotatedImageIds: parsed.annotatedImageIds,
     ...(Array.isArray(parsed.incompleteTransectIds)
       ? { incompleteTransectIds: parsed.incompleteTransectIds }
@@ -771,6 +777,10 @@ async function readPayloadFromS3(
     annotationSetId: parsed.annotationSetId,
     categoryId: parsed.categoryId,
     categoryName: parsed.categoryName,
+    queueName:
+      typeof parsed.queueName === 'string'
+        ? parsed.queueName.trim() || undefined
+        : undefined,
     annotatedImageIds: parsed.annotatedImageIds ?? [],
     ...(Array.isArray(parsed.incompleteTransectIds)
       ? { incompleteTransectIds: parsed.incompleteTransectIds }

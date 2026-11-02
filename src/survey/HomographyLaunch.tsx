@@ -1,16 +1,22 @@
 import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import pLimit from 'p-limit';
-import { useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
 import { loadRows } from '../rowChunks';
 import { uploadWorkflowFile } from '../storage/workflowFiles';
-import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  LaunchSummary,
+  SettingRow,
+  SwitchRow,
+} from './launchParts';
 import { LoadingProgressCard } from './LoadingProgressCard';
 
 type LaunchHandler = {
@@ -129,7 +135,6 @@ export default function HomographyLaunch({
 }) {
   const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
-  const switchId = useId();
 
   // ── Up-front data loading state ──
   const [loading, setLoading] = useState(true);
@@ -146,9 +151,7 @@ export default function HomographyLaunch({
     CategoryOption[]
   >([]);
   const [batchSize, setBatchSize] = useState<number>(50);
-  const [hidden, setHidden] = useState(false);
   const [includeSkipped, setIncludeSkipped] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [queueName, setQueueName] = useState<string>(
     `Homography - ${annotationSet.name}`,
   );
@@ -216,64 +219,32 @@ export default function HomographyLaunch({
         const annotatedImageIds = new Set<string>();
         for (const a of annotations) annotatedImageIds.add(a.imageId);
 
-        // 4. Fetch neighbours for all annotated images
-        const totalImages = annotatedImageIds.size;
-        const neighbourCache = neighbourCacheRef.current;
-        const uncachedImageIds = [...annotatedImageIds].filter(
-          (id) => !neighbourCache.has(id),
+        // 4. Fetch the survey's neighbours in one chunked pass
+        const neighbourRows = await loadRows(
+          client,
+          'imageNeighboursByProjectId',
+          project.id,
+          ['image1Id', 'image2Id', 'homography', 'skipped'],
+          {
+            onProgress: (count) => {
+              if (!cancelled)
+                setLoadStatus((s) => ({ ...s, neighbours: count }));
+            },
+          },
         );
-        const cachedCount = totalImages - uncachedImageIds.length;
-        setLoadStatus((s) => ({ ...s, neighbours: cachedCount }));
-
-        if (uncachedImageIds.length > 0) {
-          const limit = pLimit(15);
-          let completed = 0;
-
-          await Promise.all(
-            uncachedImageIds.map((imageId) =>
-              limit(async () => {
-                const [n1, n2] = await Promise.all([
-                  fetchAllPaginatedResults<NeighbourItem>(
-                    (client.models.ImageNeighbour as any)
-                      .imageNeighboursByImage1key,
-                    {
-                      image1Id: imageId,
-                      limit: 10000,
-                      selectionSet: NEIGHBOUR_SELECTION,
-                    },
-                  ),
-                  fetchAllPaginatedResults<NeighbourItem>(
-                    (client.models.ImageNeighbour as any)
-                      .imageNeighboursByImage2key,
-                    {
-                      image2Id: imageId,
-                      limit: 10000,
-                      selectionSet: NEIGHBOUR_SELECTION,
-                    },
-                  ),
-                ]);
-                neighbourCache.set(imageId, [...n1, ...n2]);
-                completed++;
-                if (
-                  completed % 50 === 0 ||
-                  completed === uncachedImageIds.length
-                ) {
-                  if (!cancelled) {
-                    setLoadStatus((s) => ({
-                      ...s,
-                      neighbours: cachedCount + completed,
-                    }));
-                  }
-                }
-              }),
-            ),
-          );
+        const neighbourCache = new Map<string, NeighbourItem[]>();
+        for (const id of annotatedImageIds) neighbourCache.set(id, []);
+        for (const row of neighbourRows) {
+          const item = row as NeighbourItem;
+          neighbourCache.get(item.image1Id)?.push(item);
+          neighbourCache.get(item.image2Id)?.push(item);
         }
+        neighbourCacheRef.current = neighbourCache;
 
         if (cancelled) return;
         setLoadStatus((s) => ({
           ...s,
-          neighbours: totalImages,
+          neighbours: neighbourRows.length,
           neighboursDone: true,
         }));
         setLoading(false);
@@ -341,7 +312,6 @@ export default function HomographyLaunch({
 
   // ── Refs for stable launch handler ──
   const batchSizeRef = useRef(batchSize);
-  const hiddenRef = useRef(hidden);
   const queueNameRef = useRef(queueName);
   const includeSkippedRef = useRef(includeSkipped);
   const effectiveAnnotationsRef = useRef(effectiveAnnotations);
@@ -349,9 +319,6 @@ export default function HomographyLaunch({
   useEffect(() => {
     batchSizeRef.current = batchSize;
   }, [batchSize]);
-  useEffect(() => {
-    hiddenRef.current = hidden;
-  }, [hidden]);
   useEffect(() => {
     queueNameRef.current = queueName;
   }, [queueName]);
@@ -437,7 +404,7 @@ export default function HomographyLaunch({
           projectId: project.id,
           annotationSetId: annotationSet.id,
           batchSize: batchSizeRef.current,
-          hidden: hiddenRef.current,
+          hidden: false,
           manifestS3Key: manifestKey,
           launchedCount: manifestItems.length,
           queueName: queueNameRef.current,
@@ -470,76 +437,72 @@ export default function HomographyLaunch({
   ]);
 
   // ── Render ──
+  useLaunchLabel(
+    pairCount ? `Launch ${plural(pairCount, 'pair')}` : null,
+    loadError
+      ? 'The homography data could not be loaded'
+      : !loading && pairCount === 0
+        ? 'No image pairs need a homography'
+        : undefined,
+  );
 
   if (loadError) {
     return (
-      <div className='px-4 pt-1 pb-4'>
-        <span className='text-danger'>Failed to load: {loadError}</span>
+      <div className='p-4'>
+        <Banner tone='danger'>
+          The homography data could not be loaded: {loadError}
+        </Banner>
       </div>
     );
   }
 
   return (
-    <div className='px-4 pb-4'>
-      <div className='flex flex-col gap-4 pt-2'>
-        {/* Progress / pair count */}
-        {loading ? (
-          <LoadingProgressCard
-            title='Loading homography data…'
-            rows={[
-              {
-                label: 'Labels',
-                count: loadStatus.categories,
-                done: loadStatus.categoriesDone,
-              },
-              {
-                label: 'Annotations',
-                count: loadStatus.annotations,
-                done: loadStatus.annotationsDone,
-              },
-              {
-                label: 'Image neighbours',
-                count: loadStatus.neighbours,
-                done: loadStatus.neighboursDone,
-              },
-            ]}
-          />
-        ) : pairCount !== null ? (
-          <div className='flex items-center gap-2'>
-            <span style={{ fontSize: '14px' }}>
-              {pairCount === 0 ? (
-                <span className='text-warning'>
-                  No pairs requiring homography found.
-                </span>
-              ) : (
-                <>
-                  <strong>{pairCount.toLocaleString()}</strong> pair
-                  {pairCount !== 1 ? 's' : ''} to launch
-                  {selectedCategories.length > 0 && (
-                    <span className='text-muted-foreground'>
-                      {' '}
-                      (filtered to {selectedCategories.length} label
-                      {selectedCategories.length !== 1 ? 's' : ''})
-                    </span>
-                  )}
-                </>
-              )}
-            </span>
-          </div>
-        ) : null}
-
-        {/* Label filter (only after loading) */}
-        {!loading && (
-          <>
+    <div className='flex flex-col gap-4 p-4'>
+      {loading ? (
+        <LoadingProgressCard
+          title='Finding image pairs...'
+          rows={[
+            {
+              label: 'Labels',
+              count: loadStatus.categories,
+              done: loadStatus.categoriesDone,
+            },
+            {
+              label: 'Annotations',
+              count: loadStatus.annotations,
+              done: loadStatus.annotationsDone,
+            },
+            {
+              label: 'Neighbouring image pairs',
+              count: loadStatus.neighbours,
+              done: loadStatus.neighboursDone,
+            },
+          ]}
+        />
+      ) : (
+        <>
+          {pairCount === 0 ? (
+            <Banner tone='info'>
+              No image pairs need a homography
+              {selectedCategories.length > 0
+                ? ' for the selected labels.'
+                : '. Every overlapping pair with annotations already has one.'}
+            </Banner>
+          ) : (
+            pairCount !== null && (
+              <LaunchSummary value={pairCount.toLocaleString()}>
+                image {pairCount === 1 ? 'pair needs' : 'pairs need'} a
+                homography
+                <br />
+                {selectedCategories.length > 0
+                  ? `Only pairs with ${plural(selectedCategories.length, 'selected label')}`
+                  : 'Pairs with annotations of any label'}
+              </LaunchSummary>
+            )
+          )}
+          <div className='grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]'>
             <div>
-              <Label className='mb-0'>Filter by Labels</Label>
-              <span
-                className='mb-1 block text-muted-foreground'
-                style={{ fontSize: '12px' }}
-              >
-                By default all labels are included. Select specific labels to
-                narrow which annotations define image pairs.
-              </span>
+              <Label className='mb-1'>Labels</Label>
               <Combobox
                 value={selectedCategories}
                 onChange={(options) => setSelectedCategories(options)}
@@ -547,133 +510,50 @@ export default function HomographyLaunch({
                 name='Labels for homography'
                 options={enrichedCategoryOptions}
                 disabled={launching}
-                placeholder='All labels (default)'
+                placeholder='All labels'
               />
               {selectedCategories.length > 0 && (
-                <span
-                  className='mt-1 block text-warning'
-                  style={{ fontSize: '12px' }}
-                >
-                  Note: After homographies are created, all labels affected by
-                  the new homographies will be updated, not just the ones in
-                  this filter.
+                <span className='mt-1 block text-xs text-muted-foreground'>
+                  New homographies update every label they touch, not only
+                  these.
                 </span>
               )}
             </div>
-
             <div>
-              <div className='mb-0.5 flex items-center gap-2'>
-                <Switch
-                  id={`${switchId}-advanced`}
-                  checked={showAdvancedOptions}
-                  onCheckedChange={() =>
-                    setShowAdvancedOptions(!showAdvancedOptions)
-                  }
-                  disabled={launching}
-                />
-                <Label htmlFor={`${switchId}-advanced`} className='mb-0'>
-                  Show Advanced Options
-                </Label>
-              </div>
+              <Label className='mb-1'>Batch size</Label>
+              <Input
+                type='number'
+                title='The number of pairs a user can pick up at a time'
+                value={batchSize}
+                onChange={(e) => setBatchSize(Number(e.target.value))}
+                disabled={launching}
+              />
             </div>
-
-            {showAdvancedOptions && (
-              <div
-                className='flex flex-col gap-4 border border-dark p-2 shadow-sm'
-                style={{ backgroundColor: '#697582' }}
-              >
-                <div>
-                  <Label className='mb-0'>Job Name</Label>
-                  <span
-                    className='mb-1 block text-muted-foreground'
-                    style={{ fontSize: '12px' }}
-                  >
-                    The name shown on the Jobs page.
-                  </span>
-                  <Input
-                    type='text'
-                    value={queueName}
-                    onChange={(e) => setQueueName(e.target.value)}
-                    disabled={launching}
-                  />
-                </div>
-
-                <div>
-                  <Label className='mb-0'>Batch Size</Label>
-                  <span
-                    className='mb-1 block text-muted-foreground'
-                    style={{ fontSize: '12px' }}
-                  >
-                    The number of pairs a user can pick up at a time.
-                  </span>
-                  <Input
-                    type='number'
-                    value={batchSize}
-                    onChange={(e) =>
-                      setBatchSize(Number((e.target as HTMLInputElement).value))
-                    }
-                    disabled={launching}
-                  />
-                </div>
-
-                <div>
-                  <div className='mb-0.5 flex items-center gap-2'>
-                    <Switch
-                      id={`${switchId}-hidden`}
-                      checked={hidden}
-                      onCheckedChange={() => setHidden(!hidden)}
-                      disabled={launching}
-                    />
-                    <Label htmlFor={`${switchId}-hidden`} className='mb-0'>
-                      Hide Job From Non-Admin Workers
-                    </Label>
-                  </div>
-                  <span
-                    className='block text-muted-foreground'
-                    style={{ fontSize: '12px' }}
-                  >
-                    When enabled, only organisation admins and admins of this
-                    survey will see this job on the Jobs page.
-                  </span>
-                </div>
-
-                <div>
-                  <div className='mb-0.5 flex items-center gap-2'>
-                    <Switch
-                      id={`${switchId}-skipped`}
-                      checked={includeSkipped}
-                      onCheckedChange={() => setIncludeSkipped(!includeSkipped)}
-                      disabled={launching}
-                    />
-                    <Label htmlFor={`${switchId}-skipped`} className='mb-0'>
-                      Include Previously Skipped Pairs
-                    </Label>
-                  </div>
-                  <span
-                    className='block text-muted-foreground'
-                    style={{ fontSize: '12px' }}
-                  >
-                    When enabled, pairs that were previously skipped will be
-                    included for review.
-                  </span>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+          </div>
+          <AdvancedOptions disabled={launching}>
+            <SettingRow label='Job name' hint='Shown on the Jobs page'>
+              <Input
+                type='text'
+                aria-label='Job name'
+                value={queueName}
+                onChange={(e) => setQueueName(e.target.value)}
+                disabled={launching}
+              />
+            </SettingRow>
+            <SwitchRow
+              label='Include pairs that were skipped before'
+              checked={includeSkipped}
+              onChange={setIncludeSkipped}
+              disabled={launching}
+            />
+          </AdvancedOptions>
+        </>
+      )}
     </div>
   );
 }
 
 // ── Data fetching helpers ──
-
-const NEIGHBOUR_SELECTION = [
-  'image1Id',
-  'image2Id',
-  'homography',
-  'skipped',
-] as const;
 
 const IMAGE_SELECTION = [
   'id',

@@ -143,6 +143,7 @@ type LaunchQCReviewPayload = {
   annotationSetId: string;
   categoryId: string;
   categoryName?: string;
+  queueName?: string;
   samplePercent: number;
   batchSize: number;
   hidden: boolean;
@@ -345,7 +346,8 @@ async function handleLaunch(payload: LaunchQCReviewPayload, organizationId: stri
   // 7. Create the SQS queue and Queue record.
   // `name` carries the category name (displayed as the heading on Jobs page).
   // `tag` stays 'qc-review' (used by requeue lambda for branching).
-  const queueDisplayName = payload.categoryName || 'QC Review';
+  const queueDisplayName =
+    payload.queueName || payload.categoryName || 'QC Review';
   const queue = await createQueue(
     { name: queueDisplayName, hidden, fifo: false },
     'qc-review',
@@ -628,6 +630,10 @@ function parsePayload(request: unknown): LaunchQCReviewPayload {
     annotationSetId: parsed.annotationSetId,
     categoryId: parsed.categoryId,
     categoryName: parsed.categoryName,
+    queueName:
+      typeof parsed.queueName === 'string'
+        ? parsed.queueName.trim() || undefined
+        : undefined,
     samplePercent: parsed.samplePercent,
     batchSize: parsed.batchSize ?? 200,
     hidden: parsed.hidden ?? false,
