@@ -19,6 +19,7 @@ import {
 } from './imageTiles';
 import { ImageContext, ManagementContext, ProjectContext } from '../Context';
 import useImageMenuItems from '../useImageMenuItems';
+import { setAnnotatorViewport } from './prefetchTask';
 import { isWithinLocationBounds, resolveCategoryIdForSet } from '../utils';
 import {
   canonicalHotkeyFromParsed,
@@ -582,6 +583,9 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     if (visible) {
       setVisibleTimestamp(Date.now());
       mapRef.current?.resize();
+      const container = containerRef.current;
+      if (container)
+        setAnnotatorViewport(container.clientWidth, container.clientHeight);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);

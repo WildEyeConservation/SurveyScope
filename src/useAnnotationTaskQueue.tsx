@@ -14,6 +14,7 @@ import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { decideTestCadence } from './testCadence';
 import type { BeforeNextDecision } from './TaskBuffer';
+import { tileLoadStats } from './storage/tileLoadStats';
 
 const LOCATION_SELECTION = [
   'id',
@@ -233,11 +234,15 @@ export default function useAnnotationTaskQueue() {
           })
         );
 
+      let receivedAt = performance.now();
       let response = await getResponse(url);
+      let receiveMs = performance.now() - receivedAt;
       let usingBackup = false;
 
       if (!response.Messages && backupUrl) {
+        receivedAt = performance.now();
         response = await getResponse(backupUrl);
+        receiveMs = performance.now() - receivedAt;
         usingBackup = Boolean(response.Messages);
       }
 
@@ -289,6 +294,7 @@ export default function useAnnotationTaskQueue() {
         continue;
       }
 
+      const hydrateStart = performance.now();
       const preparedTask = await prepareTask(body);
       if (!preparedTask) {
         try {
@@ -299,6 +305,10 @@ export default function useAnnotationTaskQueue() {
         await sleep(1000);
         continue;
       }
+      const imageId = preparedTask.location.image.id;
+      const hydrateMs = performance.now() - hydrateStart;
+      tileLoadStats.step(imageId, 'receive', receiveMs, hydrateMs);
+      tileLoadStats.step(imageId, 'hydrate', hydrateMs);
 
       return {
         ...preparedTask,

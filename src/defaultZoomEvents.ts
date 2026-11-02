@@ -1,5 +1,12 @@
 export const SHARED_DEFAULT_ZOOM_EVENT = 'detweb:shared-default-zoom';
 
+export function storedDefaultZoom(surveyId: string | undefined) {
+  const stored = surveyId
+    ? localStorage.getItem(`defaultZoom-${surveyId}`)
+    : null;
+  return stored ? Number(stored) : null;
+}
+
 export interface SharedDefaultZoomDetail {
   surveyId: string;
   zoom: number;

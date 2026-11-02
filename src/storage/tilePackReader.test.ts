@@ -200,9 +200,10 @@ test('renews once on 403 and retries; concurrent reads share the renewal', async
   ]);
   assert.deepEqual(bytesOf(tile), [1, 1, 1, 1]);
   assert.equal(refreshes, 1);
+  // Header twice (refused, then renewed), then both adjacent tiles at once.
   assert.deepEqual(
     store.calls.map((c) => c.url),
-    ['old', 'new', 'new', 'new']
+    ['old', 'new', 'new']
   );
 });
 
@@ -369,4 +370,125 @@ test('limiter caps concurrency and skips tasks aborted while queued', async () =
   finish[2]();
   assert.deepEqual(await Promise.all([results[1], results[3]]), [2, 4]);
   assert.equal(limiter.active(), 0);
+});
+
+test('reports timing for header and tile requests, including failures', async () => {
+  const { file } = buildPack(SMALL, (i) => i + 1);
+  const store = storage(file, ['old']);
+  const timings: { kind: string; bytes: number; status: number }[] = [];
+  const pack = openTilePack({
+    access: access('old'),
+    refresh: async () => access('new'),
+    fetch: store.fetchFn,
+    onRequest: ({ kind, bytes, status, queueMs, ttfbMs, totalMs }) => {
+      assert.ok(queueMs >= 0 && ttfbMs >= 0 && totalMs >= ttfbMs);
+      timings.push({ kind, bytes, status });
+    },
+  });
+  await pack.tile(2, 1, 2);
+  assert.deepEqual(timings, [
+    { kind: 'header', bytes: 0, status: 403 },
+    { kind: 'header', bytes: file.length, status: 206 },
+    { kind: 'tile', bytes: 9, status: 206 },
+  ]);
+});
+
+test('merges adjacent tiles requested together and splits non-adjacent ones', async () => {
+  const { file, headerLength } = buildPack(SMALL, (i) => i + 1);
+  const store = storage(file);
+  const pack = openTilePack({
+    access: access('u'),
+    refresh: never,
+    fetch: store.fetchFn,
+  });
+  await pack.header();
+  // Level 2 is 3x2 starting at index 3: row 0 is 3,4,5 and row 1 is 6,7,8.
+  const tiles = await Promise.all([
+    pack.tile(2, 0, 0),
+    pack.tile(2, 0, 1),
+    pack.tile(2, 0, 1),
+    pack.tile(2, 1, 2),
+    pack.tile(0, 0, 0),
+  ]);
+  assert.deepEqual(tiles.map(bytesOf), [
+    Array(4).fill(3),
+    Array(5).fill(4),
+    Array(5).fill(4),
+    Array(9).fill(8),
+    [0],
+  ]);
+  const offsetOf = (index: number) =>
+    headerLength + Array.from({ length: index }, (_, i) => i + 1).reduce((a, b) => a + b, 0);
+  assert.deepEqual(store.calls.slice(1), [
+    { url: 'u', first: offsetOf(0), last: offsetOf(0) },
+    { url: 'u', first: offsetOf(3), last: offsetOf(5) - 1 },
+    { url: 'u', first: offsetOf(8), last: offsetOf(9) - 1 },
+  ]);
+});
+
+test('asks for the header size it was given', async () => {
+  const { file, headerLength } = buildPack(SMALL);
+  const store = storage(file);
+  const pack = openTilePack({
+    access: access('u'),
+    refresh: never,
+    fetch: store.fetchFn,
+    headerGuessBytes: headerLength + 10,
+  });
+  await pack.header();
+  assert.deepEqual(store.calls, [{ url: 'u', first: 0, last: headerLength + 9 }]);
+});
+
+test('an aborted tile rejects without cancelling bytes others still need', async () => {
+  const { file } = buildPack(SMALL, (i) => i + 1);
+  const store = storage(file);
+  const signals: (AbortSignal | null | undefined)[] = [];
+  const pack = openTilePack({
+    access: access('u'),
+    refresh: never,
+    fetch: (input, init) => {
+      signals.push(init?.signal);
+      return store.fetchFn(input, init);
+    },
+  });
+  await pack.header();
+  const controller = new AbortController();
+  const cancelled = pack.tile(2, 0, 0, controller.signal);
+  const kept = pack.tile(2, 0, 1);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  controller.abort();
+  await assert.rejects(cancelled, isAbort);
+  assert.deepEqual(bytesOf(await kept), Array(5).fill(4));
+  assert.equal(signals[1]?.aborted, false);
+});
+
+test('a shared read is cancelled when every tile waiting on it aborts', async () => {
+  const { file } = buildPack(SMALL);
+  const store = storage(file);
+  const limiter = makeLimiter(1);
+  const pack = openTilePack({
+    access: access('u'),
+    refresh: never,
+    fetch: store.fetchFn,
+    limiter,
+  });
+  await pack.header();
+  // Hold the only request slot so the tile read waits in the limiter.
+  let hold!: () => void;
+  const held = new Promise<void>((resolve) => (hold = resolve));
+  const busy = limiter.run(() => held);
+  const first = new AbortController();
+  const second = new AbortController();
+  const tiles = [
+    pack.tile(2, 0, 0, first.signal),
+    pack.tile(2, 0, 1, second.signal),
+  ];
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  first.abort();
+  second.abort();
+  for (const tile of tiles) await assert.rejects(tile, isAbort);
+  hold();
+  await busy;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(store.calls.length, 1);
 });

@@ -1,4 +1,5 @@
 import type { TileCoordinate } from '../../shared/imageTiles';
+import { maxZoomFor, pyramid } from '../../shared/tilePack';
 import {
   openTilePack,
   TilePackRequestFailed,
@@ -17,14 +18,28 @@ export const isPackGone = (error: unknown) =>
 
 export type OpenPack = { pack: TilePack; format: string };
 
+const PACK_TILE_SIZE = 256;
+// A few spare KB cost less than a second round trip on slow links.
+const HEADER_OVERHEAD_BYTES = 4096;
+
+export function headerGuessBytes(size: { width: number; height: number }) {
+  const { tileCount } = pyramid({
+    ...size,
+    tileSize: PACK_TILE_SIZE,
+    maxZoom: maxZoomFor(size.width, size.height, PACK_TILE_SIZE),
+  });
+  return HEADER_OVERHEAD_BYTES + tileCount * 8;
+}
+
 export async function openSignedTilePack(
   sign: () => Promise<TilePackAccess | null>,
   size: { width: number; height: number },
-  options: Pick<TilePackOptions, 'fetch' | 'limiter' | 'now'> = {}
+  options: Pick<TilePackOptions, 'fetch' | 'limiter' | 'now' | 'onRequest'> = {}
 ): Promise<OpenPack | null> {
   const access = await sign();
   if (!access) return null;
   const pack = openTilePack({
+    headerGuessBytes: headerGuessBytes(size),
     ...options,
     access,
     refresh: async () => {

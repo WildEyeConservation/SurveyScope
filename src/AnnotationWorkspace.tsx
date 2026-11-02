@@ -25,6 +25,7 @@ import type {
 } from './annotationTypes';
 import {
   publishSharedDefaultZoom,
+  storedDefaultZoom,
   subscribeToSharedDefaultZoom,
 } from './defaultZoomEvents';
 
@@ -188,15 +189,9 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   const navigate = useNavigate();
   const { surveyId } = useParams();
   // Read localStorage synchronously so tiles are never loaded at the wrong zoom.
-  const [defaultZoom, setDefaultZoom] = useState<number | null>(() => {
-    if (surveyId) {
-      const storedZoom = localStorage.getItem(`defaultZoom-${surveyId}`);
-      if (storedZoom) {
-        return Number(storedZoom);
-      }
-    }
-    return zoom ?? null;
-  });
+  const [defaultZoom, setDefaultZoom] = useState<number | null>(
+    () => storedDefaultZoom(surveyId) ?? zoom ?? null
+  );
 
   // TaskBuffer keeps upcoming workspaces mounted. Synchronize a shared zoom
   // save across those preloaded workspaces without rebuilding the job buffer.

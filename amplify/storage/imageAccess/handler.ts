@@ -551,8 +551,24 @@ export function createImageAccessHandler(s3 = presignClient()) {
   return async function handler(event: AppSyncEvent): Promise<unknown> {
     const user = requireStorageUser(event.identity);
     const { fieldName } = event;
-    if (fieldName === 'signImageTiles') return signImageTiles(event);
-    if (fieldName === 'signImageTilePack') return signImageTilePack(event);
+    if (fieldName === 'signImageTiles' || fieldName === 'signImageTilePack') {
+      const startedAt = Date.now();
+      const result =
+        fieldName === 'signImageTiles'
+          ? await signImageTiles(event)
+          : await signImageTilePack(event);
+      // One line per call so Logs Insights can compare with client timings.
+      console.log(
+        JSON.stringify({
+          op: fieldName,
+          imageId: event.arguments.imageId,
+          ms: Date.now() - startedAt,
+          tiles: 'tiles' in result ? result.tiles.length : undefined,
+          found: 'url' in result ? result.url !== null : undefined,
+        })
+      );
+      return result;
+    }
     if (fieldName === 'imageDownloadUrl') return imageDownloadUrl(event);
     const operation = projectOperations[fieldName];
     if (!operation) throw new Error('Unsupported storage operation');
