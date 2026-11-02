@@ -1,4 +1,8 @@
-import { getTileBlob, imageTileContext } from '../StorageLayer';
+import {
+  getTileBlob,
+  imageTileContext,
+  primeImageTiles,
+} from '../StorageLayer';
 import { makeLimiter } from '../storage/tilePackReader';
 import { tileLoadStats } from '../storage/tileLoadStats';
 import type { AnnotationTaskPayload } from '../annotationTypes';
@@ -46,5 +50,21 @@ export function prefetchTask(
     })
     .catch((error: unknown) => {
       console.warn('Prefetching a task failed', error);
+    });
+}
+
+// Signing and headers are a few KB, so every received task gets them early.
+export function primeTask(
+  client: Client,
+  location: AnnotationTaskPayload['location']
+): Promise<void> {
+  const { image, id: taskId } = location;
+  return loadImageFiles(client, image.id, taskId)
+    .then((files) => {
+      const key = sourceKeyOf(files);
+      if (key) return primeImageTiles(key, imageTileContext(image, taskId));
+    })
+    .catch((error: unknown) => {
+      console.warn('Priming a task failed', error);
     });
 }

@@ -14,6 +14,8 @@ export type TaskStep = 'receive' | 'hydrate' | 'fileLookup';
 export interface TileLoadMetrics {
   /** Time with image requests in flight (lookup, signing, header, tiles); idle gaps excluded. */
   imageBusyMs: number;
+  /** Busy time of the tile requests alone, without the file lookup, pack sign and header. */
+  tileBusyMs: number;
   receiveMs: number;
   hydrateMs: number;
   fileLookupMs: number;
@@ -47,13 +49,14 @@ export interface TileLoadMetrics {
 
 type Entry = Omit<
   TileLoadMetrics,
-  'imageBusyMs' | 'connectionRttMs' | 'connectionDownlinkMbps'
-> & { busy: [number, number][] };
+  'imageBusyMs' | 'tileBusyMs' | 'connectionRttMs' | 'connectionDownlinkMbps'
+> & { busy: [number, number][]; tileBusy: [number, number][] };
 
 const MAX_TASKS = 100;
 
 const blank = (): Entry => ({
   busy: [],
+  tileBusy: [],
   receiveMs: 0,
   hydrateMs: 0,
   fileLookupMs: 0,
@@ -95,7 +98,7 @@ export function busyTime(intervals: [number, number][]) {
 export function createTileLoadStats(now: () => number = () => Date.now()) {
   const tasks = new Map<string, Entry>();
 
-  const entry = (taskId: string, busyMs?: number) => {
+  const entry = (taskId: string, busyMs?: number, tileStage = false) => {
     let current = tasks.get(taskId);
     if (!current) {
       current = blank();
@@ -108,19 +111,20 @@ export function createTileLoadStats(now: () => number = () => Date.now()) {
     if (busyMs !== undefined) {
       const at = now();
       current.busy.push([at - busyMs, at]);
+      if (tileStage) current.tileBusy.push([at - busyMs, at]);
     }
     return current;
   };
 
   return {
-    sign(taskId: string, ms: number) {
-      const e = entry(taskId, ms);
+    sign(taskId: string, ms: number, tileStage = false) {
+      const e = entry(taskId, ms, tileStage);
       e.signCalls++;
       e.signMs += ms;
       e.signMaxMs = Math.max(e.signMaxMs, ms);
     },
     request(taskId: string, source: 'pack' | 'legacy', t: TileRequestTiming) {
-      const e = entry(taskId, t.queueMs + t.totalMs);
+      const e = entry(taskId, t.queueMs + t.totalMs, t.kind === 'tile');
       if (t.status === 404) e.missingTiles++;
       else if (t.status !== 200 && t.status !== 206) e.failedRequests++;
       if (t.kind === 'header') {
@@ -152,7 +156,7 @@ export function createTileLoadStats(now: () => number = () => Date.now()) {
       entry(taskId).prefetched = 1;
     },
     generate(taskId: string, ms: number, tiles: number) {
-      const e = entry(taskId, ms);
+      const e = entry(taskId, ms, true);
       e.generateCalls++;
       e.generateMs += ms;
       e.generatedTiles += tiles;
@@ -161,13 +165,14 @@ export function createTileLoadStats(now: () => number = () => Date.now()) {
       const e = tasks.get(taskId);
       if (!e) return undefined;
       tasks.delete(taskId);
-      const { busy, ...counts } = e;
+      const { busy, tileBusy, ...counts } = e;
       const metrics = Object.fromEntries(
         Object.entries(counts).map(([k, v]) => [k, Math.round(v)])
-      ) as Omit<TileLoadMetrics, 'imageBusyMs'>;
+      ) as Omit<TileLoadMetrics, 'imageBusyMs' | 'tileBusyMs'>;
       return {
         ...metrics,
         imageBusyMs: Math.round(busyTime(busy)),
+        tileBusyMs: Math.round(busyTime(tileBusy)),
         ...connection(),
       };
     },
