@@ -1,7 +1,19 @@
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import exportFromJSON from 'export-from-json';
-import { useContext, useEffect, useMemo, useState } from 'react';
+import {
+  ChartColumnIcon,
+  DownloadIcon,
+  SearchIcon,
+  WaypointsIcon,
+} from 'lucide-react';
+import {
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   createStratumAssigner,
@@ -64,6 +76,7 @@ export default function AnnotationSetResults({
   const { client, showModal } = useContext(GlobalContext)!;
   const [loading, setLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
+  const [exportError, setExportError] = useState('');
   const { users } = useUsers();
 
   const userMap = useMemo(() => {
@@ -116,10 +129,7 @@ export default function AnnotationSetResults({
       { selectionSet: ['name'] },
     );
 
-    if (!survey) {
-      console.error('Survey not found');
-      return;
-    }
+    if (!survey) throw new Error('Survey not found');
 
     let fetched = 0;
     const [annotationSetsResult, images, categories] = await Promise.all([
@@ -304,6 +314,122 @@ export default function AnnotationSetResults({
     navigate(`/jolly/${surveyId}/${annotationSetId}`);
   }
 
+  const exporting = exportStatus !== '';
+  const actions: {
+    icon: ReactNode;
+    title: string;
+    detail: ReactNode;
+    buttons: ReactNode;
+  }[] = [
+    {
+      icon: <SearchIcon />,
+      title: 'Explore',
+      detail: 'Go through the annotations freely, outside of a workflow.',
+      buttons: (
+        <Button
+          variant='primary'
+          onClick={() =>
+            navigate(`/surveys/${surveyId}/set/${annotationSet.id}/review`)
+          }
+        >
+          Explore
+        </Button>
+      ),
+    },
+    {
+      icon: <DownloadIcon />,
+      title: 'CSV export',
+      detail: exporting ? (
+        <span className='flex items-center gap-2'>
+          <Spinner size='sm' />
+          {exportStatus}
+        </span>
+      ) : exportError ? (
+        <span className='text-danger'>{exportError}</span>
+      ) : (
+        'Every annotation with its related data.'
+      ),
+      buttons: (
+        <Button
+          variant='primary'
+          disabled={users.length === 0 || exporting}
+          title={users.length === 0 ? 'Loading users...' : undefined}
+          onClick={() => {
+            setExportError('');
+            exportData([annotationSet]).catch((error) => {
+              console.error('CSV export failed', error);
+              setExportStatus('');
+              setExportError('The export failed. Try again.');
+            });
+          }}
+        >
+          {exporting ? 'Exporting...' : 'Download'}
+        </Button>
+      ),
+    },
+    {
+      icon: <WaypointsIcon />,
+      title: 'Chain Viewer',
+      detail:
+        'Each primary annotation with its linked sightings across neighbouring images.',
+      buttons: (
+        <Button
+          variant='primary'
+          onClick={() =>
+            navigate(
+              `/surveys/${surveyId}/set/${annotationSet.id}/chain-viewer`,
+            )
+          }
+        >
+          Open
+        </Button>
+      ),
+    },
+    {
+      icon: <ChartColumnIcon />,
+      title: 'Jolly II',
+      detail: loading
+        ? 'Checking for results...'
+        : jollyResultsExists
+          ? 'Population estimates are ready. Regenerate after changing annotations.'
+          : 'Population estimates for this annotation set.',
+      buttons: jollyResultsExists ? (
+        <>
+          <Button
+            variant='outline-primary'
+            disabled={loading}
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Regenerating replaces the existing Jolly results for this annotation set. Continue?',
+                )
+              ) {
+                generateSurveyResults();
+              }
+            }}
+          >
+            Regenerate
+          </Button>
+          <Button
+            variant='primary'
+            disabled={loading}
+            onClick={() => viewSurveyResults(annotationSet.id)}
+          >
+            View
+          </Button>
+        </>
+      ) : (
+        <Button
+          variant='primary'
+          disabled={loading}
+          onClick={generateSurveyResults}
+        >
+          Generate
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <>
       <Modal show={show} onHide={onClose} strict={true} size='lg'>
@@ -311,120 +437,30 @@ export default function AnnotationSetResults({
           <Title>{annotationSet.name} Results</Title>
         </Header>
         <Body>
-          <div className='flex flex-col gap-6 p-4'>
-            <div>
-              <h5 className='mb-0'>Explore</h5>
-              <span
-                className='text-muted-foreground'
-                style={{ fontSize: '14px' }}
-              >
-                Explore your annotation set by searching for all sightings of a
-                specific species. Can be used to find and correct errors, and
-                reannotate unknown sightings.
-              </span>
-              <Button
-                className='mt-1 block'
-                variant='primary'
-                onClick={() =>
-                  navigate(
-                    `/surveys/${surveyId}/set/${annotationSet.id}/review`,
-                  )
-                }
-              >
-                Explore
-              </Button>
-            </div>
-            <div>
-              <h5 className='mb-0'>CSV File</h5>
-              <span
-                className='text-muted-foreground'
-                style={{ fontSize: '14px' }}
-              >
-                Download a CSV file of your annotation set.
-              </span>
-              {exportStatus && (
-                <p
-                  className='text-muted-foreground'
-                  style={{ fontSize: '14px' }}
+          <div className='p-4'>
+            <div className='divide-y divide-white/10 border border-white/15 bg-white/[0.07]'>
+              {actions.map((action) => (
+                <div
+                  key={action.title}
+                  className='flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3'
                 >
-                  <Spinner animation='border' size='sm' /> {exportStatus}
-                </p>
-              )}
-              <Button
-                className='mt-1 block'
-                variant='primary'
-                disabled={users.length === 0}
-                onClick={() => {
-                  exportData([annotationSet]);
-                }}
-              >
-                Download
-              </Button>
-            </div>
-            <div>
-              <h5 className='mb-0'>Chain Viewer</h5>
-              <span
-                className='text-muted-foreground'
-                style={{ fontSize: '14px' }}
-              >
-                Inspect linked-individual chains: every primary annotation and
-                all its linked sightings across neighbour images.
-              </span>
-              <Button
-                className='mt-1 block'
-                variant='primary'
-                onClick={() =>
-                  navigate(
-                    `/surveys/${surveyId}/set/${annotationSet.id}/chain-viewer`,
-                  )
-                }
-              >
-                Open Chain Viewer
-              </Button>
-            </div>
-            <div>
-              <h5 className='mb-0'>Jolly II</h5>
-              <span
-                className='text-muted-foreground'
-                style={{ fontSize: '14px' }}
-              >
-                Generate and view the Jolly results for this annotation set.
-              </span>
-              <div className='flex flex-row gap-2'>
-                <Button
-                  className='mt-1 block'
-                  variant='primary'
-                  disabled={loading}
-                  onClick={() => {
-                    if (
-                      jollyResultsExists &&
-                      !window.confirm(
-                        'Jolly results already exist for this annotation set. Recalculating will overwrite existing results. Continue?',
-                      )
-                    ) {
-                      return;
-                    }
-                    generateSurveyResults();
-                  }}
-                >
-                  Generate Results
-                </Button>
-                <Button
-                  className='mt-1 block'
-                  variant='primary'
-                  disabled={loading || !jollyResultsExists}
-                  onClick={() => {
-                    viewSurveyResults(annotationSet.id);
-                  }}
-                >
-                  View Results
-                </Button>
-              </div>
+                  <span className='text-muted-foreground [&_svg]:size-5'>
+                    {action.icon}
+                  </span>
+                  <div className='flex min-w-0 flex-1 flex-col'>
+                    <span className='font-semibold'>{action.title}</span>
+                    <span className='text-sm text-muted-foreground'>
+                      {action.detail}
+                    </span>
+                  </div>
+                  <div className='flex gap-2'>{action.buttons}</div>
+                </div>
+              ))}
             </div>
           </div>
         </Body>
         <Footer>
-          <Button variant='dark' onClick={onClose} disabled={loading}>
+          <Button variant='ghost' className='mr-auto' onClick={onClose}>
             Close
           </Button>
         </Footer>

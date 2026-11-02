@@ -8,6 +8,7 @@ import { GlobalContext } from './Context';
 import { Body, Footer, Header, Modal, Title } from './Modal';
 import { Tab, Tabs } from './Tabs';
 import { Schema } from './amplify/client-schema';
+import { loadRows } from './rowChunks';
 import LabelEditor from './survey/LabelEditor';
 
 interface EditAnnotationSetModalProps {
@@ -74,6 +75,38 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
     },
   });
 
+  const [labelCount, setLabelCount] = useState<number>();
+  const [infoTagCount, setInfoTagCount] = useState<number>();
+  const { data: usage } = useQuery({
+    queryKey: ['annotation-set-label-usage', annotationSet.id],
+    enabled: show,
+    staleTime: 0,
+    queryFn: async () => {
+      const [annotations, links] = await Promise.all([
+        loadRows(client, 'annotationsByAnnotationSetId', annotationSet.id, [
+          'categoryId',
+        ]),
+        loadRows(
+          client,
+          'annotationInfoTagsByAnnotationSetId',
+          annotationSet.id,
+          ['infoTagId'],
+        ),
+      ]);
+      const count = (ids: (string | null)[]) => {
+        const counts = new Map<string, number>();
+        for (const id of ids) {
+          if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+        return counts;
+      };
+      return {
+        labels: count(annotations.map((a) => a.categoryId)),
+        infoTags: count(links.map((l) => l.infoTagId)),
+      };
+    },
+  });
+
   const handleSave = async () => {
     if (!annotationSet || newName.trim() === '') return;
 
@@ -125,7 +158,9 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
       </Header>
       <Body>
         <Tabs>
-          <Tab label='Labels'>
+          <Tab
+            label={`Labels (${labelCount ?? fetchedCategories?.length ?? 0})`}
+          >
             <form className='flex flex-col gap-2 p-4'>
               <div>
                 <Label htmlFor='annotationSetName'>Name</Label>
@@ -154,11 +189,15 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
                   isEditing
                   setHandleSave={setSaveLabels}
                   onStatusChange={setStatusMessage}
+                  usage={usage?.labels}
+                  onCountChange={setLabelCount}
                 />
               )}
             </form>
           </Tab>
-          <Tab label='Info Tags'>
+          <Tab
+            label={`Info Tags (${infoTagCount ?? fetchedInfoTags?.length ?? 0})`}
+          >
             <form className='flex flex-col gap-2 p-4'>
               {infoTagsLoading || !fetchedInfoTags ? (
                 <div className='flex items-center gap-2 py-4'>
@@ -180,41 +219,17 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
                   description='Define optional informational tags that can be toggled on annotations.'
                   setHandleSave={setSaveInfoTags}
                   onStatusChange={setStatusMessage}
+                  usage={usage?.infoTags}
+                  onCountChange={setInfoTagCount}
                 />
               )}
             </form>
           </Tab>
         </Tabs>
         <Footer>
-          {errorMessage ? (
-            <span className='me-auto text-danger' style={{ fontSize: 12 }}>
-              {errorMessage}
-            </span>
-          ) : statusMessage ? (
-            <span
-              className='me-auto flex items-center gap-2 text-muted-foreground'
-              style={{ fontSize: 12 }}
-            >
-              <Spinner size='sm' />
-              {statusMessage}
-            </span>
-          ) : null}
           <Button
-            variant='primary'
-            disabled={isSaving || categoriesLoading || infoTagsLoading}
-            onClick={handleSave}
-          >
-            {isSaving ? (
-              <span className='flex items-center gap-2'>
-                <Spinner size='sm' />
-                Saving...
-              </span>
-            ) : (
-              'Save Changes'
-            )}
-          </Button>
-          <Button
-            variant='dark'
+            variant='ghost'
+            className='mr-auto'
             disabled={isSaving}
             onClick={() => {
               handleClose();
@@ -224,6 +239,21 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
             }}
           >
             Cancel
+          </Button>
+          {errorMessage ? (
+            <span className='text-xs text-danger'>{errorMessage}</span>
+          ) : statusMessage ? (
+            <span className='flex items-center gap-2 text-xs text-muted-foreground'>
+              <Spinner size='sm' />
+              {statusMessage}
+            </span>
+          ) : null}
+          <Button
+            variant='primary'
+            disabled={isSaving || categoriesLoading || infoTagsLoading}
+            onClick={handleSave}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </Footer>
       </Body>
