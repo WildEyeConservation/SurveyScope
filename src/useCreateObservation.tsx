@@ -139,7 +139,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           prefetchPlanner.record({
             timeTakenMs: timeTaken,
             waitingMs: input.waitingTime,
-            loadMs: loadMetrics?.imageBusyMs ?? 0,
+            loadMs: loadMetrics?.tileBusyMs ?? 0,
             slotWaitMs: requests ? loadMetrics!.tileQueueMs / requests : 0,
           });
         }

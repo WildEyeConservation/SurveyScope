@@ -67,12 +67,17 @@ test('busy time counts overlapping image work once and skips idle gaps', () => {
   const a = stats.take('a')!;
   // 300 lookup + 250 sign (overlaps nothing) + 500 tiles + 200 later tile.
   assert.equal(a.imageBusyMs, 300 + 250 + 500 + 200);
+  assert.equal(a.tileBusyMs, 500 + 200);
   assert.equal(a.receiveMs, 200);
   assert.equal(a.hydrateMs, 500);
   assert.equal(a.fileLookupMs, 300);
   assert.equal(a.prefetched, 1);
   stats.cacheHit('b');
   assert.equal(stats.take('b')!.imageBusyMs, 0);
+  clock = 70_000;
+  stats.sign('c', 100, true);
+  stats.request('c', 'pack', timing('header', 100));
+  assert.equal(stats.take('c')!.tileBusyMs, 100);
 });
 
 test('busyTime merges overlapping and touching intervals', () => {

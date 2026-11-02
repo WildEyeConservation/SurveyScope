@@ -77,7 +77,7 @@ const urls = new TileUrlBatcher((context, sourceKey, tiles) =>
         },
         'signImageTiles'
       ),
-    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms))
+    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms, true))
   )
 );
 
@@ -230,6 +230,20 @@ function generateTile(
 
 const packs = new TilePackRegistry();
 
+const openPack = (scope: string, context: TileContext, sourceKey: string) =>
+  packs.get(tileImageKey(scope, context, sourceKey), () =>
+    openSignedTilePack(() => signTilePack(context, sourceKey), context, {
+      onRequest: (timing) =>
+        forTask(context, (id) => tileLoadStats.request(id, 'pack', timing)),
+    })
+  );
+
+export async function primeImageTiles(sourceKey: string, context: TileContext) {
+  const epoch = sessionEpoch;
+  const scope = await sessionScope();
+  if (epoch === sessionEpoch) await openPack(scope, context, sourceKey);
+}
+
 function signTilePack(context: TileContext, sourceKey: string) {
   return timed(
     () =>
@@ -319,13 +333,7 @@ export async function getTileBlob(
   const work = loadPackTile({
     tile,
     onRequest: context.taskId ? packReporter(context.taskId) : undefined,
-    open: () =>
-      packs.get(imageKey, () =>
-        openSignedTilePack(() => signTilePack(context, sourceKey), context, {
-          onRequest: (timing) =>
-            forTask(context, (id) => tileLoadStats.request(id, 'pack', timing)),
-        })
-      ),
+    open: () => openPack(scope, context, sourceKey),
     forget: () => packs.forget(imageKey),
     legacy,
     readCache,

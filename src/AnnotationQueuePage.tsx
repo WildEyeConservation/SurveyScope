@@ -1,6 +1,7 @@
 import {
   useCallback,
   useContext,
+  useEffect,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -30,6 +31,7 @@ export default function AnnotationQueuePage() {
   useUnsavedWorkGuard();
   const { client } = useContext(GlobalContext)!;
   const { surveyId } = useParams();
+  useEffect(() => prefetchPlanner.skipNext(), []);
   const prefetch = useSyncExternalStore(
     prefetchPlanner.subscribe,
     prefetchPlanner.depth

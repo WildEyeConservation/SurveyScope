@@ -17,6 +17,7 @@ import { decideTestCadence } from './testCadence';
 import type { BeforeNextDecision } from './TaskBuffer';
 import { tileLoadStats } from './storage/tileLoadStats';
 import { createLocationLeases } from './locationLeases';
+import { primeTask } from './annotator/prefetchTask';
 
 const LOCATION_SELECTION = [
   'id',
@@ -290,6 +291,10 @@ export default function useAnnotationTaskQueue() {
         tileLoadStats.step(taskId, 'receive', receiveMs);
         tileLoadStats.step(taskId, 'hydrate', performance.now() - hydrateStart);
       }
+      void primeTask(
+        client as unknown as Parameters<typeof primeTask>[0],
+        preparedTask.location
+      );
 
       return {
         ...preparedTask,
@@ -297,7 +302,7 @@ export default function useAnnotationTaskQueue() {
         revalidate: async () => Boolean(await prepareTask(body)),
       };
     },
-    [getSqsClient, prepareTask, leases]
+    [client, getSqsClient, prepareTask, leases]
   );
 
   const receiveBatch = useCallback(async (): Promise<number> => {
