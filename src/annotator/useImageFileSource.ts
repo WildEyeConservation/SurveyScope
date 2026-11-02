@@ -20,7 +20,8 @@ onImageSessionChange(() => files.clear());
 
 export function loadImageFiles(
   client: FilesClient,
-  imageId: string
+  imageId: string,
+  taskId?: string
 ): Promise<ImageFileType[]> {
   const cached = files.get(imageId);
   if (cached) return cached;
@@ -29,7 +30,9 @@ export function loadImageFiles(
       client.models.ImageFile.imagesByimageId({ imageId }).then(
         ({ data }) => data
       ),
-    (ms) => tileLoadStats.step(imageId, 'fileLookup', ms)
+    (ms) => {
+      if (taskId) tileLoadStats.step(taskId, 'fileLookup', ms);
+    }
   );
   files.set(imageId, loading);
   const forget = () => {
@@ -47,7 +50,7 @@ export function loadImageFiles(
 export const sourceKeyOf = (imageFiles: ImageFileType[]) =>
   imageFiles.find((file) => file.type === 'image/jpeg')?.key;
 
-export default function useImageFileSource(imageId: string) {
+export default function useImageFileSource(imageId: string, taskId?: string) {
   const { client } = useContext(GlobalContext)!;
   const [imageFiles, setImageFiles] = useState<ImageFileType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +60,7 @@ export default function useImageFileSource(imageId: string) {
     setImageFiles([]);
     setLoading(true);
 
-    loadImageFiles(client as unknown as FilesClient, imageId)
+    loadImageFiles(client as unknown as FilesClient, imageId, taskId)
       .then((data) => {
         if (!cancelled) setImageFiles(data);
       })
@@ -73,7 +76,7 @@ export default function useImageFileSource(imageId: string) {
     return () => {
       cancelled = true;
     };
-  }, [client, imageId]);
+  }, [client, imageId, taskId]);
 
   const sourceKey = useMemo(() => sourceKeyOf(imageFiles), [imageFiles]);
 

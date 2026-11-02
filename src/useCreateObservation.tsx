@@ -50,7 +50,6 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   } = props;
   const annotationSetId = location?.annotationSetId;
   const id = location?.id;
-  const imageId = location?.image?.id;
   const annotationSetToUse = isTest && testSetId ? testSetId : annotationSetId;
   const {
     annoCount,
@@ -107,7 +106,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
         }
 
         const persistedAnnotationSetId = annotationSetToUse ?? annotationSetId;
-        if (imageId) loadMetricsRef.current ??= tileLoadStats.take(imageId);
+        loadMetricsRef.current ??= tileLoadStats.take(id);
         const loadMetrics = loadMetricsRef.current;
         const input = {
           ...(observationId ? { id: observationId } : {}),
@@ -140,7 +139,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           prefetchPlanner.record({
             timeTakenMs: timeTaken,
             waitingMs: input.waitingTime,
-            loadMs: loadMetrics?.spanMs ?? 0,
+            loadMs: loadMetrics?.imageBusyMs ?? 0,
             slotWaitMs: requests ? loadMetrics!.tileQueueMs / requests : 0,
           });
         }
@@ -190,7 +189,6 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     },
     [
       id,
-      imageId,
       annotationSetId,
       annotationSetToUse,
       project,

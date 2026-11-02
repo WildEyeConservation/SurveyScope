@@ -110,6 +110,7 @@ export class TilePackRegistry {
 
 export async function loadPackTile(ops: {
   tile: TileCoordinate;
+  onRequest?: TilePackOptions['onRequest'];
   open: () => Promise<OpenPack | null>;
   forget: () => void;
   legacy: () => Promise<Blob>;
@@ -128,7 +129,7 @@ export async function loadPackTile(ops: {
     ops.assertCurrentSession();
     if (cached) return cached;
     const { z, row, col } = ops.tile;
-    const bytes = await open.pack.tile(z, row, col);
+    const bytes = await open.pack.tile(z, row, col, undefined, ops.onRequest);
     ops.assertCurrentSession();
     const blob = new Blob([bytes], { type: open.format });
     await ops.writeCache(blob);

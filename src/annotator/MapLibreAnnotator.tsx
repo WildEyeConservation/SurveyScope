@@ -161,7 +161,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     imageFiles,
     loading: imageFilesLoading,
     sourceKey,
-  } = useImageFileSource(image.id);
+  } = useImageFileSource(image.id, location?.id);
 
   const projection = useMemo(
     () => makeProjection(image.width, image.height),
@@ -261,7 +261,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     const unregisterMarkerImages = registerAnnotationMarkerImages(map);
 
     map.on('load', () => {
-      addImageTiles(map, sourceKey, image, projection);
+      addImageTiles(map, sourceKey, image, projection, location?.id);
 
       // Location rectangle (task bounds)
       if (location?.width && location?.height) {

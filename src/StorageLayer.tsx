@@ -12,7 +12,30 @@ import {
   SIGN_TILE_PACK,
 } from './storage/api';
 import { loadAuthorizedTile } from './storage/tileLoader';
-import { tileLoadStats, timed } from './storage/tileLoadStats';
+import {
+  tileLoadStats,
+  timed,
+  type TileRequestTiming,
+} from './storage/tileLoadStats';
+
+const forTask = (context: TileContext, record: (taskId: string) => void) => {
+  if (context.taskId) record(context.taskId);
+};
+
+// One callback per task, so a merged read counts once for each task waiting on it.
+const packReporters = new Map<string, (timing: TileRequestTiming) => void>();
+function packReporter(taskId: string) {
+  let reporter = packReporters.get(taskId);
+  if (!reporter) {
+    reporter = (timing) => tileLoadStats.request(taskId, 'pack', timing);
+    packReporters.set(taskId, reporter);
+    for (const oldest of packReporters.keys()) {
+      if (packReporters.size <= 200) break;
+      packReporters.delete(oldest);
+    }
+  }
+  return reporter;
+}
 import {
   loadPackTile,
   openSignedTilePack,
@@ -54,7 +77,7 @@ const urls = new TileUrlBatcher((context, sourceKey, tiles) =>
         },
         'signImageTiles'
       ),
-    (ms) => tileLoadStats.sign(context.imageId, ms)
+    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms))
   )
 );
 
@@ -109,14 +132,18 @@ function sessionScope(): Promise<string> {
   return scopePromise;
 }
 
-export function imageTileContext(image: {
-  id: string;
-  width: number;
-  height: number;
-  sharedImageId?: string;
-}): TileContext {
+export function imageTileContext(
+  image: {
+    id: string;
+    width: number;
+    height: number;
+    sharedImageId?: string;
+  },
+  taskId?: string
+): TileContext {
   return {
     imageId: image.id,
+    taskId,
     width: image.width,
     height: image.height,
     sharedImageId: image.sharedImageId,
@@ -164,7 +191,10 @@ async function flushGeneration(
             },
             'generateTile'
           ),
-        (ms) => tileLoadStats.generate(context.imageId, ms, chunk.length)
+        (ms) =>
+          forTask(context, (id) =>
+            tileLoadStats.generate(id, ms, chunk.length)
+          )
       );
       chunk.forEach((entry, i) => {
         if (result[i]) entry.resolve(base64ToBlob(result[i]));
@@ -212,18 +242,18 @@ function signTilePack(context: TileContext, sourceKey: string) {
         },
         'signImageTilePack'
       ),
-    (ms) => tileLoadStats.sign(context.imageId, ms)
+    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms))
   ).then((signed) =>
     signed.url ? { url: signed.url, expiresAt: signed.expiresAt } : null
   );
 }
 
-async function fetchLegacyTile(imageId: string, url: string) {
+async function fetchLegacyTile(taskId: string | undefined, url: string) {
   const sentAt = performance.now();
   const response = await fetch(url, { cache: 'no-store' });
   const ttfbMs = performance.now() - sentAt;
   const body = response.ok ? await response.arrayBuffer() : null;
-  tileLoadStats.request(imageId, 'legacy', {
+  if (taskId) tileLoadStats.request(taskId, 'legacy', {
     kind: 'tile',
     queueMs: 0,
     ttfbMs,
@@ -266,11 +296,14 @@ export async function getTileBlob(
   const imageKey = tileImageKey(scope, context, sourceKey);
   const key = `${imageKey}:${path}`;
   const existing = blobsInFlight.get(key);
-  if (existing) return existing;
+  if (existing) {
+    forTask(context, (id) => tileLoadStats.sharedInFlight(id));
+    return existing;
+  }
 
   const readCache = async () => {
     const cached = await tileCache.getItem<Blob>(key);
-    if (cached) tileLoadStats.cacheHit(context.imageId);
+    if (cached) forTask(context, (id) => tileLoadStats.cacheHit(id));
     return cached;
   };
   const legacy = () =>
@@ -279,17 +312,18 @@ export async function getTileBlob(
       evict: () => urls.evict(scope, context, sourceKey, tile),
       readCache,
       writeCache: (blob) => tileCache.setItem(key, blob),
-      fetch: (url) => fetchLegacyTile(context.imageId, url),
+      fetch: (url) => fetchLegacyTile(context.taskId, url),
       generate: () => generateTile(sourceKey, context, tile, scope),
       assertCurrentSession,
     });
   const work = loadPackTile({
     tile,
+    onRequest: context.taskId ? packReporter(context.taskId) : undefined,
     open: () =>
       packs.get(imageKey, () =>
         openSignedTilePack(() => signTilePack(context, sourceKey), context, {
           onRequest: (timing) =>
-            tileLoadStats.request(context.imageId, 'pack', timing),
+            forTask(context, (id) => tileLoadStats.request(id, 'pack', timing)),
         })
       ),
     forget: () => packs.forget(imageKey),

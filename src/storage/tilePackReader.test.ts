@@ -15,6 +15,7 @@ import {
   TilePackRequestFailed,
   type TilePackAccess,
 } from './tilePackReader';
+import type { TileRequestTiming } from './tileLoadStats';
 
 // Tile `i` is `lengthOf(i)` bytes, each of value `i % 251`.
 function buildPack(
@@ -376,16 +377,25 @@ test('reports timing for header and tile requests, including failures', async ()
   const { file } = buildPack(SMALL, (i) => i + 1);
   const store = storage(file, ['old']);
   const timings: { kind: string; bytes: number; status: number }[] = [];
+  const onRequest = ({
+    kind,
+    bytes,
+    status,
+    queueMs,
+    ttfbMs,
+    totalMs,
+  }: TileRequestTiming) => {
+    assert.ok(queueMs >= 0 && ttfbMs >= 0 && totalMs >= ttfbMs);
+    timings.push({ kind, bytes, status });
+  };
+  // Header reads report to the pack's callback, tile reads to the caller's.
   const pack = openTilePack({
     access: access('old'),
     refresh: async () => access('new'),
     fetch: store.fetchFn,
-    onRequest: ({ kind, bytes, status, queueMs, ttfbMs, totalMs }) => {
-      assert.ok(queueMs >= 0 && ttfbMs >= 0 && totalMs >= ttfbMs);
-      timings.push({ kind, bytes, status });
-    },
+    onRequest,
   });
-  await pack.tile(2, 1, 2);
+  await pack.tile(2, 1, 2, undefined, onRequest);
   assert.deepEqual(timings, [
     { kind: 'header', bytes: 0, status: 403 },
     { kind: 'header', bytes: file.length, status: 206 },
@@ -491,4 +501,29 @@ test('a shared read is cancelled when every tile waiting on it aborts', async ()
   await busy;
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(store.calls.length, 1);
+});
+
+test('a merged read reports its timing to every caller waiting on it', async () => {
+  const { file } = buildPack(SMALL, (i) => i + 1);
+  const store = storage(file);
+  const opener: string[] = [];
+  const pack = openTilePack({
+    access: access('u'),
+    refresh: never,
+    fetch: store.fetchFn,
+    onRequest: ({ kind }) => opener.push(kind),
+  });
+  await pack.header();
+  const seen: Record<string, number[]> = { a: [], b: [] };
+  const record = (task: string) => ({ bytes }: { bytes: number }) =>
+    seen[task].push(bytes);
+  const a = record('a');
+  await Promise.all([
+    pack.tile(2, 0, 0, undefined, a),
+    pack.tile(2, 0, 1, undefined, a),
+    pack.tile(2, 0, 2, undefined, record('b')),
+  ]);
+  assert.deepEqual(opener, ['header']);
+  // One read covering tiles 3-5: once for task a's two tiles, once for b.
+  assert.deepEqual(seen, { a: [4 + 5 + 6], b: [4 + 5 + 6] });
 });

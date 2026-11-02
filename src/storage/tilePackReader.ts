@@ -107,7 +107,8 @@ export interface TilePack {
     zoom: number,
     row: number,
     column: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onRequest?: (timing: TileRequestTiming) => void
   ) => Promise<ArrayBuffer>;
 }
 
@@ -139,7 +140,8 @@ export function openTilePack(options: TilePackOptions): TilePack {
     first: number,
     last: number,
     signal?: AbortSignal,
-    reload = false
+    reload = false,
+    report = options.onRequest
   ): Promise<{ bytes: Uint8Array; etag: string | null }> => {
     for (let attempt = 0; ; attempt++) {
       if (access.expiresAt - now() < EXPIRY_MARGIN_MS) await renew(access);
@@ -156,8 +158,8 @@ export function openTilePack(options: TilePackOptions): TilePack {
           signal,
         });
         const ttfbMs = performance.now() - sentAt;
-        const report = (bytes: number) =>
-          options.onRequest?.({
+        const timed = (bytes: number) =>
+          report?.({
             kind,
             queueMs: sentAt - queuedAt,
             ttfbMs,
@@ -167,11 +169,11 @@ export function openTilePack(options: TilePackOptions): TilePack {
           });
         if (response.status !== 200 && response.status !== 206) {
           void response.body?.cancel().catch(() => undefined);
-          report(0);
+          timed(0);
           return response.status;
         }
         const body = new Uint8Array(await response.arrayBuffer());
-        report(body.length);
+        timed(body.length);
         return {
           // Storage that ignores Range sends the whole file.
           bytes: response.status === 200 ? body.slice(first, last + 1) : body,
@@ -223,7 +225,8 @@ export function openTilePack(options: TilePackOptions): TilePack {
 
   const download = async (
     indices: number[],
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    report?: (timing: TileRequestTiming) => void
   ): Promise<ArrayBuffer[]> => {
     let short = 0;
     for (let attempt = 0; ; attempt++) {
@@ -234,7 +237,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
         throw new Error('Tile is empty');
       if (!contiguous(entries)) {
         const parts = await Promise.all(
-          indices.map((index) => download([index], signal))
+          indices.map((index) => download([index], signal, report))
         );
         return parts.flat();
       }
@@ -246,7 +249,8 @@ export function openTilePack(options: TilePackOptions): TilePack {
         first,
         first + expected - 1,
         signal,
-        short > 0
+        short > 0,
+        report
       ).catch((error: unknown) => {
         if (
           error instanceof TilePackRequestFailed &&
@@ -288,6 +292,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
     reject: (error: unknown) => void;
     aborted: boolean;
     onAbort?: () => void;
+    onRequest?: (timing: TileRequestTiming) => void;
   };
   let waiting: Waiter[] = [];
 
@@ -325,7 +330,10 @@ export function openTilePack(options: TilePackOptions): TilePack {
         };
       }
       const live = () => members.filter((waiter) => !waiter.aborted);
-      download(run, controller.signal).then(
+      const reporters = new Set(members.map((waiter) => waiter.onRequest));
+      const report = (timing: TileRequestTiming) =>
+        reporters.forEach((onRequest) => onRequest?.(timing));
+      download(run, controller.signal, report).then(
         (buffers) =>
           live().forEach((waiter) => {
             const bytes = buffers[run.indexOf(waiter.index)];
@@ -344,13 +352,19 @@ export function openTilePack(options: TilePackOptions): TilePack {
       const { meta, levels, entries } = await readHeader();
       return { meta, levels, entries };
     },
-    tile: async (zoom, row, column, signal) => {
+    tile: async (zoom, row, column, signal, onRequest) => {
       const head = await readHeader();
       const index = tileIndex(head.levels, zoom, row, column);
       if (index === undefined) throw new TileOutsideImage(zoom, row, column);
       if (signal?.aborted) throw aborted();
       return new Promise<ArrayBuffer>((resolve, reject) => {
-        const waiter: Waiter = { index, resolve, reject, aborted: false };
+        const waiter: Waiter = {
+          index,
+          resolve,
+          reject,
+          aborted: false,
+          onRequest,
+        };
         signal?.addEventListener(
           'abort',
           () => {
