@@ -389,6 +389,8 @@ const schema = a
         annotationCount: a.integer(),
         waitingTime: a.float(),
         loadingTime: a.float(),
+        // Tile network timings from src/storage/tileLoadStats.ts.
+        loadMetrics: a.json(),
         locationId: a.id().required(),
         location: a.belongsTo('Location', 'locationId'),
         annotationSetId: a.id().required(),

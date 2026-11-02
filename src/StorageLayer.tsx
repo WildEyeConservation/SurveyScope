@@ -12,6 +12,7 @@ import {
   SIGN_TILE_PACK,
 } from './storage/api';
 import { loadAuthorizedTile } from './storage/tileLoader';
+import { tileLoadStats, timed } from './storage/tileLoadStats';
 import {
   loadPackTile,
   openSignedTilePack,
@@ -41,15 +42,19 @@ void localforage
   .catch(() => {});
 
 const urls = new TileUrlBatcher((context, sourceKey, tiles) =>
-  storageOperation<SignedTileBatch>(
-    SIGN_TILES,
-    {
-      imageId: context.imageId,
-      sharedImageId: context.sharedImageId,
-      sourceKey,
-      tiles: JSON.stringify(tiles),
-    },
-    'signImageTiles'
+  timed(
+    () =>
+      storageOperation<SignedTileBatch>(
+        SIGN_TILES,
+        {
+          imageId: context.imageId,
+          sharedImageId: context.sharedImageId,
+          sourceKey,
+          tiles: JSON.stringify(tiles),
+        },
+        'signImageTiles'
+      ),
+    (ms) => tileLoadStats.sign(context.imageId, ms)
   )
 );
 
@@ -145,17 +150,21 @@ async function flushGeneration(
   ) {
     const chunk = batch.slice(offset, offset + MAX_GENERATED_TILE_BATCH);
     try {
-      const result = await storageOperation<string[]>(
-        GENERATE_TILE,
-        {
-          imageKey: `images/${sourceKey}`,
-          imageId: context.imageId,
-          sharedImageId: context.sharedImageId,
-          zs: chunk.map((t) => t.z),
-          rows: chunk.map((t) => t.row),
-          cols: chunk.map((t) => t.col),
-        },
-        'generateTile'
+      const result = await timed(
+        () =>
+          storageOperation<string[]>(
+            GENERATE_TILE,
+            {
+              imageKey: `images/${sourceKey}`,
+              imageId: context.imageId,
+              sharedImageId: context.sharedImageId,
+              zs: chunk.map((t) => t.z),
+              rows: chunk.map((t) => t.row),
+              cols: chunk.map((t) => t.col),
+            },
+            'generateTile'
+          ),
+        (ms) => tileLoadStats.generate(context.imageId, ms, chunk.length)
       );
       chunk.forEach((entry, i) => {
         if (result[i]) entry.resolve(base64ToBlob(result[i]));
@@ -192,17 +201,42 @@ function generateTile(
 const packs = new TilePackRegistry();
 
 function signTilePack(context: TileContext, sourceKey: string) {
-  return storageOperation<{ url: string | null; expiresAt: number }>(
-    SIGN_TILE_PACK,
-    {
-      imageId: context.imageId,
-      sharedImageId: context.sharedImageId,
-      sourceKey,
-    },
-    'signImageTilePack'
+  return timed(
+    () =>
+      storageOperation<{ url: string | null; expiresAt: number }>(
+        SIGN_TILE_PACK,
+        {
+          imageId: context.imageId,
+          sharedImageId: context.sharedImageId,
+          sourceKey,
+        },
+        'signImageTilePack'
+      ),
+    (ms) => tileLoadStats.sign(context.imageId, ms)
   ).then((signed) =>
     signed.url ? { url: signed.url, expiresAt: signed.expiresAt } : null
   );
+}
+
+async function fetchLegacyTile(imageId: string, url: string) {
+  const sentAt = performance.now();
+  const response = await fetch(url, { cache: 'no-store' });
+  const ttfbMs = performance.now() - sentAt;
+  const body = response.ok ? await response.arrayBuffer() : null;
+  tileLoadStats.request(imageId, 'legacy', {
+    kind: 'tile',
+    queueMs: 0,
+    ttfbMs,
+    totalMs: performance.now() - sentAt,
+    bytes: body?.byteLength ?? 0,
+    status: response.status,
+  });
+  if (!body) return response;
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 const TILE_PATH = /^slippymaps\/(.+)\/(\d+)\/(\d+)\/(\d+)\.png$/;
@@ -234,13 +268,18 @@ export async function getTileBlob(
   const existing = blobsInFlight.get(key);
   if (existing) return existing;
 
+  const readCache = async () => {
+    const cached = await tileCache.getItem<Blob>(key);
+    if (cached) tileLoadStats.cacheHit(context.imageId);
+    return cached;
+  };
   const legacy = () =>
     loadAuthorizedTile({
       sign: () => urls.get(scope, context, sourceKey, tile),
       evict: () => urls.evict(scope, context, sourceKey, tile),
-      readCache: () => tileCache.getItem<Blob>(key),
+      readCache,
       writeCache: (blob) => tileCache.setItem(key, blob),
-      fetch: (url) => fetch(url, { cache: 'no-store' }),
+      fetch: (url) => fetchLegacyTile(context.imageId, url),
       generate: () => generateTile(sourceKey, context, tile, scope),
       assertCurrentSession,
     });
@@ -248,11 +287,14 @@ export async function getTileBlob(
     tile,
     open: () =>
       packs.get(imageKey, () =>
-        openSignedTilePack(() => signTilePack(context, sourceKey), context)
+        openSignedTilePack(() => signTilePack(context, sourceKey), context, {
+          onRequest: (timing) =>
+            tileLoadStats.request(context.imageId, 'pack', timing),
+        })
       ),
     forget: () => packs.forget(imageKey),
     legacy,
-    readCache: () => tileCache.getItem<Blob>(key),
+    readCache,
     writeCache: (blob) => tileCache.setItem(key, blob),
     assertCurrentSession,
   });

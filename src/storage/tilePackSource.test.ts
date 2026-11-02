@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { encodeHeader, pyramid } from '../../shared/tilePack';
+import { encodeHeader, maxZoomFor, pyramid } from '../../shared/tilePack';
 import { TilePackRequestFailed, type TilePack } from './tilePackReader';
 import {
+  headerGuessBytes,
   loadPackTile,
   openSignedTilePack,
   TilePackGone,
@@ -206,4 +207,13 @@ test('a pack cut from other dimensions is not used', async () => {
   );
   assert.equal(open?.format, 'image/webp');
   assert.equal(await openSignedTilePack(async () => null, meta), null);
+});
+
+test('header guess covers a real survey image in one request', () => {
+  const size = { width: 6336, height: 9504 };
+  const meta = { ...size, tileSize: 256, maxZoom: maxZoomFor(size.width, size.height, 256), format: 'image/webp' };
+  const tiles = Array(1296).fill(1);
+  const actual = encodeHeader(meta, tiles).length;
+  const guess = headerGuessBytes(size);
+  assert.ok(guess >= actual + 2048 && guess < actual + 8192, `${guess} vs ${actual}`);
 });

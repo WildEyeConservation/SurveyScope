@@ -3,6 +3,8 @@ import { GlobalContext, ImageContext, ProjectContext } from './Context';
 import useCreateTestResult from './useCreateTestResult';
 import { GraphQLError } from './limitedClient';
 import { persistObservation } from './persistObservation';
+import { tileLoadStats } from './storage/tileLoadStats';
+import { prefetchPlanner } from './annotator/prefetchPlanner';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
@@ -48,6 +50,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   } = props;
   const annotationSetId = location?.annotationSetId;
   const id = location?.id;
+  const imageId = location?.image?.id;
   const annotationSetToUse = isTest && testSetId ? testSetId : annotationSetId;
   const {
     annoCount,
@@ -58,6 +61,8 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   const { project } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
   const completionRef = useRef<Promise<void> | null>(null);
+  const loadMetricsRef = useRef<ReturnType<typeof tileLoadStats.take>>();
+  const plannedRef = useRef(false);
 
   const createTestResult = useCreateTestResult({
     locationId: id,
@@ -102,6 +107,8 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
         }
 
         const persistedAnnotationSetId = annotationSetToUse ?? annotationSetId;
+        if (imageId) loadMetricsRef.current ??= tileLoadStats.take(imageId);
+        const loadMetrics = loadMetricsRef.current;
         const input = {
           ...(observationId ? { id: observationId } : {}),
           annotationSetId: persistedAnnotationSetId,
@@ -122,7 +129,21 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           queueId: queueId || undefined,
           source: observationSource,
           group: project.organizationId,
+          ...(loadMetrics ? { loadMetrics: JSON.stringify(loadMetrics) } : {}),
         };
+
+        if (!isTest && !plannedRef.current) {
+          plannedRef.current = true;
+          const requests = loadMetrics
+            ? loadMetrics.packTileRequests + loadMetrics.legacyTileRequests
+            : 0;
+          prefetchPlanner.record({
+            timeTakenMs: timeTaken,
+            waitingMs: input.waitingTime,
+            loadMs: loadMetrics?.spanMs ?? 0,
+            slotWaitMs: requests ? loadMetrics!.tileQueueMs / requests : 0,
+          });
+        }
 
         await persistObservation({
           create: () => client.models.Observation.create(input),
@@ -169,6 +190,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     },
     [
       id,
+      imageId,
       annotationSetId,
       annotationSetToUse,
       project,

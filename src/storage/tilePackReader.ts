@@ -6,6 +6,7 @@ import {
   type TilePackLevel,
   type TilePackMeta,
 } from '../../shared/tilePack';
+import type { TileRequestKind, TileRequestTiming } from './tileLoadStats';
 
 // expiresAt uses epoch milliseconds.
 export interface TilePackAccess {
@@ -86,6 +87,8 @@ export function makeLimiter(limit: number): Limiter {
 const sharedLimiter = makeLimiter(6);
 const EXPIRY_MARGIN_MS = 30_000;
 const SHORT_READ_RETRIES = 2;
+const MAX_RUN_TILES = 32;
+const MAX_RUN_BYTES = 2 * 1024 * 1024;
 
 export interface TilePackOptions {
   access: TilePackAccess;
@@ -93,6 +96,9 @@ export interface TilePackOptions {
   fetch?: typeof fetch;
   limiter?: Limiter;
   now?: () => number;
+  onRequest?: (timing: TileRequestTiming) => void;
+  /** First header read; sized from the image so one request usually suffices. */
+  headerGuessBytes?: number;
 }
 export interface TilePack {
   authorize: () => Promise<void>;
@@ -129,6 +135,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
   };
 
   const range = async (
+    kind: TileRequestKind,
     first: number,
     last: number,
     signal?: AbortSignal,
@@ -138,19 +145,33 @@ export function openTilePack(options: TilePackOptions): TilePack {
       if (access.expiresAt - now() < EXPIRY_MARGIN_MS) await renew(access);
       if (signal?.aborted) throw aborted();
       let used = access;
+      const queuedAt = performance.now();
       const result = await limiter.run(async () => {
         if (renewing) await renewing.catch(() => undefined);
         used = access;
+        const sentAt = performance.now();
         const response = await fetchFn(used.url, {
           headers: { Range: `bytes=${first}-${last}` },
           cache: reload ? 'reload' : 'no-store',
           signal,
         });
+        const ttfbMs = performance.now() - sentAt;
+        const report = (bytes: number) =>
+          options.onRequest?.({
+            kind,
+            queueMs: sentAt - queuedAt,
+            ttfbMs,
+            totalMs: performance.now() - sentAt,
+            bytes,
+            status: response.status,
+          });
         if (response.status !== 200 && response.status !== 206) {
           void response.body?.cancel().catch(() => undefined);
+          report(0);
           return response.status;
         }
         const body = new Uint8Array(await response.arrayBuffer());
+        report(body.length);
         return {
           // Storage that ignores Range sends the whole file.
           bytes: response.status === 200 ? body.slice(first, last + 1) : body,
@@ -165,14 +186,14 @@ export function openTilePack(options: TilePackOptions): TilePack {
   };
 
   const loadHeader = async (): Promise<Header> => {
-    let asked = HEADER_GUESS_BYTES;
-    let { bytes, etag } = await range(0, asked - 1);
+    let asked = options.headerGuessBytes ?? HEADER_GUESS_BYTES;
+    let { bytes, etag } = await range('header', 0, asked - 1);
     for (;;) {
       const decoded = decodeHeader(bytes);
       if (decoded.complete) return { ...decoded, etag };
       if (bytes.length < asked || decoded.needed <= bytes.length)
         throw new Error('Tile pack is cut short');
-      const more = await range(bytes.length, decoded.needed - 1);
+      const more = await range('header', bytes.length, decoded.needed - 1);
       const joined = new Uint8Array(bytes.length + more.bytes.length);
       joined.set(bytes, 0);
       joined.set(more.bytes, bytes.length);
@@ -193,20 +214,37 @@ export function openTilePack(options: TilePackOptions): TilePack {
     return header;
   };
 
+  const contiguous = (entries: TilePackEntry[]) =>
+    entries.every(
+      (entry, i) =>
+        i === 0 ||
+        entries[i - 1].offset + entries[i - 1].length === entry.offset
+    );
+
   const download = async (
-    index: number,
+    indices: number[],
     signal?: AbortSignal
-  ): Promise<ArrayBuffer> => {
+  ): Promise<ArrayBuffer[]> => {
     let short = 0;
     for (let attempt = 0; ; attempt++) {
       const current = readHeader();
       const head = await current;
-      const entry = head.entries[index];
-      if (!entry || entry.length === 0) throw new Error('Tile is empty');
+      const entries = indices.map((index) => head.entries[index]);
+      if (entries.some((entry) => !entry || entry.length === 0))
+        throw new Error('Tile is empty');
+      if (!contiguous(entries)) {
+        const parts = await Promise.all(
+          indices.map((index) => download([index], signal))
+        );
+        return parts.flat();
+      }
+      const first = entries[0].offset;
+      const expected = entries.reduce((sum, entry) => sum + entry.length, 0);
       // 416 on the first try means a rebuilt pack that came out smaller.
       const read = await range(
-        entry.offset,
-        entry.offset + entry.length - 1,
+        'tile',
+        first,
+        first + expected - 1,
         signal,
         short > 0
       ).catch((error: unknown) => {
@@ -221,23 +259,80 @@ export function openTilePack(options: TilePackOptions): TilePack {
       if (read) {
         const rebuilt =
           read.etag !== null && head.etag !== null && read.etag !== head.etag;
-        if (!rebuilt && read.bytes.length !== entry.length) {
+        if (!rebuilt && read.bytes.length !== expected) {
           if (short >= SHORT_READ_RETRIES)
-            throw new TileCutShort(read.bytes.length, entry.length);
+            throw new TileCutShort(read.bytes.length, expected);
           short++;
           attempt--;
           continue;
         }
         if (!rebuilt) {
           const { bytes } = read;
-          return bytes.buffer.slice(
-            bytes.byteOffset,
-            bytes.byteOffset + bytes.byteLength
-          ) as ArrayBuffer;
+          return entries.map((entry) => {
+            const start = bytes.byteOffset + entry.offset - first;
+            return bytes.buffer.slice(
+              start,
+              start + entry.length
+            ) as ArrayBuffer;
+          });
         }
         if (attempt > 0) throw new Error('Tile pack keeps changing');
       }
       if (header === current) header = undefined;
+    }
+  };
+
+  type Waiter = {
+    index: number;
+    resolve: (bytes: ArrayBuffer) => void;
+    reject: (error: unknown) => void;
+    aborted: boolean;
+    onAbort?: () => void;
+  };
+  let waiting: Waiter[] = [];
+
+  const flush = (head: Header) => {
+    const batch = waiting.filter((waiter) => !waiter.aborted);
+    waiting = [];
+    const indices = [...new Set(batch.map((waiter) => waiter.index))].sort(
+      (a, b) => a - b
+    );
+    const runs: number[][] = [];
+    for (const index of indices) {
+      const run = runs[runs.length - 1];
+      const last = run?.[run.length - 1];
+      const previous = last === undefined ? undefined : head.entries[last];
+      const runBytes =
+        run?.reduce((sum, i) => sum + head.entries[i].length, 0) ?? 0;
+      if (
+        run &&
+        previous &&
+        index === last! + 1 &&
+        previous.offset + previous.length === head.entries[index].offset &&
+        run.length < MAX_RUN_TILES &&
+        runBytes + head.entries[index].length <= MAX_RUN_BYTES
+      )
+        run.push(index);
+      else runs.push([index]);
+    }
+    for (const run of runs) {
+      const members = batch.filter((waiter) => run.includes(waiter.index));
+      // The shared request is cancelled only once nobody wants its bytes.
+      const controller = new AbortController();
+      for (const waiter of members) {
+        waiter.onAbort = () => {
+          if (members.every((member) => member.aborted)) controller.abort();
+        };
+      }
+      const live = () => members.filter((waiter) => !waiter.aborted);
+      download(run, controller.signal).then(
+        (buffers) =>
+          live().forEach((waiter) => {
+            const bytes = buffers[run.indexOf(waiter.index)];
+            waiter.resolve(members.length > run.length ? bytes.slice(0) : bytes);
+          }),
+        (error: unknown) => live().forEach((waiter) => waiter.reject(error))
+      );
     }
   };
 
@@ -254,7 +349,20 @@ export function openTilePack(options: TilePackOptions): TilePack {
       const index = tileIndex(head.levels, zoom, row, column);
       if (index === undefined) throw new TileOutsideImage(zoom, row, column);
       if (signal?.aborted) throw aborted();
-      return download(index, signal);
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        const waiter: Waiter = { index, resolve, reject, aborted: false };
+        signal?.addEventListener(
+          'abort',
+          () => {
+            waiter.aborted = true;
+            reject(aborted());
+            waiter.onAbort?.();
+          },
+          { once: true }
+        );
+        if (waiting.length === 0) setTimeout(() => flush(head), 0);
+        waiting.push(waiter);
+      });
     },
   };
 }
