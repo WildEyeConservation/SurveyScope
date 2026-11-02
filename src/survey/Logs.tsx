@@ -22,8 +22,6 @@ const RANGES: { value: Range; label: string }[] = [
   { value: 'custom', label: 'Custom' },
 ];
 
-const GRID = '170px 150px minmax(0, 1fr)';
-
 const isoDay = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
     date.getDate(),
@@ -174,7 +172,6 @@ export default function Logs({ projectId }: { projectId: string }) {
             <SearchIcon className='pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-[#6c757d]' />
             <Input
               type='search'
-              size='sm'
               aria-label='Search logs'
               placeholder='Search messages or users…'
               className='pl-9'
@@ -195,7 +192,7 @@ export default function Logs({ projectId }: { projectId: string }) {
                 aria-checked={range === option.value}
                 onClick={() => setRange(option.value)}
                 className={cn(
-                  'px-3 py-1 text-sm leading-normal transition-colors',
+                  'px-3 py-1.5 text-base leading-normal transition-colors',
                   range === option.value
                     ? 'bg-primary text-white'
                     : 'hover:bg-white/10',
@@ -209,7 +206,6 @@ export default function Logs({ projectId }: { projectId: string }) {
             <div className='flex items-center gap-2 text-sm'>
               <Input
                 type='date'
-                size='sm'
                 aria-label='From'
                 className='w-40'
                 value={from}
@@ -219,7 +215,6 @@ export default function Logs({ projectId }: { projectId: string }) {
               <span className='text-muted-foreground'>to</span>
               <Input
                 type='date'
-                size='sm'
                 aria-label='To'
                 className='w-40'
                 value={to}
@@ -230,7 +225,6 @@ export default function Logs({ projectId }: { projectId: string }) {
           )}
           <Button
             variant='outline-light'
-            size='sm'
             onClick={handleDownload}
             disabled={loading || visible.length === 0}
           >
@@ -238,11 +232,8 @@ export default function Logs({ projectId }: { projectId: string }) {
             Export CSV
           </Button>
         </div>
-        <div className='border border-white/15 bg-white/[0.07] text-sm'>
-          <div
-            className='grid gap-3 border-b border-white/15 bg-black/15 px-3 py-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
-            style={{ gridTemplateColumns: GRID }}
-          >
+        <div className='border border-dark bg-white/[0.07] text-sm'>
+          <div className='hidden gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase md:grid md:grid-cols-[170px_150px_minmax(0,1fr)]'>
             <span>Time</span>
             <span>User</span>
             <span>Message</span>
@@ -265,8 +256,7 @@ export default function Logs({ projectId }: { projectId: string }) {
               visible.map((log) => (
                 <div
                   key={log.id}
-                  className='grid gap-3 border-b border-white/[0.08] px-3 py-2 last:border-b-0'
-                  style={{ gridTemplateColumns: GRID }}
+                  className='grid gap-x-3 gap-y-0.5 border-b border-white/[0.08] px-3 py-2 last:border-b-0 md:grid-cols-[170px_150px_minmax(0,1fr)]'
                 >
                   <span className='text-muted-foreground tabular-nums'>
                     {formatTimestamp(log.createdAt)}

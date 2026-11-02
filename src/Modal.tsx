@@ -139,7 +139,7 @@ function CustomModal({
           <DialogBody className='relative p-0'>
             <fieldset
               disabled={disabled}
-              className='m-0 flex h-full flex-col border-0 p-0'
+              className='m-0 flex h-full min-w-0 flex-col border-0 p-0'
             >
               {modalBodyChildren}
             </fieldset>

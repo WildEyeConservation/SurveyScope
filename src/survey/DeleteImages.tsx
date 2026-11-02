@@ -1524,10 +1524,10 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           )}
 
           {editable && (selectedCount > 0 || hint) && (
-            <div className='absolute bottom-[5.5rem] left-1/2 z-10 -translate-x-1/2'>
+            <div className='absolute bottom-[5.5rem] left-1/2 z-10 w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2'>
               <div
                 className={cn(
-                  'flex items-center gap-3 border border-black/10 px-3 py-1.5 text-xs whitespace-nowrap text-[#212529]',
+                  'flex flex-wrap items-center gap-x-3 gap-y-1 border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
                   MAP_CONTROLS,
                 )}
               >

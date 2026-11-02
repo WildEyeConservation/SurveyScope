@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { FormText, Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { useContext, useState } from 'react';
@@ -43,10 +43,7 @@ export default function AddAnnotationSetModal({
   const [loadingLabels, setLoadingLabels] = useState(false);
 
   async function handleSave() {
-    if (!name) {
-      alert('Please enter a name for the annotation set');
-      return;
-    }
+    if (!name.trim()) return;
 
     setBusy(true);
     setStatusMessage('Creating annotation set...');
@@ -61,7 +58,7 @@ export default function AddAnnotationSetModal({
     });
 
     const { data: annotationSet } = await client.models.AnnotationSet.create({
-      name,
+      name: name.trim(),
       projectId: project.id,
       group: project.organizationId,
     });
@@ -108,58 +105,61 @@ export default function AddAnnotationSetModal({
         <Title>Add Annotation Set</Title>
       </Header>
       <Body>
-        <form className='flex flex-col gap-2 p-4'>
+        <form
+          className='flex flex-col gap-4 p-4'
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSave();
+          }}
+        >
           <div>
-            <Label className='mb-0'>Name</Label>
-            <span
-              className='mb-1 block text-muted-foreground'
-              style={{ fontSize: '12px' }}
-            >
-              A descriptive name for your annotation set to help you identify
-              it.
-            </span>
+            <Label htmlFor='annotation-set-name'>Name</Label>
             <Input
+              id='annotation-set-name'
               type='text'
               value={name}
-              placeholder='Enter a name'
+              placeholder='e.g. Elephant count 2026'
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div>
-            <Label className='mb-0'>Load Labels</Label>
-            <span
-              className='mb-1 block text-muted-foreground'
-              style={{ fontSize: '12px' }}
-            >
-              Load labels from a previous annotation set.
-            </span>
-            <NativeSelect
-              value={selectedProject}
-              disabled={loadingLabels}
-              onChange={(e) => setSelectedProject(e.target.value)}
-            >
-              <option value=''>Select a survey</option>
-              {allProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              className='mt-1'
-              disabled={!selectedProject || loadingLabels}
-              value={selectedAnnotationSet}
-              onChange={handleAnnotationSetChange}
-            >
-              <option value=''>Select an annotation set</option>
-              {allProjects
-                .find((p) => p.id === selectedProject)
-                ?.annotationSets.map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
+            <Label>Copy labels from another annotation set</Label>
+            <div className='grid gap-2 sm:grid-cols-2'>
+              <NativeSelect
+                aria-label='Survey'
+                value={selectedProject}
+                disabled={loadingLabels}
+                onChange={(e) => {
+                  setSelectedProject(e.target.value);
+                  setSelectedAnnotationSet('');
+                }}
+              >
+                <option value=''>Survey</option>
+                {allProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
-            </NativeSelect>
+              </NativeSelect>
+              <NativeSelect
+                aria-label='Annotation set'
+                disabled={!selectedProject || loadingLabels}
+                value={selectedAnnotationSet}
+                onChange={handleAnnotationSetChange}
+              >
+                <option value=''>
+                  {loadingLabels ? 'Loading labels…' : 'Annotation set'}
+                </option>
+                {allProjects
+                  .find((p) => p.id === selectedProject)
+                  ?.annotationSets.map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </NativeSelect>
+            </div>
+            <FormText>Optional. Replaces the labels below.</FormText>
           </div>
           <LabelEditor
             defaultLabels={[
@@ -176,20 +176,26 @@ export default function AddAnnotationSetModal({
           />
         </form>
         <Footer>
+          <Button
+            variant='ghost'
+            className='mr-auto'
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
           {statusMessage && (
-            <span
-              className='me-auto flex items-center gap-2 text-muted-foreground'
-              style={{ fontSize: 12 }}
-            >
+            <span className='flex items-center gap-2 text-xs text-muted-foreground'>
               <Spinner size='sm' />
               {statusMessage}
             </span>
           )}
-          <Button variant='primary' onClick={handleSave} disabled={busy}>
+          <Button
+            variant='primary'
+            onClick={handleSave}
+            disabled={busy || !name.trim()}
+          >
             {busy ? 'Creating...' : 'Create'}
-          </Button>
-          <Button variant='dark' onClick={onClose} disabled={busy}>
-            Cancel
           </Button>
         </Footer>
       </Body>

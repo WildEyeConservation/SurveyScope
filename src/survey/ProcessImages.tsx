@@ -342,7 +342,6 @@ export default function ProcessImages({
                       ) : (
                         <Button
                           variant={retry ? 'warning' : 'primary'}
-                          size='sm'
                           disabled={(busy && !retry) || !!queueing}
                           title={
                             busy && !isQueueing

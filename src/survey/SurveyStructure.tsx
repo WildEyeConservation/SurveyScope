@@ -303,9 +303,9 @@ export default function SurveyStructure({
               ))}
             </div>
           ) : (
-            <div className='border border-white/15 bg-white/[0.07] text-[13px]'>
+            <div className='overflow-x-auto border border-dark bg-white/[0.07] text-[13px]'>
               <div
-                className='grid [scrollbar-gutter:stable] overflow-hidden border-b border-white/15 bg-black/15 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
+                className='grid min-w-[820px] [scrollbar-gutter:stable] overflow-hidden border-b border-dark bg-dark text-[11px] font-semibold tracking-wider text-white/85 uppercase'
                 style={{ gridTemplateColumns: gridColumns }}
               >
                 {headers.map(([key, label]) => (
@@ -346,7 +346,7 @@ export default function SurveyStructure({
               ) : (
                 <div
                   ref={listScrollRef}
-                  className='[scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.3)_transparent] [scrollbar-gutter:stable] overflow-auto'
+                  className='min-w-[820px] [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.3)_transparent] [scrollbar-gutter:stable] overflow-y-auto'
                   style={{
                     height:
                       Math.min(filteredRows.length, MAX_VISIBLE_ROWS) *

@@ -740,7 +740,6 @@ export default function TileConfiguration({
                   <Input
                     type='file'
                     accept='.csv,text/csv'
-                    size='sm'
                     className='max-w-sm'
                     onChange={handleCsvUpload}
                     disabled={disabled}
@@ -806,7 +805,7 @@ function Segmented({
           disabled={disabled}
           onClick={() => onChange(index)}
           className={cn(
-            'px-3 py-1 text-xs transition-colors disabled:opacity-60',
+            'px-3 py-1.5 text-base leading-normal transition-colors disabled:opacity-60',
             value === index ? 'bg-primary text-white' : 'hover:bg-white/10',
           )}
         >
@@ -840,7 +839,6 @@ function NumberField({
       <span className='relative'>
         <Input
           type='number'
-          size='sm'
           min={min}
           className={cn(unit && 'pr-8')}
           value={draft ?? value}
@@ -993,10 +991,10 @@ function DevTransectTable({
         Keep every nth image after skipping the first few. Distance and speed
         use each transect's first and last image.
       </span>
-      <div className='border border-white/15 text-[13px]'>
+      <div className='overflow-x-auto border border-dark text-[13px]'>
         <div
-          className='grid gap-2 border-b border-white/15 bg-black/15 px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
-          style={{ gridTemplateColumns: columns }}
+          className='grid gap-2 border-b border-dark bg-dark px-3 py-1.5 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
+          style={{ gridTemplateColumns: columns, minWidth: 640 }}
         >
           <span>Transect</span>
           <span className='text-right'>Images</span>
@@ -1011,7 +1009,7 @@ function DevTransectTable({
             <div
               key={g.transectId}
               className='grid items-center gap-2 border-b border-white/[0.08] px-3 py-1 tabular-nums last:border-b-0'
-              style={{ gridTemplateColumns: columns }}
+              style={{ gridTemplateColumns: columns, minWidth: 640 }}
             >
               <span className='truncate' title={g.transectId}>
                 Transect {index + 1}
@@ -1023,7 +1021,6 @@ function DevTransectTable({
               <span className='text-right'>{g.speedKmh.toFixed(0)}</span>
               <Input
                 type='number'
-                size='sm'
                 min={1}
                 aria-label={`Every nth image of transect ${index + 1}`}
                 value={steps[g.transectId] ?? 1}
@@ -1032,7 +1029,6 @@ function DevTransectTable({
               />
               <Input
                 type='number'
-                size='sm'
                 min={0}
                 aria-label={`Images to skip on transect ${index + 1}`}
                 value={offsets[g.transectId] ?? 0}
@@ -1045,7 +1041,7 @@ function DevTransectTable({
         </div>
         <div
           className='grid gap-2 border-t border-white/15 px-3 py-1.5 font-semibold tabular-nums'
-          style={{ gridTemplateColumns: columns }}
+          style={{ gridTemplateColumns: columns, minWidth: 640 }}
         >
           <span>Total</span>
           <span className='text-right'>

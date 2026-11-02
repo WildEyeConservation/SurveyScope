@@ -69,7 +69,6 @@ export default function CameraCard({
             <div className='relative w-28'>
               <Input
                 type='number'
-                size='sm'
                 step='0.01'
                 aria-label={`${label} of ${name}`}
                 className='pr-8'
@@ -155,7 +154,6 @@ export default function CameraCard({
         </div>
         {link && (
           <NativeSelect
-            size='sm'
             aria-label={`Existing camera for ${name}`}
             className='w-fit'
             value={link.value}

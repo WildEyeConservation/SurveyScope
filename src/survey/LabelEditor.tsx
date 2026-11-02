@@ -1,12 +1,10 @@
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label as FormLabel } from '@/components/ui/label';
 import { useQueryClient } from '@tanstack/react-query';
+import { PlusIcon, Trash2Icon } from 'lucide-react';
 import pLimit from 'p-limit';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useRecordHotkeys } from 'react-hotkeys-hook';
 import { GlobalContext } from '../Context';
-import MyTable from '../Table';
 import { fetchAllPaginatedResults } from '../utils';
 import { formatShortcutKey } from '../utils/hotkeys';
 
@@ -65,6 +63,7 @@ export default function LabelEditor({
 }) {
   const [keys, { start, stop, isRecording }] = useRecordHotkeys();
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
+  const [shortcutError, setShortcutError] = useState<string | null>(null);
   const [labels, setLabels] = useState<Label[]>(defaultLabels);
   const { client } = useContext(GlobalContext)!;
   const defaultLabelsRef = useRef<Label[]>(defaultLabels);
@@ -207,31 +206,78 @@ export default function LabelEditor({
     }
   }, [importLabels]);
 
+  const noun = modelName === 'Category' ? 'label' : 'info tag';
+  const incomplete = labels.some((l) => l.name === '' || l.shortcutKey === '');
+  const grid = '64px minmax(0, 1fr) minmax(110px, 180px) 36px';
+
+  const recordShortcut = (labelId: string) => {
+    stop();
+    const newShortcutKey = Array.from(keys).join('+');
+    if (!newShortcutKey) return;
+    if (newShortcutKey === ' ' || newShortcutKey.toLowerCase() === 'space') {
+      setShortcutError('Space is reserved and cannot be a shortcut.');
+      return;
+    }
+    if (['equal', 'shift+equal', 'add'].includes(newShortcutKey)) {
+      setShortcutError('"+" and "=" are reserved and cannot be shortcuts.');
+      return;
+    }
+    const clash = labels.find(
+      (l) => l.id !== labelId && l.shortcutKey === newShortcutKey,
+    );
+    if (clash) {
+      setShortcutError(
+        `${formatShortcutKey(newShortcutKey)} is already used by ${clash.name || `another ${noun}`}.`,
+      );
+      return;
+    }
+    setShortcutError(null);
+    setLabels(
+      labels.map((l) =>
+        l.id === labelId ? { ...l, shortcutKey: newShortcutKey } : l,
+      ),
+    );
+  };
+
   return (
-    <div>
-      <FormLabel className='mb-0'>{title}</FormLabel>
-      <span
-        className='mb-1 block text-muted-foreground'
-        style={{ fontSize: 12, lineHeight: 1.2 }}
-      >
-        {description}
-      </span>
-      <MyTable
-        tableHeadings={[
-          { content: 'Name', style: { width: '25%' } },
-          { content: 'Shortcut Key', style: { width: '25%' } },
-          { content: 'Color', style: { width: '25%' } },
-          {
-            content: `Remove ${modelName === 'Category' ? 'Label' : 'Info Tag'}`,
-            style: { width: '25%' },
-          },
-        ]}
-        tableData={labels.map((label) => ({
-          id: label.id,
-          rowData: [
+    <div className='flex flex-col gap-2'>
+      <div>
+        <div className='text-sm'>{title}</div>
+        <div className='text-xs text-muted-foreground'>{description}</div>
+      </div>
+      <div className='border border-dark bg-white/[0.07] text-sm'>
+        <div
+          className='grid items-center gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
+          style={{ gridTemplateColumns: grid }}
+        >
+          <span>Colour</span>
+          <span>Name</span>
+          <span>Shortcut</span>
+          <span />
+        </div>
+        {labels.map((label) => (
+          <div
+            key={label.id}
+            className='grid items-center gap-3 border-b border-white/[0.08] px-3 py-2'
+            style={{ gridTemplateColumns: grid }}
+          >
+            <input
+              type='color'
+              aria-label={`Colour of ${label.name || noun}`}
+              value={label.color}
+              onChange={(event) =>
+                setLabels(
+                  labels.map((l) =>
+                    l.id === label.id ? { ...l, color: event.target.value } : l,
+                  ),
+                )
+              }
+              className='size-[38px] cursor-pointer border border-white/30 bg-transparent p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0.5'
+            />
             <Input
               type='text'
-              placeholder='Enter label name'
+              aria-label={`${noun} name`}
+              placeholder={`${noun[0].toUpperCase()}${noun.slice(1)} name`}
               value={label.name}
               onChange={(e) =>
                 setLabels(
@@ -240,117 +286,65 @@ export default function LabelEditor({
                   ),
                 )
               }
-            />,
+            />
             <Input
               type='text'
-              placeholder='Record shortcut key'
+              aria-label={`Shortcut for ${label.name || noun}`}
+              placeholder='Press a key'
               value={
                 isRecording && activeRowId === label.id
                   ? formatShortcutKey(Array.from(keys).join('+'))
                   : formatShortcutKey(label.shortcutKey)
               }
-              onFocus={start}
-              onBlur={() => {
-                stop();
-                const newShortcutKey = Array.from(keys).join('+');
-                if (
-                  newShortcutKey === ' ' ||
-                  newShortcutKey.toLowerCase() === 'space'
-                ) {
-                  alert(
-                    `Spacebar is reserved and cannot be used as a ${title.toLowerCase()} shortcut.`,
-                  );
-                  return;
-                }
-                if (
-                  newShortcutKey === 'equal' ||
-                  newShortcutKey === 'shift+equal' ||
-                  newShortcutKey === 'add'
-                ) {
-                  alert(
-                    `"+" and "=" are reserved and cannot be used as a ${title.toLowerCase()} shortcut.`,
-                  );
-                  return;
-                }
-                if (
-                  labels.some(
-                    (l) =>
-                      l.id !== label.id && l.shortcutKey === newShortcutKey,
-                  )
-                ) {
-                  alert(
-                    `This shortcut key is already in use by another ${modelName === 'Category' ? 'label' : 'info tag'}.`,
-                  );
-                  return;
-                }
-                setLabels(
-                  labels.map((l) =>
-                    l.id === label.id
-                      ? {
-                          ...l,
-                          shortcutKey: newShortcutKey,
-                        }
-                      : l,
-                  ),
-                );
+              onFocus={() => {
+                setActiveRowId(label.id);
+                start();
               }}
-              onFocusCapture={() => setActiveRowId(label.id)}
-              onBlurCapture={() => {
-                if (activeRowId === label.id) {
-                  setActiveRowId(null);
-                }
+              onBlur={() => {
+                recordShortcut(label.id);
+                if (activeRowId === label.id) setActiveRowId(null);
               }}
               onChange={() => {}}
-            />,
-            <Input
-              type='color'
-              id='exampleColorInput'
-              size='sm'
-              value={label.color}
-              title='Label color'
-              onChange={(event) => {
-                setLabels(
-                  labels.map((l) =>
-                    l.id === label.id ? { ...l, color: event.target.value } : l,
-                  ),
-                );
-              }}
-            />,
-            <Button
-              variant='danger'
-              size='sm'
-              onClick={() => {
-                setLabels(labels.filter((l) => l.id !== label.id));
-              }}
+            />
+            <button
+              type='button'
+              aria-label={`Remove ${label.name || noun}`}
+              title={`Remove ${noun}`}
+              className='flex size-8 items-center justify-center text-muted-foreground hover:text-danger'
+              onClick={() => setLabels(labels.filter((l) => l.id !== label.id))}
             >
-              Remove
-            </Button>,
-          ],
-        }))}
-      />
-      <Button
-        variant='info'
-        size='sm'
-        onClick={() => {
-          if (labels.some((l) => l.name === '' || l.shortcutKey === '')) {
-            alert(
-              `Please complete the current ${modelName === 'Category' ? 'label' : 'info tag'} before adding another`,
-            );
-            return;
+              <Trash2Icon className='size-4' />
+            </button>
+          </div>
+        ))}
+        <button
+          type='button'
+          disabled={incomplete}
+          title={
+            incomplete
+              ? `Name the current ${noun} and give it a shortcut first`
+              : undefined
           }
-          setLabels([
-            ...labels,
-            {
-              id: crypto.randomUUID(),
-              name: '',
-              shortcutKey: '',
-              color: '#000000',
-            },
-          ]);
-        }}
-      >
-        +
-      </Button>
+          className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-white/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-50'
+          onClick={() =>
+            setLabels([
+              ...labels,
+              {
+                id: crypto.randomUUID(),
+                name: '',
+                shortcutKey: '',
+                color: '#000000',
+              },
+            ])
+          }
+        >
+          <PlusIcon className='size-4' />
+          Add {noun}
+        </button>
+      </div>
+      {shortcutError && (
+        <div className='text-xs text-danger'>{shortcutError}</div>
+      )}
     </div>
   );
 }

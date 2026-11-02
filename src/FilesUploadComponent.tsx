@@ -4398,7 +4398,6 @@ export function FileUploadCore({
                               <div className='flex items-center justify-between gap-2'>
                                 <Input
                                   type='time'
-                                  size='sm'
                                   aria-label={`Start time on ${dayLabel}`}
                                   className='w-32'
                                   value={minutesToTime(startMinutes)}
@@ -4417,7 +4416,6 @@ export function FileUploadCore({
                                 />
                                 <Input
                                   type='time'
-                                  size='sm'
                                   aria-label={`End time on ${dayLabel}`}
                                   className='w-32'
                                   value={minutesToTime(endMinutes)}
@@ -4462,7 +4460,6 @@ export function FileUploadCore({
                       <div className='flex items-center gap-2 text-sm'>
                         <Input
                           type='number'
-                          size='sm'
                           id='altitude-filter-target'
                           aria-label='Target height'
                           placeholder='Target'
@@ -4477,7 +4474,6 @@ export function FileUploadCore({
                         <span>±</span>
                         <Input
                           type='number'
-                          size='sm'
                           id='altitude-filter-deviation'
                           aria-label='Allowed deviation'
                           placeholder='Range'
@@ -4490,7 +4486,6 @@ export function FileUploadCore({
                           }}
                         />
                         <NativeSelect
-                          size='sm'
                           aria-label='Altitude filter unit'
                           style={{ width: 64 }}
                           value={altitudeFilterUnit}

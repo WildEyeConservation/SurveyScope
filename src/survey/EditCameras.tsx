@@ -22,7 +22,7 @@ const FIELDS: { key: keyof CameraFormData; label: string; unit: string }[] = [
   { key: 'sensorWidthMm', label: 'Sensor width', unit: 'mm' },
   { key: 'tiltDegrees', label: 'Tilt', unit: '°' },
 ];
-const GRID = 'minmax(0, 1fr) 130px 130px 130px';
+const GRID = 'minmax(0, 1fr) repeat(3, minmax(84px, 130px))';
 
 export default function EditCameras({
   projectId,
@@ -155,9 +155,9 @@ export default function EditCameras({
         }}
       >
         <SectionTitle className='border-b-0 pb-0'>Lens settings</SectionTitle>
-        <div className='border border-white/15 bg-white/[0.07]'>
+        <div className='border border-dark bg-white/[0.07]'>
           <div
-            className='grid gap-3 border-b border-white/15 bg-black/15 px-3 py-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase'
+            className='grid gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
             style={{ gridTemplateColumns: GRID }}
           >
             <span>Camera</span>
@@ -185,7 +185,6 @@ export default function EditCameras({
                   <div key={key} className='relative'>
                     <Input
                       type='number'
-                      size='sm'
                       step='0.01'
                       min={key === 'tiltDegrees' ? undefined : 0}
                       aria-label={`${label} of ${row.name}`}
