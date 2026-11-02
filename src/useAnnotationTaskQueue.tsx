@@ -39,6 +39,8 @@ const LOCATION_SELECTION = [
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // Enough to stay ahead of a fast annotator without hoarding a shared queue.
 const RECEIVE_BATCH_SIZE = 5;
+// Start the next batch while there is still time to prime it.
+const RECEIVE_AHEAD = 3;
 const VISIBILITY_TIMEOUT_S = 600;
 
 interface AnnotationTaskMessage {
@@ -346,23 +348,34 @@ export default function useAnnotationTaskQueue() {
     return received.messages.length;
   }, [url, backupUrl, zoom, backupZoom, getSqsClient, prepareMessage]);
 
+  const receive = useCallback(() => {
+    receivingRef.current ??= receiveBatch().finally(() => {
+      receivingRef.current = null;
+    });
+    return receivingRef.current;
+  }, [receiveBatch]);
+
   const fetcher = useCallback(async (): Promise<AnnotationTaskPayload> => {
     for (;;) {
       const ready = readyRef.current.shift();
-      if (ready) return ready;
+      if (ready) {
+        if (url && readyRef.current.length <= RECEIVE_AHEAD) {
+          receive().catch((error: unknown) => {
+            console.error('Receiving tasks ahead failed', error);
+          });
+        }
+        return ready;
+      }
       if (!url) {
         await sleep(5000);
         continue;
       }
 
-      receivingRef.current ??= receiveBatch().finally(() => {
-        receivingRef.current = null;
-      });
-      const received = await receivingRef.current;
+      const received = await receive();
       if (readyRef.current.length > 0) continue;
       await sleep(received === 0 ? 5000 : 1000);
     }
-  }, [url, receiveBatch]);
+  }, [url, receive]);
 
   const standbyTestFetcher = useCallback(
     async (): Promise<AnnotationTaskPayload | null> => {
