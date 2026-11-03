@@ -45,7 +45,6 @@ const PROJECT_SELECTION_SET = [
   'queues.url',
   'queues.name',
   'queues.tag',
-  'queues.annotationSetId',
   'queues.cancelAfter',
   'individualIdJobs.id',
   'individualIdJobs.status',
@@ -395,6 +394,37 @@ export default function Surveys() {
     );
   }
 
+  function renderKeepJob(
+    project: Schema['Project']['type'],
+    disabled: boolean,
+    size?: 'sm'
+  ) {
+    const warnedQueues = project.queues.filter(
+      (queue: { cancelAfter?: string | null }) => queue.cancelAfter
+    );
+    if (warnedQueues.length === 0) return null;
+    const cancelAfter = warnedQueues
+      .map((queue: { cancelAfter?: string | null }) => queue.cancelAfter!)
+      .sort()[0];
+    return (
+      <Button
+        size={size}
+        variant='primary'
+        disabled={disabled}
+        title={`Inactive for over 60 days. Cancels on ${new Date(cancelAfter).toLocaleDateString()} unless kept.`}
+        onClick={() =>
+          handleKeepJob(
+            project.id,
+            warnedQueues.map((queue: { id: string }) => queue.id)
+          )
+        }
+        style={{ whiteSpace: 'nowrap' }}
+      >
+        Keep job
+      </Button>
+    );
+  }
+
   async function handleCancelJob() {
     const previousStatus = selectedProject!.status;
     updateProjectInCache(selectedProject!.id, (prev) =>
@@ -619,60 +649,25 @@ export default function Surveys() {
             None
           </Badge>
         )}
-        {sortedAnnotationSets.map((annotationSet, i) => {
-          const warnedQueues = project.queues.filter(
-            (queue: { annotationSetId?: string | null; cancelAfter?: string | null }) =>
-              queue.annotationSetId === annotationSet.id && queue.cancelAfter
-          );
-          const cancelAfter = warnedQueues
-            .map((queue: { cancelAfter?: string | null }) => queue.cancelAfter!)
-            .sort()[0];
-          return (
-            <div
-              className={`d-flex flex-column ${gapClass} ${i === 0 ? '' : `border-top border-light ${borderClass}`
-                }`}
-              key={annotationSet.id}
-            >
-              <div className={`d-flex justify-content-between align-items-center ${gapClass} flex-wrap`}>
-                <div className={`d-flex align-items-center ${gapClass} flex-wrap`}>
-                  <div style={{ fontSize: '16px' }}>{annotationSet.name}</div>
-                  {cancelAfter && (
-                    <>
-                      <Badge
-                        bg='warning'
-                        text='dark'
-                        style={{ fontSize: '12px' }}
-                        title='This job has been inactive for over 60 days'
-                      >
-                        Cancels {new Date(cancelAfter).toLocaleDateString()}
-                      </Badge>
-                      <Button
-                        size={size}
-                        variant='primary'
-                        onClick={() =>
-                          handleKeepJob(
-                            project.id,
-                            warnedQueues.map((queue: { id: string }) => queue.id)
-                          )
-                        }
-                      >
-                        Keep job
-                      </Button>
-                    </>
-                  )}
-                </div>
-                {!hasJobs &&
-                  renderAnnotationSetActions(
-                    project,
-                    annotationSet,
-                    disabled,
-                    hasJobs,
-                    { wrap, size }
-                  )}
-              </div>
+        {sortedAnnotationSets.map((annotationSet, i) => (
+          <div
+            className={`d-flex flex-column ${gapClass} ${i === 0 ? '' : `border-top border-light ${borderClass}`
+              }`}
+            key={annotationSet.id}
+          >
+            <div className={`d-flex justify-content-between align-items-center ${gapClass} flex-wrap`}>
+              <div style={{ fontSize: '16px' }}>{annotationSet.name}</div>
+              {!hasJobs &&
+                renderAnnotationSetActions(
+                  project,
+                  annotationSet,
+                  disabled,
+                  hasJobs,
+                  { wrap, size }
+                )}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     );
   }
@@ -891,29 +886,31 @@ export default function Surveys() {
                   }}
                 />
               </div>
-              <div className={`d-flex ${gapClass} flex-wrap justify-content-end`}>
-                <Button
-                  size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
-                  disabled={disabled || scanningProjects.has(project.id)}
-                  variant='primary'
-                  onClick={() => navigate(`/jobs`)}
-                >
-                  <SquareArrowOutUpRight />
-                </Button>
-                <Button
-                  size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
-                  disabled={disabled || scanningProjects.has(project.id)}
-                  variant='danger'
-                  onClick={() => {
-                    setSelectedProject(project);
-                    showModal('deleteJob');
-                  }}
-                >
-                  <X />
-                </Button>
-              </div>
+              {renderKeepJob(project, disabled, compactMode ? 'sm' : undefined) ?? (
+                <div className={`d-flex ${gapClass} flex-wrap justify-content-end`}>
+                  <Button
+                    size={compactMode ? 'sm' : undefined}
+                    className='flex align-items-center justify-content-center'
+                    disabled={disabled || scanningProjects.has(project.id)}
+                    variant='primary'
+                    onClick={() => navigate(`/jobs`)}
+                  >
+                    <SquareArrowOutUpRight />
+                  </Button>
+                  <Button
+                    size={compactMode ? 'sm' : undefined}
+                    className='flex align-items-center justify-content-center'
+                    disabled={disabled || scanningProjects.has(project.id)}
+                    variant='danger'
+                    onClick={() => {
+                      setSelectedProject(project);
+                      showModal('deleteJob');
+                    }}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           {project.status === 'active' && hasIndividualIdJob && (
@@ -1042,29 +1039,31 @@ export default function Surveys() {
                     }}
                   />
                 </div>
-                <div className='d-flex gap-2 flex-wrap justify-content-end'>
-                  <Button
-                    size='sm'
-                    className='flex align-items-center justify-content-center'
-                    disabled={disabled || scanningProjects.has(project.id)}
-                    variant='primary'
-                    onClick={() => navigate(`/jobs`)}
-                  >
-                    <SquareArrowOutUpRight />
-                  </Button>
-                  <Button
-                    size='sm'
-                    className='flex align-items-center justify-content-center'
-                    disabled={disabled || scanningProjects.has(project.id)}
-                    variant='danger'
-                    onClick={() => {
-                      setSelectedProject(project);
-                      showModal('deleteJob');
-                    }}
-                  >
-                    <X />
-                  </Button>
-                </div>
+                {renderKeepJob(project, disabled, 'sm') ?? (
+                  <div className='d-flex gap-2 flex-wrap justify-content-end'>
+                    <Button
+                      size='sm'
+                      className='flex align-items-center justify-content-center'
+                      disabled={disabled || scanningProjects.has(project.id)}
+                      variant='primary'
+                      onClick={() => navigate(`/jobs`)}
+                    >
+                      <SquareArrowOutUpRight />
+                    </Button>
+                    <Button
+                      size='sm'
+                      className='flex align-items-center justify-content-center'
+                      disabled={disabled || scanningProjects.has(project.id)}
+                      variant='danger'
+                      onClick={() => {
+                        setSelectedProject(project);
+                        showModal('deleteJob');
+                      }}
+                    >
+                      <X />
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
             {project.status === 'active' && hasIndividualIdJob && (

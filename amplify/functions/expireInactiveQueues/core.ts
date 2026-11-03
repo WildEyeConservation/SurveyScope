@@ -79,7 +79,7 @@ export function inactiveJobsEmail(
       `${job.projectName}: ${job.jobLabel}, last active ${formatDate(job.lastActiveAt)}`
   );
   const keep =
-    'To keep a job, click Keep job next to its annotation set on the Surveys page, or take the job from the Jobs page.';
+    'To keep a job, click Keep job next to it on the Surveys page, or take it from the Jobs page.';
   const safe =
     'Cancelling a job does not delete any annotations, observations, images or locations. You can launch it again from the survey whenever you like.';
   const list = `<ul style="margin:0 0 16px;padding-left:20px;font-size:15px;line-height:1.6;">${lines
