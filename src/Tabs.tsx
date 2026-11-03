@@ -148,7 +148,11 @@ export const Tabs: React.FC<TabsProps> = ({
 
   return (
     <div className={`flex h-full w-full flex-col ${className ?? ''}`}>
-      <div ref={headerRef} className='tabs-header border-b border-dark'>
+      <div
+        ref={headerRef}
+        role='tablist'
+        className='tabs-header border-b border-dark'
+      >
         {/* Hidden measurement row */}
         {tabWidths.length === 0 && (
           <div
@@ -175,15 +179,18 @@ export const Tabs: React.FC<TabsProps> = ({
 
         {/* Visible tabs */}
         {visibleIndices.map((index) => (
-          <div
+          <button
             key={index}
+            type='button'
+            role='tab'
+            aria-selected={activeTab === index}
             className={`tab-label px-4! py-2! ${
               activeTab === index ? 'bg-primary!' : ''
             }`}
             onClick={() => handleTabClick(index)}
           >
             {childrenArray[index].props.label}
-          </div>
+          </button>
         ))}
 
         {/* More dropdown */}

@@ -20,18 +20,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import {
-  ChevronRight,
-  PanelBottom,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from 'lucide-react';
+import { ChevronRight, PanelBottom } from 'lucide-react';
 import { useUsers } from './apiInterface';
 import DensityMap, { type DensitySource } from './DensityMap';
 import ReviewImages from './ReviewImages';
+import { CollapsedSidebar, SidebarCollapseButton } from './SidebarCollapse';
 import { useSyncViewerEdits } from './sightingQueries';
 import { Tab, Tabs } from './Tabs';
 import { useInfoTagData } from './useInfoTags';
+import { useSidebarCollapsed } from './useSidebarCollapsed';
 import { fetchAllPaginatedResults } from './utils';
 
 type Option = { label: string; value: string };
@@ -50,14 +47,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
     useState<string>('');
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => localStorage.getItem('reviewSidebarCollapsed') === 'true',
-  );
-  const toggleSidebar = () =>
-    setSidebarCollapsed((collapsed) => {
-      localStorage.setItem('reviewSidebarCollapsed', String(!collapsed));
-      return !collapsed;
-    });
+  const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
   const primaryOnlyId = useId();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { client } = useContext(GlobalContext)!;
@@ -308,19 +298,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
       }}
     >
       <div className='flex h-full w-full flex-col gap-2 sm:flex-row'>
-        {sidebarCollapsed && (
-          <Card className='hidden flex-none sm:flex'>
-            <button
-              type='button'
-              aria-label='Show information and filters'
-              title='Show information and filters'
-              onClick={toggleSidebar}
-              className='flex h-full w-10 items-start justify-center pt-3 text-muted-foreground hover:text-foreground'
-            >
-              <PanelLeftOpen className='size-5' />
-            </button>
-          </Card>
-        )}
+        {sidebarCollapsed && <CollapsedSidebar onExpand={toggleSidebar} />}
         <div
           className={cn(
             'flex w-full flex-col gap-2',
@@ -335,15 +313,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
           <Card className='hidden w-full sm:block'>
             <CardHeader className='flex flex-row items-center justify-between'>
               <CardTitle className='mb-0'>Information</CardTitle>
-              <button
-                type='button'
-                aria-label='Hide information and filters'
-                title='Hide information and filters'
-                onClick={toggleSidebar}
-                className='text-muted-foreground hover:text-foreground'
-              >
-                <PanelLeftClose className='size-5' />
-              </button>
+              <SidebarCollapseButton onClick={toggleSidebar} />
             </CardHeader>
             <CardContent className='flex flex-col gap-2'>
               <p className='mb-0'>

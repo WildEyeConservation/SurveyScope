@@ -1,13 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import exportFromJSON from 'export-from-json';
 import { X } from 'lucide-react';
 import { DateTime } from 'luxon';
@@ -18,13 +12,24 @@ import { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
 import { GlobalContext, UserContext } from './Context.tsx';
 import DensityMap from './DensityMap.tsx';
+import { CollapsedSidebar, SidebarCollapseButton } from './SidebarCollapse';
 import MyTable from './Table.tsx';
+import { Tab, Tabs } from './Tabs';
 import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
+import { useSidebarCollapsed } from './useSidebarCollapsed';
 import { fetchAllPaginatedResults } from './utils.tsx';
 import { createToken, verifyToken } from './utils/jwt';
 // @ts-ignore
 import * as jStat from 'jstat';
 import { useNavigate } from 'react-router-dom';
+
+// New links are off until link creation moves to the backend.
+const SHARING_AVAILABLE = false;
+const LINK_DURATIONS = [
+  { label: '1 day', days: 1 },
+  { label: '1 week', days: 7 },
+  { label: '4 weeks', days: 28 },
+];
 
 export default function JollyResults() {
   const { surveyId, annotationSetId } = useParams() as {
@@ -35,6 +40,8 @@ export default function JollyResults() {
   const { myMembershipHook: myProjectsHook, user: authUser } =
     useContext(UserContext)!;
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<'map' | 'estimates'>('map');
+  const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
   const [results, setResults] = useState<
     (Schema['JollyResult']['type'] & { stratumName?: string })[]
   >([]);
@@ -55,7 +62,7 @@ export default function JollyResults() {
     DateTime.now().plus({ days: 1 }).toMillis(),
   );
   const [isCopying, setIsCopying] = useState(false);
-  const [moreInfo, setMoreInfo] = useState(false);
+  const [linkDays, setLinkDays] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [tableHoveredStratumId, setTableHoveredStratumId] = useState<
     string | null
@@ -469,12 +476,17 @@ export default function JollyResults() {
       }}
     >
       <div className='flex h-full w-full flex-row gap-2'>
-        <div className='flex flex-col gap-2' style={{ width: '300px' }}>
+        {sidebarCollapsed && <CollapsedSidebar onExpand={toggleSidebar} />}
+        <div
+          className={cn(
+            'flex w-[300px] flex-none flex-col gap-2',
+            sidebarCollapsed && 'sm:hidden',
+          )}
+        >
           <Card>
-            <CardHeader>
-              <CardTitle>
-                <h4 className='mb-0'>Information</h4>
-              </CardTitle>
+            <CardHeader className='flex flex-row items-center justify-between'>
+              <CardTitle className='mb-0'>Information</CardTitle>
+              <SidebarCollapseButton onClick={toggleSidebar} />
             </CardHeader>
             <CardContent>
               <p className='mb-0'>
@@ -487,14 +499,12 @@ export default function JollyResults() {
           </Card>
           <Card>
             <CardHeader>
-              <CardTitle>
-                <h4 className='mb-0'>Filter</h4>
-              </CardTitle>
+              <CardTitle className='mb-0'>Filters</CardTitle>
             </CardHeader>
             <CardContent>
               <Combobox
                 multiple
-                placeholder='Select labels'
+                placeholder='All labels'
                 options={categoryOptions}
                 value={selectedCategories}
                 onChange={(value) => setSelectedCategories(value)}
@@ -502,201 +512,172 @@ export default function JollyResults() {
               />
             </CardContent>
           </Card>
-          <Card className='grow overflow-auto'>
-            <CardHeader>
-              <CardTitle>
-                <h4 className='mb-0'>Sharing</h4>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className='flex flex-col justify-between'>
-              {isProjectAdmin && (
-                <div className='flex flex-col gap-4'>
-                  <div>
-                    <Button
-                      variant='link'
-                      className='mb-1 p-0'
-                      onClick={() => setMoreInfo(!moreInfo)}
-                    >
-                      {moreInfo ? 'Less Info' : 'Click for more info...'}
-                    </Button>
-                    {moreInfo && (
-                      <span
-                        className='mt-0 mb-2 block text-muted-foreground'
-                        style={{ fontSize: '14px' }}
+          {isProjectAdmin && (
+            <Card className='min-h-0 grow overflow-auto'>
+              <CardHeader>
+                <CardTitle className='mb-0'>Sharing</CardTitle>
+              </CardHeader>
+              <CardContent className='flex flex-col gap-4'>
+                <span className='text-sm text-muted-foreground'>
+                  The link works for the chosen time. People who sign in with it
+                  keep access until you remove them.
+                </span>
+                {tokenExpiry && tokenExpiry > new Date() && (
+                  <span className='text-sm'>
+                    Current link valid until {tokenExpiry.toLocaleDateString()}
+                  </span>
+                )}
+                <div className='flex flex-col gap-2'>
+                  <div
+                    role='radiogroup'
+                    aria-label='Link valid for'
+                    className='flex border border-white/30'
+                  >
+                    {LINK_DURATIONS.map(({ label, days }) => {
+                      const selected = linkDays === days;
+                      return (
+                        <button
+                          key={label}
+                          type='button'
+                          role='radio'
+                          aria-checked={selected}
+                          disabled={!SHARING_AVAILABLE}
+                          onClick={() => {
+                            setLinkDays(days);
+                            setExpiration(
+                              DateTime.now().plus({ days }).toMillis(),
+                            );
+                          }}
+                          className={cn(
+                            'flex-1 px-3 py-1.5 text-base leading-normal transition-colors disabled:opacity-60',
+                            selected
+                              ? 'bg-primary text-white'
+                              : 'enabled:hover:bg-white/10',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    variant='primary'
+                    onClick={handleShare}
+                    disabled={!SHARING_AVAILABLE || isCopying}
+                  >
+                    {isCopying ? 'Copying...' : 'Copy link'}
+                  </Button>
+                  {!SHARING_AVAILABLE && (
+                    <span className='text-xs text-muted-foreground'>
+                      New links are temporarily unavailable.
+                    </span>
+                  )}
+                </div>
+                {resultsMemberships.length > 0 && (
+                  <div className='border border-dark bg-white/[0.07] text-sm'>
+                    <div className='flex justify-between border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'>
+                      <span>Shared with</span>
+                      <span>{resultsMemberships.length}</span>
+                    </div>
+                    {resultsMemberships.map((m) => (
+                      <div
+                        key={m.userId}
+                        className='flex items-center justify-between gap-2 border-b border-white/[0.08] py-1 pr-1 pl-3 last:border-b-0'
                       >
-                        After copying the link, it will remain valid until the
-                        expiration date. Any user who clicks the link will be
-                        required to sign in. These users will be granted access
-                        to this results page. You can revoke access by removing
-                        them from the list below. You must wait for the link to
-                        expire before creating a new one. As a safety measure,
-                        choose the shortest expiration date possible.
-                      </span>
-                    )}
-                    <Label className='mb-0 block'>Expiration Date:</Label>
-                    {tokenExpiry && (
-                      <span
-                        className='mt-0 mb-2 block text-muted-foreground'
-                        style={{ fontSize: '14px' }}
+                        <span className='truncate'>
+                          {users?.find((u) => u.id === m.userId)?.name ||
+                            'New user'}
+                        </span>
+                        <button
+                          type='button'
+                          aria-label='Remove access'
+                          title='Remove access'
+                          onClick={() => removeResultsMembership(m.userId)}
+                          className='flex size-7 flex-none items-center justify-center text-muted-foreground hover:text-danger'
+                        >
+                          <X className='size-4' />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          <Button
+            variant='primary'
+            className='mt-auto'
+            onClick={exportResultsAsCSV}
+            disabled={exporting}
+          >
+            {exporting ? 'Exporting...' : 'Export results as CSV'}
+          </Button>
+        </div>
+        <Card className='min-w-0 grow'>
+          <CardContent>
+            <Tabs
+              keepMounted
+              activeTab={tab === 'map' ? 0 : 1}
+              onTabChange={(index) => setTab(index === 0 ? 'map' : 'estimates')}
+            >
+              <Tab label='Density Map'>
+                <div className='h-[calc(100vh-170px)] min-h-[420px] pt-4'>
+                  <DensityMap
+                    surveyId={surveyId}
+                    annotationSetId={annotationSetId}
+                    categoryIds={
+                      selectedCategories.length > 0
+                        ? categoryIds
+                        : categoryOptions.map((c) => c.value)
+                    }
+                    primaryOnly
+                    dropFalseNegatives
+                    highlightedStratumId={tableHoveredStratumId}
+                    onStratumHover={setMapHoveredStratumId}
+                  />
+                </div>
+              </Tab>
+              <Tab label='Population Estimates'>
+                <div className='flex h-[calc(100vh-170px)] min-h-[420px] flex-col gap-3 pt-4'>
+                  <div className='flex flex-wrap items-stretch gap-2'>
+                    {[
+                      ['Estimate', Math.round(totalEstimate).toLocaleString()],
+                      ['Lower 95', Math.round(totalLower95).toLocaleString()],
+                      ['Upper 95', Math.round(totalUpper95).toLocaleString()],
+                      ['Std error', totalStdError.toFixed(2)],
+                      ['Variance', totalVariance.toFixed(2)],
+                      [`t value (n=${totalSamples})`, tValue.toFixed(3)],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className='flex flex-col justify-center border border-white/15 bg-white/[0.07] px-4 py-2'
                       >
-                        Link still valid until{' '}
-                        {new Date(tokenExpiry).toLocaleDateString()}
-                      </span>
-                    )}
-                    <Input
-                      type='date'
-                      disabled={true}
-                      placeholder='Expiration'
-                      value={DateTime.fromMillis(expiration).toFormat(
-                        'yyyy-MM-dd',
-                      )}
-                      onChange={(e) =>
-                        setExpiration(
-                          DateTime.fromFormat(
-                            e.target.value,
-                            'yyyy-MM-dd',
-                          ).toMillis(),
+                        <span className='text-[11px] tracking-wider text-muted-foreground uppercase'>
+                          {label}
+                        </span>
+                        <span className='tabular-nums'>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className='min-h-0 grow overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10'>
+                    <MyTable
+                      tableHeadings={tableHeadings}
+                      tableData={tableData}
+                      pagination={false}
+                      emptyMessage='No Jolly results found.'
+                      onRowHover={(id) =>
+                        setTableHoveredStratumId(
+                          id ? (rowStratumIds.get(id) ?? null) : null,
                         )
                       }
-                      min={DateTime.now().toFormat('yyyy-MM-dd')}
+                      highlightedRowIds={highlightedRowIds}
                     />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className='inline-block w-full'>
-                          <Button
-                            variant='outline-primary'
-                            className='mt-2 w-full'
-                            onClick={handleShare}
-                            disabled={true}
-                            style={{ pointerEvents: 'none' }}
-                          >
-                            {isCopying ? 'Copying...' : 'Copy Link'}
-                          </Button>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent id='copy-link-tooltip' side='top'>
-                        Under maintenance
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <div>
-                    <Label className='m-0'>Shared with:</Label>
-                    {resultsMemberships.length > 0 ? (
-                      resultsMemberships.map((m) => (
-                        <div
-                          className='mb-2 flex w-full items-center justify-between'
-                          style={{
-                            border: '1px solid #ccc',
-                            borderRadius: '4px',
-                            padding: '0px 0px 0px 8px',
-                            fontSize: '14px',
-                            overflow: 'hidden',
-                          }}
-                          key={m.userId}
-                        >
-                          <span className='m-0'>
-                            {users?.find((u) => u.id === m.userId)?.name ||
-                              'New User'}
-                          </span>
-                          <Button
-                            variant='danger'
-                            size='sm'
-                            onClick={() => removeResultsMembership(m.userId)}
-                          >
-                            <X />
-                          </Button>
-                        </div>
-                      ))
-                    ) : (
-                      <p
-                        className='mb-0 text-muted-foreground'
-                        style={{ fontSize: '14px' }}
-                      >
-                        No one has been shared with yet.
-                      </p>
-                    )}
                   </div>
                 </div>
-              )}
-              <Button onClick={exportResultsAsCSV} disabled={exporting}>
-                {exporting
-                  ? 'Exporting, Please wait...'
-                  : 'Export Results as CSV'}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-        <div className='flex grow flex-col gap-2'>
-          <Card className='grow'>
-            <CardHeader>
-              <CardTitle>
-                <h4 className='mb-0'>Density Map</h4>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className='overflow-hidden p-0'>
-              <div style={{ height: 'clamp(400px, 55vh, 650px)' }}>
-                <DensityMap
-                  surveyId={surveyId}
-                  annotationSetId={annotationSetId}
-                  categoryIds={
-                    selectedCategories.length > 0
-                      ? categoryIds
-                      : categoryOptions.map((c) => c.value)
-                  }
-                  primaryOnly
-                  dropFalseNegatives
-                  highlightedStratumId={tableHoveredStratumId}
-                  onStratumHover={setMapHoveredStratumId}
-                />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className='flex items-center justify-between gap-2'>
-              <CardTitle className='mb-0 w-full' style={{ maxWidth: '300px' }}>
-                <h4 className='mb-0'>Jolly Results</h4>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MyTable
-                tableHeadings={tableHeadings}
-                tableData={tableData}
-                pagination={false}
-                emptyMessage='No Jolly results found.'
-                onRowHover={(id) =>
-                  setTableHoveredStratumId(
-                    id ? (rowStratumIds.get(id) ?? null) : null,
-                  )
-                }
-                highlightedRowIds={highlightedRowIds}
-              />
-              <div className='mt-4 border-t p-2'>
-                <h5>Totals</h5>
-                <div className='flex flex-wrap gap-6'>
-                  <div>
-                    <strong>Estimate:</strong> {Math.round(totalEstimate)}
-                  </div>
-                  <div>
-                    <strong>Variance:</strong> {totalVariance.toFixed(2)}
-                  </div>
-                  <div>
-                    <strong>Std Error:</strong> {totalStdError.toFixed(2)}
-                  </div>
-                  <div>
-                    <strong>t Value (n={totalSamples}):</strong>{' '}
-                    {tValue.toFixed(3)}
-                  </div>
-                  <div>
-                    <strong>Lower 95:</strong> {Math.round(totalLower95)}
-                  </div>
-                  <div>
-                    <strong>Upper 95:</strong> {Math.round(totalUpper95)}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              </Tab>
+            </Tabs>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
