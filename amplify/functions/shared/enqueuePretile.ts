@@ -15,6 +15,9 @@ const SKIP_MAX_AGE_DAYS = 30;
 // (CopyObject in place) to reset the lifecycle clock.
 const REFRESH_MAX_AGE_DAYS = 55;
 
+// Images tiled before this only have per-tile PNGs, so they get a pack.
+const PACKS_SINCE_MS = Date.parse('2026-10-21T09:00:00Z');
+
 export type PretileWorkflow =
   | 'species-labelling'
   | 'false-negatives'
@@ -89,6 +92,32 @@ type ProjectRow = {
 
 type ImageRow = ImageTileState;
 
+export function partitionTileStates(rows: ImageRow[], nowMs: number) {
+  const skipCutoff = nowMs - SKIP_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const refreshCutoff = nowMs - REFRESH_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const needsTiling: ImageRow[] = [];
+  const needsRefresh: ImageRow[] = [];
+  const skippedFresh: ImageRow[] = [];
+  const skippedNoSource: ImageRow[] = [];
+  for (const row of rows) {
+    if (!row.originalPath) {
+      skippedNoSource.push(row);
+      continue;
+    }
+    const tiledAtMs = row.tiledAt ? Date.parse(row.tiledAt) : NaN;
+    if (!Number.isFinite(tiledAtMs) || tiledAtMs < PACKS_SINCE_MS) {
+      needsTiling.push(row);
+    } else if (tiledAtMs >= skipCutoff) {
+      skippedFresh.push(row);
+    } else if (tiledAtMs >= refreshCutoff) {
+      needsRefresh.push(row);
+    } else {
+      needsTiling.push(row);
+    }
+  }
+  return { needsTiling, needsRefresh, skippedFresh, skippedNoSource };
+}
+
 /**
  * Write a pretile manifest, stamp the Project with the manifest key, and enqueue
  * pretile SQS messages for each image that doesn't already have `tiledAt` set.
@@ -140,33 +169,11 @@ export async function enqueuePretile(
     return row;
   });
 
-  // Partition images into four buckets:
-  //   - skippedFresh:    tiledAt < 30 days old → tiles are fresh, no work needed
-  //   - needsRefresh:    tiledAt 30–55 days old → CopyObject-in-place to reset lifecycle
-  //   - needsTiling:     tiledAt > 55 days or missing → full re-tile from source
-  //   - skippedNoSource: no originalPath → can't do anything
-  const nowMs = Date.now();
-  const skipCutoff = nowMs - SKIP_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-  const refreshCutoff = nowMs - REFRESH_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-  const validRows = imageRows.filter((r): r is ImageRow => r !== null);
-  const needsTiling: ImageRow[] = [];
-  const needsRefresh: ImageRow[] = [];
-  const skippedFresh: ImageRow[] = [];
-  const skippedNoSource: ImageRow[] = [];
-  for (const row of validRows) {
-    if (!row.originalPath) {
-      skippedNoSource.push(row);
-      continue;
-    }
-    const tiledAtMs = row.tiledAt ? Date.parse(row.tiledAt) : NaN;
-    if (Number.isFinite(tiledAtMs) && tiledAtMs >= skipCutoff) {
-      skippedFresh.push(row);
-    } else if (Number.isFinite(tiledAtMs) && tiledAtMs >= refreshCutoff) {
-      needsRefresh.push(row);
-    } else {
-      needsTiling.push(row);
-    }
-  }
+  const { needsTiling, needsRefresh, skippedFresh, skippedNoSource } =
+    partitionTileStates(
+      imageRows.filter((r): r is ImageRow => r !== null),
+      Date.now()
+    );
 
   if (skippedNoSource.length > 0) {
     console.warn(
