@@ -1,3 +1,5 @@
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
@@ -23,7 +25,6 @@ import { GlobalContext, UserContext } from '../Context.tsx';
 import EditAnnotationSetModal from '../EditAnnotationSet.tsx';
 import FilesUploadComponent from '../FilesUploadComponent.tsx';
 import PageHeader from '../PageHeader';
-import MyTable from '../Table.tsx';
 import { Schema } from '../amplify/client-schema.ts';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress.tsx';
 import { deleteInfoTagDataForSet } from '../infoTags.ts';
@@ -1210,14 +1211,14 @@ export default function Surveys() {
                 </div>
               )
             ) : (
-              <MyTable
-                tableHeadings={[
+              <DataTable
+                columns={columnsFromHeadings([
                   { content: 'Survey', style: { width: '50%' } },
                   { content: 'Annotation Sets', style: { width: '50%' } },
-                ]}
-                tableData={tableData}
-                pagination={true}
-                itemsPerPage={5}
+                ])}
+                data={cellRows(tableData)}
+                getRowId={(row) => row.id}
+                pageSize={5}
                 emptyMessage={emptyMessage}
               />
             )}

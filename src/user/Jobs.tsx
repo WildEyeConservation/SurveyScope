@@ -1,3 +1,5 @@
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,11 +11,10 @@ import {
   type GetQueueAttributesCommandInput,
 } from '@aws-sdk/client-sqs';
 import { Maximize2, Minimize2 } from 'lucide-react';
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalContext, UserContext } from '../Context';
 import PageHeader from '../PageHeader';
-import MyTable from '../Table';
 import { Schema } from '../amplify/client-schema';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress';
 import ProjectProgress from './ProjectProgress';
@@ -63,6 +64,7 @@ export default function Jobs() {
     }[]
   >([]);
   const [isLoading, setIsLoading] = useState(false);
+  const hasLoadedRef = useRef(false);
   const [takingJob, setTakingJob] = useState(false);
   const [deletingJob] = useState(false);
   const [scanningProjects, setScanningProjects] = useState<Set<string>>(
@@ -160,11 +162,10 @@ export default function Jobs() {
     let validProjects: Project[] = [];
     let activeProjects: Project[] = [];
 
-    // Fetches the member projects and their queues. Only the first load shows
-    // the spinner; later refreshes swap the list in quietly.
     async function loadProjects(showSpinner: boolean) {
       const memberships = userProjectMembershipHook.data;
       if (!memberships) return;
+      showSpinner &&= !hasLoadedRef.current;
       if (showSpinner) setIsLoading(true);
 
       const projectResults = await Promise.all(
@@ -219,6 +220,7 @@ export default function Jobs() {
       });
 
       setDisplayProjects(validProjects);
+      hasLoadedRef.current = true;
       if (showSpinner) setIsLoading(false);
 
       refreshJobs();
@@ -741,10 +743,17 @@ export default function Jobs() {
           {isLoading ? (
             <Spinner />
           ) : (
-            <MyTable
-              tableData={tableData}
-              pagination={true}
-              itemsPerPage={5}
+            <DataTable
+              columns={columnsFromHeadings(
+                Array.from(
+                  { length: tableData[0]?.rowData.length ?? 1 },
+                  () => ({ content: '' }),
+                ),
+              )}
+              data={cellRows(tableData)}
+              getRowId={(row) => row.id}
+              pageSize={5}
+              hideHeader
               emptyMessage='No jobs available'
             />
           )}

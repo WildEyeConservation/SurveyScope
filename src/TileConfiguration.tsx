@@ -1,3 +1,4 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
@@ -957,6 +958,88 @@ function TilePreview({
   );
 }
 
+type TransectRow = {
+  transectId: string;
+  label: string;
+  number: number;
+  images: number;
+  distanceKm: number;
+  speedKmh: number;
+  step: number;
+  offset: number;
+  kept: number;
+  disabled?: boolean;
+  onStep: (value: number) => void;
+  onOffset: (value: number) => void;
+};
+
+const transectColumns: DataColumn<TransectRow>[] = [
+  {
+    accessorKey: 'number',
+    header: 'Transect',
+    meta: { className: 'max-w-40 truncate' },
+    cell: ({ row }) => (
+      <span title={row.original.transectId}>{row.original.label}</span>
+    ),
+  },
+  {
+    accessorKey: 'images',
+    header: 'Images',
+    meta: { className: 'text-right tabular-nums' },
+    cell: ({ row }) => row.original.images.toLocaleString(),
+  },
+  {
+    accessorKey: 'distanceKm',
+    header: 'km',
+    meta: { className: 'text-right tabular-nums' },
+    cell: ({ row }) => row.original.distanceKm.toFixed(1),
+  },
+  {
+    accessorKey: 'speedKmh',
+    header: 'km/h',
+    meta: { className: 'text-right tabular-nums' },
+    cell: ({ row }) => row.original.speedKmh.toFixed(0),
+  },
+  {
+    id: 'step',
+    header: 'Every nth',
+    enableSorting: false,
+    meta: { className: 'w-28' },
+    cell: ({ row }) => (
+      <Input
+        type='number'
+        min={1}
+        aria-label={`Every nth image of transect ${row.original.number}`}
+        value={row.original.step}
+        disabled={row.original.disabled}
+        onChange={(e) => row.original.onStep(Number(e.target.value))}
+      />
+    ),
+  },
+  {
+    id: 'offset',
+    header: 'Skip first',
+    enableSorting: false,
+    meta: { className: 'w-28' },
+    cell: ({ row }) => (
+      <Input
+        type='number'
+        min={0}
+        aria-label={`Images to skip on transect ${row.original.number}`}
+        value={row.original.offset}
+        disabled={row.original.disabled}
+        onChange={(e) => row.original.onOffset(Number(e.target.value))}
+      />
+    ),
+  },
+  {
+    accessorKey: 'kept',
+    header: 'Kept',
+    meta: { className: 'text-right tabular-nums' },
+    cell: ({ row }) => row.original.kept.toLocaleString(),
+  },
+];
+
 function DevTransectTable({
   groups,
   steps,
@@ -983,7 +1066,20 @@ function DevTransectTable({
     return Math.floor(Math.max(0, g.images.length - offset) / step);
   };
   const total = groups.reduce((sum, g) => sum + kept(g), 0);
-  const columns = 'minmax(0,1fr) 80px 80px 80px 90px 90px 80px';
+  const rows: TransectRow[] = groups.map((g, index) => ({
+    transectId: g.transectId,
+    label: `Transect ${index + 1}`,
+    number: index + 1,
+    images: g.images.length,
+    distanceKm: g.distanceKm,
+    speedKmh: g.speedKmh,
+    step: steps[g.transectId] ?? 1,
+    offset: offsets[g.transectId] ?? 0,
+    kept: kept(g),
+    disabled,
+    onStep: (value) => onStep(g.transectId, value),
+    onOffset: (value) => onOffset(g.transectId, value),
+  }));
   return (
     <div className='flex flex-col gap-1.5'>
       <span className='text-sm'>Subset by transect</span>
@@ -991,71 +1087,28 @@ function DevTransectTable({
         Keep every nth image after skipping the first few. Distance and speed
         use each transect's first and last image.
       </span>
-      <div className='overflow-x-auto border border-dark text-[13px]'>
-        <div
-          className='grid gap-2 border-b border-dark bg-dark px-3 py-1.5 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
-          style={{ gridTemplateColumns: columns, minWidth: 640 }}
-        >
-          <span>Transect</span>
-          <span className='text-right'>Images</span>
-          <span className='text-right'>km</span>
-          <span className='text-right'>km/h</span>
-          <span>Every nth</span>
-          <span>Skip first</span>
-          <span className='text-right'>Kept</span>
-        </div>
-        <div className='max-h-72 overflow-y-auto'>
-          {groups.map((g, index) => (
-            <div
-              key={g.transectId}
-              className='grid items-center gap-2 border-b border-white/[0.08] px-3 py-1 tabular-nums last:border-b-0'
-              style={{ gridTemplateColumns: columns, minWidth: 640 }}
-            >
-              <span className='truncate' title={g.transectId}>
-                Transect {index + 1}
-              </span>
-              <span className='text-right'>
-                {g.images.length.toLocaleString()}
-              </span>
-              <span className='text-right'>{g.distanceKm.toFixed(1)}</span>
-              <span className='text-right'>{g.speedKmh.toFixed(0)}</span>
-              <Input
-                type='number'
-                min={1}
-                aria-label={`Every nth image of transect ${index + 1}`}
-                value={steps[g.transectId] ?? 1}
-                disabled={disabled}
-                onChange={(e) => onStep(g.transectId, Number(e.target.value))}
-              />
-              <Input
-                type='number'
-                min={0}
-                aria-label={`Images to skip on transect ${index + 1}`}
-                value={offsets[g.transectId] ?? 0}
-                disabled={disabled}
-                onChange={(e) => onOffset(g.transectId, Number(e.target.value))}
-              />
-              <span className='text-right'>{kept(g).toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
-        <div
-          className='grid gap-2 border-t border-white/15 px-3 py-1.5 font-semibold tabular-nums'
-          style={{ gridTemplateColumns: columns, minWidth: 640 }}
-        >
-          <span>Total</span>
-          <span className='text-right'>
+      <DataTable
+        columns={transectColumns}
+        data={rows}
+        getRowId={(row) => row.transectId}
+        minWidth={640}
+        className='text-[13px]'
+        footer={[
+          'Total',
+          <div key='images' className='text-right'>
             {groups
               .reduce((sum, g) => sum + g.images.length, 0)
               .toLocaleString()}
-          </span>
-          <span />
-          <span />
-          <span />
-          <span />
-          <span className='text-right'>{total.toLocaleString()}</span>
-        </div>
-      </div>
+          </div>,
+          '',
+          '',
+          '',
+          '',
+          <div key='kept' className='text-right'>
+            {total.toLocaleString()}
+          </div>,
+        ]}
+      />
     </div>
   );
 }

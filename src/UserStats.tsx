@@ -1,3 +1,5 @@
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -27,7 +29,6 @@ import { loadRows } from './rowChunks';
 import type { UserStatsType } from './schemaTypes';
 import SnapshotStatsModal from './SnapshotStatsModal';
 import { LIGHT_THEME } from './survey/mapTheme';
-import MyTable from './Table';
 import { fetchAllPaginatedResults } from './utils';
 
 export default function UserStats() {
@@ -574,9 +575,10 @@ export default function UserStats() {
                 <span className='ms-4'>Loading stats...</span>
               </div>
             ) : (
-              <MyTable
-                tableHeadings={tableHeadings}
-                tableData={tableData}
+              <DataTable
+                columns={columnsFromHeadings(tableHeadings)}
+                data={cellRows(tableData)}
+                getRowId={(row) => row.id}
                 emptyMessage={
                   project && selectedSets && selectedSets.length > 0
                     ? 'No stats found'

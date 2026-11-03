@@ -1,3 +1,5 @@
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -25,13 +27,18 @@ import {
 import { neutraliseCsvRows } from '../shared/csv';
 import { GlobalContext, UserContext } from './Context';
 import PageHeader from './PageHeader';
-import MyTable from './Table';
 import WorkflowSnapshotModal from './WorkflowSnapshotModal';
 import { useUsers } from './apiInterface';
 import { LIGHT_THEME } from './survey/mapTheme';
 import { fetchAllPaginatedResults } from './utils';
 import { eventToCsvRow, fetchAllWorkflowEvents } from './workflowEvents';
 import { WORKFLOW_REGISTRY, type WorkflowType } from './workflowRegistry';
+import {
+  resolveStatsQuery,
+  type StatsQueryResult as QueryResult,
+  type RunSummary,
+  type StatsBucket,
+} from './workflowStatsQuery';
 import {
   buildWorkflowSections,
   localDateString,
@@ -52,30 +59,6 @@ import {
  * is shown rather than what is fetched; exports in the card footer.
  */
 
-interface StatsBucket {
-  workflowType: string;
-  annotationSetId: string;
-  date: string;
-  userId: string;
-  workflowRunId: string;
-  completedUnits: number;
-  skippedUnits: number;
-  activeTimeMs: number;
-  waitingTimeMs: number;
-  metrics: Record<string, number>;
-}
-
-interface RunSummary {
-  runId: string;
-  workflowType: string;
-  annotationSetId: string;
-  displayName: string;
-  status: string;
-  launchedAt: string;
-  finishedAt?: string | null;
-  finishReason?: string | null;
-}
-
 const FINISH_REASON_LABELS: Record<string, string> = {
   drained: 'all work done',
   'requeue-limit': 'finished with unreturned work',
@@ -93,34 +76,6 @@ function runStatusLabel(run: RunSummary): string {
     ? (FINISH_REASON_LABELS[run.finishReason] ?? run.finishReason)
     : undefined;
   return reason ? `${run.status} (${reason})` : run.status;
-}
-
-interface QueryResult {
-  buckets?: StatsBucket[];
-  runs?: RunSummary[];
-  truncated?: boolean;
-}
-
-interface QueryWorkflowStatsInput {
-  projectId: string;
-  annotationSetIds: string[];
-  startDate?: string;
-  endDate?: string;
-}
-
-// The generated client types are derived from the deployed amplify_outputs, so
-// this query only appears on `client.queries` once the backend that defines it
-// is deployed. Non-master branches also reuse master's outputs. Resolving it
-// through a narrow local type keeps the build green in both cases and lets the
-// screen explain itself if the backend is not deployed yet.
-function resolveStatsQuery(client: unknown) {
-  const queries = (client as { queries?: Record<string, unknown> }).queries;
-  const query = queries?.queryWorkflowStats;
-  return typeof query === 'function'
-    ? (query as (
-        input: QueryWorkflowStatsInput,
-      ) => Promise<{ data?: unknown; errors?: { message?: string }[] }>)
-    : undefined;
 }
 
 interface ProjectOption {
@@ -734,24 +689,14 @@ export default function WorkflowStatistics() {
                 <div key={section.workflowType} className='mt-4'>
                   <h6 className='mb-2'>{section.label}</h6>
                   <div className='overflow-x-auto'>
-                    <MyTable
-                      tableHeadings={section.headings}
-                      tableData={[
-                        ...section.rows.map((row) => ({
-                          id: row.id,
-                          rowData: row.cells,
-                        })),
-                        ...(section.footer
-                          ? [
-                              {
-                                id: `${section.workflowType}:__total`,
-                                rowData: section.footer.map((cell, index) => (
-                                  <strong key={index}>{cell}</strong>
-                                )),
-                              },
-                            ]
-                          : []),
-                      ]}
+                    <DataTable
+                      columns={columnsFromHeadings(section.headings)}
+                      data={section.rows.map((row) => ({
+                        id: row.id,
+                        cells: row.cells,
+                      }))}
+                      getRowId={(row) => row.id}
+                      footer={section.footer ?? undefined}
                     />
                   </div>
                 </div>
@@ -769,8 +714,8 @@ export default function WorkflowStatistics() {
                 <div className='mt-6'>
                   <h6 className='mb-2'>Runs</h6>
                   <div className='overflow-x-auto'>
-                    <MyTable
-                      tableHeadings={[
+                    <DataTable
+                      columns={columnsFromHeadings([
                         {
                           content: 'Run',
                           description:
@@ -799,8 +744,9 @@ export default function WorkflowStatistics() {
                           description:
                             'Units completed in this run within the selected period, across all users.',
                         },
-                      ]}
-                      tableData={runRows}
+                      ])}
+                      data={cellRows(runRows)}
+                      getRowId={(row) => row.id}
                     />
                   </div>
                 </div>

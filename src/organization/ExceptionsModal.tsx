@@ -1,8 +1,9 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { Body, Footer, Header, Modal, Title } from '../Modal';
 import { fetchAllPaginatedResults } from '../utils';
@@ -22,6 +23,9 @@ type Permission = {
   annotationAccess: boolean;
   isAdmin: boolean;
 };
+
+const levelOf = (p: Permission): Level =>
+  p.isAdmin ? 'admin' : p.annotationAccess ? 'annotate' : 'none';
 
 export default function ExceptionsModal({
   show,
@@ -120,9 +124,7 @@ export default function ExceptionsModal({
     onClose();
   };
 
-  const levelOf = (p: Permission): Level =>
-    p.isAdmin ? 'admin' : p.annotationAccess ? 'annotate' : 'none';
-  const setLevel = (projectId: string, level: Level) => {
+  const setLevel = useCallback((projectId: string, level: Level) => {
     setSaveResult(null);
     setPermissions((current) =>
       current.map((p) =>
@@ -135,7 +137,7 @@ export default function ExceptionsModal({
           : p,
       ),
     );
-  };
+  }, []);
   const changeCount = permissions.filter(
     (p) =>
       !originalPermissions.some(
@@ -151,8 +153,55 @@ export default function ExceptionsModal({
     .filter((p) => !onlyWithAccess || p.annotationAccess)
     .filter((p) =>
       p.projectName.toLowerCase().includes(search.trim().toLowerCase()),
-    )
-    .sort((a, b) => a.projectName.localeCompare(b.projectName));
+    );
+
+  const columns = useMemo<DataColumn<Permission>[]>(
+    () => [
+      {
+        accessorKey: 'projectName',
+        header: 'Survey',
+        meta: { className: 'max-w-80 truncate' },
+      },
+      {
+        id: 'access',
+        accessorFn: (row) => LEVELS.findIndex((l) => l.value === levelOf(row)),
+        header: 'Access',
+        // Sorting by access would move a row while it is being changed.
+        enableSorting: false,
+        meta: { className: 'w-px' },
+        cell: ({ row }) => {
+          const permission = row.original;
+          return (
+            <div
+              role='radiogroup'
+              aria-label={`Access to ${permission.projectName}`}
+              className='inline-flex flex-none border border-white/30'
+            >
+              {LEVELS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type='button'
+                  role='radio'
+                  aria-checked={levelOf(permission) === value}
+                  disabled={isSaving}
+                  onClick={() => setLevel(permission.projectId, value)}
+                  className={cn(
+                    'px-2.5 py-1 transition-colors disabled:opacity-60',
+                    levelOf(permission) === value
+                      ? 'bg-primary text-white'
+                      : 'enabled:hover:bg-white/10',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          );
+        },
+      },
+    ],
+    [isSaving, setLevel],
+  );
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -254,58 +303,15 @@ export default function ExceptionsModal({
               ))}
             </div>
           </div>
-          <div className='border border-dark bg-white/[0.07] text-sm'>
-            <div className='flex justify-between border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'>
-              <span>Survey</span>
-              <span>Access</span>
-            </div>
-            <div className='max-h-[50vh] overflow-y-auto'>
-              {isLoading ? (
-                <div className='px-3 py-3 text-muted-foreground'>
-                  Loading surveys...
-                </div>
-              ) : visible.length === 0 ? (
-                <div className='px-3 py-3 text-muted-foreground italic'>
-                  No surveys found.
-                </div>
-              ) : (
-                visible.map((permission) => (
-                  <div
-                    key={permission.projectId}
-                    className='flex items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-1.5 last:border-b-0'
-                  >
-                    <span className='truncate' title={permission.projectName}>
-                      {permission.projectName}
-                    </span>
-                    <div
-                      role='radiogroup'
-                      aria-label={`Access to ${permission.projectName}`}
-                      className='inline-flex flex-none border border-white/30'
-                    >
-                      {LEVELS.map(({ value, label }) => (
-                        <button
-                          key={value}
-                          type='button'
-                          role='radio'
-                          aria-checked={levelOf(permission) === value}
-                          disabled={isSaving}
-                          onClick={() => setLevel(permission.projectId, value)}
-                          className={cn(
-                            'px-2.5 py-1 transition-colors disabled:opacity-60',
-                            levelOf(permission) === value
-                              ? 'bg-primary text-white'
-                              : 'enabled:hover:bg-white/10',
-                          )}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <DataTable
+            columns={columns}
+            data={visible}
+            getRowId={(row) => row.projectId}
+            initialSorting={[{ id: 'projectName', desc: false }]}
+            loading={isLoading}
+            loadingMessage='Loading surveys...'
+            emptyMessage='No surveys found.'
+          />
           {saveResult && (
             <Alert variant={saveResult.variant} className='mb-0'>
               {saveResult.message}

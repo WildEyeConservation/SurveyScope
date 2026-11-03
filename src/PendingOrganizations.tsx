@@ -1,10 +1,11 @@
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { useContext, useState } from 'react';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
 import { GlobalContext } from './Context';
 import CreateOrganization from './organization/CreateOrganization';
-import MyTable from './Table';
 import { useOptimisticUpdates } from './useOptimisticUpdates';
 
 export default function PendingOrganizations() {
@@ -68,11 +69,11 @@ export default function PendingOrganizations() {
   return (
     <div className='m-2'>
       <h5>Pending Organisations</h5>
-      <MyTable
-        tableData={tableData}
-        tableHeadings={tableHeadings}
-        pagination={true}
-        itemsPerPage={10}
+      <DataTable
+        columns={columnsFromHeadings(tableHeadings)}
+        data={cellRows(tableData)}
+        getRowId={(row) => row.id}
+        pageSize={10}
         emptyMessage='No pending organisations'
       />
       <div className='mt-4 flex items-center justify-center border-t border-dark pt-4'>

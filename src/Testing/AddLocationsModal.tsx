@@ -1,9 +1,11 @@
 import { Button, buttonVariants } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
+import { ChevronRightIcon } from 'lucide-react';
 import {
   useCallback,
   useContext,
@@ -542,9 +544,9 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                   className='mt-4 flex flex-col gap-4 border-r border-dark pe-4'
                   style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
                 >
-                  <div className='flex flex-col gap-2'>
+                  <div className='flex flex-col gap-3 border border-white/15 bg-white/[0.07] p-3'>
                     <div>
-                      <Label className='mb-0'>Label filter</Label>
+                      <Label className='mb-1'>Label</Label>
                       <NativeSelect
                         value={pendingLabel}
                         onChange={(e) => setPendingLabel(e.target.value)}
@@ -558,7 +560,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                       </NativeSelect>
                     </div>
                     <div>
-                      <Label className='mb-0'>Max annotations</Label>
+                      <Label className='mb-1'>Max annotations</Label>
                       <Input
                         type='number'
                         min={0}
@@ -578,112 +580,131 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                       onClick={applyFilters}
                       disabled={loading}
                     >
-                      Filter
+                      Apply filter
                     </Button>
                   </div>
-                  <div className='flex flex-col gap-2 pb-4'>
-                    <label className='mb-0 flex items-center gap-2'>
-                      <Checkbox
-                        checked={advancedOpen}
-                        onCheckedChange={(c) => setAdvancedOpen(c === true)}
+                  <div className='flex flex-col gap-3 border-t border-white/10 pb-4'>
+                    <button
+                      type='button'
+                      onClick={() => setAdvancedOpen(!advancedOpen)}
+                      className='flex items-center gap-2 pt-2 text-left text-sm text-muted-foreground hover:text-foreground'
+                    >
+                      <ChevronRightIcon
+                        className={cn(
+                          'size-4 transition-transform',
+                          advancedOpen && 'rotate-90',
+                        )}
                       />
                       Advanced options
-                    </label>
+                    </button>
                     {advancedOpen && (
-                      <div className='flex flex-row flex-wrap items-end gap-2'>
-                        <label className='mb-0 flex items-center gap-2'>
-                          <Checkbox
+                      <>
+                        <span className='text-xs text-muted-foreground'>
+                          Applied to each location you add while this is open.
+                        </span>
+                        <label className='mb-0 flex items-center justify-between gap-3'>
+                          Resize locations
+                          <Switch
                             checked={changeSize}
-                            onCheckedChange={(c) => setChangeSize(c === true)}
+                            onCheckedChange={setChangeSize}
                           />
-                          Change location size when adding
                         </label>
-                        <div>
-                          <Label className='mb-0'>From tiled sizes</Label>
-                          <NativeSelect
-                            disabled={
-                              loadingLocationSets ||
-                              tiledSizeOptions.length === 0 ||
-                              !changeSize
-                            }
-                            value={selectedSize}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setSelectedSize(val);
-                              const found = tiledSizeOptions.find(
-                                (o) => o.value === val,
-                              );
-                              if (found) {
-                                setCustomWidth(found.w);
-                                setCustomHeight(found.h);
+                        {changeSize && (
+                          <>
+                            {tiledSizeOptions.length > 0 && (
+                              <div>
+                                <Label className='mb-1'>Tiled size</Label>
+                                <NativeSelect
+                                  disabled={loadingLocationSets}
+                                  value={selectedSize}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSelectedSize(val);
+                                    const found = tiledSizeOptions.find(
+                                      (o) => o.value === val,
+                                    );
+                                    if (found) {
+                                      setCustomWidth(found.w);
+                                      setCustomHeight(found.h);
+                                    }
+                                  }}
+                                >
+                                  <option value=''>Custom size</option>
+                                  {tiledSizeOptions.map((o) => (
+                                    <option key={o.value} value={o.value}>
+                                      {o.label}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </div>
+                            )}
+                            <div className='grid grid-cols-2 gap-2'>
+                              <div>
+                                <Label className='mb-1'>Width (px)</Label>
+                                <Input
+                                  type='number'
+                                  min={1}
+                                  placeholder='1024'
+                                  value={customWidth}
+                                  onChange={(e) =>
+                                    setCustomWidth(
+                                      e.target.value === ''
+                                        ? ''
+                                        : Math.max(
+                                            1,
+                                            Number(e.target.value) || 1,
+                                          ),
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <Label className='mb-1'>Height (px)</Label>
+                                <Input
+                                  type='number'
+                                  min={1}
+                                  placeholder='1024'
+                                  value={customHeight}
+                                  onChange={(e) =>
+                                    setCustomHeight(
+                                      e.target.value === ''
+                                        ? ''
+                                        : Math.max(
+                                            1,
+                                            Number(e.target.value) || 1,
+                                          ),
+                                    )
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        <div className='grid grid-cols-2 gap-2'>
+                          <div>
+                            <Label className='mb-1'>Offset X (px)</Label>
+                            <Input
+                              type='number'
+                              step={1}
+                              value={offsetX}
+                              onChange={(e) =>
+                                setOffsetX(Number(e.target.value) || 0)
                               }
-                            }}
-                          >
-                            <option value=''>Select size</option>
-                            {tiledSizeOptions.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </NativeSelect>
+                            />
+                          </div>
+                          <div>
+                            <Label className='mb-1'>Offset Y (px)</Label>
+                            <Input
+                              type='number'
+                              step={1}
+                              value={offsetY}
+                              onChange={(e) =>
+                                setOffsetY(Number(e.target.value) || 0)
+                              }
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <Label className='mb-0'>Width (px)</Label>
-                          <Input
-                            type='number'
-                            min={1}
-                            placeholder='e.g. 1024'
-                            disabled={!changeSize}
-                            value={customWidth}
-                            onChange={(e) =>
-                              setCustomWidth(
-                                e.target.value === ''
-                                  ? ''
-                                  : Math.max(1, Number(e.target.value) || 1),
-                              )
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label className='mb-0'>Height (px)</Label>
-                          <Input
-                            type='number'
-                            min={1}
-                            placeholder='e.g. 1024'
-                            disabled={!changeSize}
-                            value={customHeight}
-                            onChange={(e) =>
-                              setCustomHeight(
-                                e.target.value === ''
-                                  ? ''
-                                  : Math.max(1, Number(e.target.value) || 1),
-                              )
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label className='mb-0'>Offset X (px)</Label>
-                          <Input
-                            type='number'
-                            step={1}
-                            value={offsetX}
-                            onChange={(e) =>
-                              setOffsetX(Number(e.target.value) || 0)
-                            }
-                          />
-                        </div>
-                        <div>
-                          <Label className='mb-0'>Offset Y (px)</Label>
-                          <Input
-                            type='number'
-                            step={1}
-                            value={offsetY}
-                            onChange={(e) =>
-                              setOffsetY(Number(e.target.value) || 0)
-                            }
-                          />
-                        </div>
-                      </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -773,7 +794,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           </div>
         </Body>
         <Footer>
-          <Button variant='dark' onClick={() => showModal(null)}>
+          <Button
+            variant='ghost'
+            className='mr-auto'
+            onClick={() => showModal(null)}
+          >
             Close
           </Button>
         </Footer>

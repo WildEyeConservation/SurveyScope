@@ -1,3 +1,5 @@
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,7 +11,6 @@ import {
 } from '@/components/ui/dialog';
 import { generateClient } from 'aws-amplify/api';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import MyTable from './Table';
 import { useUsers } from './apiInterface';
 import { graphqlErrorMessage } from './reportClientErrorCore';
 
@@ -169,7 +170,7 @@ export default function ErrorReports() {
         ? `${report.message.slice(0, 150)}…`
         : report.message,
       pathOf(report.url),
-      <Button variant='primary' size='sm' onClick={() => setSelected(report)}>
+      <Button variant='primary' onClick={() => setSelected(report)}>
         View
       </Button>,
     ],
@@ -181,7 +182,6 @@ export default function ErrorReports() {
         <h5 className='mb-0'>Error Reports</h5>
         <Button
           variant='outline-primary'
-          size='sm'
           onClick={() => void loadReports()}
           disabled={loading}
         >
@@ -191,11 +191,11 @@ export default function ErrorReports() {
       {loadError && (
         <p className='text-danger'>Failed to load error reports: {loadError}</p>
       )}
-      <MyTable
-        tableData={tableData}
-        tableHeadings={tableHeadings}
-        pagination={true}
-        itemsPerPage={10}
+      <DataTable
+        columns={columnsFromHeadings(tableHeadings)}
+        data={cellRows(tableData)}
+        getRowId={(row) => row.id}
+        pageSize={10}
         emptyMessage={loading ? 'Loading...' : 'No error reports'}
       />
       <Dialog

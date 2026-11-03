@@ -1,7 +1,7 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { cn } from '@/lib/utils';
-import { useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import { Schema } from '../amplify/client-schema';
@@ -22,7 +22,13 @@ const FIELDS: { key: keyof CameraFormData; label: string; unit: string }[] = [
   { key: 'sensorWidthMm', label: 'Sensor width', unit: 'mm' },
   { key: 'tiltDegrees', label: 'Tilt', unit: '°' },
 ];
-const GRID = 'minmax(0, 1fr) repeat(3, minmax(84px, 130px))';
+
+type CameraRow = {
+  id: string;
+  name: string;
+  values: CameraFormData;
+  onChange: (field: keyof CameraFormData, value: string) => void;
+};
 
 export default function EditCameras({
   projectId,
@@ -74,6 +80,11 @@ export default function EditCameras({
   const rows = hasCameras
     ? cameras.map((camera) => ({ id: camera.id, name: camera.name }))
     : [{ id: NEW_CAMERA, name: 'Survey Camera' }];
+  const tableRows: CameraRow[] = rows.map((row) => ({
+    ...row,
+    values: form[row.id] ?? {},
+    onChange: (field, value) => handleFormChange(row.id, field, value),
+  }));
   const changedIds = rows
     .map((row) => row.id)
     .filter((id) =>
@@ -84,21 +95,20 @@ export default function EditCameras({
   );
   const canSave = !saving && complete && changedIds.length > 0;
 
-  const handleFormChange = (
-    cameraId: string,
-    field: keyof CameraFormData,
-    value: string,
-  ) => {
-    const numValue = value === '' ? undefined : parseFloat(value);
-    setJustSaved(false);
-    setForm((prev) => ({
-      ...prev,
-      [cameraId]: {
-        ...prev[cameraId],
-        [field]: Number.isNaN(numValue) ? undefined : numValue,
-      },
-    }));
-  };
+  const handleFormChange = useCallback(
+    (cameraId: string, field: keyof CameraFormData, value: string) => {
+      const numValue = value === '' ? undefined : parseFloat(value);
+      setJustSaved(false);
+      setForm((prev) => ({
+        ...prev,
+        [cameraId]: {
+          ...prev[cameraId],
+          [field]: Number.isNaN(numValue) ? undefined : numValue,
+        },
+      }));
+    },
+    [],
+  );
 
   const handleSubmit = async () => {
     if (!canSave) return;
@@ -141,6 +151,51 @@ export default function EditCameras({
     setSaving(false);
   };
 
+  const columns = useMemo<DataColumn<CameraRow>[]>(
+    () => [
+      {
+        id: 'name',
+        header: 'Camera',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span
+            className='block max-w-64 truncate font-semibold'
+            title={row.original.name}
+          >
+            {row.original.name}
+          </span>
+        ),
+      },
+      ...FIELDS.map(({ key, label, unit }): DataColumn<CameraRow> => ({
+        id: key,
+        header: label,
+        enableSorting: false,
+        meta: { className: 'w-36' },
+        cell: ({ row }) => {
+          const value = row.original.values[key];
+          return (
+            <div className='relative'>
+              <Input
+                type='number'
+                step='0.01'
+                min={key === 'tiltDegrees' ? undefined : 0}
+                aria-label={`${label} of ${row.original.name}`}
+                aria-invalid={value === undefined}
+                className='pr-8 aria-invalid:ring-2 aria-invalid:ring-danger'
+                value={value ?? ''}
+                onChange={(e) => row.original.onChange(key, e.target.value)}
+              />
+              <span className='pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-xs text-[#6c757d]'>
+                {unit}
+              </span>
+            </div>
+          );
+        },
+      })),
+    ],
+    [],
+  );
+
   if (isLoading) {
     return <div className='p-4 text-muted-foreground'>Loading cameras...</div>;
   }
@@ -155,55 +210,17 @@ export default function EditCameras({
         }}
       >
         <SectionTitle className='border-b-0 pb-0'>Lens settings</SectionTitle>
-        <div className='border border-dark bg-white/[0.07]'>
-          <div
-            className='grid gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
-            style={{ gridTemplateColumns: GRID }}
-          >
-            <span>Camera</span>
-            {FIELDS.map(({ key, label }) => (
-              <span key={key}>{label}</span>
-            ))}
-          </div>
-          {rows.map((row) => (
-            <div
-              key={row.id}
-              className={cn(
-                'grid items-center gap-3 border-b border-white/[0.08] px-3 py-2 last:border-b-0',
-                changedIds.includes(row.id) &&
-                  hasCameras &&
-                  'shadow-[inset_3px_0_0_var(--color-primary)]',
-              )}
-              style={{ gridTemplateColumns: GRID }}
-            >
-              <span className='truncate font-semibold' title={row.name}>
-                {row.name}
-              </span>
-              {FIELDS.map(({ key, label, unit }) => {
-                const value = form[row.id]?.[key];
-                return (
-                  <div key={key} className='relative'>
-                    <Input
-                      type='number'
-                      step='0.01'
-                      min={key === 'tiltDegrees' ? undefined : 0}
-                      aria-label={`${label} of ${row.name}`}
-                      aria-invalid={value === undefined}
-                      className='pr-8 aria-invalid:ring-2 aria-invalid:ring-danger'
-                      value={value ?? ''}
-                      onChange={(e) =>
-                        handleFormChange(row.id, key, e.target.value)
-                      }
-                    />
-                    <span className='pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-xs text-[#6c757d]'>
-                      {unit}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+        <DataTable
+          columns={columns}
+          data={tableRows}
+          getRowId={(row) => row.id}
+          pageSize={false}
+          rowClassName={(row) =>
+            hasCameras && changedIds.includes(row.id)
+              ? 'shadow-[inset_3px_0_0_var(--color-primary)]'
+              : undefined
+          }
+        />
         {!hasCameras && (
           <div className='text-xs text-muted-foreground'>
             Saving creates a camera for all images in this survey.

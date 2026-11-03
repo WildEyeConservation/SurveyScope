@@ -1,3 +1,4 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
@@ -21,6 +22,15 @@ const RANGES: { value: Range; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'custom', label: 'Custom' },
 ];
+
+const formatTimestamp = (timestamp: string | null | undefined) =>
+  new Date(timestamp ?? '').toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
 const isoDay = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
@@ -131,13 +141,19 @@ export default function Logs({ projectId }: { projectId: string }) {
   }, [client, projectId, range, from, to]);
 
   const query = search.trim().toLowerCase();
-  const visible = query
-    ? logs.filter(
-        (log) =>
-          (log.message ?? '').toLowerCase().includes(query) ||
-          (userMap[log.userId] ?? '').toLowerCase().includes(query),
-      )
-    : logs;
+  // The name lives in the row so rows refresh once users have loaded.
+  const visible = useMemo(
+    () =>
+      logs
+        .map((log) => ({ ...log, userName: userMap[log.userId] || log.userId }))
+        .filter(
+          (log) =>
+            !query ||
+            (log.message ?? '').toLowerCase().includes(query) ||
+            log.userName.toLowerCase().includes(query),
+        ),
+    [logs, userMap, query],
+  );
 
   const handleDownload = () => {
     exportFromJSON({
@@ -155,14 +171,27 @@ export default function Logs({ projectId }: { projectId: string }) {
     });
   };
 
-  const formatTimestamp = (timestamp: string | null | undefined) =>
-    new Date(timestamp ?? '').toLocaleString(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const columns = useMemo<DataColumn<(typeof visible)[number]>[]>(
+    () => [
+      {
+        accessorKey: 'createdAt',
+        header: 'Time',
+        meta: { className: 'w-44 whitespace-nowrap tabular-nums' },
+        cell: ({ row }) => formatTimestamp(row.original.createdAt),
+      },
+      {
+        accessorKey: 'userName',
+        header: 'User',
+        meta: { className: 'max-w-40 truncate' },
+      },
+      {
+        accessorKey: 'message',
+        header: 'Message',
+        meta: { className: 'whitespace-pre-wrap' },
+      },
+    ],
+    [],
+  );
 
   return (
     <>
@@ -232,44 +261,28 @@ export default function Logs({ projectId }: { projectId: string }) {
             Export CSV
           </Button>
         </div>
-        <div className='border border-dark bg-white/[0.07] text-sm'>
-          <div className='hidden gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase md:grid md:grid-cols-[170px_150px_minmax(0,1fr)]'>
-            <span>Time</span>
-            <span>User</span>
-            <span>Message</span>
-          </div>
-          <div className='max-h-[28rem] overflow-y-auto'>
-            {loading ? (
-              <div className='flex items-center gap-2 px-3 py-3 text-muted-foreground'>
-                <Spinner animation='border' size='sm' />
-                Loading logs...
-              </div>
-            ) : error ? (
-              <div className='px-3 py-3 text-danger'>{error}</div>
-            ) : visible.length === 0 ? (
-              <div className='px-3 py-3 text-muted-foreground italic'>
-                {logs.length
-                  ? 'No entries match your search.'
-                  : 'Nothing was logged in this period.'}
-              </div>
+        <DataTable
+          columns={columns}
+          data={error ? [] : visible}
+          getRowId={(log) => log.id}
+          initialSorting={[{ id: 'createdAt', desc: true }]}
+          loading={loading}
+          loadingMessage={
+            <span className='flex items-center gap-2'>
+              <Spinner animation='border' size='sm' />
+              Loading logs...
+            </span>
+          }
+          emptyMessage={
+            error ? (
+              <span className='text-danger not-italic'>{error}</span>
+            ) : logs.length ? (
+              'No entries match your search.'
             ) : (
-              visible.map((log) => (
-                <div
-                  key={log.id}
-                  className='grid gap-x-3 gap-y-0.5 border-b border-white/[0.08] px-3 py-2 last:border-b-0 md:grid-cols-[170px_150px_minmax(0,1fr)]'
-                >
-                  <span className='text-muted-foreground tabular-nums'>
-                    {formatTimestamp(log.createdAt)}
-                  </span>
-                  <span className='truncate' title={userMap[log.userId]}>
-                    {userMap[log.userId] || log.userId}
-                  </span>
-                  <span className='whitespace-pre-wrap'>{log.message}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+              'Nothing was logged in this period.'
+            )
+          }
+        />
       </div>
       <Footer>
         <Button

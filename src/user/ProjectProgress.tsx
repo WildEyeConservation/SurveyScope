@@ -28,13 +28,15 @@ export default function ProjectProgress({
   const [jobsRemaining, setJobsRemaining] = useState<number>(0);
 
   const prevScanningRef = useRef<boolean>(false);
+  // Read through a ref so a new client function doesn't restart polling.
+  const getSqsClientRef = useRef(getSqsClient);
+  getSqsClientRef.current = getSqsClient;
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     let cancelled = false;
 
     async function fetchQueueAndStartPolling() {
-      setIsLoading(true);
       const projectData = (
         await client.models.Project.get(
           { id: projectId },
@@ -77,7 +79,7 @@ export default function ProjectProgress({
       setIsLoading(false);
 
       async function updateJobsRemaining() {
-        const sqsClient = await getSqsClient();
+        const sqsClient = await getSqsClientRef.current();
         const params = {
           QueueUrl: url,
           AttributeNames: ['ApproximateNumberOfMessages'] as any[],
@@ -100,7 +102,7 @@ export default function ProjectProgress({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [projectId, client, getSqsClient]);
+  }, [projectId, client]);
 
   const isScanning =
     jobsRemaining === 0 &&
@@ -120,8 +122,8 @@ export default function ProjectProgress({
     }
   }, [shouldDisable, onScanningChange]);
 
-  if (isLoading || !queueInfo) {
-    return <Spinner />;
+  if (!queueInfo) {
+    return isLoading ? <Spinner /> : null;
   }
 
   const { batchSize, totalBatches } = queueInfo;

@@ -31,6 +31,8 @@
   --danger: #d9534f;
   --light: #abb6c2;
   --dark: #20374c;
+  /* Dark with a 5% white overlay. */
+  --table-head: #2b4155;
   --border: #dee2e6;
   --border-subtle: rgba(0, 0, 0, 0.175);
   --input: #dee2e6;
@@ -67,6 +69,8 @@
   --danger: #d9534f;
   --light: #abb6c2;
   --dark: #20374c;
+  /* Dark with a 5% white overlay. */
+  --table-head: #2b4155;
   --border: #ced4da;
   --border-subtle: rgba(0, 0, 0, 0.175);
   --input: transparent;
@@ -117,6 +121,7 @@
   --color-danger: var(--danger);
   --color-light: var(--light);
   --color-dark: var(--dark);
+  --color-table-head: var(--table-head);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);
@@ -163,6 +168,13 @@
   }
   [data-slot='table'][data-hover] > tbody > tr:hover {
     --table-accent: rgba(255, 255, 255, 0.075);
+  }
+  [data-slot='grid-table']
+    [data-slot='grid-row']:nth-child(odd of [data-slot='grid-row']) {
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+  [data-slot='grid-table'] [data-slot='grid-row']:hover {
+    background-color: rgba(255, 255, 255, 0.075);
   }
   [data-slot='table'][data-bordered] :where(td, th) {
     border-width: 1px;

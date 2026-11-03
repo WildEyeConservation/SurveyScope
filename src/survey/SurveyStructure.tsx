@@ -1,3 +1,4 @@
+import { GridHead, GridTable } from '@/components/GridTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
@@ -303,9 +304,9 @@ export default function SurveyStructure({
               ))}
             </div>
           ) : (
-            <div className='overflow-x-auto border border-dark bg-white/[0.07] text-[13px]'>
-              <div
-                className='grid min-w-[820px] [scrollbar-gutter:stable] overflow-hidden border-b border-dark bg-dark text-[11px] font-semibold tracking-wider text-white/85 uppercase'
+            <GridTable className='overflow-x-auto text-[13px]'>
+              <GridHead
+                className='grid min-w-[820px] [scrollbar-gutter:stable] overflow-hidden'
                 style={{ gridTemplateColumns: gridColumns }}
               >
                 {headers.map(([key, label]) => (
@@ -338,7 +339,7 @@ export default function SurveyStructure({
                       : ''}
                   </div>
                 ))}
-              </div>
+              </GridHead>
               {filteredRows.length === 0 ? (
                 <div className='px-3 py-4 text-muted-foreground italic'>
                   No images match your search.
@@ -364,7 +365,7 @@ export default function SurveyStructure({
                           key={row.id}
                           ref={rowVirtualizer.measureElement}
                           data-index={virtualRow.index}
-                          className='absolute top-0 left-0 grid w-full border-b border-white/[0.08] whitespace-nowrap hover:bg-white/5 [&>div]:truncate [&>div]:px-3 [&>div]:py-2'
+                          className={`absolute top-0 left-0 grid w-full border-b border-white/[0.08] whitespace-nowrap hover:bg-white/[0.075] [&>div]:truncate [&>div]:px-3 [&>div]:py-2 ${virtualRow.index % 2 === 0 ? 'bg-black/5' : ''}`}
                           style={{
                             transform: `translateY(${virtualRow.start}px)`,
                             gridTemplateColumns: gridColumns,
@@ -396,7 +397,7 @@ export default function SurveyStructure({
                   </div>
                 </div>
               )}
-            </div>
+            </GridTable>
           )}
         </>
       )}

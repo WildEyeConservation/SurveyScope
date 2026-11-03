@@ -308,9 +308,9 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
                   className='mt-4 flex flex-col gap-4 border-r border-dark pe-4'
                   style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
                 >
-                  <div className='flex flex-col gap-2'>
+                  <div className='flex flex-col gap-3 border border-white/15 bg-white/[0.07] p-3'>
                     <div>
-                      <Label className='mb-0'>Label filter</Label>
+                      <Label className='mb-1'>Label</Label>
                       <NativeSelect
                         value={pendingCategoryId}
                         onChange={(e) => setPendingCategoryId(e.target.value)}
@@ -324,7 +324,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
                       </NativeSelect>
                     </div>
                     <div>
-                      <Label className='mb-0'>Max annotations</Label>
+                      <Label className='mb-1'>Max annotations</Label>
                       <Input
                         type='number'
                         min={0}
@@ -344,7 +344,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
                       onClick={applyFilters}
                       disabled={loading}
                     >
-                      Filter
+                      Apply filter
                     </Button>
                   </div>
                 </div>
@@ -387,7 +387,11 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
           </div>
         </Body>
         <Footer>
-          <Button variant='dark' onClick={() => showModal(null)}>
+          <Button
+            variant='ghost'
+            className='mr-auto'
+            onClick={() => showModal(null)}
+          >
             Close
           </Button>
         </Footer>

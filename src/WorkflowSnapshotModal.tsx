@@ -1,3 +1,5 @@
+import DataTable from '@/components/DataTable';
+import { columnsFromHeadings } from '@/components/cellColumns';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,7 +17,6 @@ import exportFromJSON from 'export-from-json';
 import { DownloadIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { neutraliseCsvRows } from '../shared/csv';
-import MyTable from './Table';
 import { fetchWorkflowTotals } from './workflowEvents';
 import {
   buildWorkflowSections,
@@ -180,24 +181,14 @@ export default function WorkflowSnapshotModal({
             <div key={section.workflowType}>
               <div className='mb-2 font-semibold'>{section.label}</div>
               <div className='overflow-x-auto'>
-                <MyTable
-                  tableHeadings={section.headings}
-                  tableData={[
-                    ...section.rows.map((row) => ({
-                      id: row.id,
-                      rowData: row.cells,
-                    })),
-                    ...(section.footer
-                      ? [
-                          {
-                            id: `${section.workflowType}:__total`,
-                            rowData: section.footer.map((cell, index) => (
-                              <strong key={index}>{cell}</strong>
-                            )),
-                          },
-                        ]
-                      : []),
-                  ]}
+                <DataTable
+                  columns={columnsFromHeadings(section.headings)}
+                  data={section.rows.map((row) => ({
+                    id: row.id,
+                    cells: row.cells,
+                  }))}
+                  getRowId={(row) => row.id}
+                  footer={section.footer ?? undefined}
                 />
               </div>
             </div>

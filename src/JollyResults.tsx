@@ -1,3 +1,5 @@
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
@@ -5,7 +7,7 @@ import { cn } from '@/lib/utils';
 import exportFromJSON from 'export-from-json';
 import { X } from 'lucide-react';
 import { DateTime } from 'luxon';
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { neutraliseCsvRows } from '../shared/csv';
 import { Schema } from './amplify/client-schema';
@@ -13,7 +15,6 @@ import { useUsers } from './apiInterface';
 import { GlobalContext, UserContext } from './Context.tsx';
 import DensityMap from './DensityMap.tsx';
 import { CollapsedSidebar, SidebarCollapseButton } from './SidebarCollapse';
-import MyTable from './Table.tsx';
 import { Tab, Tabs } from './Tabs';
 import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
@@ -192,16 +193,55 @@ export default function JollyResults() {
     }
   }
 
-  async function removeResultsMembership(userId: string) {
-    await client.models.JollyResultsMembership.delete({
-      surveyId,
-      annotationSetId,
-      userId,
-    });
-    setResultsMemberships(
-      resultsMemberships.filter((m) => m.userId !== userId),
-    );
-  }
+  const removeResultsMembership = useCallback(
+    async (userId: string) => {
+      await client.models.JollyResultsMembership.delete({
+        surveyId,
+        annotationSetId,
+        userId,
+      });
+      setResultsMemberships((prev) => prev.filter((m) => m.userId !== userId));
+    },
+    [client, surveyId, annotationSetId],
+  );
+
+  // Names live in the rows so they refresh once users have loaded.
+  const sharedRows = useMemo(
+    () =>
+      resultsMemberships.map((m) => ({
+        ...m,
+        name: users?.find((u) => u.id === m.userId)?.name || 'New user',
+      })),
+    [resultsMemberships, users],
+  );
+
+  const sharedColumns = useMemo<DataColumn<(typeof sharedRows)[number]>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: 'Shared with',
+        meta: { className: 'max-w-64 truncate' },
+      },
+      {
+        id: 'remove',
+        header: () => resultsMemberships.length,
+        enableSorting: false,
+        meta: { className: 'w-12 text-right' },
+        cell: ({ row }) => (
+          <button
+            type='button'
+            aria-label='Remove access'
+            title='Remove access'
+            onClick={() => removeResultsMembership(row.original.userId)}
+            className='ml-auto flex size-7 flex-none items-center justify-center text-muted-foreground hover:text-danger'
+          >
+            <X className='size-4' />
+          </button>
+        ),
+      },
+    ],
+    [resultsMemberships.length, removeResultsMembership],
+  );
 
   async function exportResultsAsCSV() {
     setExporting(true);
@@ -574,32 +614,12 @@ export default function JollyResults() {
                   )}
                 </div>
                 {resultsMemberships.length > 0 && (
-                  <div className='border border-dark bg-white/[0.07] text-sm'>
-                    <div className='flex justify-between border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'>
-                      <span>Shared with</span>
-                      <span>{resultsMemberships.length}</span>
-                    </div>
-                    {resultsMemberships.map((m) => (
-                      <div
-                        key={m.userId}
-                        className='flex items-center justify-between gap-2 border-b border-white/[0.08] py-1 pr-1 pl-3 last:border-b-0'
-                      >
-                        <span className='truncate'>
-                          {users?.find((u) => u.id === m.userId)?.name ||
-                            'New user'}
-                        </span>
-                        <button
-                          type='button'
-                          aria-label='Remove access'
-                          title='Remove access'
-                          onClick={() => removeResultsMembership(m.userId)}
-                          className='flex size-7 flex-none items-center justify-center text-muted-foreground hover:text-danger'
-                        >
-                          <X className='size-4' />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  <DataTable
+                    columns={sharedColumns}
+                    data={sharedRows}
+                    getRowId={(m) => m.userId}
+                    pageSize={false}
+                  />
                 )}
               </CardContent>
             </Card>
@@ -660,10 +680,10 @@ export default function JollyResults() {
                     ))}
                   </div>
                   <div className='min-h-0 grow overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10'>
-                    <MyTable
-                      tableHeadings={tableHeadings}
-                      tableData={tableData}
-                      pagination={false}
+                    <DataTable
+                      columns={columnsFromHeadings(tableHeadings)}
+                      data={cellRows(tableData)}
+                      getRowId={(row) => row.id}
                       emptyMessage='No Jolly results found.'
                       onRowHover={(id) =>
                         setTableHoveredStratumId(

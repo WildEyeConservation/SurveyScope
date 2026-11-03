@@ -1,3 +1,4 @@
+import { GridHead, GridTable } from '@/components/GridTable';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
@@ -173,8 +174,8 @@ export default function ReviewImages({
 
   return (
     <div className='flex h-[calc(100vh-200px)] min-h-[480px] gap-3 pt-4'>
-      <div className='flex w-64 flex-none flex-col border border-dark bg-white/[0.07]'>
-        <div className='flex items-center justify-between gap-2 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'>
+      <GridTable className='flex w-64 flex-none flex-col'>
+        <GridHead className='flex items-center justify-between gap-2'>
           <span>
             {loading ? 'Loading...' : `${rows.length.toLocaleString()} images`}
           </span>
@@ -205,7 +206,7 @@ export default function ReviewImages({
               </button>
             ))}
           </div>
-        </div>
+        </GridHead>
         <div
           ref={listRef}
           tabIndex={0}
@@ -238,7 +239,10 @@ export default function ReviewImages({
                     'absolute inset-x-0 flex items-center gap-2.5 border-b border-white/[0.08] px-2.5 text-left',
                     row.id === selectedImageId
                       ? 'bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]'
-                      : 'hover:bg-white/5',
+                      : cn(
+                          'hover:bg-white/[0.075]',
+                          (first + offset) % 2 === 0 && 'bg-black/5',
+                        ),
                   )}
                   style={{
                     top: (first + offset) * ROW_HEIGHT,
@@ -283,7 +287,7 @@ export default function ReviewImages({
             </div>
           )}
         </div>
-      </div>
+      </GridTable>
 
       <div className='relative min-w-0 grow overflow-hidden border border-white/15'>
         {selected?.width && selected.height ? (

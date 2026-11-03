@@ -1,9 +1,10 @@
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { Eye, Plus, Settings2 } from 'lucide-react';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { GlobalContext, TestingContext } from '../Context';
-import MyTable from '../Table';
 import AddLocationsModal from './AddLocationsModal';
 import ConfigModal from './ConfigModal';
 import EditLocationsModal from './EditLocationsModal';
@@ -29,14 +30,18 @@ export default function Surveys() {
     [surveyId: string]: Option[];
   }>({});
 
-  async function handlePoolsChange(surveyId: string, pools: Option[]) {
+  async function handlePoolsChange(surveyId: string, chosen: Option[]) {
+    // The survey's own tests aren't in the picker; keep them assigned.
+    const original = originalSelectedLocationPools.current[surveyId] ?? [];
+    const own = original.find((p) => p.value === surveyPreset(surveyId)?.id);
+    const pools = own ? [own, ...chosen] : chosen;
     setSelectedLocationPools((prev) => ({
       ...prev,
       [surveyId]: pools,
     }));
 
     await Promise.all([
-      ...originalSelectedLocationPools.current[surveyId]
+      ...original
         .filter((pool) => !pools.some((p) => p.value === pool.value))
         .map((pool) =>
           client.models.TestPresetProject.delete({
@@ -45,12 +50,7 @@ export default function Surveys() {
           }),
         ),
       ...pools
-        .filter(
-          (pool) =>
-            !originalSelectedLocationPools.current[surveyId].some(
-              (p) => p.value === pool.value,
-            ),
-        )
+        .filter((pool) => !original.some((p) => p.value === pool.value))
         .map((pool) =>
           client.models.TestPresetProject.create({
             testPresetId: pool.value,
@@ -122,13 +122,17 @@ export default function Surveys() {
           survey.name,
           <Combobox
             multiple
-            value={selectedLocationPools[survey.id] ?? []}
-            options={locationPools.map((pool) => ({
-              label: pool.name,
-              value: pool.id,
-            }))}
+            value={(selectedLocationPools[survey.id] ?? []).filter(
+              (pool) => pool.value !== surveyPreset(survey.id)?.id,
+            )}
+            options={locationPools
+              .filter((pool) => pool.ownerProjectId !== survey.id)
+              .map((pool) => ({
+                label: pool.name,
+                value: pool.id,
+              }))}
             onChange={(options) => handlePoolsChange(survey.id, options)}
-            placeholder='Select location pools'
+            placeholder='Select surveys'
             name='Assigned location pools'
           />,
           <Button
@@ -186,20 +190,20 @@ export default function Surveys() {
   return (
     <div className='mt-4 flex w-full flex-col gap-2'>
       <h5 className='mb-0'>Surveys</h5>
-      <MyTable
-        tableHeadings={[
+      <DataTable
+        columns={columnsFromHeadings([
           { content: 'Name', style: { width: '40%' }, sort: true },
-          { content: 'Assigned Location Pools' },
+          { content: 'Use tests from other surveys' },
           { content: 'Add Locations', style: { width: '120px' } },
           { content: 'Edit Locations', style: { width: '120px' } },
           {
             content: 'Configuration',
             style: { width: '120px' },
           },
-        ]}
-        tableData={tableData}
-        pagination={true}
-        itemsPerPage={5}
+        ])}
+        data={cellRows(tableData)}
+        getRowId={(row) => row.id}
+        pageSize={5}
         emptyMessage='No surveys found'
       />
       {selectedSurvey && (

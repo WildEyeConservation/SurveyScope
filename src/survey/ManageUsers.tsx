@@ -1,10 +1,10 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
 import { SearchIcon } from 'lucide-react';
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import { useUsers } from '../apiInterface';
@@ -21,8 +21,6 @@ type UserPermission = {
   isAdmin: boolean;
   isOrgAdmin: boolean;
 };
-
-const GRID = 'minmax(0, 1fr) minmax(0, 1.3fr) 110px 110px';
 
 export default function ManageUsers({
   projectId,
@@ -180,12 +178,103 @@ export default function ManageUsers({
     if (await handleSave()) showModal(null);
   };
 
-  const update = (userId: string, change: Partial<UserPermission>) => {
-    setSaveResult(null);
-    setPermissions((prev) =>
-      prev.map((p) => (p.userId === userId ? { ...p, ...change } : p)),
-    );
-  };
+  const update = useCallback(
+    (userId: string, change: Partial<UserPermission>) => {
+      setSaveResult(null);
+      setPermissions((prev) =>
+        prev.map((p) => (p.userId === userId ? { ...p, ...change } : p)),
+      );
+    },
+    [],
+  );
+
+  const columns = useMemo<DataColumn<UserPermission>[]>(
+    () => [
+      {
+        accessorKey: 'userName',
+        header: 'Name',
+        cell: ({ row }) => (
+          <span className='flex min-w-0 items-center gap-2'>
+            <span className='truncate' title={row.original.userName}>
+              {row.original.userName}
+            </span>
+            {row.original.isOrgAdmin && (
+              <span className='shrink-0 border border-white/30 px-1.5 text-[11px] leading-5 text-muted-foreground'>
+                Organisation admin
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'userEmail',
+        header: 'Email',
+        meta: { className: 'max-w-80 truncate' },
+      },
+      {
+        accessorKey: 'annotationAccess',
+        header: 'Can annotate',
+        enableSorting: false,
+        meta: { className: 'w-36' },
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <span
+              className='inline-flex'
+              title={
+                p.isOrgAdmin
+                  ? 'Organisation admins always have full access'
+                  : p.isAdmin
+                    ? 'Survey admins can always annotate'
+                    : undefined
+              }
+            >
+              <Switch
+                aria-label={`${p.userName} can annotate`}
+                checked={p.annotationAccess}
+                disabled={p.isOrgAdmin || p.isAdmin || isSaving}
+                onCheckedChange={(checked) =>
+                  update(p.userId, { annotationAccess: checked })
+                }
+              />
+            </span>
+          );
+        },
+      },
+      {
+        accessorKey: 'isAdmin',
+        header: 'Survey admin',
+        enableSorting: false,
+        meta: { className: 'w-36' },
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <span
+              className='inline-flex'
+              title={
+                p.isOrgAdmin
+                  ? 'Organisation admins always have full access'
+                  : undefined
+              }
+            >
+              <Switch
+                aria-label={`${p.userName} is a survey admin`}
+                checked={p.isAdmin}
+                disabled={p.isOrgAdmin || isSaving}
+                onCheckedChange={(checked) =>
+                  update(p.userId, {
+                    isAdmin: checked,
+                    annotationAccess: checked || p.annotationAccess,
+                  })
+                }
+              />
+            </span>
+          );
+        },
+      },
+    ],
+    [isSaving, update],
+  );
 
   const query = search.trim().toLowerCase();
   const visible = query
@@ -211,96 +300,26 @@ export default function ManageUsers({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className='border border-dark bg-white/[0.07] text-sm'>
-          <div
-            className='grid gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
-            style={{ gridTemplateColumns: GRID }}
-          >
-            <span>Name</span>
-            <span>Email</span>
-            <span className='text-center'>Can annotate</span>
-            <span className='text-center'>Survey admin</span>
-          </div>
-          <div className='max-h-[26rem] overflow-y-auto'>
-            {isLoading ? (
-              <div className='flex items-center gap-2 px-3 py-3 text-muted-foreground'>
-                <Spinner animation='border' size='sm' />
-                Loading members...
-              </div>
-            ) : visible.length === 0 ? (
-              <div className='px-3 py-3 text-muted-foreground italic'>
-                {permissions.length ? 'No members match.' : 'No members found.'}
-              </div>
-            ) : (
-              visible.map((p) => (
-                <div
-                  key={p.userId}
-                  className={cn(
-                    'grid items-center gap-3 border-b border-white/[0.08] px-3 py-2 last:border-b-0',
-                    changed(p) && 'shadow-[inset_3px_0_0_var(--color-primary)]',
-                  )}
-                  style={{ gridTemplateColumns: GRID }}
-                >
-                  <span className='flex min-w-0 items-center gap-2'>
-                    <span className='truncate' title={p.userName}>
-                      {p.userName}
-                    </span>
-                    {p.isOrgAdmin && (
-                      <span className='shrink-0 border border-white/30 px-1.5 text-[11px] leading-5 text-muted-foreground'>
-                        Organisation admin
-                      </span>
-                    )}
-                  </span>
-                  <span
-                    className='truncate text-muted-foreground'
-                    title={p.userEmail}
-                  >
-                    {p.userEmail}
-                  </span>
-                  <span
-                    className='flex justify-center'
-                    title={
-                      p.isOrgAdmin
-                        ? 'Organisation admins always have full access'
-                        : p.isAdmin
-                          ? 'Survey admins can always annotate'
-                          : undefined
-                    }
-                  >
-                    <Switch
-                      aria-label={`${p.userName} can annotate`}
-                      checked={p.annotationAccess}
-                      disabled={p.isOrgAdmin || p.isAdmin || isSaving}
-                      onCheckedChange={(checked) =>
-                        update(p.userId, { annotationAccess: checked })
-                      }
-                    />
-                  </span>
-                  <span
-                    className='flex justify-center'
-                    title={
-                      p.isOrgAdmin
-                        ? 'Organisation admins always have full access'
-                        : undefined
-                    }
-                  >
-                    <Switch
-                      aria-label={`${p.userName} is a survey admin`}
-                      checked={p.isAdmin}
-                      disabled={p.isOrgAdmin || isSaving}
-                      onCheckedChange={(checked) =>
-                        update(p.userId, {
-                          isAdmin: checked,
-                          annotationAccess: checked || p.annotationAccess,
-                        })
-                      }
-                    />
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <DataTable
+          columns={columns}
+          data={visible}
+          getRowId={(p) => p.userId}
+          loading={isLoading}
+          loadingMessage={
+            <span className='flex items-center gap-2'>
+              <Spinner animation='border' size='sm' />
+              Loading members...
+            </span>
+          }
+          emptyMessage={
+            permissions.length ? 'No members match.' : 'No members found.'
+          }
+          rowClassName={(p) =>
+            changed(p)
+              ? 'shadow-[inset_3px_0_0_var(--color-primary)]'
+              : undefined
+          }
+        />
         {saveResult?.variant === 'danger' && (
           <div className='text-xs text-danger'>{saveResult.message}</div>
         )}

@@ -1,3 +1,5 @@
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -11,7 +13,6 @@ import { Input } from '@/components/ui/input';
 import exportFromJSON from 'export-from-json';
 import { useState } from 'react';
 import { neutraliseCsvRows } from '../shared/csv';
-import MyTable from './Table';
 
 type AnnotationSet = { label: string; value: string };
 type UserType = { id: string; name: string };
@@ -213,32 +214,35 @@ export default function SnapshotStatsModal({
             </div>
           </div>
           <div className='mt-4 overflow-x-auto'>
-            <MyTable
-              tableHeadings={tableHeadings}
-              tableData={Object.keys(snapshotStats).map((userId) => ({
-                id: userId,
-                rowData: [
-                  allUsers.find((u) => u.id == userId)?.name,
-                  formatDuration(snapshotStats[userId].activeTime),
-                  snapshotStats[userId].observationCount,
-                  (
-                    snapshotStats[userId].searchTime /
-                    1000 /
-                    (snapshotStats[userId].searchCount ||
-                      snapshotStats[userId].observationCount ||
-                      1)
-                  ).toFixed(1),
-                  Math.max(0, snapshotStats[userId].annotationCount),
-                  snapshotStats[userId].sightingCount,
-                  formatDuration(snapshotStats[userId].searchTime),
-                  formatDuration(snapshotStats[userId].annotationTime),
-                  (
-                    snapshotStats[userId].observationCount /
-                      snapshotStats[userId].sightingCount || 0
-                  ).toFixed(1),
-                  formatDuration(snapshotStats[userId].waitingTime),
-                ],
-              }))}
+            <DataTable
+              columns={columnsFromHeadings(tableHeadings)}
+              data={cellRows(
+                Object.keys(snapshotStats).map((userId) => ({
+                  id: userId,
+                  rowData: [
+                    allUsers.find((u) => u.id == userId)?.name,
+                    formatDuration(snapshotStats[userId].activeTime),
+                    snapshotStats[userId].observationCount,
+                    (
+                      snapshotStats[userId].searchTime /
+                      1000 /
+                      (snapshotStats[userId].searchCount ||
+                        snapshotStats[userId].observationCount ||
+                        1)
+                    ).toFixed(1),
+                    Math.max(0, snapshotStats[userId].annotationCount),
+                    snapshotStats[userId].sightingCount,
+                    formatDuration(snapshotStats[userId].searchTime),
+                    formatDuration(snapshotStats[userId].annotationTime),
+                    (
+                      snapshotStats[userId].observationCount /
+                        snapshotStats[userId].sightingCount || 0
+                    ).toFixed(1),
+                    formatDuration(snapshotStats[userId].waitingTime),
+                  ],
+                })),
+              )}
+              getRowId={(row) => row.id}
               emptyMessage="No snapshot stats. Please select time range and click 'Run Snapshot'."
             />
           </div>

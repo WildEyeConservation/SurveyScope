@@ -1,9 +1,17 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useQueryClient } from '@tanstack/react-query';
 import { PlusIcon, Trash2Icon } from 'lucide-react';
 import pLimit from 'p-limit';
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRecordHotkeys } from 'react-hotkeys-hook';
 import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
@@ -16,6 +24,17 @@ interface Label {
   shortcutKey: string;
   color: string;
 }
+
+type LabelRow = Label & {
+  usage: number;
+  shortcutText: string;
+  removeDisabled: boolean;
+  onColor: (color: string) => void;
+  onName: (name: string) => void;
+  onShortcutFocus: () => void;
+  onShortcutBlur: () => void;
+  onRemove: () => void;
+};
 
 type EditableLabelModel = {
   create: (input: {
@@ -221,7 +240,6 @@ export default function LabelEditor({
   const noun = modelName === 'Category' ? 'label' : 'info tag';
 
   const incomplete = labels.some((l) => l.name === '' || l.shortcutKey === '');
-  const grid = '64px minmax(0, 1fr) minmax(110px, 180px) 36px';
   const usageOf = (id: string) => usage?.get(id) ?? 0;
 
   const recordShortcut = (labelId: string) => {
@@ -253,128 +271,148 @@ export default function LabelEditor({
     );
   };
 
+  const rows: LabelRow[] = labels.map((label) => ({
+    ...label,
+    usage: usageOf(label.id),
+    shortcutText:
+      isRecording && activeRowId === label.id
+        ? formatShortcutKey(Array.from(keys).join('+'))
+        : formatShortcutKey(label.shortcutKey),
+    removeDisabled:
+      isEditing && !usage && defaultLabels.some((l) => l.id === label.id),
+    onColor: (color) =>
+      setLabels(labels.map((l) => (l.id === label.id ? { ...l, color } : l))),
+    onName: (name) =>
+      setLabels(labels.map((l) => (l.id === label.id ? { ...l, name } : l))),
+    onShortcutFocus: () => {
+      setActiveRowId(label.id);
+      start();
+    },
+    onShortcutBlur: () => {
+      recordShortcut(label.id);
+      if (activeRowId === label.id) setActiveRowId(null);
+    },
+    onRemove: () =>
+      usageOf(label.id) > 0
+        ? setConfirmDeleteId(label.id)
+        : setLabels(labels.filter((l) => l.id !== label.id)),
+  }));
+
+  const columns = useMemo<DataColumn<LabelRow>[]>(
+    () => [
+      {
+        id: 'color',
+        header: 'Colour',
+        enableSorting: false,
+        meta: { className: 'w-20' },
+        cell: ({ row }) => (
+          <input
+            type='color'
+            aria-label={`Colour of ${row.original.name || noun}`}
+            value={row.original.color}
+            onChange={(event) => row.original.onColor(event.target.value)}
+            className='size-[38px] cursor-pointer border border-white/30 bg-transparent p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0.5'
+          />
+        ),
+      },
+      {
+        id: 'name',
+        header: 'Name',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className='relative'>
+            <Input
+              type='text'
+              aria-label={`${noun} name`}
+              placeholder={`${noun[0].toUpperCase()}${noun.slice(1)} name`}
+              value={row.original.name}
+              className={row.original.usage > 0 ? 'pr-36' : undefined}
+              onChange={(e) => row.original.onName(e.target.value)}
+            />
+            {row.original.usage > 0 && (
+              <span className='pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#6c757d] tabular-nums'>
+                {plural(row.original.usage, 'annotation')}
+              </span>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: 'shortcut',
+        header: 'Shortcut',
+        enableSorting: false,
+        meta: { className: 'w-48' },
+        cell: ({ row }) => (
+          <Input
+            type='text'
+            aria-label={`Shortcut for ${row.original.name || noun}`}
+            placeholder='Press a key'
+            value={row.original.shortcutText}
+            onFocus={row.original.onShortcutFocus}
+            onBlur={row.original.onShortcutBlur}
+            onChange={() => {}}
+          />
+        ),
+      },
+      {
+        id: 'remove',
+        header: '',
+        enableSorting: false,
+        meta: { className: 'w-12' },
+        cell: ({ row }) => (
+          <button
+            type='button'
+            aria-label={`Remove ${row.original.name || noun}`}
+            title={`Remove ${noun}`}
+            className='flex size-8 items-center justify-center text-muted-foreground hover:text-danger'
+            disabled={row.original.removeDisabled}
+            onClick={row.original.onRemove}
+          >
+            <Trash2Icon className='size-4' />
+          </button>
+        ),
+      },
+    ],
+    [noun],
+  );
+
   return (
     <div className='flex flex-col gap-2'>
       <div>
         <div className='text-sm'>{title}</div>
         <div className='text-xs text-muted-foreground'>{description}</div>
       </div>
-      <div className='border border-dark bg-white/[0.07] text-sm'>
-        <div
-          className='grid items-center gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
-          style={{ gridTemplateColumns: grid }}
-        >
-          <span>Colour</span>
-          <span>Name</span>
-          <span>Shortcut</span>
-          <span />
-        </div>
-        {labels.map((label) => (
-          <div key={label.id} className='border-b border-white/[0.08]'>
-            <div
-              className='grid items-center gap-3 px-3 py-2'
-              style={{ gridTemplateColumns: grid }}
-            >
-              <input
-                type='color'
-                aria-label={`Colour of ${label.name || noun}`}
-                value={label.color}
-                onChange={(event) =>
-                  setLabels(
-                    labels.map((l) =>
-                      l.id === label.id
-                        ? { ...l, color: event.target.value }
-                        : l,
-                    ),
-                  )
-                }
-                className='size-[38px] cursor-pointer border border-white/30 bg-transparent p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0.5'
-              />
-              <div className='relative'>
-                <Input
-                  type='text'
-                  aria-label={`${noun} name`}
-                  placeholder={`${noun[0].toUpperCase()}${noun.slice(1)} name`}
-                  value={label.name}
-                  className={usageOf(label.id) > 0 ? 'pr-36' : undefined}
-                  onChange={(e) =>
-                    setLabels(
-                      labels.map((l) =>
-                        l.id === label.id ? { ...l, name: e.target.value } : l,
-                      ),
-                    )
-                  }
-                />
-                {usageOf(label.id) > 0 && (
-                  <span className='pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#6c757d] tabular-nums'>
-                    {plural(usageOf(label.id), 'annotation')}
-                  </span>
-                )}
-              </div>
-              <Input
-                type='text'
-                aria-label={`Shortcut for ${label.name || noun}`}
-                placeholder='Press a key'
-                value={
-                  isRecording && activeRowId === label.id
-                    ? formatShortcutKey(Array.from(keys).join('+'))
-                    : formatShortcutKey(label.shortcutKey)
-                }
-                onFocus={() => {
-                  setActiveRowId(label.id);
-                  start();
+      <DataTable
+        columns={columns}
+        data={rows}
+        getRowId={(row) => row.id}
+        pageSize={false}
+        emptyMessage={`No ${noun}s yet.`}
+        renderBelowRow={(row) =>
+          confirmDeleteId === row.id && (
+            <div className='flex flex-wrap items-center gap-3 border-t border-danger/40 bg-danger/15 px-3 py-2'>
+              <span className='flex-1'>
+                {modelName === 'Category'
+                  ? `${plural(row.usage, 'annotation')} use ${row.name}. Removing it leaves them without a label.`
+                  : `Removing ${row.name} untags ${plural(row.usage, 'annotation')}.`}
+              </span>
+              <Button variant='ghost' onClick={() => setConfirmDeleteId(null)}>
+                Keep
+              </Button>
+              <Button
+                variant='danger'
+                onClick={() => {
+                  setConfirmDeleteId(null);
+                  setLabels(labels.filter((l) => l.id !== row.id));
                 }}
-                onBlur={() => {
-                  recordShortcut(label.id);
-                  if (activeRowId === label.id) setActiveRowId(null);
-                }}
-                onChange={() => {}}
-              />
-              <button
-                type='button'
-                aria-label={`Remove ${label.name || noun}`}
-                title={`Remove ${noun}`}
-                className='flex size-8 items-center justify-center text-muted-foreground hover:text-danger'
-                disabled={
-                  isEditing &&
-                  !usage &&
-                  defaultLabels.some((l) => l.id === label.id)
-                }
-                onClick={() =>
-                  usageOf(label.id) > 0
-                    ? setConfirmDeleteId(label.id)
-                    : setLabels(labels.filter((l) => l.id !== label.id))
-                }
               >
-                <Trash2Icon className='size-4' />
-              </button>
+                Remove
+              </Button>
             </div>
-            {confirmDeleteId === label.id && (
-              <div className='flex flex-wrap items-center gap-3 border-t border-danger/40 bg-danger/15 px-3 py-2'>
-                <span className='flex-1'>
-                  {modelName === 'Category'
-                    ? `${plural(usageOf(label.id), 'annotation')} use ${label.name}. Removing it leaves them without a label.`
-                    : `Removing ${label.name} untags ${plural(usageOf(label.id), 'annotation')}.`}
-                </span>
-                <Button
-                  variant='ghost'
-                  onClick={() => setConfirmDeleteId(null)}
-                >
-                  Keep
-                </Button>
-                <Button
-                  variant='danger'
-                  onClick={() => {
-                    setConfirmDeleteId(null);
-                    setLabels(labels.filter((l) => l.id !== label.id));
-                  }}
-                >
-                  Remove
-                </Button>
-              </div>
-            )}
-          </div>
-        ))}
+          )
+        }
+      />
+      <div className='border border-dark'>
         <button
           type='button'
           disabled={incomplete}

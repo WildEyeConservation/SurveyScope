@@ -1,3 +1,4 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
@@ -13,6 +14,13 @@ interface AnnotationRow {
   objectId: string | null;
   source: string | null;
   categoryId: string | null;
+}
+
+interface CountRow {
+  name: string;
+  color: string | null;
+  count: number;
+  fn: number;
 }
 
 interface Props {
@@ -94,10 +102,7 @@ const AnnotationCountModal: React.FC<Props> = ({
   }, [client, setId, projectId, show]);
 
   const rows = useMemo(() => {
-    const byLabel = new Map<
-      string,
-      { name: string; color: string | null; count: number; fn: number }
-    >();
+    const byLabel = new Map<string, CountRow>();
     for (const a of annotations) {
       if (primaryOnly && a.objectId !== a.id) continue;
       const category = categories.get(a.categoryId ?? '');
@@ -119,9 +124,61 @@ const AnnotationCountModal: React.FC<Props> = ({
   const hasFalseNegatives = annotations.some((a) =>
     a.source?.includes('false-negative'),
   );
-  const grid = hasFalseNegatives
-    ? '12px minmax(90px, 160px) minmax(0, 1fr) 64px 110px'
-    : '12px minmax(90px, 160px) minmax(0, 1fr) 64px';
+
+  const columns = useMemo<DataColumn<CountRow>[]>(
+    () => [
+      {
+        id: 'swatch',
+        header: '',
+        enableSorting: false,
+        meta: { className: 'w-8' },
+        cell: ({ row }) => (
+          <span
+            className='block size-2.5'
+            style={{ backgroundColor: row.original.color || '#adb5bd' }}
+          />
+        ),
+      },
+      {
+        accessorKey: 'name',
+        header: 'Label',
+        meta: { className: 'max-w-40 truncate' },
+      },
+      {
+        id: 'bar',
+        header: '',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className='h-2 bg-white/10'>
+            <div
+              className='h-full'
+              style={{
+                width: `${total ? (row.original.count / total) * 100 : 0}%`,
+                backgroundColor: row.original.color || '#adb5bd',
+              }}
+            />
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'count',
+        header: 'Count',
+        meta: { className: 'w-24 text-right tabular-nums' },
+        cell: ({ row }) => row.original.count.toLocaleString(),
+      },
+      ...(hasFalseNegatives
+        ? [
+            {
+              accessorKey: 'fn',
+              header: 'False negatives',
+              meta: { className: 'w-36 text-right tabular-nums' },
+              cell: ({ row }) => row.original.fn.toLocaleString(),
+            } satisfies DataColumn<CountRow>,
+          ]
+        : []),
+    ],
+    [total, hasFalseNegatives],
+  );
 
   return (
     <Modal show={show} onHide={handleClose} size='lg'>
@@ -179,61 +236,13 @@ const AnnotationCountModal: React.FC<Props> = ({
                   ))}
                 </div>
               </div>
-              <div className='border border-dark bg-white/[0.07] text-sm'>
-                <div
-                  className='grid items-center gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'
-                  style={{ gridTemplateColumns: grid }}
-                >
-                  <span />
-                  <span>Label</span>
-                  <span />
-                  <span className='text-right'>Count</span>
-                  {hasFalseNegatives && (
-                    <span className='text-right'>False negatives</span>
-                  )}
-                </div>
-                {rows.length === 0 ? (
-                  <div className='px-3 py-3 text-muted-foreground italic'>
-                    No annotations yet.
-                  </div>
-                ) : (
-                  rows.map((row) => {
-                    const colour = row.color || '#adb5bd';
-                    return (
-                      <div
-                        key={row.name}
-                        className='grid items-center gap-3 border-b border-white/[0.08] px-3 py-2.5 last:border-b-0'
-                        style={{ gridTemplateColumns: grid }}
-                      >
-                        <span
-                          className='size-2.5'
-                          style={{ backgroundColor: colour }}
-                        />
-                        <span className='truncate' title={row.name}>
-                          {row.name}
-                        </span>
-                        <div className='h-2 bg-white/10'>
-                          <div
-                            className='h-full'
-                            style={{
-                              width: `${total ? (row.count / total) * 100 : 0}%`,
-                              backgroundColor: colour,
-                            }}
-                          />
-                        </div>
-                        <span className='text-right tabular-nums'>
-                          {row.count.toLocaleString()}
-                        </span>
-                        {hasFalseNegatives && (
-                          <span className='text-right text-xs text-muted-foreground tabular-nums'>
-                            {row.fn.toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+              <DataTable
+                columns={columns}
+                data={rows}
+                getRowId={(row) => row.name}
+                initialSorting={[{ id: 'count', desc: true }]}
+                emptyMessage='No annotations yet.'
+              />
             </>
           )}
         </div>

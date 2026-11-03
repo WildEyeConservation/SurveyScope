@@ -1,3 +1,5 @@
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
@@ -5,7 +7,6 @@ import { Label } from '@/components/ui/label';
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { escapeCsvValue } from '../shared/csv';
 import { GlobalContext } from './Context';
-import MyTable from './Table';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
@@ -228,11 +229,11 @@ export default function ClientLogs() {
         </div>
       </div>
 
-      <MyTable
-        tableHeadings={tableHeadings as any}
-        tableData={tableData}
-        pagination={true}
-        itemsPerPage={10}
+      <DataTable
+        columns={columnsFromHeadings(tableHeadings as any)}
+        data={cellRows(tableData)}
+        getRowId={(row) => row.id}
+        pageSize={10}
         emptyMessage={
           selectedUser
             ? loading
