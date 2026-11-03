@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   classifyNeighbour,
   confidenceBucket,
+  confidenceBucketLabels,
   greedyMatch,
   summariseAnnotations,
   summariseChainLinking,
@@ -207,6 +208,31 @@ test('puts band edges in the band they open', () => {
   assert.equal(confidenceBucket(1), '0.95');
   assert.equal(confidenceBucket(0), '0.00');
   assert.equal(confidenceBucket(null), 'unscored');
+});
+
+test('buckets confidence into 0.02 bands', () => {
+  assert.equal(confidenceBucket(0.06, 0.02), '0.06');
+  assert.equal(confidenceBucket(0.935, 0.02), '0.92');
+  assert.equal(confidenceBucket(1, 0.02), '0.98');
+  assert.equal(confidenceBucketLabels(0.02).length, 51);
+});
+
+test('uses each source its own band width', () => {
+  const coverage = summariseConfidenceCoverage(
+    [
+      location('owl', { source: 'owl-d-v1', confidence: 0.93 }),
+      location('mad', { source: 'mad-v2', confidence: 0.93 }),
+    ],
+    [],
+    [],
+    (source) => (source.startsWith('owl-d') ? 0.02 : 0.05),
+  );
+  const bySource = Object.fromEntries(
+    coverage.sources.map((source) => [source.source, source]),
+  );
+  assert.equal(bySource['owl-d-v1'].bands['0.92'].locations, 1);
+  assert.equal(bySource['mad-v2'].bands['0.90'].locations, 1);
+  assert.equal(bySource['owl-d-v1'].bandWidth, 0.02);
 });
 
 test('separates empty-image markers from detections', () => {

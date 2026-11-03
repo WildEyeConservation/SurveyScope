@@ -71,16 +71,9 @@ export default function PendingOrganizations() {
   ];
 
   return (
-    <div className='m-2'>
-      <h5>Pending Organisations</h5>
-      <DataTable
-        columns={columnsFromHeadings(tableHeadings)}
-        data={cellRows(tableData)}
-        getRowId={(row) => row.id}
-        pageSize={10}
-        emptyMessage='No pending organisations'
-      />
-      <div className='mt-4 flex items-center justify-center border-t border-dark pt-4'>
+    <>
+      <div className='mb-4 flex items-center justify-between'>
+        <h5 className='mb-0'>Pending Organisations</h5>
         <Button
           variant='primary'
           onClick={() => showModal('createOrganization')}
@@ -88,6 +81,13 @@ export default function PendingOrganizations() {
           Create Organisation
         </Button>
       </div>
+      <DataTable
+        columns={columnsFromHeadings(tableHeadings)}
+        data={cellRows(tableData)}
+        getRowId={(row) => row.id}
+        pageSize={10}
+        emptyMessage='No pending organisations'
+      />
       <CreateOrganization
         show={modalToShow === 'createOrganization'}
         onHide={() => {
@@ -96,6 +96,6 @@ export default function PendingOrganizations() {
         }}
         request={selectedRequest ?? undefined}
       />
-    </div>
+    </>
   );
 }

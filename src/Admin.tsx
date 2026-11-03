@@ -23,7 +23,8 @@ export default function Admin() {
         width: '100%',
         maxWidth: '1555px',
         marginTop: '16px',
-        marginBottom: '16px',
+        paddingBottom: '16px',
+        alignSelf: 'flex-start',
       }}
     >
       <Card>
@@ -31,35 +32,37 @@ export default function Admin() {
         <CardContent>
           <Tabs>
             <Tab label='Pending Organisations'>
-              <PendingOrganizations />
+              <div className='mx-2 mt-4 mb-2'>
+                <PendingOrganizations />
+              </div>
             </Tab>
             <Tab label='Client Logs'>
-              <div className='m-2'>
+              <div className='mx-2 mt-4 mb-2'>
                 <ClientLogs />
               </div>
             </Tab>
             <Tab label='Error Reports'>
-              <div className='m-2'>
+              <div className='mx-2 mt-4 mb-2'>
                 <ErrorReports />
               </div>
             </Tab>
             <Tab label='Statistics'>
-              <div className='m-2'>
+              <div className='mx-2 mt-4 mb-2'>
                 <AdminStats />
               </div>
             </Tab>
             <Tab label='Surveys'>
-              <div className='m-2'>
+              <div className='mx-2 mt-4 mb-2'>
                 <AdminSurveys />
               </div>
             </Tab>
             <Tab label='Survey Metrics'>
-              <div className='m-2'>
+              <div className='mx-2 mt-4 mb-2'>
                 <SurveyMetrics />
               </div>
             </Tab>
             <Tab label='AWS Health'>
-              <div className='m-2'>
+              <div className='mx-2 mt-4 mb-2'>
                 <AwsServiceHealth />
               </div>
             </Tab>

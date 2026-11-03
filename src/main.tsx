@@ -6,7 +6,6 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { persistQueryClient } from '@tanstack/react-query-persist-client';
-import { lazy, Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
 import {
   createBrowserRouter,
@@ -52,17 +51,6 @@ import Jobs from './user/Jobs.tsx';
 import { Progress } from './UserContext';
 import UserStats from './UserStats';
 import WorkflowStatistics from './WorkflowStatistics';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const devModules = (import.meta as any).glob('./DevActions.tsx') as Record<
-  string,
-  () => Promise<{ DevActions: React.FC }>
->;
-const DevActions = devModules['./DevActions.tsx']
-  ? lazy(() =>
-      devModules['./DevActions.tsx']().then((m) => ({ default: m.DevActions })),
-    )
-  : null;
 
 const persister = createSyncStoragePersister({
   storage: window.localStorage,
@@ -243,18 +231,6 @@ const router = createBrowserRouter([
         path: 'testing',
         element: <Testing />,
       },
-      ...(DevActions
-        ? [
-            {
-              path: 'dev-actions',
-              element: (
-                <Suspense fallback={null}>
-                  <DevActions />
-                </Suspense>
-              ),
-            },
-          ]
-        : []),
     ],
   },
 ]);

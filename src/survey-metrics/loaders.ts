@@ -35,12 +35,25 @@ const NEIGHBOUR_BATCH = 40;
 const NEIGHBOUR_WORKERS = 6;
 
 export const DETECTORS = [
-  { prefix: 'scoutbot', label: 'ScoutBot' },
-  { prefix: 'heatmap', label: 'Elephant Nadir' },
-  { prefix: 'mad', label: 'MAD' },
-  { prefix: 'owl-d', label: 'OWL-D' },
-  { prefix: 'stormfly', label: 'Stormfly' },
+  { prefix: 'scoutbot', label: 'ScoutBot', bandWidth: 0.05 },
+  { prefix: 'heatmap', label: 'Elephant Nadir', bandWidth: 0.05 },
+  { prefix: 'mad', label: 'MAD', bandWidth: 0.05 },
+  { prefix: 'owl-d', label: 'OWL-D', bandWidth: 0.02 },
 ] as const;
+
+export const BAND_WIDTHS = [0.02, 0.05] as const;
+
+// Confidence band width per detector prefix.
+export type BandWidths = Record<string, number>;
+
+export const DEFAULT_BAND_WIDTHS: BandWidths = Object.fromEntries(
+  DETECTORS.map((detector) => [detector.prefix, detector.bandWidth]),
+);
+
+export function bandWidthFor(widths: BandWidths, source: string): number {
+  const detector = DETECTORS.find((d) => source.startsWith(d.prefix));
+  return (detector && widths[detector.prefix]) || 0.05;
+}
 
 export function detectorLabel(source: string): string {
   const detector = DETECTORS.find((d) => source.startsWith(d.prefix));

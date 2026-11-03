@@ -24,7 +24,8 @@ export default function Permissions() {
         width: '100%',
         maxWidth: '1555px',
         marginTop: '16px',
-        marginBottom: '16px',
+        paddingBottom: '16px',
+        alignSelf: 'flex-start',
       }}
     >
       <Card>

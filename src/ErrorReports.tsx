@@ -1,6 +1,6 @@
-import DataTable from '@/components/DataTable';
-import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import {
   Dialog,
   DialogBody,
@@ -9,8 +9,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { generateClient } from 'aws-amplify/api';
+import {
+  ArrowRight,
+  Download,
+  RefreshCw,
+  SearchIcon,
+  SearchX,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { escapeCsvValue } from '../shared/csv';
 import { useUsers } from './apiInterface';
 import { graphqlErrorMessage } from './reportClientErrorCore';
 
@@ -103,6 +113,10 @@ export default function ErrorReports() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ErrorReport | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState('');
+  const [selectedUser, setSelectedUser] = useState<ComboboxOption | null>(null);
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
 
   const loadReports = useCallback(async () => {
     setLoading(true);
@@ -121,21 +135,89 @@ export default function ErrorReports() {
     void loadReports();
   }, [loadReports]);
 
-  const sortedReports = useMemo(
-    () =>
-      [...reports].sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [reports],
-  );
-
   const userLabel = (report: ErrorReport) => {
     const user = users.find((u) => u.id === report.userId);
     return user?.name
       ? `${user.name} (${report.userEmail || user.email || ''})`
       : report.userEmail || report.userId;
   };
+
+  const userOptions = useMemo(() => {
+    const options = new Map<string, ComboboxOption>();
+    for (const report of reports) {
+      if (!options.has(report.userId))
+        options.set(report.userId, {
+          value: report.userId,
+          label: userLabel(report),
+        });
+    }
+    return [...options.values()].sort((a, b) => a.label.localeCompare(b.label));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reports, users]);
+
+  const filteredReports = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const from = start ? new Date(start).getTime() : -Infinity;
+    const to = end ? new Date(end).getTime() : Infinity;
+    return reports.filter((report) => {
+      const time = new Date(report.createdAt).getTime();
+      if (time < from || time > to) return false;
+      if (selectedUser && report.userId !== selectedUser.value) return false;
+      return (
+        !query ||
+        [report.message, report.stack, report.url, report.status]
+          .filter(Boolean)
+          .some((text) => text!.toLowerCase().includes(query))
+      );
+    });
+  }, [reports, search, selectedUser, start, end]);
+
+  const hasFilters = !!(search || selectedUser || start || end);
+
+  function clearFilters() {
+    setSearch('');
+    setSelectedUser(null);
+    setStart('');
+    setEnd('');
+  }
+
+  function exportFilteredReportsToCsv() {
+    const header = [
+      'timestamp',
+      'userId',
+      'userEmail',
+      'status',
+      'url',
+      'message',
+      'stack',
+      'userAgent',
+    ];
+    const rows = filteredReports.map((report) =>
+      [
+        new Date(report.createdAt).toISOString(),
+        report.userId,
+        report.userEmail || '',
+        report.status || '',
+        report.url || '',
+        report.message,
+        report.stack || '',
+        report.userAgent || '',
+      ]
+        .map(escapeCsvValue)
+        .join(','),
+    );
+    const csv = [header.join(','), ...rows].join('\r\n');
+    const url = URL.createObjectURL(
+      new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'error_reports.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
 
   async function deleteReport(report: ErrorReport) {
     setDeleting(true);
@@ -153,50 +235,140 @@ export default function ErrorReports() {
     }
   }
 
-  const tableHeadings = [
-    { content: 'Timestamp', style: { width: '15%' }, sort: true },
-    { content: 'User', style: { width: '20%' }, sort: true },
-    { content: 'Message', style: { width: '35%' }, sort: true },
-    { content: 'Page', style: { width: '20%' }, sort: true },
-    { content: 'Details', style: { width: '10%' }, className: 'text-center' },
+  const columns: DataColumn<ErrorReport>[] = [
+    {
+      id: 'timestamp',
+      header: 'Timestamp',
+      accessorFn: (report) => new Date(report.createdAt).getTime(),
+      cell: ({ row }) =>
+        new Date(row.original.createdAt).toLocaleString(undefined, {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        }),
+      meta: { className: 'whitespace-nowrap' },
+    },
+    { id: 'user', header: 'User', accessorFn: userLabel },
+    {
+      id: 'message',
+      header: 'Message',
+      accessorFn: (report) => report.message,
+      cell: ({ row }) => (
+        <div className='line-clamp-2 max-w-xl' title={row.original.message}>
+          {row.original.message}
+        </div>
+      ),
+    },
+    {
+      id: 'page',
+      header: 'Page',
+      accessorFn: (report) => pathOf(report.url),
+      cell: ({ getValue }) => (
+        <div className='max-w-64 truncate font-mono text-sm'>
+          {getValue<string>()}
+        </div>
+      ),
+    },
+    {
+      id: 'details',
+      header: 'Details',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Button variant='primary' onClick={() => setSelected(row.original)}>
+          View
+        </Button>
+      ),
+      meta: { className: 'w-px text-center' },
+    },
   ];
 
-  const tableData = sortedReports.map((report) => ({
-    id: report.id,
-    rowData: [
-      new Date(report.createdAt).toLocaleString(),
-      userLabel(report),
-      report.message.length > 150
-        ? `${report.message.slice(0, 150)}…`
-        : report.message,
-      pathOf(report.url),
-      <Button variant='primary' onClick={() => setSelected(report)}>
-        View
-      </Button>,
-    ],
-  }));
-
   return (
-    <div className='mt-2'>
-      <div className='mb-4 flex items-center justify-between'>
+    <div>
+      <div className='mb-4 flex items-center justify-between gap-2'>
         <h5 className='mb-0'>Error Reports</h5>
-        <Button
-          variant='outline-primary'
-          onClick={() => void loadReports()}
-          disabled={loading}
-        >
-          {loading ? 'Loading...' : 'Refresh'}
-        </Button>
+        <div className='flex gap-2'>
+          <Button
+            variant='outline-primary'
+            onClick={() => void loadReports()}
+            disabled={loading}
+          >
+            <RefreshCw size={16} />
+            {loading ? 'Loading…' : 'Refresh'}
+          </Button>
+          <Button
+            variant='outline-success'
+            onClick={exportFilteredReportsToCsv}
+            disabled={!filteredReports.length}
+          >
+            <Download size={16} />
+            Export CSV
+          </Button>
+        </div>
+      </div>
+      <div className='mb-4 flex flex-wrap items-end gap-2'>
+        <div className='min-w-72 flex-[1.4]'>
+          <Label className='mb-1'>Search</Label>
+          <div className='relative'>
+            <SearchIcon className='pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-[#6c757d]' />
+            <Input
+              type='search'
+              aria-label='Search error reports'
+              placeholder='Message, stack trace, page or status…'
+              className='pl-9'
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className='min-w-60 flex-1'>
+          <Label className='mb-1'>User</Label>
+          <Combobox
+            options={userOptions}
+            value={selectedUser}
+            onChange={setSelectedUser}
+            placeholder='All users'
+            name='User'
+            clearable
+          />
+        </div>
+        <div className='min-w-52 flex-1'>
+          <Label className='mb-1'>From</Label>
+          <Input
+            type='datetime-local'
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+        </div>
+        <ArrowRight size={16} className='mb-3 text-muted-foreground' />
+        <div className='min-w-52 flex-1'>
+          <Label className='mb-1'>To</Label>
+          <Input
+            type='datetime-local'
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
+        </div>
+        {hasFilters && (
+          <Button variant='ghost' onClick={clearFilters}>
+            Clear filters
+          </Button>
+        )}
       </div>
       {loadError && (
         <p className='text-danger'>Failed to load error reports: {loadError}</p>
       )}
       <DataTable
-        columns={columnsFromHeadings(tableHeadings)}
-        data={cellRows(tableData)}
-        getRowId={(row) => row.id}
+        columns={columns}
+        data={filteredReports}
+        getRowId={(report) => report.id}
         pageSize={10}
-        emptyMessage={loading ? 'Loading...' : 'No error reports'}
+        initialSorting={[{ id: 'timestamp', desc: true }]}
+        loading={loading}
+        emptyIcon={reports.length ? SearchX : undefined}
+        emptyMessage={
+          reports.length
+            ? 'No error reports match these filters'
+            : 'No error reports'
+        }
       />
       <Dialog
         open={selected !== null}
@@ -247,14 +419,18 @@ export default function ErrorReports() {
           )}
           <DialogFooter>
             <Button
+              variant='ghost'
+              className='mr-auto'
+              onClick={() => setSelected(null)}
+            >
+              Close
+            </Button>
+            <Button
               variant='danger'
               disabled={deleting}
               onClick={() => selected && void deleteReport(selected)}
             >
               {deleting ? 'Deleting...' : 'Delete'}
-            </Button>
-            <Button variant='dark' onClick={() => setSelected(null)}>
-              Close
             </Button>
           </DialogFooter>
         </DialogContent>

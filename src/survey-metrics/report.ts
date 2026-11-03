@@ -20,6 +20,8 @@ import {
 } from './collectors';
 import {
   AbortError,
+  DEFAULT_BAND_WIDTHS,
+  bandWidthFor,
   loadAnnotationSets,
   loadAnnotations,
   loadCategories,
@@ -34,6 +36,7 @@ import {
   loadRegistration,
   loadTasks,
   scanDetectorLocations,
+  type BandWidths,
   type LoadContext,
 } from './loaders';
 import type {
@@ -332,6 +335,7 @@ export type ReportRequest = {
   statIds: StatId[];
   // Denominators for progress only.
   imageCountHint?: number;
+  bandWidths?: BandWidths;
   cache: ReportCache;
   reuseCache: boolean;
   signal: AbortSignal;
@@ -353,9 +357,14 @@ function cacheKey(
   entity: EntityKey,
   forSet = SET_ENTITIES.includes(entity),
 ) {
+  // Confidence bands are counted during the scan, so they key its cache.
+  const name =
+    entity === 'locationScan'
+      ? `${entity}@${JSON.stringify(request.bandWidths ?? DEFAULT_BAND_WIDTHS)}`
+      : entity;
   return forSet
-    ? `${request.surveyId}:${entity}:${request.annotationSetId}`
-    : `${request.surveyId}:${entity}`;
+    ? `${request.surveyId}:${name}:${request.annotationSetId}`
+    : `${request.surveyId}:${name}`;
 }
 
 function rowCount(data: unknown): number {
@@ -454,7 +463,12 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         const data = await fetchEntity(entity, request, ctx, needs);
         const fetchedAt = new Date().toISOString();
         if (entity === 'annotations' || entity === 'observations') {
-          request.cache.delete(cacheKey(request, 'locationScan', true));
+          const scanPrefix = `${surveyId}:locationScan@`;
+          const setSuffix = `:${annotationSetId}`;
+          for (const cached of [...request.cache.keys()]) {
+            if (cached.startsWith(scanPrefix) && cached.endsWith(setSuffix))
+              request.cache.delete(cached);
+          }
         }
         if (entity === 'locationScan') {
           const scan = data as LocationScan;
@@ -582,17 +596,19 @@ type Dependencies = {
 
 async function scanLocations(
   surveyId: string,
+  widths: BandWidths,
   ctx: LoadContext,
   needs: Dependencies,
 ): Promise<LocationScan> {
+  const widthFor = (source: string) => bandWidthFor(widths, source);
   const detections: DetectionScan = new Map();
   const coverage =
     needs.observations && needs.annotations
-      ? scanConfidenceCoverage(needs.observations, needs.annotations)
+      ? scanConfidenceCoverage(needs.observations, needs.annotations, widthFor)
       : null;
   const rows = await scanDetectorLocations(surveyId, ctx, (page) => {
     for (const location of page) {
-      addDetection(detections, location);
+      addDetection(detections, location, widthFor);
       coverage?.add(location);
     }
   });
@@ -627,7 +643,12 @@ function fetchEntity(
     case 'processedBy':
       return loadProcessedBy(surveyId, ctx);
     case 'locationScan':
-      return scanLocations(surveyId, ctx, needs);
+      return scanLocations(
+        surveyId,
+        request.bandWidths ?? DEFAULT_BAND_WIDTHS,
+        ctx,
+        needs,
+      );
     case 'annotations':
       return loadAnnotations(setId, ctx);
     case 'observations':

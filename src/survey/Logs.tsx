@@ -275,7 +275,7 @@ export default function Logs({ projectId }: { projectId: string }) {
           }
           emptyMessage={
             error ? (
-              <span className='text-danger not-italic'>{error}</span>
+              <span className='text-danger'>{error}</span>
             ) : logs.length ? (
               'No entries match your search.'
             ) : (

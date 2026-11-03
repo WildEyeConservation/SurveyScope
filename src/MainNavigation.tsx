@@ -203,9 +203,6 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
                 <>
                   <NavItem to={`SSAdmin`}>Admin</NavItem>
                   <NavItem to={`chain-share-admin`}>Chain Shares</NavItem>
-                  {process.env.NODE_ENV === 'development' && (
-                    <NavItem to={`dev-actions`}>Dev Actions</NavItem>
-                  )}
                 </>
               )}
               {/* Shared Results hidden for now.

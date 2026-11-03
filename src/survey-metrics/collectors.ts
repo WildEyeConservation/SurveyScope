@@ -313,14 +313,18 @@ export function summariseProcessedBy(
   };
 }
 
-export const CONFIDENCE_BUCKET_WIDTH = 0.05;
-export const CONFIDENCE_BUCKET_COUNT = 20;
+export const DEFAULT_BAND_WIDTH = 0.05;
 export const UNSCORED = 'unscored';
 
-export function confidenceBucketLabels(): string[] {
+export type BandWidthFor = (source: string) => number;
+const defaultBandWidth: BandWidthFor = () => DEFAULT_BAND_WIDTH;
+
+const bandCount = (width: number) => Math.round(1 / width);
+
+export function confidenceBucketLabels(width = DEFAULT_BAND_WIDTH): string[] {
   const labels: string[] = [];
-  for (let i = 0; i < CONFIDENCE_BUCKET_COUNT; i++) {
-    labels.push((i * CONFIDENCE_BUCKET_WIDTH).toFixed(2));
+  for (let i = 0; i < bandCount(width); i++) {
+    labels.push((i * width).toFixed(2));
   }
   labels.push(UNSCORED);
   return labels;
@@ -328,13 +332,14 @@ export function confidenceBucketLabels(): string[] {
 
 export function confidenceBucket(
   confidence: number | null | undefined,
+  width = DEFAULT_BAND_WIDTH,
 ): string {
   if (confidence === null || confidence === undefined) return UNSCORED;
   if (!Number.isFinite(confidence)) return UNSCORED;
   // Epsilon keeps band edges such as 0.15 out of the band below.
-  const index = Math.floor(confidence / CONFIDENCE_BUCKET_WIDTH + 1e-9);
-  const clamped = Math.max(0, Math.min(CONFIDENCE_BUCKET_COUNT - 1, index));
-  return (clamped * CONFIDENCE_BUCKET_WIDTH).toFixed(2);
+  const index = Math.floor(confidence / width + 1e-9);
+  const clamped = Math.max(0, Math.min(bandCount(width) - 1, index));
+  return (clamped * width).toFixed(2);
 }
 
 // The detector writes a zero-area row for an image it found nothing in.
@@ -351,6 +356,7 @@ export type DetectionSourceSummary = {
   imagesNotProcessed: number;
   imagesWithBothMarkerAndDetection: number;
   rowsWithoutImage: number;
+  bandWidth: number;
   confidence: Counts;
 };
 
@@ -365,12 +371,17 @@ type DetectionTally = {
   rowsWithoutImage: number;
   detected: Set<string>;
   marked: Set<string>;
+  bandWidth: number;
   confidence: Counts;
 };
 
 export type DetectionScan = Map<string, DetectionTally>;
 
-export function addDetection(scan: DetectionScan, location: LocationRow) {
+export function addDetection(
+  scan: DetectionScan,
+  location: LocationRow,
+  bandWidthFor: BandWidthFor = defaultBandWidth,
+) {
   let tally = scan.get(location.source);
   if (!tally) {
     tally = {
@@ -379,6 +390,7 @@ export function addDetection(scan: DetectionScan, location: LocationRow) {
       rowsWithoutImage: 0,
       detected: new Set(),
       marked: new Set(),
+      bandWidth: bandWidthFor(location.source),
       confidence: {},
     };
     scan.set(location.source, tally);
@@ -390,7 +402,10 @@ export function addDetection(scan: DetectionScan, location: LocationRow) {
   } else {
     tally.detectionRows += 1;
     if (location.imageId) tally.detected.add(location.imageId);
-    bump(tally.confidence, confidenceBucket(location.confidence));
+    bump(
+      tally.confidence,
+      confidenceBucket(location.confidence, tally.bandWidth),
+    );
   }
 }
 
@@ -415,6 +430,7 @@ export function finishDetections(
       imagesNotProcessed: imageIds.size - accounted,
       imagesWithBothMarkerAndDetection: both,
       rowsWithoutImage: tally.rowsWithoutImage,
+      bandWidth: tally.bandWidth,
       confidence: tally.confidence,
     };
   });
@@ -566,13 +582,14 @@ export type ConfidenceBand = {
 
 export type ConfidenceCoverageSource = {
   source: string;
+  bandWidth: number;
+  labels: string[];
   bands: Record<string, ConfidenceBand>;
   totals: ConfidenceBand;
   lowestObservedBand: string | null;
 };
 
 export type ConfidenceCoverage = {
-  labels: string[];
   sources: ConfidenceCoverageSource[];
   observedOutsideDetections: number;
 };
@@ -599,23 +616,33 @@ export type ConfidenceCoverageScan = {
 export function scanConfidenceCoverage(
   observations: ObservationRow[],
   annotations: AnnotationRow[],
+  bandWidthFor: BandWidthFor = defaultBandWidth,
 ): ConfidenceCoverageScan {
-  const labels = confidenceBucketLabels();
   const observed = new Set(
     observations.map((observation) => observation.locationId),
   );
   const byImage = groupAnnotationsByImage(annotations);
-  const bySource = new Map<string, Record<string, ConfidenceBand>>();
+  const bySource = new Map<
+    string,
+    { width: number; bands: Record<string, ConfidenceBand> }
+  >();
   let matchedObserved = 0;
 
   const add = (location: LocationRow) => {
     if (isEmptyMarker(location)) return;
-    let bands = bySource.get(location.source);
-    if (!bands) {
-      bands = Object.fromEntries(labels.map((label) => [label, emptyBand()]));
-      bySource.set(location.source, bands);
+    let entry = bySource.get(location.source);
+    if (!entry) {
+      const width = bandWidthFor(location.source);
+      entry = {
+        width,
+        bands: Object.fromEntries(
+          confidenceBucketLabels(width).map((label) => [label, emptyBand()]),
+        ),
+      };
+      bySource.set(location.source, entry);
     }
-    const band = bands[confidenceBucket(location.confidence)];
+    const band =
+      entry.bands[confidenceBucket(location.confidence, entry.width)];
     const isObserved = observed.has(location.id);
     const imageAnnotations = location.imageId
       ? byImage.get(location.imageId)
@@ -634,28 +661,37 @@ export function scanConfidenceCoverage(
   };
 
   const finish = (): ConfidenceCoverage => {
-    const sources = [...bySource.entries()].map(([source, bands]) => {
-      const totals = emptyBand();
-      let lowestObservedBand: string | null = null;
-      for (const label of labels) {
-        const band = bands[label];
-        totals.locations += band.locations;
-        totals.observed += band.observed;
-        totals.annotated += band.annotated;
-        totals.observedAndAnnotated += band.observedAndAnnotated;
-        if (
-          lowestObservedBand === null &&
-          label !== UNSCORED &&
-          band.observed > 0
-        ) {
-          lowestObservedBand = label;
+    const sources = [...bySource.entries()].map(
+      ([source, { width, bands }]) => {
+        const labels = confidenceBucketLabels(width);
+        const totals = emptyBand();
+        let lowestObservedBand: string | null = null;
+        for (const label of labels) {
+          const band = bands[label];
+          totals.locations += band.locations;
+          totals.observed += band.observed;
+          totals.annotated += band.annotated;
+          totals.observedAndAnnotated += band.observedAndAnnotated;
+          if (
+            lowestObservedBand === null &&
+            label !== UNSCORED &&
+            band.observed > 0
+          ) {
+            lowestObservedBand = label;
+          }
         }
-      }
-      return { source, bands, totals, lowestObservedBand };
-    });
+        return {
+          source,
+          bandWidth: width,
+          labels,
+          bands,
+          totals,
+          lowestObservedBand,
+        };
+      },
+    );
     sources.sort((a, b) => b.totals.locations - a.totals.locations);
     return {
-      labels,
       sources,
       observedOutsideDetections: observed.size - matchedObserved,
     };
@@ -668,8 +704,9 @@ export function summariseConfidenceCoverage(
   locations: LocationRow[],
   observations: ObservationRow[],
   annotations: AnnotationRow[],
+  bandWidthFor: BandWidthFor = defaultBandWidth,
 ): ConfidenceCoverage {
-  const scan = scanConfidenceCoverage(observations, annotations);
+  const scan = scanConfidenceCoverage(observations, annotations, bandWidthFor);
   for (const location of locations) scan.add(location);
   return scan.finish();
 }

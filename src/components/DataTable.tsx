@@ -21,7 +21,13 @@ import {
   type RowData,
   type SortingState,
 } from '@tanstack/react-table';
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Inbox,
+  type LucideIcon,
+} from 'lucide-react';
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { dataTableFeatures, type DataColumn } from './dataTableFeatures';
 
@@ -54,6 +60,7 @@ export interface DataTableProps<T extends RowData> {
   /** Rows per page until the user picks another size; false shows every row. */
   pageSize?: number | false;
   emptyMessage?: ReactNode;
+  emptyIcon?: LucideIcon;
   loading?: boolean;
   loadingMessage?: ReactNode;
   minWidth?: number;
@@ -74,6 +81,7 @@ export default function DataTable<T extends RowData>({
   initialSorting = [],
   pageSize = 10,
   emptyMessage = 'Nothing to show.',
+  emptyIcon: EmptyIcon = Inbox,
   loading = false,
   loadingMessage = 'Loading...',
   minWidth,
@@ -195,9 +203,12 @@ export default function DataTable<T extends RowData>({
               <TableRow>
                 <TableCell
                   colSpan={columnCount}
-                  className='bg-[#6F7B89] text-muted-foreground italic'
+                  className='bg-[#6F7B89] py-10 text-center text-muted-foreground'
                 >
-                  {message}
+                  <div className='flex flex-col items-center gap-2'>
+                    {!loading && <EmptyIcon size={28} className='opacity-70' />}
+                    {message}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (

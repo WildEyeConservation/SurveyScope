@@ -1,7 +1,11 @@
+import SharedTable, { type DataColumn } from '@/components/DataTable';
 import { Alert, type AlertVariant } from '@/components/ui/alert';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import {
   HOMOGRAPHY_BUCKETS,
+  UNSCORED,
   type AnnotationSummary,
   type ChainLinkSummary,
   type ChainStateCounts,
@@ -47,6 +51,11 @@ const percent = (value: number | null | undefined, digits = 1) =>
     ? 'N/A'
     : `${(value * 100).toFixed(digits)}%`;
 
+const bandRange = (label: string, width: number) =>
+  label === UNSCORED
+    ? label
+    : `${label}–${Math.min(Number(label) + width, 1).toFixed(2)}`;
+
 const share = (part: number, whole: number) =>
   whole > 0 ? percent(part / whole) : 'N/A';
 
@@ -54,6 +63,17 @@ function date(value: string | null | undefined): string {
   if (!value) return 'N/A';
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+}
+
+type Row = { id: string; cells: Cell[] };
+type SortRow = { getValue: (columnId: string) => unknown };
+
+const NUMERIC = /^-?[\d,]+(\.\d+)?%?$/;
+
+function sortValue(cell: Cell): string | number {
+  if (typeof cell === 'number') return cell;
+  if (typeof cell !== 'string') return '';
+  return NUMERIC.test(cell) ? Number(cell.replace(/[,%]/g, '')) : cell;
 }
 
 function DataTable({
@@ -65,46 +85,45 @@ function DataTable({
   rows: Cell[][];
   numericFrom?: number;
 }) {
-  if (rows.length === 0) {
-    return <div className='survey-metrics-empty'>Nothing to show.</div>;
-  }
-  const align = (index: number) =>
-    index >= numericFrom ? ({ textAlign: 'right' } as const) : undefined;
+  const columns: DataColumn<Row>[] = head.map((title, index) => ({
+    id: String(index),
+    header: title,
+    accessorFn: (row) => sortValue(row.cells[index]),
+    cell: ({ row }) => row.original.cells[index],
+    sortingFn: (a: SortRow, b: SortRow) => {
+      const x = a.getValue(String(index));
+      const y = b.getValue(String(index));
+      return typeof x === 'number' && typeof y === 'number'
+        ? x - y
+        : String(x).localeCompare(String(y), undefined, { numeric: true });
+    },
+    meta: {
+      className:
+        index >= numericFrom ? 'text-right tabular-nums whitespace-nowrap' : '',
+    },
+  }));
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table className='ss-data-table'>
-        <thead>
-          <tr>
-            {head.map((title, index) => (
-              <th key={title} style={align(index)}>
-                {title}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>
-              {row.map((cell, index) => (
-                <td key={index} style={align(index)}>
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <SharedTable
+      columns={columns}
+      data={rows.map((cells, index) => ({ id: String(index), cells }))}
+      getRowId={(row) => row.id}
+      pageSize={rows.length > 25 ? 25 : false}
+    />
   );
 }
 
 function Facts({ items }: { items: [string, Cell][] }) {
   return (
-    <div className='survey-metrics-facts'>
+    <div className='grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2'>
       {items.map(([label, value]) => (
-        <div key={label} className='survey-metrics-fact'>
-          <div className='survey-metrics-fact-label'>{label}</div>
-          <div className='survey-metrics-fact-value'>{value}</div>
+        <div
+          key={label}
+          className='border border-white/10 bg-black/10 px-3 py-2'
+        >
+          <div className='text-xs text-muted-foreground'>{label}</div>
+          <div className='text-lg font-semibold [overflow-wrap:anywhere] tabular-nums'>
+            {value}
+          </div>
         </div>
       ))}
     </div>
@@ -112,7 +131,11 @@ function Facts({ items }: { items: [string, Cell][] }) {
 }
 
 function Subheading({ children }: { children: ReactNode }) {
-  return <h6 className='survey-metrics-subheading'>{children}</h6>;
+  return (
+    <h6 className='mt-2 mb-0 text-sm font-semibold tracking-wide text-muted-foreground uppercase'>
+      {children}
+    </h6>
+  );
 }
 
 function countsRows(
@@ -210,7 +233,7 @@ function Overview({ data }: { data: OverviewResult }) {
 
 function ScannedSources() {
   return (
-    <div className='survey-metrics-empty px-0'>
+    <div className='text-sm text-muted-foreground'>
       Covers location sources starting with{' '}
       {DETECTORS.map((detector) => detector.prefix).join(', ')}.
     </div>
@@ -261,14 +284,17 @@ function DetectorOutput({ data }: { data: DetectionSummary }) {
         ])}
       />
       {data.sources.map((source) => (
-        <div key={source.source}>
-          <Subheading>{detectorLabel(source.source)} confidence</Subheading>
+        <div key={source.source} className='flex flex-col gap-3'>
+          <Subheading>
+            {detectorLabel(source.source)} confidence (bands of{' '}
+            {source.bandWidth})
+          </Subheading>
           <DataTable
             head={['Confidence band', 'Detections', 'Share']}
             rows={Object.entries(source.confidence)
               .sort((a, b) => a[0].localeCompare(b[0]))
               .map(([band, value]) => [
-                band,
+                bandRange(band, source.bandWidth),
                 count(value),
                 share(value, source.detectionRows),
               ])}
@@ -473,8 +499,10 @@ function ConfidenceCoverageView({ data }: { data: ConfidenceCoverage }) {
         ]}
       />
       {data.sources.map((source) => (
-        <div key={source.source}>
-          <Subheading>{detectorLabel(source.source)}</Subheading>
+        <div key={source.source} className='flex flex-col gap-3'>
+          <Subheading>
+            {detectorLabel(source.source)} (bands of {source.bandWidth})
+          </Subheading>
           <Facts
             items={[
               ['Detections', count(source.totals.locations)],
@@ -486,7 +514,12 @@ function ConfidenceCoverageView({ data }: { data: ConfidenceCoverage }) {
                 'Holding an annotation',
                 share(source.totals.annotated, source.totals.locations),
               ],
-              ['Lowest band observed', source.lowestObservedBand ?? 'None'],
+              [
+                'Lowest band observed',
+                source.lowestObservedBand
+                  ? bandRange(source.lowestObservedBand, source.bandWidth)
+                  : 'None',
+              ],
             ]}
           />
           <DataTable
@@ -499,12 +532,12 @@ function ConfidenceCoverageView({ data }: { data: ConfidenceCoverage }) {
               'Annotated share',
               'Observed and annotated',
             ]}
-            rows={data.labels
+            rows={source.labels
               .filter((label) => source.bands[label].locations > 0)
               .map((label) => {
                 const band = source.bands[label];
                 return [
-                  label,
+                  bandRange(label, source.bandWidth),
                   count(band.locations),
                   count(band.observed),
                   share(band.observed, band.locations),
@@ -517,7 +550,7 @@ function ConfidenceCoverageView({ data }: { data: ConfidenceCoverage }) {
         </div>
       ))}
       {data.sources.length === 0 && (
-        <div className='survey-metrics-empty'>
+        <div className='text-sm text-muted-foreground'>
           No model detections in this survey.
         </div>
       )}
@@ -561,7 +594,7 @@ function ChainLinking({ data }: { data: ChainLinkSummary }) {
   const recommendation = RECOMMENDATIONS[data.verdict.recommendation];
   return (
     <>
-      <Alert variant={recommendation.variant} className='mb-4'>
+      <Alert variant={recommendation.variant} className='mb-0'>
         <strong>{recommendation.label}.</strong> {data.verdict.reason}
       </Alert>
       <Facts
@@ -653,32 +686,56 @@ function StatBody({
 export default function SurveyMetricsResults({
   report,
   userName,
+  summary,
 }: {
   report: SurveyReport;
   userName: (owner: string) => string;
+  summary: string;
 }) {
+  const outcomes = STATS.flatMap((stat) => {
+    const outcome = report.stats[stat.id] as StatOutcome | undefined;
+    return outcome ? [outcome] : [];
+  });
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {STATS.map((stat) => {
-        const outcome = report.stats[stat.id] as StatOutcome | undefined;
-        if (!outcome) return null;
-        return (
-          <div key={stat.id} className='ss-card'>
-            <div className='survey-metrics-card-header'>
-              <strong>{outcome.label}</strong>
-            </div>
-            <div className='survey-metrics-card-body'>
-              {outcome.status === 'error' ? (
-                <Alert variant='danger' className='mb-0'>
-                  {outcome.error}
-                </Alert>
-              ) : (
-                <StatBody outcome={outcome} userName={userName} />
+    <div className='flex flex-col gap-4'>
+      <div className='flex flex-wrap items-center gap-2'>
+        <span className='mr-2 text-sm text-muted-foreground'>{summary}.</span>
+        {outcomes.length > 1 &&
+          outcomes.map((outcome) => (
+            <a
+              key={outcome.id}
+              href={`#survey-metric-result-${outcome.id}`}
+              className={cn(
+                'rounded-full border px-2.5 py-0.5 text-sm no-underline transition-colors hover:bg-white/10',
+                outcome.status === 'error'
+                  ? 'border-danger/70 text-danger'
+                  : 'border-white/30 text-foreground',
               )}
-            </div>
-          </div>
-        );
-      })}
+            >
+              {outcome.label}
+            </a>
+          ))}
+      </div>
+      {outcomes.map((outcome) => (
+        <Card
+          key={outcome.id}
+          id={`survey-metric-result-${outcome.id}`}
+          className='scroll-mt-4'
+        >
+          <CardHeader className='py-3'>
+            <div className='font-semibold'>{outcome.label}</div>
+          </CardHeader>
+          <CardContent className='flex flex-col gap-3'>
+            {outcome.status === 'error' ? (
+              <Alert variant='danger' className='mb-0'>
+                {outcome.error}
+              </Alert>
+            ) : (
+              <StatBody outcome={outcome} userName={userName} />
+            )}
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }
