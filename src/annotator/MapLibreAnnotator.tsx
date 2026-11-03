@@ -52,6 +52,7 @@ import {
   storedZoomToMapZoom,
 } from './imageTiles';
 import MapRotateControl from './MapRotateControl';
+import { setAnnotatorViewport } from './prefetchTask';
 import useImageFileSource from './useImageFileSource';
 
 /*
@@ -162,7 +163,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     imageFiles,
     loading: imageFilesLoading,
     sourceKey,
-  } = useImageFileSource(image.id);
+  } = useImageFileSource(image.id, location?.id);
 
   const projection = useMemo(
     () => makeProjection(image.width, image.height),
@@ -261,7 +262,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     const unregisterMarkerImages = registerAnnotationMarkerImages(map);
 
     map.on('load', () => {
-      addImageTiles(map, sourceKey, image, projection);
+      addImageTiles(map, sourceKey, image, projection, location?.id);
 
       // Location rectangle (task bounds)
       if (location?.width && location?.height) {
@@ -583,6 +584,9 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     if (visible) {
       setVisibleTimestamp(Date.now());
       mapRef.current?.resize();
+      const container = containerRef.current;
+      if (container)
+        setAnnotatorViewport(container.clientWidth, container.clientHeight);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);

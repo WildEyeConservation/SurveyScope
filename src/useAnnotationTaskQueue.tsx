@@ -1,16 +1,20 @@
 import {
   DeleteMessageCommand,
   ReceiveMessageCommand,
+  type Message,
 } from '@aws-sdk/client-sqs';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { GlobalContext, ProjectContext, UserContext } from './Context';
+import type { BeforeNextDecision } from './TaskBuffer';
 import type { Schema } from './amplify/client-schema';
 import type {
   AnnotationTaskPayload,
   TaskAcknowledgement,
 } from './annotationTypes';
-import { GlobalContext, ProjectContext, UserContext } from './Context';
+import { primeTask } from './annotator/prefetchTask';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
-import type { BeforeNextDecision } from './TaskBuffer';
+import { createLocationLeases } from './locationLeases';
+import { tileLoadStats } from './storage/tileLoadStats';
 import { decideTestCadence } from './testCadence';
 import useTesting from './useTesting';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
@@ -33,6 +37,11 @@ const LOCATION_SELECTION = [
 ] as const;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Enough to stay ahead of a fast annotator without hoarding a shared queue.
+const RECEIVE_BATCH_SIZE = 5;
+// Start the next batch while there is still time to prime it.
+const RECEIVE_AHEAD = 3;
+const VISIBILITY_TIMEOUT_S = 600;
 
 interface AnnotationTaskMessage {
   location: {
@@ -214,46 +223,25 @@ export default function useAnnotationTaskQueue() {
     [client],
   );
 
-  const fetcher = useCallback(async (): Promise<AnnotationTaskPayload> => {
-    for (;;) {
-      if (!url) {
-        await sleep(5000);
-        continue;
-      }
+  const readyRef = useRef<AnnotationTaskPayload[]>([]);
+  const [leases] = useState(() =>
+    createLocationLeases(VISIBILITY_TIMEOUT_S * 1000),
+  );
+  const receivingRef = useRef<Promise<number> | null>(null);
 
-      const sqsClient = await getSqsClient();
-
-      const getResponse = (queueUrl: string) =>
-        sqsClient.send(
-          new ReceiveMessageCommand({
-            QueueUrl: queueUrl,
-            MaxNumberOfMessages: 1,
-            MessageAttributeNames: ['All'],
-            VisibilityTimeout: 600,
-          }),
-        );
-
-      let response = await getResponse(url);
-      let usingBackup = false;
-
-      if (!response.Messages && backupUrl) {
-        response = await getResponse(backupUrl);
-        usingBackup = Boolean(response.Messages);
-      }
-
-      if (!response.Messages) {
-        await sleep(5000);
-        continue;
-      }
-
-      const sourceUrl = usingBackup ? backupUrl! : url;
-      const entity = response.Messages[0];
+  const prepareMessage = useCallback(
+    async (
+      entity: Message,
+      sourceUrl: string,
+      queueZoom: number | undefined,
+      receiveMs: number,
+    ): Promise<AnnotationTaskPayload | null> => {
       const body = JSON.parse(entity.Body!) as AnnotationTaskMessage;
       if (entity.MessageId) {
         body.observationId = `queue-message:${entity.MessageId}`;
       }
-      body.zoom = usingBackup ? backupZoom : zoom;
-      body.ack = async () => {
+      body.zoom = queueZoom;
+      const ack = async () => {
         try {
           // Re-resolve the client: the ack can fire long after the receive.
           const ackClient = await getSqsClient();
@@ -274,39 +262,123 @@ export default function useAnnotationTaskQueue() {
           throw error;
         }
       };
-
-      if (
-        body.location?.id &&
-        processedLocationsRef.current.has(body.location.id)
-      ) {
+      body.ack = ack;
+      const discard = async () => {
         try {
-          await body.ack();
+          await ack();
         } catch {
-          await sleep(1000);
+          // The message reappears after its visibility timeout.
         }
-        // Back off so a run of duplicates cannot spin the loop.
-        await sleep(500);
-        continue;
-      }
+        return null;
+      };
 
-      const preparedTask = await prepareTask(body);
+      const locationId = body.location?.id;
+      if (locationId && processedLocationsRef.current.has(locationId)) {
+        return discard();
+      }
+      // Already waiting here: leave the copy in SQS in case this one is never done.
+      if (locationId && !leases.claim(locationId)) return null;
+
+      const hydrateStart = performance.now();
+      const preparedTask = await prepareTask(body).catch((error: unknown) => {
+        if (locationId) leases.release(locationId);
+        throw error;
+      });
       if (!preparedTask) {
-        try {
-          await body.ack();
-        } catch {
-          await sleep(1000);
-        }
-        await sleep(1000);
-        continue;
+        if (locationId) leases.release(locationId);
+        return discard();
       }
+      const taskId = preparedTask.location.id;
+      if (taskId) {
+        tileLoadStats.step(taskId, 'receive', receiveMs);
+        tileLoadStats.step(taskId, 'hydrate', performance.now() - hydrateStart);
+      }
+      void primeTask(
+        client as unknown as Parameters<typeof primeTask>[0],
+        preparedTask.location,
+      );
 
       return {
         ...preparedTask,
         // Last-resort filtering when the buffered task becomes visible.
         revalidate: async () => Boolean(await prepareTask(body)),
       };
+    },
+    [client, getSqsClient, prepareTask, leases],
+  );
+
+  const receiveBatch = useCallback(async (): Promise<number> => {
+    const sqsClient = await getSqsClient();
+    const receive = async (queueUrl: string) => {
+      const startedAt = performance.now();
+      const response = await sqsClient.send(
+        new ReceiveMessageCommand({
+          QueueUrl: queueUrl,
+          MaxNumberOfMessages: RECEIVE_BATCH_SIZE,
+          MessageAttributeNames: ['All'],
+          VisibilityTimeout: VISIBILITY_TIMEOUT_S,
+        }),
+      );
+      return {
+        messages: response.Messages ?? [],
+        receiveMs: performance.now() - startedAt,
+      };
+    };
+
+    let source = { url: url!, zoom };
+    let received = await receive(url!);
+    if (received.messages.length === 0 && backupUrl) {
+      source = { url: backupUrl, zoom: backupZoom };
+      received = await receive(backupUrl);
     }
-  }, [url, backupUrl, getSqsClient, prepareTask, zoom, backupZoom]);
+
+    const tasks = await Promise.all(
+      received.messages.map((entity) =>
+        prepareMessage(
+          entity,
+          source.url,
+          source.zoom,
+          received.receiveMs,
+        ).catch((error: unknown) => {
+          console.error('Failed to prepare annotation task', error);
+          return null;
+        }),
+      ),
+    );
+    readyRef.current.push(
+      ...tasks.filter((task): task is AnnotationTaskPayload => task !== null),
+    );
+    return received.messages.length;
+  }, [url, backupUrl, zoom, backupZoom, getSqsClient, prepareMessage]);
+
+  const receive = useCallback(() => {
+    receivingRef.current ??= receiveBatch().finally(() => {
+      receivingRef.current = null;
+    });
+    return receivingRef.current;
+  }, [receiveBatch]);
+
+  const fetcher = useCallback(async (): Promise<AnnotationTaskPayload> => {
+    for (;;) {
+      const ready = readyRef.current.shift();
+      if (ready) {
+        if (url && readyRef.current.length <= RECEIVE_AHEAD) {
+          receive().catch((error: unknown) => {
+            console.error('Receiving tasks ahead failed', error);
+          });
+        }
+        return ready;
+      }
+      if (!url) {
+        await sleep(5000);
+        continue;
+      }
+
+      const received = await receive();
+      if (readyRef.current.length > 0) continue;
+      await sleep(received === 0 ? 5000 : 1000);
+    }
+  }, [url, receive]);
 
   const standbyTestFetcher =
     useCallback(async (): Promise<AnnotationTaskPayload | null> => {

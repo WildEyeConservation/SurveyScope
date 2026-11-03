@@ -35,6 +35,8 @@ interface TaskBufferProps<T extends TaskPayload> {
   preloadN?: number;
   visible?: boolean;
   prefetch?: number;
+  /** Warms a fetched task that is beyond the mounted window. */
+  warm?: (task: T & { id: string }) => void;
   /** Fetches tasks reserved outside the normal queue. The first stays mounted and warm. */
   standbyFetcher?: () => Promise<T | null | undefined>;
   standbyN?: number;
@@ -62,6 +64,7 @@ export function TaskBuffer<T extends TaskPayload>({
   index,
   setIndex,
   prefetch = 0,
+  warm,
   standbyFetcher,
   standbyN = 0,
   beforeNext,
@@ -98,6 +101,17 @@ export function TaskBuffer<T extends TaskPayload>({
     // A new render-time fetcher identity must not enqueue duplicate work.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buffer.length, index]);
+
+  const warmed = useRef(new Set<string>());
+  useEffect(() => {
+    if (!warm) return;
+    const start = index + preloadN;
+    for (const entry of buffer.slice(start, start + prefetch)) {
+      if (warmed.current.has(entry.id)) continue;
+      warmed.current.add(entry.id);
+      warm(entry);
+    }
+  }, [buffer, index, preloadN, prefetch, warm]);
 
   // Fill one slot at a time. The first entry is rendered invisibly so its
   // queries, image and MapLibre instance are ready; remaining entries are

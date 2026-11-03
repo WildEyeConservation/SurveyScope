@@ -7,6 +7,8 @@ import {
 } from '../../shared/imageTiles';
 export interface TileContext {
   imageId: string;
+  /** The annotation task the tiles are loaded for; timings are recorded against it. */
+  taskId?: string;
   width: number;
   height: number;
   sharedImageId?: string;

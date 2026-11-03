@@ -1,5 +1,20 @@
-import { useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import { useParams } from 'react-router-dom';
+import type { AnnotationTaskPayload } from './annotationTypes';
 import AnnotationWorkspace from './AnnotationWorkspace';
+import {
+  ANNOTATION_PRELOAD,
+  prefetchPlanner,
+} from './annotator/prefetchPlanner';
+import { prefetchTask } from './annotator/prefetchTask';
+import { GlobalContext } from './Context';
+import { storedDefaultZoom } from './defaultZoomEvents';
 import { JobsRemaining } from './JobsRemaining';
 import { TaskBuffer } from './TaskBuffer';
 import useAnnotationTaskQueue from './useAnnotationTaskQueue';
@@ -13,6 +28,25 @@ export default function AnnotationQueuePage() {
   const [index, setIndex] = useState(0);
   const { fetcher, standbyTestFetcher, beforeNext } = useAnnotationTaskQueue();
   useUnsavedWorkGuard();
+  const { client } = useContext(GlobalContext)!;
+  const { surveyId } = useParams();
+  useEffect(() => prefetchPlanner.skipNext(), []);
+  const prefetch = useSyncExternalStore(
+    prefetchPlanner.subscribe,
+    prefetchPlanner.depth,
+  );
+  // Same precedence as AnnotationWorkspace, so warmed tiles match the view.
+  const warm = useCallback(
+    (task: AnnotationTaskPayload) =>
+      void prefetchTask(
+        client as unknown as Parameters<typeof prefetchTask>[0],
+        {
+          ...task,
+          zoom: storedDefaultZoom(surveyId) ?? task.zoom,
+        },
+      ),
+    [client, surveyId],
+  );
 
   return (
     <div
@@ -29,7 +63,9 @@ export default function AnnotationQueuePage() {
             standbyN={2}
             beforeNext={beforeNext}
             visible
-            preloadN={3}
+            preloadN={ANNOTATION_PRELOAD}
+            prefetch={prefetch}
+            warm={warm}
             historyN={2}
             renderTask={(task) => <AnnotationWorkspace {...task} />}
           />

@@ -33,6 +33,7 @@ export function ensureTileProtocol() {
       width: Number(args.get('width')),
       height: Number(args.get('height')),
       sharedImageId: args.get('sharedImageId') || undefined,
+      taskId: args.get('taskId') || undefined,
     });
     return { data: await blob.arrayBuffer() };
   });
@@ -78,8 +79,9 @@ export function addImageTiles(
   sourceKey: string,
   image: { width: number; height: number; id: string; sharedImageId?: string },
   projection: ImageProjection,
+  taskId?: string,
 ) {
-  const context = imageTileContext(image);
+  const context = imageTileContext(image, taskId);
   const query = new URLSearchParams(
     Object.entries(context)
       .filter(([, value]) => value != null)
