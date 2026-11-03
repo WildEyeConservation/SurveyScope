@@ -27,6 +27,7 @@ import ProjectProgress from '../user/ProjectProgress.tsx';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress.tsx';
 import { logAdminAction } from '../utils/adminActionLogger.ts';
 import { deleteInfoTagDataForSet } from '../infoTags.ts';
+import { touchQueue } from '../touchQueue.ts';
 
 const PROJECT_SELECTION_SET = [
   'id',
@@ -44,6 +45,8 @@ const PROJECT_SELECTION_SET = [
   'queues.url',
   'queues.name',
   'queues.tag',
+  'queues.annotationSetId',
+  'queues.cancelAfter',
   'individualIdJobs.id',
   'individualIdJobs.status',
   'imageSets.imageCount',
@@ -370,6 +373,28 @@ export default function Surveys() {
     );
   }
 
+  async function handleKeepJob(projectId: string, queueIds: string[]) {
+    const kept = await Promise.all(
+      queueIds.map((id) => touchQueue(client, id, true))
+    );
+    if (kept.includes(false)) {
+      alert('Failed to keep the job. Please try again.');
+      return;
+    }
+    updateProjectInCache(projectId, (prev) =>
+      prev
+        ? {
+            ...prev,
+            queues: prev.queues.map((queue: { id: string }) =>
+              queueIds.includes(queue.id)
+                ? { ...queue, cancelAfter: null }
+                : queue
+            ),
+          }
+        : prev
+    );
+  }
+
   async function handleCancelJob() {
     const previousStatus = selectedProject!.status;
     updateProjectInCache(selectedProject!.id, (prev) =>
@@ -594,25 +619,60 @@ export default function Surveys() {
             None
           </Badge>
         )}
-        {sortedAnnotationSets.map((annotationSet, i) => (
-          <div
-            className={`d-flex flex-column ${gapClass} ${i === 0 ? '' : `border-top border-light ${borderClass}`
-              }`}
-            key={annotationSet.id}
-          >
-            <div className={`d-flex justify-content-between align-items-center ${gapClass} flex-wrap`}>
-              <div style={{ fontSize: '16px' }}>{annotationSet.name}</div>
-              {!hasJobs &&
-                renderAnnotationSetActions(
-                  project,
-                  annotationSet,
-                  disabled,
-                  hasJobs,
-                  { wrap, size }
-                )}
+        {sortedAnnotationSets.map((annotationSet, i) => {
+          const warnedQueues = project.queues.filter(
+            (queue: { annotationSetId?: string | null; cancelAfter?: string | null }) =>
+              queue.annotationSetId === annotationSet.id && queue.cancelAfter
+          );
+          const cancelAfter = warnedQueues
+            .map((queue: { cancelAfter?: string | null }) => queue.cancelAfter!)
+            .sort()[0];
+          return (
+            <div
+              className={`d-flex flex-column ${gapClass} ${i === 0 ? '' : `border-top border-light ${borderClass}`
+                }`}
+              key={annotationSet.id}
+            >
+              <div className={`d-flex justify-content-between align-items-center ${gapClass} flex-wrap`}>
+                <div className={`d-flex align-items-center ${gapClass} flex-wrap`}>
+                  <div style={{ fontSize: '16px' }}>{annotationSet.name}</div>
+                  {cancelAfter && (
+                    <>
+                      <Badge
+                        bg='warning'
+                        text='dark'
+                        style={{ fontSize: '12px' }}
+                        title='This job has been inactive for over 60 days'
+                      >
+                        Cancels {new Date(cancelAfter).toLocaleDateString()}
+                      </Badge>
+                      <Button
+                        size={size}
+                        variant='outline-light'
+                        onClick={() =>
+                          handleKeepJob(
+                            project.id,
+                            warnedQueues.map((queue: { id: string }) => queue.id)
+                          )
+                        }
+                      >
+                        Keep job
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {!hasJobs &&
+                  renderAnnotationSetActions(
+                    project,
+                    annotationSet,
+                    disabled,
+                    hasJobs,
+                    { wrap, size }
+                  )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   }
