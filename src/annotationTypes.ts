@@ -47,6 +47,8 @@ export interface AnnotationWorkspaceProps {
   /** Stable identifier for retry-safe Observation creation. */
   observationId?: string;
   taskTag?: string;
+  /** Image only: no header, side legend or frame, for viewers embedded in a page. */
+  embedded?: boolean;
 }
 
 /** A fully hydrated task returned by the annotation queue source. */

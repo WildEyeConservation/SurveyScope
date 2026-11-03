@@ -103,6 +103,8 @@ export interface MapLibreAnnotatorProps {
   showMapLegend?: boolean;
   /** Informational tag names per annotation id, shown in the hover popup. */
   infoTags?: Map<string, string[]>;
+  /** Fill the container with no frame or task outline. */
+  embedded?: boolean;
 }
 
 export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
@@ -124,6 +126,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     hideFnAnnotations,
     showMapLegend,
     infoTags,
+    embedded,
   } = props;
 
   const {
@@ -265,7 +268,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       addImageTiles(map, sourceKey, image, projection, location?.id);
 
       // Location rectangle (task bounds)
-      if (location?.width && location?.height) {
+      if (!embedded && location?.width && location?.height) {
         const x0 = location.x - location.width / 2;
         const y0 = location.y - location.height / 2;
         const x1 = location.x + location.width / 2;
@@ -353,6 +356,42 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     // mounted. Other inputs are fixed for the lifetime of this map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, zoom]);
+
+  // The hook reports [] until its query has loaded.
+  const annotationsLoaded = !!(
+    annotationsHook as { meta?: { isSuccess?: boolean } }
+  ).meta?.isSuccess;
+  const fittedToAnnotationsRef = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!embedded || !map || !mapReady || fittedToAnnotationsRef.current)
+      return;
+    // A hidden tab has no size to fit to; retry once it is shown.
+    if (!annotationsLoaded || !visible || !map.getContainer().clientWidth)
+      return;
+    fittedToAnnotationsRef.current = true;
+    if (annotations.length === 0) return;
+    const xs = annotations.map((a) => a.x);
+    const ys = annotations.map((a) => a.y);
+    const minSide = Math.min(image.width, image.height) / 4;
+    const pad = (lo: number, hi: number) => {
+      const span = Math.max(hi - lo, minSide);
+      const mid = (lo + hi) / 2;
+      return [mid - span * 0.6, mid + span * 0.6];
+    };
+    const [left, right] = pad(Math.min(...xs), Math.max(...xs));
+    const [top, bottom] = pad(Math.min(...ys), Math.max(...ys));
+    map.resize();
+    fitPxBounds(map, projection, left, top, right, bottom);
+  }, [
+    embedded,
+    mapReady,
+    visible,
+    annotations,
+    annotationsLoaded,
+    image,
+    projection,
+  ]);
 
   // ── Annotation data sync ──
   useEffect(() => {
@@ -706,10 +745,10 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
           style={{
             width: '100%',
             height: '100%',
-            borderRadius: 10,
+            borderRadius: embedded ? 0 : 10,
             overflow: 'hidden',
-            background: '#ffffff',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: embedded ? '#1f2933' : '#ffffff',
+            border: embedded ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           }}
         />
 

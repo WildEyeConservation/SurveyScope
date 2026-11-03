@@ -33,6 +33,9 @@ interface TabsProps {
   className?: string;
   sharedChild?: React.ReactNode;
   disableSwitching?: boolean;
+  // Hide inactive tabs instead of unmounting them, so they keep their state.
+  keepMounted?: boolean;
+  activeTab?: number;
 }
 
 export const Tab: React.FC<TabProps> = ({ children, className }) => {
@@ -50,8 +53,11 @@ export const Tabs: React.FC<TabsProps> = ({
   className,
   sharedChild,
   disableSwitching = false,
+  keepMounted = false,
+  activeTab: controlledTab,
 }) => {
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [internalTab, setActiveTab] = useState(defaultTab);
+  const activeTab = controlledTab ?? internalTab;
   const childrenArray = React.Children.toArray(
     children,
   ) as ReactElement<TabProps>[];
@@ -212,7 +218,19 @@ export const Tabs: React.FC<TabsProps> = ({
       </div>
       <div className='flex h-full w-full grow flex-col'>
         {sharedChild}
-        {childrenArray[activeTab]}
+        {keepMounted
+          ? childrenArray.map((child, index) => (
+              <div
+                key={index}
+                className={cn(
+                  'h-full w-full grow flex-col',
+                  index === activeTab ? 'flex' : 'hidden',
+                )}
+              >
+                {child}
+              </div>
+            ))
+          : childrenArray[activeTab]}
       </div>
     </div>
   );

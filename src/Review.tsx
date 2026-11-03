@@ -1,12 +1,11 @@
 import { Combobox } from '@/components/ui/combobox';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   useCallback,
   useContext,
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { useParams } from 'react-router-dom';
@@ -18,13 +17,20 @@ import './Review.css';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { FormText, Label } from '@/components/ui/label';
+import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { ChevronRight, PanelBottom } from 'lucide-react';
-import DensityMap, { type DensitySource } from './DensityMap';
-import ReviewCarousel from './ReviewCarousel';
-import { Tab, Tabs } from './Tabs';
+import { cn } from '@/lib/utils';
+import {
+  ChevronRight,
+  PanelBottom,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from 'lucide-react';
 import { useUsers } from './apiInterface';
+import DensityMap, { type DensitySource } from './DensityMap';
+import ReviewImages from './ReviewImages';
+import { useSyncViewerEdits } from './sightingQueries';
+import { Tab, Tabs } from './Tabs';
 import { useInfoTagData } from './useInfoTags';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -34,20 +40,37 @@ export function Review({ showAnnotationSetDropdown = true }) {
   const [selectedCategories, setSelectedCategories] = useState<Option[]>([]);
   const [selectedInfoTags, setSelectedInfoTags] = useState<Option[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<Option[]>([]);
-  const [tab, setTab] = useState<'carousel' | 'map'>('map');
+  const [tab, setTab] = useState<'images' | 'map'>('map');
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const openImage = useCallback((imageId: string) => {
+    setSelectedImageId(imageId);
+    setTab('images');
+  }, []);
   const [selectedAnnotationSet, setSelectedAnnotationSet] =
     useState<string>('');
-  const [imageBased] = useState(true);
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem('reviewSidebarCollapsed') === 'true',
+  );
+  const toggleSidebar = () =>
+    setSidebarCollapsed((collapsed) => {
+      localStorage.setItem('reviewSidebarCollapsed', String(!collapsed));
+      return !collapsed;
+    });
   const primaryOnlyId = useId();
-  const transectModeId = useId();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { client } = useContext(GlobalContext)!;
   const {
     categoriesHook: { data: categories },
     project,
   } = useContext(ProjectContext)!;
+  useSyncViewerEdits(
+    useMemo(
+      () => new Map((categories ?? []).map((c) => [c.id, c.name])),
+      [categories],
+    ),
+  );
   const { annotationSetId } = useParams();
   const {
     annotationSetsHook: { data: annotationSets },
@@ -59,14 +82,8 @@ export function Review({ showAnnotationSetDropdown = true }) {
     { userId: string }[]
   >([]);
 
-  // --- Advanced multi-survey selection ------------------------------------
-  // Surveys (of the same organization) whose data is overlaid on the map, and
-  // the annotation set(s) selected within each. The current survey is selected
-  // by default and tracks the primary annotation set chosen below.
-  const [selectedSurveyIds, setSelectedSurveyIds] = useState<string[]>([]);
-  const [setsBySurvey, setSetsBySurvey] = useState<Record<string, string[]>>(
-    {},
-  );
+  // Extra annotation sets, from any survey in the organisation, overlaid on the map.
+  const [overlaySetIds, setOverlaySetIds] = useState<string[]>([]);
   // Transects reported by the map (consistent numbering) + the active filter.
   const [transectOptionsRaw, setTransectOptionsRaw] = useState<
     { id: string; surveyId: string; number: number }[]
@@ -136,132 +153,66 @@ export function Review({ showAnnotationSetDropdown = true }) {
     queryFn: () =>
       fetchAllPaginatedResults(client.models.Project.list, {
         filter: { organizationId: { eq: project.organizationId } },
-        selectionSet: ['id', 'name', 'status'],
+        selectionSet: [
+          'id',
+          'name',
+          'status',
+          'annotationSets.id',
+          'annotationSets.name',
+        ] as const,
       }),
   });
 
-  const surveyOptions = useMemo<Option[]>(() => {
-    const data = (orgSurveysQuery.data ?? []) as {
-      id: string;
-      name: string;
-      status?: string | null;
-    }[];
-    return data
-      .filter((p) => p.status !== 'deleted')
-      .map((p) => ({ label: p.name, value: p.id }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [orgSurveysQuery.data]);
+  const orgSurveys = useMemo(
+    () =>
+      (
+        (orgSurveysQuery.data ?? []) as {
+          id: string;
+          name: string;
+          status?: string | null;
+          annotationSets?: { id: string; name: string }[] | null;
+        }[]
+      ).filter((survey) => survey.status !== 'deleted'),
+    [orgSurveysQuery.data],
+  );
 
   const surveyLabel = (id: string) =>
-    surveyOptions.find((o) => o.value === id)?.label ??
+    orgSurveys.find((survey) => survey.id === id)?.name ??
     (id === project.id ? project.name : 'Survey');
 
-  // --- Annotation sets per selected survey (one cached query each) --------
-  // Keyed by surveyId, so adding/removing a survey only fetches the new one.
-  const setQueries = useQueries({
-    queries: selectedSurveyIds.map((sid) => ({
-      queryKey: ['review-survey-sets', sid],
-      staleTime: 5 * 60 * 1000,
-      queryFn: () =>
-        fetchAllPaginatedResults(
-          client.models.AnnotationSet.annotationSetsByProjectId,
-          { projectId: sid, selectionSet: ['id', 'name'] },
-        ),
-    })),
-  });
+  const overlayOptions = useMemo(
+    () =>
+      orgSurveys
+        .flatMap((survey) =>
+          (survey.annotationSets ?? []).map((set) => ({
+            label: `${survey.name} · ${set.name}`,
+            value: set.id,
+            surveyId: survey.id,
+          })),
+        )
+        .filter((option) => option.value !== selectedAnnotationSet)
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [orgSurveys, selectedAnnotationSet],
+  );
 
-  const surveyIdsKey = selectedSurveyIds.join(',');
-  const setQueryLenKey = setQueries
-    .map((q) => (q.data ? (q.data as Array<unknown>).length : 0))
-    .join(',');
-
-  const setOptionsBySurvey = useMemo<Record<string, Option[]>>(() => {
-    const out: Record<string, Option[]> = {};
-    selectedSurveyIds.forEach((sid, i) => {
-      const data = (setQueries[i]?.data ?? []) as {
-        id: string;
-        name: string;
-      }[];
-      out[sid] = data
-        .map((s) => ({ label: s.name, value: s.id }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-    });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surveyIdsKey, setQueryLenKey]);
-
-  // Default the survey selection to the current survey once it is known.
   useEffect(() => {
-    if (!project?.id) return;
-    setSelectedSurveyIds((prev) => (prev.length ? prev : [project.id]));
-  }, [project?.id]);
+    if (annotationSets?.length === 1) {
+      setSelectedAnnotationSet((prev) => prev || annotationSets[0].id);
+    }
+  }, [annotationSets]);
 
-  // Keep the current survey's set selection in sync with the primary set
-  // chosen below (replacing the previously-synced primary, keeping extras).
-  const prevPrimaryRef = useRef<string>('');
-  useEffect(() => {
-    if (!project?.id) return;
-    setSetsBySurvey((prev) => {
-      const current = prev[project.id] ?? [];
-      const withoutOld = current.filter((id) => id !== prevPrimaryRef.current);
-      const next = selectedAnnotationSet
-        ? Array.from(new Set([selectedAnnotationSet, ...withoutOld]))
-        : withoutOld;
-      prevPrimaryRef.current = selectedAnnotationSet;
-      const unchanged =
-        next.length === current.length &&
-        next.every((id, i) => id === current[i]);
-      return unchanged ? prev : { ...prev, [project.id]: next };
-    });
-  }, [selectedAnnotationSet, project?.id]);
-
-  // When a selected survey exposes exactly one annotation set, auto-select it.
-  // For the current survey this drives the primary set (which then syncs into
-  // the map + carousel via the effect above); for others it fills the row.
-  useEffect(() => {
-    selectedSurveyIds.forEach((sid) => {
-      const opts = setOptionsBySurvey[sid];
-      if (!opts || opts.length !== 1) return;
-      const only = opts[0].value;
-      if (sid === project.id) {
-        setSelectedAnnotationSet((prev) => prev || only);
-      } else {
-        setSetsBySurvey((prev) =>
-          prev[sid]?.length ? prev : { ...prev, [sid]: [only] },
-        );
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setOptionsBySurvey, surveyIdsKey, project.id]);
-
-  const handleSurveysChange = (newValue: Option[]) => {
-    const ids = newValue.map((v) => v.value);
-    setSelectedSurveyIds(ids);
-    // Drop set selections for surveys no longer selected.
-    setSetsBySurvey((prev) => {
-      const next: Record<string, string[]> = {};
-      for (const id of ids) if (prev[id]) next[id] = prev[id];
-      return next;
-    });
-  };
-
-  const handleSetsChange = (surveyId: string, newValue: Option[]) => {
-    setSetsBySurvey((prev) => ({
-      ...prev,
-      [surveyId]: newValue.map((v) => v.value),
-    }));
-  };
-
-  // Flatten the selection into the (survey, set) sources the map renders.
   const mapSources = useMemo<DensitySource[]>(() => {
-    const out: DensitySource[] = [];
-    for (const sid of selectedSurveyIds) {
-      for (const aid of setsBySurvey[sid] ?? []) {
-        out.push({ surveyId: sid, annotationSetId: aid });
+    const out: DensitySource[] = selectedAnnotationSet
+      ? [{ surveyId: project.id, annotationSetId: selectedAnnotationSet }]
+      : [];
+    for (const id of overlaySetIds) {
+      const option = overlayOptions.find((o) => o.value === id);
+      if (option) {
+        out.push({ surveyId: option.surveyId, annotationSetId: id });
       }
     }
     return out;
-  }, [selectedSurveyIds, setsBySurvey]);
+  }, [project.id, selectedAnnotationSet, overlaySetIds, overlayOptions]);
 
   const categoryNames = useMemo(
     () => selectedCategories.map((c) => c.label),
@@ -325,7 +276,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
           : `Transect ${t.number}`,
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transectOptionsRaw, surveyOptions]);
+  }, [transectOptionsRaw, orgSurveys]);
 
   // Free-text mode: take comma-separated transect ids verbatim (these are the
   // ids stored in the database, not the display numbers).
@@ -357,8 +308,24 @@ export function Review({ showAnnotationSetDropdown = true }) {
       }}
     >
       <div className='flex h-full w-full flex-col gap-2 sm:flex-row'>
+        {sidebarCollapsed && (
+          <Card className='hidden flex-none sm:flex'>
+            <button
+              type='button'
+              aria-label='Show information and filters'
+              title='Show information and filters'
+              onClick={toggleSidebar}
+              className='flex h-full w-10 items-start justify-center pt-3 text-muted-foreground hover:text-foreground'
+            >
+              <PanelLeftOpen className='size-5' />
+            </button>
+          </Card>
+        )}
         <div
-          className='flex w-full flex-col gap-2'
+          className={cn(
+            'flex w-full flex-col gap-2',
+            sidebarCollapsed && 'sm:hidden',
+          )}
           style={{
             maxWidth: '300px',
             maxHeight: 'calc(100vh - 32px)',
@@ -366,8 +333,17 @@ export function Review({ showAnnotationSetDropdown = true }) {
           }}
         >
           <Card className='hidden w-full sm:block'>
-            <CardHeader>
+            <CardHeader className='flex flex-row items-center justify-between'>
               <CardTitle className='mb-0'>Information</CardTitle>
+              <button
+                type='button'
+                aria-label='Hide information and filters'
+                title='Hide information and filters'
+                onClick={toggleSidebar}
+                className='text-muted-foreground hover:text-foreground'
+              >
+                <PanelLeftClose className='size-5' />
+              </button>
             </CardHeader>
             <CardContent className='flex flex-col gap-2'>
               <p className='mb-0'>
@@ -405,69 +381,57 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 className='flex flex-col gap-2'
                 style={{ overflowY: 'auto', minHeight: 0 }}
               >
-                <div className='w-full'>
-                  <Label>Labels</Label>
-                  <Combobox
-                    value={selectedCategories}
-                    onChange={(options) => setSelectedCategories(options)}
-                    multiple
-                    name='Labels to review'
-                    options={
-                      categories
-                        ?.filter(
-                          (c) => c.annotationSetId === selectedAnnotationSet,
-                        )
-                        .map((q) => ({
-                          label: q.name,
-                          value: q.id,
-                        })) ?? []
-                    }
-                    placeholder='All labels'
-                  />
-                  {tab === 'map' && (
-                    <div className='mt-4 flex items-center gap-2'>
-                      <Switch
-                        id={primaryOnlyId}
-                        checked={primaryOnly}
-                        onCheckedChange={(c) => setPrimaryOnly(c)}
-                      />
-                      <Label htmlFor={primaryOnlyId} className='mb-0'>
-                        Primary sightings only
-                      </Label>
-                    </div>
-                  )}
-                </div>
+                <Combobox
+                  value={selectedCategories}
+                  onChange={(options) => setSelectedCategories(options)}
+                  multiple
+                  name='Labels to review'
+                  options={
+                    categories
+                      ?.filter(
+                        (c) => c.annotationSetId === selectedAnnotationSet,
+                      )
+                      .map((q) => ({
+                        label: q.name,
+                        value: q.id,
+                      })) ?? []
+                  }
+                  placeholder='All labels'
+                />
 
-                {/* Only surveys that have been informationally tagged get the
-                    filter - everyone else would see an empty control. */}
+                {/* Only tagged surveys get the filter; others would see an empty control. */}
                 {infoTagOptions.length > 0 && (
-                  <div className='w-full'>
-                    <Label>Info Tags</Label>
-                    <Combobox
-                      value={selectedInfoTags}
-                      onChange={(options) => setSelectedInfoTags(options)}
-                      multiple
-                      name='Info tags to review'
-                      options={infoTagOptions}
-                      placeholder='Any tags'
-                    />
-                    <FormText>
-                      Keeps sightings carrying any of the selected tags.
-                    </FormText>
-                  </div>
+                  <Combobox
+                    value={selectedInfoTags}
+                    onChange={(options) => setSelectedInfoTags(options)}
+                    multiple
+                    name='Info tags to review'
+                    options={infoTagOptions}
+                    placeholder='Any info tags'
+                  />
                 )}
 
-                <div className='w-full'>
-                  <Label>Users</Label>
-                  <Combobox
-                    value={selectedUsers}
-                    onChange={(options) => setSelectedUsers(options)}
-                    multiple
-                    name='Users to filter'
-                    options={userOptions}
-                    placeholder='All users'
-                  />
-                </div>
+                <Combobox
+                  value={selectedUsers}
+                  onChange={(options) => setSelectedUsers(options)}
+                  multiple
+                  name='Users to filter'
+                  options={userOptions}
+                  placeholder='All users'
+                />
+
+                {tab === 'map' && (
+                  <div className='flex items-center gap-2 py-1'>
+                    <Switch
+                      id={primaryOnlyId}
+                      checked={primaryOnly}
+                      onCheckedChange={(c) => setPrimaryOnly(c)}
+                    />
+                    <Label htmlFor={primaryOnlyId} className='mb-0'>
+                      Primary sightings only
+                    </Label>
+                  </div>
+                )}
 
                 {showAnnotationSetDropdown && (
                   <AnnotationSetDropdown
@@ -477,121 +441,82 @@ export function Review({ showAnnotationSetDropdown = true }) {
                   />
                 )}
 
-                {/* Advanced: overlay data from other surveys on the map. */}
-                <div className='mt-1 w-full border-t pt-2'>
-                  <Button
-                    variant='ghost'
-                    className='flex w-full items-center gap-1 p-0 text-left hover:bg-transparent'
+                <div className='border-t border-white/10'>
+                  <button
+                    type='button'
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    style={{ boxShadow: 'none' }}
+                    className='flex w-full items-center gap-2 py-2 text-left text-sm text-muted-foreground hover:text-foreground'
                   >
                     <ChevronRight
-                      size={16}
-                      style={{
-                        transition: 'transform 0.15s',
-                        transform: showAdvanced
-                          ? 'rotate(90deg)'
-                          : 'rotate(0deg)',
-                      }}
+                      className={cn(
+                        'size-4 transition-transform',
+                        showAdvanced && 'rotate-90',
+                      )}
                     />
-                    <span className='font-semibold'>Advanced</span>
-                  </Button>
+                    More filters
+                  </button>
 
                   {showAdvanced && (
-                    <div className='mt-2 flex flex-col gap-2'>
-                      <div className='w-full'>
-                        <Label className='mb-1'>Surveys</Label>
+                    <div className='flex flex-col gap-2 pb-1'>
+                      {transectInputMode === 'input' ? (
+                        <Input
+                          type='text'
+                          aria-label='Transect ids'
+                          value={transectInputText}
+                          onChange={(e) =>
+                            handleTransectInputChange(e.target.value)
+                          }
+                          placeholder='Transect ids, comma-separated'
+                        />
+                      ) : (
                         <Combobox
-                          value={selectedSurveyIds.map((id) => ({
-                            label: surveyLabel(id),
+                          value={selectedTransectIds.map((id) => ({
+                            label:
+                              transectOptions.find((o) => o.value === id)
+                                ?.label ?? id,
                             value: id,
                           }))}
-                          onChange={handleSurveysChange}
+                          onChange={(options) =>
+                            setSelectedTransectIds(options.map((v) => v.value))
+                          }
                           multiple
-                          name='Surveys to overlay'
-                          options={surveyOptions}
-                          loading={orgSurveysQuery.isLoading}
-                          placeholder='Add surveys…'
+                          name='Transects to filter'
+                          options={transectOptions}
+                          disabled={transectOptions.length === 0}
+                          placeholder={
+                            transectOptions.length === 0
+                              ? 'No transects'
+                              : 'All transects'
+                          }
                         />
-                        <FormText>
-                          Overlay sightings from other surveys in this
-                          organization.
-                        </FormText>
-                      </div>
+                      )}
+                      <button
+                        type='button'
+                        className='self-end text-xs text-muted-foreground hover:text-foreground'
+                        onClick={() =>
+                          handleTransectModeToggle(
+                            transectInputMode !== 'input',
+                          )
+                        }
+                      >
+                        {transectInputMode === 'input'
+                          ? 'Pick transects from a list'
+                          : 'Enter transect ids instead'}
+                      </button>
 
-                      {selectedSurveyIds.map((sid, i) => (
-                        <div className='w-full' key={sid}>
-                          <Label className='mb-1'>{surveyLabel(sid)}</Label>
-                          <Combobox
-                            value={(setsBySurvey[sid] ?? []).map((aid) => ({
-                              label:
-                                setOptionsBySurvey[sid]?.find(
-                                  (o) => o.value === aid,
-                                )?.label ?? aid,
-                              value: aid,
-                            }))}
-                            onChange={(options) =>
-                              handleSetsChange(sid, options)
-                            }
-                            multiple
-                            name={`Annotation sets for ${surveyLabel(sid)}`}
-                            options={setOptionsBySurvey[sid] ?? []}
-                            loading={setQueries[i]?.isLoading}
-                            placeholder='Select annotation sets…'
-                          />
-                        </div>
-                      ))}
-
-                      <div className='w-full'>
-                        <div className='mb-1 flex items-center justify-between'>
-                          <Label className='mb-0'>Transects</Label>
-                          <div className='flex items-center gap-2'>
-                            <Switch
-                              id={transectModeId}
-                              checked={transectInputMode === 'input'}
-                              onCheckedChange={(c) =>
-                                handleTransectModeToggle(c)
-                              }
-                            />
-                            <Label htmlFor={transectModeId} className='mb-0'>
-                              Enter id
-                            </Label>
-                          </div>
-                        </div>
-                        {transectInputMode === 'input' ? (
-                          <Input
-                            type='text'
-                            value={transectInputText}
-                            onChange={(e) =>
-                              handleTransectInputChange(e.target.value)
-                            }
-                            placeholder='Transect id(s), comma-separated'
-                          />
-                        ) : (
-                          <Combobox
-                            value={selectedTransectIds.map((id) => ({
-                              label:
-                                transectOptions.find((o) => o.value === id)
-                                  ?.label ?? id,
-                              value: id,
-                            }))}
-                            onChange={(options) =>
-                              setSelectedTransectIds(
-                                options.map((v) => v.value),
-                              )
-                            }
-                            multiple
-                            name='Transects to filter'
-                            options={transectOptions}
-                            disabled={transectOptions.length === 0}
-                            placeholder={
-                              transectOptions.length === 0
-                                ? 'No transects'
-                                : 'All transects'
-                            }
-                          />
+                      <Combobox
+                        value={overlayOptions.filter((o) =>
+                          overlaySetIds.includes(o.value),
                         )}
-                      </div>
+                        onChange={(options) =>
+                          setOverlaySetIds(options.map((o) => o.value))
+                        }
+                        multiple
+                        name='Annotation sets to overlay'
+                        options={overlayOptions}
+                        loading={orgSurveysQuery.isLoading}
+                        placeholder='Overlay other annotation sets...'
+                      />
                     </div>
                   )}
                 </div>
@@ -602,16 +527,9 @@ export function Review({ showAnnotationSetDropdown = true }) {
         <Card className='h-full w-full'>
           <CardContent>
             <Tabs
-              onTabChange={(tab) => {
-                switch (tab) {
-                  case 0:
-                    setTab('map');
-                    break;
-                  case 1:
-                    setTab('carousel');
-                    break;
-                }
-              }}
+              keepMounted
+              activeTab={tab === 'map' ? 0 : 1}
+              onTabChange={(index) => setTab(index === 0 ? 'map' : 'images')}
             >
               <Tab label='Map'>
                 <div className='h-full w-full pt-4'>
@@ -625,16 +543,21 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     onTransectsLoaded={handleTransectsLoaded}
                     primaryOnly={primaryOnly}
                     editable
+                    onOpenImage={openImage}
                   />
                 </div>
               </Tab>
-              <Tab label='Carousel'>
-                <ReviewCarousel
-                  selectedAnnotationSet={selectedAnnotationSet}
-                  selectedCategories={selectedCategories}
-                  selectedUsers={selectedUsers}
+              <Tab label='Images'>
+                <ReviewImages
+                  surveyId={project.id}
+                  annotationSetId={selectedAnnotationSet}
+                  categoryIds={selectedCategories.map((c) => c.value)}
+                  userIds={selectedUsers.map((u) => u.value)}
                   infoTagNames={infoTagNames}
-                  imageBased={imageBased}
+                  transectIds={selectedTransectIds}
+                  selectedImageId={selectedImageId}
+                  onSelectImage={setSelectedImageId}
+                  visible={tab === 'images'}
                 />
               </Tab>
             </Tabs>

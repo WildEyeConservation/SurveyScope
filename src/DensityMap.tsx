@@ -1,15 +1,31 @@
-import type { ExpressionSpecification, StyleSpecification } from 'maplibre-gl';
+import type { ExpressionSpecification } from 'maplibre-gl';
 import * as maplibregl from 'maplibre-gl';
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
+import './survey/surveyMap.css';
 
 import { buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import { useQueries } from '@tanstack/react-query';
 import { pointOnFeature } from '@turf/turf';
+import {
+  Maximize2Icon,
+  Minimize2Icon,
+  MinusIcon,
+  PlusIcon,
+  ScanIcon,
+} from 'lucide-react';
 import {
   adjectives,
   names,
@@ -25,10 +41,16 @@ import {
 } from './densityHeat';
 import ImageViewerModal from './ImageViewerModal';
 import { formatInfoTagsForDisplay } from './infoTags';
-import { loadProjectImages } from './projectImages';
-import { loadRows } from './rowChunks';
+import {
+  extractUserIdFromOwner,
+  setAnnotationsQuery,
+  surveyGeoQuery,
+} from './sightingQueries';
+import { MapButton } from './survey/mapControls';
+import { LIGHT_THEME, MAP_CONTROLS } from './survey/mapTheme';
+import { BASE_STYLE } from './survey/surveyMapStyle';
+import { strataColors } from './survey/transectStrata';
 import { useInfoTagData } from './useInfoTags';
-import { fetchAllPaginatedResults } from './utils';
 
 /**
  * A single (survey, annotation set) pair whose annotations should be plotted.
@@ -73,6 +95,8 @@ interface DensityMapProps {
   ) => void;
   highlightedStratumId?: string | null;
   onStratumHover?: (stratumId: string | null) => void;
+  /** Opens images elsewhere instead of in the viewer pop-up. */
+  onOpenImage?: (imageId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,42 +135,9 @@ const TRANSECT_COLORS = [
   '#FFD133',
 ];
 
-// OpenStreetMap raster basemap. Glyphs are needed for the cluster-count labels
-// and reuse the same endpoint as the rest of the app's MapLibre views.
-const BASE_STYLE: StyleSpecification = {
-  version: 8,
-  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: [
-        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      ],
-      tileSize: 256,
-      // OSM only serves tiles up to z19; beyond that MapLibre overzooms
-      // (upscales the z19 tile) instead of requesting non-existent tiles,
-      // which would 400 and surface as a (header-less) CORS error.
-      maxzoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
-    },
-  },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-};
-
 type FeatureCollection = GeoJSON.FeatureCollection;
-type Outline = { id: string; coordinates?: number[] | null };
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
-
-// If contains "::", the userId is the part before it; otherwise the whole field.
-function extractUserIdFromOwner(
-  owner: string | null | undefined,
-): string | null {
-  if (!owner) return null;
-  return owner.includes('::') ? owner.split('::')[0] : owner;
-}
 
 // Cheap deterministic hash so co-located annotations spread out slightly.
 function hashString(s: string): number {
@@ -213,6 +204,7 @@ export default function DensityMap({
   onTransectsLoaded,
   highlightedStratumId = null,
   onStratumHover,
+  onOpenImage,
 }: DensityMapProps) {
   const { client } = useContext(GlobalContext)!;
 
@@ -266,69 +258,12 @@ export default function DensityMap({
   // cache, which is exactly what we want when the user tweaks the selection.
   // -----------------------------------------------------------------------
   const surveyQueries = useQueries({
-    queries: uniqueSurveyIds.map((sid) => ({
-      queryKey: ['densitymap', 'survey-geo', sid],
-      staleTime: 30 * 60 * 1000,
-      queryFn: async () => {
-        const [images, strata, exclusions] = await Promise.all([
-          loadProjectImages(client, sid, [
-            'latitude',
-            'longitude',
-            'transectId',
-            'timestamp',
-          ]),
-          fetchAllPaginatedResults<Outline & { name: string | null }>(
-            client.models.Stratum.strataByProjectId,
-            {
-              projectId: sid,
-              limit: 10000,
-              selectionSet: ['id', 'name', 'coordinates'],
-            },
-          ),
-          fetchAllPaginatedResults<Outline>(
-            client.models.ShapefileExclusions.shapefileExclusionsByProjectId,
-            {
-              projectId: sid,
-              limit: 10000,
-              selectionSet: ['id', 'coordinates'],
-            },
-          ),
-        ]);
-        return { surveyId: sid, images, strata, exclusions };
-      },
-    })),
+    queries: uniqueSurveyIds.map((sid) => surveyGeoQuery(client, sid)),
   });
 
   const annotationQueries = useQueries({
-    queries: uniqueSetSources.map(
-      ({ surveyId: sid, annotationSetId: setId }) => ({
-        queryKey: ['densitymap', 'annotations', setId],
-        staleTime: 30 * 60 * 1000,
-        queryFn: async () => {
-          const [rows, surveyCategories] = await Promise.all([
-            loadRows(client, 'annotationsByAnnotationSetId', setId, [
-              'imageId',
-              'categoryId',
-              'objectId',
-              'source',
-              'owner',
-            ]),
-            loadRows(client, 'categoriesByProjectId', sid, ['name']),
-          ]);
-          const categories = new Map(
-            surveyCategories.map((c) => [
-              c.id,
-              { id: c.id, name: c.name ?? '' },
-            ]),
-          );
-          const annotations = rows.map((a) => ({
-            ...a,
-            setId,
-            category: (a.categoryId && categories.get(a.categoryId)) || null,
-          }));
-          return { surveyId: sid, annotationSetId: setId, annotations };
-        },
-      }),
+    queries: uniqueSetSources.map(({ surveyId: sid, annotationSetId: setId }) =>
+      setAnnotationsQuery(client, sid, setId),
     ),
   });
 
@@ -355,7 +290,9 @@ export default function DensityMap({
     .join('|');
   const annotationDataSig = annotationQueries
     .map((q) =>
-      q.data ? `${q.data.annotationSetId}:${q.data.annotations.length}` : '',
+      q.data
+        ? `${q.data.annotationSetId}:${q.data.annotations.length}:${q.dataUpdatedAt}`
+        : '',
     )
     .join('|');
 
@@ -610,7 +547,11 @@ export default function DensityMap({
         features.push({
           type: 'Feature',
           geometry: { type: 'Polygon', coordinates: [ring] },
-          properties: { id: s.id, name: s.name ?? 'Stratum' },
+          properties: {
+            id: s.id,
+            name: s.name ?? 'Stratum',
+            color: strataColors[features.length % strataColors.length],
+          },
         });
       }
     }
@@ -653,6 +594,18 @@ export default function DensityMap({
   // -----------------------------------------------------------------------
   const openViewer = (imageId: string, setId?: string) => {
     if (document.fullscreenElement) document.exitFullscreen?.();
+    // The Images tab only shows the primary set; overlays keep the pop-up.
+    const primarySurveyId = effectiveSources.find(
+      (source) => source.annotationSetId === primarySetId,
+    )?.surveyId;
+    if (
+      onOpenImage &&
+      (!setId || setId === primarySetId) &&
+      imageById.get(imageId)?.surveyId === primarySurveyId
+    ) {
+      onOpenImage(imageId);
+      return;
+    }
     setViewerImageId(imageId);
     setViewerSetId(setId || primarySetId);
     setViewerOpen(true);
@@ -684,14 +637,12 @@ export default function DensityMap({
 
     // MapLibre does not automatically detect every flex/grid size change.
     // Keep its canvas in sync with the responsive container.
-    const resizeObserver = new ResizeObserver(() => map.resize());
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+      if (container.clientWidth) fitPendingRef.current();
+    });
     resizeObserver.observe(container);
 
-    map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right',
-    );
-    map.addControl(new maplibregl.FullscreenControl(), 'top-right');
     map.addControl(
       new maplibregl.ScaleControl({ unit: 'metric' }),
       'bottom-left',
@@ -721,13 +672,13 @@ export default function DensityMap({
         id: LYR_EXCLUSIONS_FILL,
         type: 'fill',
         source: SRC_EXCLUSIONS,
-        paint: { 'fill-color': '#FF0000', 'fill-opacity': 0.3 },
+        paint: { 'fill-color': '#ff0000', 'fill-opacity': 0.15 },
       });
       map.addLayer({
         id: LYR_EXCLUSIONS_LINE,
         type: 'line',
         source: SRC_EXCLUSIONS,
-        paint: { 'line-color': '#FF0000', 'line-width': 2 },
+        paint: { 'line-color': '#ff0000', 'line-width': 2 },
       });
       const strataHovered: ExpressionSpecification = [
         'boolean',
@@ -739,8 +690,8 @@ export default function DensityMap({
         type: 'fill',
         source: SRC_STRATA,
         paint: {
-          'fill-color': '#3357FF',
-          'fill-opacity': ['case', strataHovered, 0.25, 0],
+          'fill-color': ['get', 'color'],
+          'fill-opacity': ['case', strataHovered, 0.25, 0.1],
         },
       });
       map.addLayer({
@@ -748,8 +699,8 @@ export default function DensityMap({
         type: 'line',
         source: SRC_STRATA,
         paint: {
-          'line-color': '#3357FF',
-          'line-width': ['case', strataHovered, 4, 2],
+          'line-color': ['get', 'color'],
+          'line-width': ['case', strataHovered, 3, 1.5],
         },
       });
 
@@ -786,15 +737,9 @@ export default function DensityMap({
         source: SRC_ANNOTATIONS,
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': [
-            'step',
-            ['get', 'point_count'],
-            '#51bbd6',
-            100,
-            '#f1f075',
-            750,
-            '#f28cb1',
-          ],
+          'circle-color': '#ff8c00',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
           'circle-radius': [
             'step',
             ['get', 'point_count'],
@@ -804,7 +749,7 @@ export default function DensityMap({
             750,
             25,
           ],
-          'circle-opacity': 0.85,
+          'circle-opacity': 0.9,
         },
       });
       map.addLayer({
@@ -815,8 +760,9 @@ export default function DensityMap({
         layout: {
           'text-field': ['get', 'point_count_abbreviated'],
           'text-size': 12,
+          'text-font': ['Open Sans Semibold'],
         },
-        paint: { 'text-color': '#000000' },
+        paint: { 'text-color': '#ffffff' },
       });
       // Individual sightings
       map.addLayer({
@@ -843,7 +789,7 @@ export default function DensityMap({
           'text-font': ['Open Sans Regular'],
         },
         paint: {
-          'text-color': '#1a2b8c',
+          'text-color': '#212529',
           'text-halo-color': '#ffffff',
           'text-halo-width': 1.5,
         },
@@ -1103,44 +1049,99 @@ export default function DensityMap({
     return [minLng, minLat, maxLng, maxLat] as [number, number, number, number];
   }, [imagesFC, annotationsFC]);
 
+  const fitAll = useCallback(
+    (duration = 300) => {
+      if (!boundsKey) return;
+      mapRef.current?.fitBounds(
+        [
+          [boundsKey[0], boundsKey[1]],
+          [boundsKey[2], boundsKey[3]],
+        ],
+        { padding: 40, maxZoom: 16, duration },
+      );
+    },
+    [boundsKey],
+  );
+
   const lastFitRef = useRef<string>('');
   useEffect(() => {
     if (!mapLoaded || !boundsKey) return;
     const key = boundsKey.join(',');
     if (key === lastFitRef.current) return;
+    // A hidden tab has no size to fit to; the resize observer fits once shown.
+    if (!mapContainerRef.current?.clientWidth) return;
     lastFitRef.current = key;
-    mapRef.current!.fitBounds(
-      [
-        [boundsKey[0], boundsKey[1]],
-        [boundsKey[2], boundsKey[3]],
-      ],
-      { padding: 40, maxZoom: 16, duration: 0 },
-    );
-  }, [mapLoaded, boundsKey]);
+    fitAll(0);
+  }, [mapLoaded, boundsKey, fitAll]);
+  const fitPendingRef = useRef(() => {});
+  fitPendingRef.current = () => {
+    if (!boundsKey || boundsKey.join(',') === lastFitRef.current) return;
+    lastFitRef.current = boundsKey.join(',');
+    fitAll(0);
+  };
+
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () =>
+      setFullscreen(document.fullscreenElement === frameRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void frameRef.current?.requestFullscreen?.();
+  };
 
   return (
     <div
-      className='h-full w-full'
-      style={{ position: 'relative', minHeight: 0 }}
+      ref={frameRef}
+      className={cn('survey-map h-full', fullscreen && 'rounded-none border-0')}
+      style={{ minHeight: 0 }}
     >
-      <div
-        ref={mapContainerRef}
-        style={{
-          height: '100%',
-          width: '100%',
-          position: 'absolute',
-          inset: 0,
-        }}
-      />
+      {/* Inline: maplibre's unlayered CSS overrides layered utilities here. */}
+      <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
 
-      {/* Layer toggles */}
       <div
-        className='absolute bg-white p-2 shadow-sm'
-        style={{ top: 10, left: 10, zIndex: 1, minWidth: 140, color: '#000' }}
+        className={cn('absolute top-3 left-3 z-10 flex flex-col', MAP_CONTROLS)}
       >
-        <div className='mb-1 font-bold' style={{ fontSize: 12 }}>
+        <MapButton
+          label={fullscreen ? 'Exit full screen' : 'Full screen'}
+          shortcut={fullscreen ? 'Esc' : undefined}
+          onClick={toggleFullscreen}
+        >
+          {fullscreen ? (
+            <Minimize2Icon className='size-4' />
+          ) : (
+            <Maximize2Icon className='size-4' />
+          )}
+        </MapButton>
+        <div className='mx-2 h-px bg-black/15' />
+        <MapButton label='Zoom in' onClick={() => mapRef.current?.zoomIn()}>
+          <PlusIcon className='size-4' />
+        </MapButton>
+        <MapButton label='Zoom out' onClick={() => mapRef.current?.zoomOut()}>
+          <MinusIcon className='size-4' />
+        </MapButton>
+        <MapButton
+          label='Fit to sightings'
+          disabled={!boundsKey}
+          onClick={() => fitAll()}
+        >
+          <ScanIcon className='size-4' />
+        </MapButton>
+      </div>
+
+      <div
+        className={cn(
+          'absolute top-3 right-3 z-10 flex min-w-36 flex-col gap-1 px-3 py-2 text-sm text-[#212529]',
+          MAP_CONTROLS,
+        )}
+        style={LIGHT_THEME}
+      >
+        <span className='text-[11px] font-semibold tracking-wider text-[#6c757d] uppercase'>
           Layers
-        </div>
+        </span>
         <LayerCheck
           id='dm-clusters'
           label='Sightings'
@@ -1154,8 +1155,8 @@ export default function DensityMap({
           onChange={setShowHeatmap}
         />
         {showHeatmap && (
-          <div className='ms-6 mb-1' style={{ fontSize: 12 }}>
-            <label htmlFor='dm-heat-radius' className='block'>
+          <div className='mb-1 ml-6 text-xs'>
+            <label htmlFor='dm-heat-radius' className='block text-[#6c757d]'>
               Radius: {heatRadiusKm} km
             </label>
             <input
@@ -1186,50 +1187,35 @@ export default function DensityMap({
 
       {/* Partial data would give a misleading map. */}
       {(loading || !mapLoaded) && (
-        <div
-          className='absolute flex flex-col items-center justify-center'
-          style={{
-            inset: 0,
-            zIndex: 2,
-            background: 'rgba(255,255,255,0.85)',
-            color: '#000',
-          }}
-        >
-          <Spinner />
-          <span className='mt-2' style={{ fontSize: 14 }}>
-            Loading map data…
-          </span>
+        <div className='absolute inset-0 z-30 flex items-center justify-center bg-black/20'>
+          <div
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm text-[#212529]',
+              MAP_CONTROLS,
+            )}
+          >
+            <Spinner size='sm' />
+            Loading map data...
+          </div>
         </div>
       )}
       {!loading && mapLoaded && fetching && (
         <div
-          className='absolute flex items-center bg-white px-2 py-1 shadow-sm'
-          style={{
-            top: 10,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 1,
-          }}
+          className={cn(
+            'absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 px-3 py-1.5 text-xs text-[#212529]',
+            MAP_CONTROLS,
+          )}
         >
           <Spinner size='sm' />
-          <span className='ms-2' style={{ fontSize: 13, color: '#000' }}>
-            Updating…
-          </span>
+          Updating...
         </div>
       )}
 
       {!loading && effectiveSources.length === 0 && (
-        <div
-          className='absolute bg-white px-4 py-2 shadow-sm'
-          style={{
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%,-50%)',
-            zIndex: 1,
-            color: '#000',
-          }}
-        >
-          Select an annotation set to begin.
+        <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
+          <div className={cn('px-4 py-3 text-sm text-[#212529]', MAP_CONTROLS)}>
+            Select an annotation set to begin.
+          </div>
         </div>
       )}
 
@@ -1269,7 +1255,7 @@ function LayerCheck({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className='mb-0.5 flex items-center gap-2' style={{ fontSize: 13 }}>
+    <div className='flex items-center gap-2'>
       <Checkbox
         id={id}
         checked={checked}

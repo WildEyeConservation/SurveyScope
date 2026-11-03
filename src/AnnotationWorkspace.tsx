@@ -52,6 +52,7 @@ interface AnnotationSessionProps {
   hideFnAnnotations?: boolean;
   showMapLegend?: boolean;
   infoTags?: Map<string, string[]>;
+  embedded?: boolean;
 }
 
 /*
@@ -82,6 +83,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     zoom,
     viewBoundsScale,
     hideNavButtons,
+    embedded,
   } = props;
   const { onNext, waiting, waitingMessage } = useTaskCompletion({
     location,
@@ -104,7 +106,8 @@ function AnnotationSession(props: AnnotationSessionProps) {
         visible={visible}
         zoom={zoom}
         viewBoundsScale={viewBoundsScale}
-        next={onNext}
+        // Embedded viewers browse images; they don't complete queue tasks.
+        next={embedded ? next : onNext}
         prev={prev}
         hideNavButtons={hideNavButtons}
         stats={stats}
@@ -116,6 +119,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
         hideFnAnnotations={hideFnAnnotations}
         showMapLegend={showMapLegend}
         infoTags={infoTags}
+        embedded={embedded}
       />
       {waiting && <WaitingOverlay message={waitingMessage} />}
     </div>
@@ -140,6 +144,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     revalidate,
     taskTag,
     viewBoundsScale,
+    embedded = false,
   } = props;
 
   const { annotationSetId } = location;
@@ -376,6 +381,32 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     }
   }
 
+  const session = (
+    <AnnotationSession
+      stats={stats}
+      visible={visible}
+      location={location}
+      zoom={defaultZoom ?? undefined}
+      viewBoundsScale={viewBoundsScale}
+      prev={prev}
+      next={next}
+      ack={ack}
+      hideNavButtons={hideNavButtons}
+      testPresetId={testPresetId}
+      isTest={isTest}
+      testSetId={testSetId}
+      queueId={queueId}
+      observationId={observationId}
+      observationSource={source}
+      allowOutside={allowOutside}
+      categories={filteredCategories}
+      hideFnAnnotations={!isFalseNegativesJob}
+      showMapLegend={embedded || legendCollapsed}
+      infoTags={infoTagsByAnnotation}
+      embedded={embedded}
+    />
+  );
+
   return (
     <ImageContextFromHook
       hook={annotationsHook}
@@ -387,125 +418,108 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         localAnnotationCreated.current = true;
       }}
     >
-      <div
-        className={`flex h-full w-full flex-col gap-4 overflow-auto md:flex-row ${
-          legendCollapsed ? 'legend-collapsed' : 'justify-center'
-        }`}
-      >
+      {embedded ? (
+        session
+      ) : (
         <div
-          className={`flex flex-col ${
-            legendCollapsed ? 'items-stretch' : 'items-center'
-          } h-full w-full gap-4`}
-          style={{
-            maxWidth: legendCollapsed ? 'none' : '1024px',
-            flex: legendCollapsed ? 1 : undefined,
-          }}
+          className={`flex h-full w-full flex-col gap-4 overflow-auto md:flex-row ${
+            legendCollapsed ? 'legend-collapsed' : 'justify-center'
+          }`}
         >
           <div
-            className='flex w-full flex-row items-center justify-center gap-4 overflow-hidden'
-            style={{ position: 'relative', height: '26px' }}
+            className={`flex flex-col ${
+              legendCollapsed ? 'items-stretch' : 'items-center'
+            } h-full w-full gap-4`}
+            style={{
+              maxWidth: legendCollapsed ? 'none' : '1024px',
+              flex: legendCollapsed ? 1 : undefined,
+            }}
           >
             <div
-              className='flex flex-row gap-2'
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-              }}
+              className='flex w-full flex-row items-center justify-center gap-4 overflow-hidden'
+              style={{ position: 'relative', height: '26px' }}
             >
-              <Share2
-                size={24}
-                onClick={!isTest ? handleShare : undefined}
-                style={{ cursor: 'pointer' }}
-              />
-            </div>
-            {visible && (
-              <>
-                <Badge variant='secondary'>
-                  Working on:{' '}
-                  {taskTag || currentTaskTag
-                    ? `${taskTag || currentTaskTag}`
-                    : 'Viewing image'}
-                </Badge>
-                {!hideZoomSetting && (
-                  <SetDefaultZoom
-                    setDefaultZoom={setDefaultZoom}
-                    originalZoom={zoom ?? null}
-                    adminMemberships={myMembershipHook.data
-                      ?.filter((membership) => membership.isAdmin)
-                      .map((membership) => ({
-                        projectId: membership.projectId,
-                        queueId: membership.queueId!,
-                      }))}
-                  />
-                )}
-              </>
-            )}
-          </div>
-          <AnnotationSession
-            stats={stats}
-            visible={visible}
-            location={location}
-            zoom={defaultZoom ?? undefined}
-            viewBoundsScale={viewBoundsScale}
-            prev={prev}
-            next={next}
-            ack={ack}
-            hideNavButtons={hideNavButtons}
-            testPresetId={testPresetId}
-            isTest={isTest}
-            testSetId={testSetId}
-            queueId={queueId}
-            observationId={observationId}
-            observationSource={source}
-            allowOutside={allowOutside}
-            categories={filteredCategories}
-            hideFnAnnotations={!isFalseNegativesJob}
-            showMapLegend={legendCollapsed}
-            infoTags={infoTagsByAnnotation}
-          />
-        </div>
-        <div className='flex flex-col items-center gap-4'>
-          <SideLegend
-            annotationSetId={annotationSetId}
-            categoriesOverride={legendCategories ?? undefined}
-            collapsed={legendCollapsed}
-            onToggleCollapse={toggleLegendCollapsed}
-          />
-          {isAnnotatePath &&
-            (legendCollapsed ? (
-              <Button
-                variant='success'
-                onClick={() => navigate('/jobs')}
-                className='hidden items-center justify-center md:flex'
-                style={{ width: '40px', height: '40px', padding: 0 }}
-                title='Save & Exit'
+              <div
+                className='flex flex-row gap-2'
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                }}
               >
-                <LogOut size={20} />
-              </Button>
-            ) : (
-              <div className='hidden w-full ps-2 md:block'>
+                <Share2
+                  size={24}
+                  onClick={!isTest ? handleShare : undefined}
+                  style={{ cursor: 'pointer' }}
+                />
+              </div>
+              {visible && (
+                <>
+                  <Badge variant='secondary'>
+                    Working on:{' '}
+                    {taskTag || currentTaskTag
+                      ? `${taskTag || currentTaskTag}`
+                      : 'Viewing image'}
+                  </Badge>
+                  {!hideZoomSetting && (
+                    <SetDefaultZoom
+                      setDefaultZoom={setDefaultZoom}
+                      originalZoom={zoom ?? null}
+                      adminMemberships={myMembershipHook.data
+                        ?.filter((membership) => membership.isAdmin)
+                        .map((membership) => ({
+                          projectId: membership.projectId,
+                          queueId: membership.queueId!,
+                        }))}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+            {session}
+          </div>
+          <div className='flex flex-col items-center gap-4'>
+            <SideLegend
+              annotationSetId={annotationSetId}
+              categoriesOverride={legendCategories ?? undefined}
+              collapsed={legendCollapsed}
+              onToggleCollapse={toggleLegendCollapsed}
+            />
+            {isAnnotatePath &&
+              (legendCollapsed ? (
                 <Button
                   variant='success'
                   onClick={() => navigate('/jobs')}
-                  className='hidden w-full md:block'
+                  className='hidden items-center justify-center md:flex'
+                  style={{ width: '40px', height: '40px', padding: 0 }}
+                  title='Save & Exit'
                 >
-                  Save & Exit
+                  <LogOut size={20} />
                 </Button>
-              </div>
-            ))}
-          {/* Mobile-only Save & Exit; the pair above is hidden below md. */}
-          {isAnnotatePath && (
-            <Button
-              variant='success'
-              onClick={() => navigate('/jobs')}
-              className='w-full md:hidden'
-            >
-              Save & Exit
-            </Button>
-          )}
+              ) : (
+                <div className='hidden w-full ps-2 md:block'>
+                  <Button
+                    variant='success'
+                    onClick={() => navigate('/jobs')}
+                    className='hidden w-full md:block'
+                  >
+                    Save & Exit
+                  </Button>
+                </div>
+              ))}
+            {/* Mobile-only Save & Exit; the pair above is hidden below md. */}
+            {isAnnotatePath && (
+              <Button
+                variant='success'
+                onClick={() => navigate('/jobs')}
+                className='w-full md:hidden'
+              >
+                Save & Exit
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </ImageContextFromHook>
   );
 }
