@@ -11,6 +11,7 @@ import { TaskBuffer } from './TaskBuffer';
 import QCAnnotationReview from './QCAnnotationReview';
 import { fetchAllPaginatedResults } from './utils';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
+import { touchQueue } from './touchQueue';
 
 /**
  * QC Review Task — SQS-driven task buffer for annotation QC review.
@@ -38,6 +39,7 @@ export default function QCReviewTask() {
   // Fetch queue URL and annotationSetId on mount.
   useEffect(() => {
     if (!queueId) return;
+    touchQueue(client, queueId);
     client.models.Queue.get({ id: queueId }).then(({ data }) => {
       if (data?.url) setQueueUrl(data.url as string);
       if (data?.annotationSetId) setAnnotationSetId(data.annotationSetId);

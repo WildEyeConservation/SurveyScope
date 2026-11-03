@@ -10,6 +10,7 @@ import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import ProjectProgress from './ProjectProgress';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress';
 import { Minimize2, Maximize2 } from 'lucide-react';
+import { touchQueue } from '../touchQueue';
 
 const STORAGE_KEYS = {
   COMPACT_MODE: 'jobsCompactMode',
@@ -375,6 +376,23 @@ export default function Jobs() {
     return 0;
   });
 
+  async function handleKeepJob(queueId: string) {
+    if (!(await touchQueue(client, queueId, true))) {
+      alert('Failed to keep the job. Please try again.');
+      return;
+    }
+    setDisplayProjects((projects) =>
+      projects.map((project) => ({
+        ...project,
+        queues: project.queues.map((queue) =>
+          queue.id === queueId
+            ? { ...queue, inactivityWarnedAt: null, cancelAfter: null }
+            : queue
+        ),
+      }))
+    );
+  }
+
   async function handleTakeJob(job: { queueId: string; projectId: string; tag?: string | null }) {
     setTakingJob(true);
 
@@ -468,6 +486,16 @@ export default function Jobs() {
             return null;
           }
 
+          const isAdmin =
+            !!userProjectMembershipHook.data?.find(
+              (membership) => membership.projectId === project.id
+            )?.isAdmin ||
+            !!myOrganizationHook.data?.find(
+              (membership) =>
+                membership.organizationId === project.organization.id
+            )?.isAdmin;
+          const cancelAfter = isAdmin ? queue.cancelAfter : null;
+
           const paddingClass = compactMode ? 'p-1' : 'p-2';
           const gapClass = compactMode ? 'gap-1' : 'gap-2';
           const rowGapClass = compactMode ? 'gap-1' : 'gap-3';
@@ -516,6 +544,15 @@ export default function Jobs() {
                       Hidden
                     </span>
                   )}
+                  {cancelAfter && (
+                    <span
+                      className='badge bg-warning text-dark'
+                      style={{ fontSize: badgeFontSize }}
+                      title='This job has been inactive for over 60 days'
+                    >
+                      Cancels {new Date(cancelAfter).toLocaleDateString()}
+                    </span>
+                  )}
                 </div>
                 <div
                   className={`d-flex flex-row ${gapClass} align-items-center`}
@@ -531,6 +568,17 @@ export default function Jobs() {
                       });
                     }}
                   />
+                  {cancelAfter && (
+                    <Button
+                      size={compactMode ? 'sm' : undefined}
+                      className='ms-1'
+                      variant='outline-primary'
+                      onClick={() => handleKeepJob(queue.id)}
+                      style={{ whiteSpace: 'nowrap' }}
+                    >
+                      Keep job
+                    </Button>
+                  )}
                   <Button
                     size={compactMode ? 'sm' : undefined}
                     className='ms-1'

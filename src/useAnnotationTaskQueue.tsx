@@ -18,6 +18,7 @@ import type { BeforeNextDecision } from './TaskBuffer';
 import { tileLoadStats } from './storage/tileLoadStats';
 import { createLocationLeases } from './locationLeases';
 import { primeTask } from './annotator/prefetchTask';
+import { touchQueue } from './touchQueue';
 
 const LOCATION_SELECTION = [
   'id',
@@ -103,6 +104,7 @@ export default function useAnnotationTaskQueue() {
 
   useEffect(() => {
     if (currentPM.queueId) {
+      touchQueue(client, currentPM.queueId);
       client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
         if (!data) return;
         setUrl(data.url ?? undefined);
@@ -330,6 +332,9 @@ export default function useAnnotationTaskQueue() {
     if (received.messages.length === 0 && backupUrl) {
       source = { url: backupUrl, zoom: backupZoom };
       received = await receive(backupUrl);
+      if (received.messages.length > 0 && currentPM.backupQueueId) {
+        touchQueue(client, currentPM.backupQueueId);
+      }
     }
 
     const tasks = await Promise.all(
@@ -346,7 +351,7 @@ export default function useAnnotationTaskQueue() {
       ...tasks.filter((task): task is AnnotationTaskPayload => task !== null)
     );
     return received.messages.length;
-  }, [url, backupUrl, zoom, backupZoom, getSqsClient, prepareMessage]);
+  }, [url, backupUrl, zoom, backupZoom, getSqsClient, prepareMessage, client, currentPM.backupQueueId]);
 
   const receive = useCallback(() => {
     receivingRef.current ??= receiveBatch().finally(() => {

@@ -37,7 +37,6 @@ const updateProjectMembershipsMutation = /* GraphQL */ `
 
 // Constants
 const MAX_REQUEUES = 1;
-const STALE_QUEUE_DAYS = 60;
 
 Amplify.configure(
   {
@@ -128,65 +127,6 @@ export const handler: Handler = async (event, context) => {
 
     for (const queue of allQueues) {
       if (!queue.url) {
-        continue;
-      }
-
-      // Delete queues with no activity for 60+ days. Null lastObservationAt
-      // (pre-existing queues that haven't had an observation since deploy)
-      // are left alone to avoid mass-deletion on first deploy.
-      if (
-        queue.lastObservationAt &&
-        Date.now() - Date.parse(queue.lastObservationAt) > STALE_QUEUE_DAYS * 24 * 60 * 60 * 1000
-      ) {
-        console.log(JSON.stringify({
-          msg: 'deleting_stale_queue',
-          queueId: queue.id,
-          projectId: queue.projectId,
-          lastObservationAt: queue.lastObservationAt,
-        }));
-
-        if (queue.locationManifestS3Key) {
-          try {
-            const bucketName = env.OUTPUTS_BUCKET_NAME;
-            if (bucketName) {
-              await s3Client.send(
-                new DeleteObjectCommand({
-                  Bucket: bucketName,
-                  Key: queue.locationManifestS3Key,
-                })
-              );
-            }
-          } catch (s3Error) {
-            console.warn("Failed to delete S3 manifest for stale queue:", s3Error);
-          }
-        }
-
-        await client.graphql({
-          query: deleteQueue,
-          variables: { input: { id: queue.id } },
-        });
-
-        const sqsClient = new SQSClient({
-          region: env.AWS_REGION,
-          credentials: {
-            accessKeyId: env.AWS_ACCESS_KEY_ID,
-            secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-            sessionToken: env.AWS_SESSION_TOKEN,
-          },
-        });
-        await sqsClient.send(new DeleteQueueCommand({ QueueUrl: queue.url }));
-
-        // The Queue is the run's only liveness signal, so its deletion is the
-        // moment the run's outcome is known.
-        await finishShadowWorkflowRun({
-          runId: queue.id,
-          status: 'cancelled',
-          reason: 'stale',
-          launchedCount: queue.launchedCount ?? undefined,
-          observedCount: queue.observedCount ?? undefined,
-        });
-
-        deletedProjectIds.add(queue.projectId);
         continue;
       }
 
