@@ -112,6 +112,9 @@ export default function AnnotationViewerModal({
           )}
         </DialogBody>
         <DialogFooter className='flex justify-between'>
+          <Button variant='ghost' onClick={onClose}>
+            Close
+          </Button>
           <div className='flex flex-row gap-2'>
             <Button
               className='flex h-full flex-row items-center justify-center'
@@ -134,9 +137,6 @@ export default function AnnotationViewerModal({
               <ChevronRight className='size-6' />
             </Button>
           </div>
-          <Button variant='dark' onClick={onClose}>
-            Close
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

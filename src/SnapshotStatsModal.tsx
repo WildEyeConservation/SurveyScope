@@ -244,6 +244,9 @@ export default function SnapshotStatsModal({
           </div>
         </DialogBody>
         <DialogFooter>
+          <Button variant='ghost' className='mr-auto' onClick={onHide}>
+            Close
+          </Button>
           <Button
             variant='success'
             onClick={handleExportSnapshot}
@@ -259,9 +262,6 @@ export default function SnapshotStatsModal({
             disabled={snapshotLoading || !snapshotStartTime || !snapshotEndTime}
           >
             {snapshotLoading ? 'Loading...' : 'Run Snapshot'}
-          </Button>
-          <Button variant='dark' onClick={onHide}>
-            Close
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,24 +1,20 @@
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { Maximize2, Minimize2, RefreshCw } from 'lucide-react';
-import { useContext, useEffect, useState } from 'react';
+import { RefreshCw, Trash2Icon, UserPlusIcon } from 'lucide-react';
+import { useContext, useState } from 'react';
 import ConfirmationModal from '../ConfirmationModal';
 import { GlobalContext, UserContext } from '../Context';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
-import MyTable from '../Table';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
 import ExceptionsModal from './ExceptionsModal';
 import InviteUserModal from './InviteUserModal';
 
-const STORAGE_KEY_COMPACT_MODE = 'usersCompactMode';
-
 export default function Users({
   organization,
-  setOnClick,
 }: {
   organization: { id: string; name: string };
-  setOnClick: (onClick: { name: string; function: () => void }) => void;
 }) {
   const { client, showModal, modalToShow } = useContext(GlobalContext)!;
   const { user: authUser } = useContext(UserContext)!;
@@ -51,25 +47,8 @@ export default function Users({
   const [userToEdit, setUserToEdit] = useState<{
     id: string;
     name: string;
-    organizationName: string;
   } | null>(null);
-
-  // Initialize compactMode from localStorage or use default
-  const getInitialCompactMode = () => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(STORAGE_KEY_COMPACT_MODE);
-      if (stored !== null) {
-        return stored === 'true';
-      }
-    }
-    return false;
-  };
-
-  const [compactMode, setCompactMode] = useState(getInitialCompactMode);
-  const getIsMobile = () =>
-    typeof window !== 'undefined' ? window.innerWidth < 1024 : false;
-
-  const [isMobile, setIsMobile] = useState(getIsMobile);
+  const [search, setSearch] = useState('');
   const [isMutating, setIsMutating] = useState(false);
 
   async function updateUser(userId: string, isAdmin: boolean) {
@@ -80,7 +59,6 @@ export default function Users({
         userId,
         isAdmin,
       });
-
       if (errors?.length) {
         alert(errors[0].message);
         return;
@@ -92,108 +70,6 @@ export default function Users({
       setIsMutating(false);
     }
   }
-
-  const tableHeadings = [
-    { content: 'Username' },
-    { content: 'Email' },
-    { content: 'Organisation Admin' },
-    { content: 'Permission Exceptions' },
-    { content: 'Remove' },
-  ];
-
-  const tableData = isLoading
-    ? []
-    : (memberships ?? []).map((membership) => {
-        const user = users.find((user) => user.id === membership.userId);
-        return {
-          id: membership.organizationId + membership.userId,
-          rowData: [
-            user?.name,
-            user?.email,
-            <LabeledToggleSwitch
-              className='mb-0'
-              leftLabel='No'
-              rightLabel='Yes'
-              checked={membership.isAdmin ?? false}
-              disabled={isMutating || membership.userId === authUser.userId}
-              onChange={(checked) => {
-                updateUser(membership.userId, checked);
-              }}
-            />,
-            <div className='flex justify-center'>
-              <Button
-                size={compactMode ? 'sm' : undefined}
-                className='w-[200px]'
-                disabled={
-                  process.env.NODE_ENV === 'development'
-                    ? false
-                    : membership.isAdmin
-                      ? true
-                      : false
-                }
-                variant={'info'}
-                onClick={() => {
-                  setUserToEdit({
-                    id: user?.id || '',
-                    name: user?.name || '',
-                    organizationName: organization.name,
-                  });
-                  showModal('exceptions');
-                }}
-              >
-                Edit
-              </Button>
-            </div>,
-            <div className='flex justify-center'>
-              <Button
-                size={compactMode ? 'sm' : undefined}
-                className='w-[200px]'
-                variant='danger'
-                disabled={isMutating || membership.userId === authUser.userId}
-                onClick={() => {
-                  setUserToEdit({
-                    id: user?.id || '',
-                    name: user?.name || '',
-                    organizationName: organization.name,
-                  });
-                  showModal('removeUser');
-                }}
-              >
-                Remove user
-              </Button>
-            </div>,
-          ],
-        };
-      });
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handleResize = () => {
-      setIsMobile(getIsMobile());
-    };
-
-    handleResize();
-
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-
-  // Persist compactMode to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_COMPACT_MODE, String(compactMode));
-    }
-  }, [compactMode]);
-
-  useEffect(() => {
-    setOnClick({
-      name: 'Invite User',
-      function: () => showModal('inviteUser'),
-    });
-  }, []);
 
   async function handleRemoveUser() {
     setIsMutating(true);
@@ -215,53 +91,161 @@ export default function Users({
     }
   }
 
+  const rows = (memberships ?? [])
+    .map((membership) => ({
+      membership,
+      user: users.find((user) => user.id === membership.userId),
+    }))
+    .filter(({ user }) =>
+      `${user?.name ?? ''} ${user?.email ?? ''}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase()),
+    )
+    .sort((a, b) => (a.user?.name ?? '').localeCompare(b.user?.name ?? ''));
+
   return (
     <>
-      <div
-        className={`flex flex-col ${compactMode ? 'gap-1' : 'gap-2'} mt-4 w-full overflow-x-auto overflow-y-visible`}
-      >
-        <div className='flex items-center justify-between'>
-          <div className='flex items-center gap-2'>
-            {compactMode ? (
-              <h6 className='mb-0'>Organisation Users</h6>
-            ) : (
-              <h5 className='mb-0'>Organisation Users</h5>
-            )}
-            <Button
-              variant='link'
-              size='sm'
-              className='p-0 text-muted-foreground'
-              onClick={() => refetch()}
-              disabled={isFetching}
-              title='Refresh'
-            >
-              <RefreshCw
-                size={16}
-                className={isFetching ? 'spinning' : undefined}
-              />
-            </Button>
+      <div className='mt-4 flex flex-col gap-3'>
+        <div className='flex flex-wrap items-center gap-2'>
+          <Input
+            type='text'
+            placeholder='Search users'
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className='w-full sm:w-64'
+          />
+          <Button
+            variant='link'
+            className='p-0 text-muted-foreground'
+            onClick={() => refetch()}
+            disabled={isFetching}
+            title='Refresh'
+          >
+            <RefreshCw
+              size={16}
+              className={isFetching ? 'spinning' : undefined}
+            />
+          </Button>
+          <Button
+            variant='primary'
+            className='ml-auto'
+            onClick={() => showModal('inviteUser')}
+          >
+            <UserPlusIcon className='size-4' />
+            Invite user
+          </Button>
+        </div>
+
+        <div className='overflow-x-auto border border-dark bg-white/[0.07] text-sm'>
+          <div className='grid min-w-[820px] grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(150px,1fr)_minmax(190px,1fr)_80px] items-center gap-3 border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'>
+            <span>Name</span>
+            <span>Email</span>
+            <span>Role</span>
+            <span>Survey access</span>
+            <span className='text-right'>Actions</span>
           </div>
-          {!isMobile && (
-            <Button
-              variant='info'
-              onClick={() => setCompactMode(!compactMode)}
-              title={compactMode ? 'Expand view' : 'Compact view'}
-              style={{
-                minWidth: 'fit-content',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-            </Button>
+          {isLoading ? (
+            <div className='px-3 py-3 text-muted-foreground'>
+              Loading users...
+            </div>
+          ) : rows.length === 0 ? (
+            <div className='px-3 py-3 text-muted-foreground italic'>
+              No users found.
+            </div>
+          ) : (
+            rows.map(({ membership, user }) => {
+              const isSelf = membership.userId === authUser.userId;
+              const isAdmin = !!membership.isAdmin;
+              return (
+                <div
+                  key={membership.userId}
+                  className='grid min-w-[820px] grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(150px,1fr)_minmax(190px,1fr)_80px] items-center gap-3 border-b border-white/[0.08] px-3 py-2 last:border-b-0'
+                >
+                  <div className='truncate'>
+                    {user?.name ?? 'Unknown user'}
+                    {isSelf && (
+                      <span className='ml-1.5 bg-white/15 px-1.5 text-[10px]'>
+                        you
+                      </span>
+                    )}
+                  </div>
+                  <div className='truncate' title={user?.email ?? undefined}>
+                    {user?.email}
+                  </div>
+                  <div
+                    role='radiogroup'
+                    aria-label={`Role of ${user?.name ?? 'user'}`}
+                    className='inline-flex w-fit border border-white/30'
+                  >
+                    {[
+                      { label: 'Member', value: false },
+                      { label: 'Admin', value: true },
+                    ].map((option) => (
+                      <button
+                        key={option.label}
+                        type='button'
+                        role='radio'
+                        aria-checked={isAdmin === option.value}
+                        disabled={isMutating || isSelf}
+                        onClick={() =>
+                          isAdmin !== option.value &&
+                          updateUser(membership.userId, option.value)
+                        }
+                        className={cn(
+                          'px-2.5 py-1 transition-colors disabled:opacity-60',
+                          isAdmin === option.value
+                            ? 'bg-primary text-white'
+                            : 'enabled:hover:bg-white/10',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div>
+                    {isAdmin && process.env.NODE_ENV !== 'development' ? (
+                      <span className='text-muted-foreground'>All surveys</span>
+                    ) : (
+                      <Button
+                        variant='info'
+                        size='sm'
+                        onClick={() => {
+                          setUserToEdit({
+                            id: user?.id || '',
+                            name: user?.name || '',
+                          });
+                          showModal('exceptions');
+                        }}
+                      >
+                        Permission exceptions
+                      </Button>
+                    )}
+                  </div>
+                  <div className='flex justify-end'>
+                    {!isSelf && (
+                      <button
+                        type='button'
+                        aria-label={`Remove ${user?.name ?? 'user'}`}
+                        title='Remove from organisation'
+                        disabled={isMutating}
+                        onClick={() => {
+                          setUserToEdit({
+                            id: user?.id || '',
+                            name: user?.name || '',
+                          });
+                          showModal('removeUser');
+                        }}
+                        className='flex size-8 items-center justify-center text-muted-foreground hover:text-danger disabled:opacity-50'
+                      >
+                        <Trash2Icon className='size-4' />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
-        <MyTable
-          tableData={tableData}
-          tableHeadings={tableHeadings}
-          pagination={true}
-          itemsPerPage={5}
-          emptyMessage={isLoading ? 'Loading users...' : 'No users found'}
-        />
       </div>
       <InviteUserModal
         organization={organization}
@@ -286,7 +270,7 @@ export default function Users({
         }}
         onConfirm={handleRemoveUser}
         title='Remove User'
-        body='Are you sure you want to remove this user?'
+        body={`Remove ${userToEdit?.name ?? 'this user'} from ${organization.name}?`}
       />
     </>
   );

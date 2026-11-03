@@ -47,7 +47,7 @@ export function SplitChainDialog({
           is saved immediately.
         </DialogBody>
         <DialogFooter>
-          <Button variant='secondary' onClick={onCancel}>
+          <Button variant='ghost' className='mr-auto' onClick={onCancel}>
             Cancel
           </Button>
           <Button variant='warning' onClick={onConfirm}>

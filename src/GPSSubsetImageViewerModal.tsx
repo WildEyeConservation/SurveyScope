@@ -162,6 +162,13 @@ export default function GPSSubsetImageViewerModal({
             <div className='flex w-full justify-between'>
               <div>
                 <Button
+                  variant='ghost'
+                  onClick={handleCloseModal}
+                  className='me-2'
+                >
+                  Close
+                </Button>
+                <Button
                   variant='primary'
                   onClick={handlePrevImage}
                   disabled={currentFilteredPoints.length <= 1}
@@ -195,13 +202,6 @@ export default function GPSSubsetImageViewerModal({
               <div>
                 <Button variant='danger' onClick={handleRemoveImage}>
                   Remove Image
-                </Button>
-                <Button
-                  variant='dark'
-                  onClick={handleCloseModal}
-                  className='ms-2'
-                >
-                  Close
                 </Button>
               </div>
             </div>

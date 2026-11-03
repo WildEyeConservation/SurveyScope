@@ -124,29 +124,23 @@ export default function CreateOrganization({
               onChange={(e) => setAdminEmail(e.target.value)}
             />
           </div>
-          <div
-            className={`flex gap-2 ${
-              request ? 'justify-between' : 'justify-end'
-            }`}
-          >
+          <div className='flex gap-2'>
+            <Button
+              variant='ghost'
+              type='button'
+              className='mr-auto'
+              onClick={onHide}
+            >
+              Cancel
+            </Button>
             {request && (
               <Button variant='danger' onClick={handleDeny}>
                 Deny
               </Button>
             )}
-            <div>
-              <Button
-                variant='primary'
-                className='me-2'
-                type='submit'
-                disabled={isSubmitting}
-              >
-                {request ? 'Approve' : 'Create'}
-              </Button>
-              <Button variant='dark' type='button' onClick={onHide}>
-                Cancel
-              </Button>
-            </div>
+            <Button variant='primary' type='submit' disabled={isSubmitting}>
+              {request ? 'Approve' : 'Create'}
+            </Button>
           </div>
         </form>
       </Body>

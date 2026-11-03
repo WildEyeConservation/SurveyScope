@@ -132,13 +132,15 @@ export default function BlockedUploadModal({
           )}
         </DialogBody>
         <DialogFooter className='flex justify-between'>
-          <Button variant='light' onClick={handleExport}>
-            Download CSV
-          </Button>
           <div className='flex gap-2'>
-            <Button variant='dark' onClick={handleClose}>
+            <Button variant='ghost' onClick={handleClose}>
               Close
             </Button>
+            <Button variant='light' onClick={handleExport}>
+              Download CSV
+            </Button>
+          </div>
+          <div className='flex gap-2'>
             <Button
               variant='secondary'
               onClick={() => {

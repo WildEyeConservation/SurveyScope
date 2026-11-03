@@ -1,12 +1,19 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
 import { Body, Footer, Header, Modal, Title } from '../Modal';
-import MyTable from '../Table';
 import { fetchAllPaginatedResults } from '../utils';
 import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
+
+type Level = 'none' | 'annotate' | 'admin';
+const LEVELS: { value: Level; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'annotate', label: 'Annotate' },
+  { value: 'admin', label: 'Admin' },
+];
 
 type Permission = {
   membershipId: string | null;
@@ -34,6 +41,8 @@ export default function ExceptionsModal({
     [],
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [onlyWithAccess, setOnlyWithAccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [saveResult, setSaveResult] = useState<{
     variant: 'success' | 'danger';
@@ -99,16 +108,6 @@ export default function ExceptionsModal({
     }
   }, [show, fetchProjects]);
 
-  const hasChanges = permissions.some(
-    (p) =>
-      !originalPermissions.some(
-        (op) =>
-          op.projectId === p.projectId &&
-          op.annotationAccess === p.annotationAccess &&
-          op.isAdmin === p.isAdmin,
-      ),
-  );
-
   const handleClose = () => {
     if (
       hasChanges &&
@@ -121,50 +120,39 @@ export default function ExceptionsModal({
     onClose();
   };
 
-  const tableData = permissions.map((permission) => ({
-    id: permission.projectId,
-    rowData: [
-      permission.projectName,
-      <LabeledToggleSwitch
-        className='mb-0'
-        leftLabel='No'
-        rightLabel='Yes'
-        checked={permission.annotationAccess}
-        disabled={isSaving}
-        onChange={(checked) => {
-          if (permission.isAdmin) {
-            alert('Admins have unrestricted access');
-            return;
-          }
-          setSaveResult(null);
-          setPermissions(
-            permissions.map((p) =>
-              p.projectId === permission.projectId
-                ? { ...p, annotationAccess: checked }
-                : p,
-            ),
-          );
-        }}
-      />,
-      <LabeledToggleSwitch
-        className='mb-0'
-        leftLabel='No'
-        rightLabel='Yes'
-        checked={permission.isAdmin}
-        disabled={isSaving}
-        onChange={(checked) => {
-          setSaveResult(null);
-          setPermissions(
-            permissions.map((p) =>
-              p.projectId === permission.projectId
-                ? { ...p, isAdmin: checked, annotationAccess: true }
-                : p,
-            ),
-          );
-        }}
-      />,
-    ],
-  }));
+  const levelOf = (p: Permission): Level =>
+    p.isAdmin ? 'admin' : p.annotationAccess ? 'annotate' : 'none';
+  const setLevel = (projectId: string, level: Level) => {
+    setSaveResult(null);
+    setPermissions((current) =>
+      current.map((p) =>
+        p.projectId === projectId
+          ? {
+              ...p,
+              annotationAccess: level !== 'none',
+              isAdmin: level === 'admin',
+            }
+          : p,
+      ),
+    );
+  };
+  const changeCount = permissions.filter(
+    (p) =>
+      !originalPermissions.some(
+        (op) =>
+          op.projectId === p.projectId &&
+          op.annotationAccess === p.annotationAccess &&
+          op.isAdmin === p.isAdmin,
+      ),
+  ).length;
+  const hasChanges = changeCount > 0;
+  const withAccess = permissions.filter((p) => p.annotationAccess).length;
+  const visible = permissions
+    .filter((p) => !onlyWithAccess || p.annotationAccess)
+    .filter((p) =>
+      p.projectName.toLowerCase().includes(search.trim().toLowerCase()),
+    )
+    .sort((a, b) => a.projectName.localeCompare(b.projectName));
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -223,38 +211,103 @@ export default function ExceptionsModal({
   return (
     <Modal show={show} strict={true} size='lg'>
       <Header>
-        <Title>
-          Permission Exceptions for {user.name} ({organization.name})
-        </Title>
+        <Title>Permission exceptions · {user.name}</Title>
       </Header>
       <Body>
-        <div className='p-4'>
-          <div
-            className='mb-4 text-muted-foreground'
-            style={{ lineHeight: 1.2 }}
-          >
-            <span style={{ fontSize: 16 }}>Instructions</span>
-            <br />
-            <span style={{ fontSize: 12 }}>
-              Select the surveys and the level of access you would like to give
-              the user for each survey.
-              <br />
-              This will override the default access level for the user for the
-              selected surveys.
-            </span>
+        <div className='flex flex-col gap-3 p-4'>
+          <span className='text-sm text-muted-foreground'>
+            Choose which of {organization.name}&apos;s surveys this person can
+            annotate or administer.
+          </span>
+          <div className='flex flex-wrap items-center gap-2'>
+            <Input
+              type='text'
+              placeholder='Search surveys'
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className='w-full sm:w-64'
+            />
+            <div
+              role='radiogroup'
+              aria-label='Surveys to show'
+              className='ml-auto inline-flex border border-white/30'
+            >
+              {[
+                { label: `All ${permissions.length}`, value: false },
+                { label: `With access ${withAccess}`, value: true },
+              ].map((option) => (
+                <button
+                  key={String(option.value)}
+                  type='button'
+                  role='radio'
+                  aria-checked={onlyWithAccess === option.value}
+                  onClick={() => setOnlyWithAccess(option.value)}
+                  className={cn(
+                    'px-3 py-1.5 leading-normal transition-colors',
+                    onlyWithAccess === option.value
+                      ? 'bg-primary text-white'
+                      : 'hover:bg-white/10',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <MyTable
-            tableHeadings={[
-              { content: 'Survey', sort: true },
-              { content: 'Annotation Access' },
-              { content: 'Admin' },
-            ]}
-            tableData={tableData}
-            pagination={true}
-            emptyMessage={isLoading ? 'Loading...' : 'No surveys found'}
-          />
+          <div className='border border-dark bg-white/[0.07] text-sm'>
+            <div className='flex justify-between border-b border-dark bg-dark px-3 py-2 text-[11px] font-semibold tracking-wider text-white/85 uppercase'>
+              <span>Survey</span>
+              <span>Access</span>
+            </div>
+            <div className='max-h-[50vh] overflow-y-auto'>
+              {isLoading ? (
+                <div className='px-3 py-3 text-muted-foreground'>
+                  Loading surveys...
+                </div>
+              ) : visible.length === 0 ? (
+                <div className='px-3 py-3 text-muted-foreground italic'>
+                  No surveys found.
+                </div>
+              ) : (
+                visible.map((permission) => (
+                  <div
+                    key={permission.projectId}
+                    className='flex items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-1.5 last:border-b-0'
+                  >
+                    <span className='truncate' title={permission.projectName}>
+                      {permission.projectName}
+                    </span>
+                    <div
+                      role='radiogroup'
+                      aria-label={`Access to ${permission.projectName}`}
+                      className='inline-flex flex-none border border-white/30'
+                    >
+                      {LEVELS.map(({ value, label }) => (
+                        <button
+                          key={value}
+                          type='button'
+                          role='radio'
+                          aria-checked={levelOf(permission) === value}
+                          disabled={isSaving}
+                          onClick={() => setLevel(permission.projectId, value)}
+                          className={cn(
+                            'px-2.5 py-1 transition-colors disabled:opacity-60',
+                            levelOf(permission) === value
+                              ? 'bg-primary text-white'
+                              : 'enabled:hover:bg-white/10',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
           {saveResult && (
-            <Alert variant={saveResult.variant} className='mt-4 mb-0'>
+            <Alert variant={saveResult.variant} className='mb-0'>
               {saveResult.message}
             </Alert>
           )}
@@ -262,14 +315,24 @@ export default function ExceptionsModal({
       </Body>
       <Footer>
         <Button
+          variant='ghost'
+          className='mr-auto'
+          onClick={handleClose}
+          disabled={isSaving}
+        >
+          {hasChanges ? 'Cancel' : 'Close'}
+        </Button>
+        {changeCount > 0 && (
+          <span className='text-xs text-muted-foreground'>
+            {changeCount} {changeCount === 1 ? 'change' : 'changes'}
+          </span>
+        )}
+        <Button
           variant='primary'
           onClick={handleSave}
           disabled={isSaving || !hasChanges}
         >
           {isSaving ? 'Saving...' : 'Save'}
-        </Button>
-        <Button variant='dark' onClick={handleClose} disabled={isSaving}>
-          Close
         </Button>
       </Footer>
     </Modal>

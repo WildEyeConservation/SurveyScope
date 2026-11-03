@@ -1,5 +1,4 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useContext, useState } from 'react';
 import { UserContext } from './Context';
 import Info from './organization/Info';
@@ -14,10 +13,6 @@ export default function Permissions() {
     id: string;
     name: string;
   }>({ id: '', name: '' });
-  const [onClick, setOnClick] = useState<{
-    name: string;
-    function: () => void;
-  } | null>(null);
 
   if (!isOrganizationAdmin) {
     return <div>You are not authorized to access this page.</div>;
@@ -44,17 +39,9 @@ export default function Permissions() {
             <PermissionsBody
               key={organization.id}
               organization={organization}
-              setOnClick={setOnClick}
             />
           )}
         </CardContent>
-        {onClick && (
-          <CardFooter className='flex justify-center'>
-            <Button variant='primary' onClick={onClick.function}>
-              {onClick.name}
-            </Button>
-          </CardFooter>
-        )}
       </Card>
     </div>
   );
@@ -62,19 +49,13 @@ export default function Permissions() {
 
 function PermissionsBody({
   organization,
-  setOnClick,
 }: {
   organization: { id: string; name: string };
-  setOnClick: (onClick: { name: string; function: () => void } | null) => void;
 }) {
   return (
-    <Tabs defaultTab={0} onTabChange={() => setOnClick(null)}>
+    <Tabs defaultTab={0}>
       <Tab label='Users'>
-        <Users
-          key={organization.id}
-          organization={organization}
-          setOnClick={setOnClick}
-        />
+        <Users key={organization.id} organization={organization} />
       </Tab>
       <Tab label='Organisation Info'>
         <Info organizationId={organization.id} />

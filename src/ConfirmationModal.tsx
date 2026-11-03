@@ -31,6 +31,9 @@ export default function ConfirmationModal({
         </DialogHeader>
         <DialogBody>{body}</DialogBody>
         <DialogFooter>
+          <Button variant='ghost' className='mr-auto' onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             variant='primary'
             onClick={() => {
@@ -39,9 +42,6 @@ export default function ConfirmationModal({
             }}
           >
             Confirm
-          </Button>
-          <Button variant='dark' onClick={onClose}>
-            Cancel
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -3,11 +3,12 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { FormText, Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
 import { useContext, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { graphqlErrorMessage } from '../reportClientErrorCore';
@@ -23,76 +24,99 @@ export default function InviteUserModal({
   show: boolean;
 }) {
   const { client, showModal } = useContext(GlobalContext)!;
+  const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [result, setResult] = useState<{
+    tone: 'success' | 'danger';
+    text: string;
+  } | null>(null);
+
+  const close = () => {
+    setEmail('');
+    setResult(null);
+    showModal(null);
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.target as HTMLFormElement);
-    const email = formData.get('email') as string;
-
-    if (!email) {
-      alert('Please enter an email');
-      return;
-    }
-
+    const address = email.trim();
+    if (!address) return;
     setIsSubmitting(true);
-
+    setResult(null);
     try {
       const { errors } = await client.mutations.inviteUserToOrganization({
         organizationId: organization.id,
-        email,
+        email: address,
       });
-
       if (errors?.length) {
-        alert(errors[0].message);
+        setResult({ tone: 'danger', text: errors[0].message });
       } else {
-        showModal(null);
-        setTimeout(
-          () =>
-            alert(
-              `If ${email} has a SurveyScope account, they've been sent an invite.`,
-            ),
-          300,
-        );
+        setEmail('');
+        setResult({
+          tone: 'success',
+          text: `If ${address} has a SurveyScope account, they've been invited.`,
+        });
       }
     } catch (err) {
-      alert(graphqlErrorMessage(err) || 'Failed to send invite');
+      setResult({
+        tone: 'danger',
+        text: graphqlErrorMessage(err) || 'Failed to send invite',
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
   };
 
   return (
-    <Dialog open={show} onOpenChange={(o) => !o && showModal(null)}>
+    <Dialog open={show} onOpenChange={(o) => !o && close()}>
       <DialogContent>
         <DialogHeader closeButton>
-          <DialogTitle>Invite a user to {organization.name}</DialogTitle>
+          <DialogTitle>Invite to {organization.name}</DialogTitle>
         </DialogHeader>
-        <DialogBody>
-          <form onSubmit={handleSubmit}>
-            <div className='mb-4'>
-              <Label htmlFor='formBasicEmail'>Email</Label>
-              <Input
-                id='formBasicEmail'
-                type='email'
-                placeholder='Enter email'
-                name='email'
-              />
-            </div>
-            <Button variant='primary' type='submit' disabled={isSubmitting}>
-              Send Invite
+        <form onSubmit={handleSubmit}>
+          <DialogBody className='flex flex-col gap-2'>
+            <Input
+              id='invite-email'
+              aria-label='Email'
+              type='email'
+              autoFocus
+              placeholder='name@example.com'
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <span className='text-xs text-muted-foreground'>
+              The owner of this email needs a SurveyScope account and should
+              contact WildEye support if they don&apos;t have one.
+            </span>
+            {result && (
+              <span
+                className={cn(
+                  'mt-2 text-sm',
+                  result.tone === 'danger' ? 'text-danger' : 'text-success',
+                )}
+              >
+                {result.text}
+              </span>
+            )}
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              type='button'
+              variant='ghost'
+              className='mr-auto'
+              onClick={close}
+            >
+              Close
             </Button>
-            <FormText className='mt-4 block'>
-              The user will get the invite by email and in their SurveyScope
-              inbox.
-            </FormText>
-            <FormText className='block'>
-              Only people with a SurveyScope account receive invites. If the
-              user doesn't have one, please contact WildEye support with the
-              email of the user that requires an account.
-            </FormText>
-          </form>
-        </DialogBody>
+            <Button
+              variant='primary'
+              type='submit'
+              disabled={isSubmitting || !email.trim()}
+            >
+              {isSubmitting ? 'Sending...' : 'Send invite'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

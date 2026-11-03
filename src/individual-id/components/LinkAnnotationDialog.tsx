@@ -37,7 +37,7 @@ export function LinkAnnotationDialog({ show, onConfirm, onCancel }: Props) {
           immediately.
         </DialogBody>
         <DialogFooter>
-          <Button variant='secondary' onClick={onCancel}>
+          <Button variant='ghost' className='mr-auto' onClick={onCancel}>
             Cancel
           </Button>
           <Button variant='primary' onClick={onConfirm}>

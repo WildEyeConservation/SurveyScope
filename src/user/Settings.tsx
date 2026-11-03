@@ -417,7 +417,7 @@ export default function Settings({ signOut }: { signOut: () => void }) {
           </div>
         </Body>
         <Footer>
-          <Button variant='dark' onClick={closeSettings}>
+          <Button variant='ghost' className='mr-auto' onClick={closeSettings}>
             Close
           </Button>
         </Footer>

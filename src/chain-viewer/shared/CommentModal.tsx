@@ -62,7 +62,7 @@ export function CommentModal({ show, initial, onClose, onSave }: Props) {
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button variant='secondary' onClick={onClose}>
+          <Button variant='ghost' className='mr-auto' onClick={onClose}>
             Cancel
           </Button>
           <Button

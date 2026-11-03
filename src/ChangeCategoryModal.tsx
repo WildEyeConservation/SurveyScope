@@ -326,7 +326,7 @@ export default function ChangeCategoryModal({
             borderTop: '1px solid rgba(255,255,255,0.1)',
           }}
         >
-          <Button variant='dark' onClick={onClose}>
+          <Button variant='ghost' className='mr-auto' onClick={onClose}>
             Cancel
           </Button>
         </DialogFooter>

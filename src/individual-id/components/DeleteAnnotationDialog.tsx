@@ -45,7 +45,7 @@ export function DeleteAnnotationDialog({
           of <strong>{chainSize}</strong>?
         </DialogBody>
         <DialogFooter>
-          <Button variant='secondary' onClick={onCancel}>
+          <Button variant='ghost' className='mr-auto' onClick={onCancel}>
             Cancel
           </Button>
           <Button variant='outline-danger' onClick={onDeleteOne}>
