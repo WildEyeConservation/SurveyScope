@@ -11,9 +11,10 @@ const STALE_TIME = 30 * 60 * 1000;
 
 export function surveyGeoQuery(client: DataClient, surveyId: string) {
   return {
-    // Bump the version when the fields change: this cache persists across reloads.
     queryKey: ['densitymap', 'survey-geo-v2', surveyId],
     staleTime: STALE_TIME,
+    // Too large for localStorage.
+    meta: { persist: false },
     queryFn: async () => {
       const [images, strata, exclusions] = await Promise.all([
         loadProjectImages(client, surveyId, [
@@ -55,6 +56,7 @@ export function setAnnotationsQuery(
   return {
     queryKey: ['densitymap', 'annotations', annotationSetId],
     staleTime: STALE_TIME,
+    meta: { persist: false },
     queryFn: async () => {
       const [rows, surveyCategories] = await Promise.all([
         loadRows(client, 'annotationsByAnnotationSetId', annotationSetId, [

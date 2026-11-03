@@ -94,7 +94,7 @@ export default function Testing() {
           </PageHeader>
           <CardContent>
             {organization.id && (
-              <Tabs defaultTab={0}>
+              <Tabs key={organization.id} defaultTab={0}>
                 <Tab label='Surveys'>
                   <Surveys />
                 </Tab>

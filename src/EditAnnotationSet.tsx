@@ -78,9 +78,11 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
   const [labelCount, setLabelCount] = useState<number>();
   const [infoTagCount, setInfoTagCount] = useState<number>();
   const { data: usage } = useQuery({
-    queryKey: ['annotation-set-label-usage', annotationSet.id],
+    queryKey: ['annotation-set-label-usage-v2', annotationSet.id],
     enabled: show,
     staleTime: 0,
+    // Holds Maps, which don't survive being saved to localStorage.
+    meta: { persist: false },
     queryFn: async () => {
       const [annotations, links] = await Promise.all([
         loadRows(client, 'annotationsByAnnotationSetId', annotationSet.id, [

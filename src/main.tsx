@@ -80,6 +80,10 @@ persistQueryClient({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   queryClient: queryClient as any,
   persister,
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query) =>
+      query.state.status === 'success' && query.meta?.persist !== false,
+  },
 });
 
 // Define global for browser environment

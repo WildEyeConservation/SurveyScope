@@ -126,6 +126,9 @@ export default function Results() {
     queryKey: ['testing-results', survey?.value, memberIds.join(',')],
     enabled: !!survey && memberIds.length > 0,
     staleTime: 0,
+    refetchOnWindowFocus: false,
+    // Too large for localStorage, and it must be fresh.
+    meta: { persist: false },
     queryFn: async () => {
       const perUser = await Promise.all(
         memberIds.map((userId) =>
@@ -161,6 +164,9 @@ export default function Results() {
     queryKey: ['testing-results-locations', survey?.value],
     enabled: !!survey,
     staleTime: 0,
+    refetchOnWindowFocus: false,
+    // Too large for localStorage, and it must be fresh.
+    meta: { persist: false },
     queryFn: async () => {
       const query = resolveStatsQuery(client);
       if (!query) return { buckets: [], truncated: false };

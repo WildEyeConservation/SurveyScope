@@ -2,19 +2,17 @@ import { GridHead, GridTable } from '@/components/GridTable';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AnnotationWorkspace from './AnnotationWorkspace';
 import { GlobalContext, ProjectContext } from './Context';
-import ImageThumb from './ImageThumb';
 import {
   extractUserIdFromOwner,
   setAnnotationsQuery,
   surveyGeoQuery,
 } from './sightingQueries';
 import { useInfoTagData } from './useInfoTags';
-
-const ROW_HEIGHT = 72;
 
 type SortMode = 'time' | 'count';
 
@@ -132,35 +130,22 @@ export default function ReviewImages({
   }, [rows, selectedImageId, imagesById, onSelectImage]);
 
   const listRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [listHeight, setListHeight] = useState(600);
-  useEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const observer = new ResizeObserver(() => setListHeight(list.clientHeight));
-    observer.observe(list);
-    return () => observer.disconnect();
-  }, []);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 52,
+    getItemKey: (i) => rows[i].id,
+    overscan: 5,
+  });
 
   useEffect(() => {
-    const list = listRef.current;
-    if (!list || index < 0) return;
-    const top = index * ROW_HEIGHT;
-    if (top < list.scrollTop) list.scrollTop = top;
-    else if (top + ROW_HEIGHT > list.scrollTop + list.clientHeight)
-      list.scrollTop = top + ROW_HEIGHT - list.clientHeight;
-  }, [index]);
+    if (index >= 0) virtualizer.scrollToIndex(index);
+  }, [index, virtualizer]);
 
   const step = (delta: number) => {
     const next = rows[index + delta];
     if (next) onSelectImage(next.id);
   };
-
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 5);
-  const last = Math.min(
-    rows.length,
-    Math.ceil((scrollTop + listHeight) / ROW_HEIGHT) + 5,
-  );
 
   if (!annotationSetId) {
     return (
@@ -210,7 +195,6 @@ export default function ReviewImages({
         <div
           ref={listRef}
           tabIndex={0}
-          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
               e.preventDefault();
@@ -229,32 +213,31 @@ export default function ReviewImages({
               No images match the filters.
             </div>
           ) : (
-            <div style={{ height: rows.length * ROW_HEIGHT }}>
-              {rows.slice(first, last).map((row, offset) => (
-                <button
-                  key={row.id}
-                  type='button'
-                  onClick={() => onSelectImage(row.id)}
-                  className={cn(
-                    'absolute inset-x-0 flex items-center gap-2.5 border-b border-white/[0.08] px-2.5 text-left',
-                    row.id === selectedImageId
-                      ? 'bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]'
-                      : cn(
-                          'hover:bg-white/[0.075]',
-                          (first + offset) % 2 === 0 && 'bg-black/5',
-                        ),
-                  )}
-                  style={{
-                    top: (first + offset) * ROW_HEIGHT,
-                    height: ROW_HEIGHT,
-                  }}
-                >
-                  <ImageThumb
-                    image={imagesById.get(row.id) ?? { id: row.id }}
-                    className='h-12 w-16 flex-none bg-black/30'
-                  />
-                  <span className='flex min-w-0 flex-col gap-1'>
-                    <span className='flex items-baseline justify-between gap-2'>
+            <div
+              className='relative'
+              style={{ height: virtualizer.getTotalSize() }}
+            >
+              {virtualizer.getVirtualItems().map((item) => {
+                const row = rows[item.index];
+                return (
+                  <button
+                    key={item.key}
+                    ref={virtualizer.measureElement}
+                    data-index={item.index}
+                    type='button'
+                    onClick={() => onSelectImage(row.id)}
+                    className={cn(
+                      'absolute inset-x-0 top-0 flex flex-col gap-1 border-b border-white/[0.08] px-2.5 py-2 text-left',
+                      row.id === selectedImageId
+                        ? 'bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]'
+                        : cn(
+                            'hover:bg-white/[0.075]',
+                            item.index % 2 === 0 && 'bg-black/5',
+                          ),
+                    )}
+                    style={{ transform: `translateY(${item.start}px)` }}
+                  >
+                    <span className='flex w-full items-baseline justify-between gap-2'>
                       <span className='truncate text-sm' title={row.name}>
                         {row.name}
                       </span>
@@ -262,16 +245,16 @@ export default function ReviewImages({
                         {formatTime(row.timestamp)}
                       </span>
                     </span>
-                    <span className='flex gap-1 overflow-hidden'>
+                    <span className='flex flex-wrap gap-1'>
                       {row.counts.map(({ categoryId, count }) => {
                         const category = categoryById.get(categoryId);
                         return (
                           <span
                             key={categoryId}
-                            className='flex flex-none items-center gap-1 bg-black/25 px-1.5 text-[11px]'
+                            className='flex items-center gap-1 bg-black/25 px-1.5 text-[11px]'
                           >
                             <span
-                              className='size-2'
+                              className='size-2 flex-none'
                               style={{
                                 backgroundColor: category?.color ?? '#adb5bd',
                               }}
@@ -281,9 +264,9 @@ export default function ReviewImages({
                         );
                       })}
                     </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -355,16 +338,16 @@ export default function ReviewImages({
         )}
 
         {index >= 0 && (
-          <div className='absolute top-2.5 right-2.5 z-10 flex flex-col gap-1 bg-white px-3 py-2 text-sm text-[#212529] shadow-lg'>
+          <div className='absolute top-2.5 right-2.5 z-10 flex max-w-56 flex-col gap-1 bg-white px-3 py-2 text-sm text-[#212529] shadow-lg'>
             <span className='text-[10px] font-semibold tracking-wider text-[#6c757d] uppercase'>
               This image
             </span>
             {rows[index].counts.map(({ categoryId, count }) => {
               const category = categoryById.get(categoryId);
               return (
-                <span key={categoryId} className='flex items-center gap-2'>
+                <span key={categoryId} className='flex items-baseline gap-2'>
                   <span
-                    className='size-2.5'
+                    className='size-2.5 flex-none'
                     style={{ backgroundColor: category?.color ?? '#adb5bd' }}
                   />
                   {count} {category?.name ?? 'Unknown'}
