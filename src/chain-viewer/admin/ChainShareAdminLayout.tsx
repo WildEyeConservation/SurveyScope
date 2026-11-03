@@ -17,7 +17,7 @@ export default function ChainShareAdminLayout() {
     <div
       style={{
         width: '100%',
-        maxWidth: 1500,
+        maxWidth: 1555,
         marginTop: 16,
         marginBottom: 16,
         display: 'flex',

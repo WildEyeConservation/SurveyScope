@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useContext } from 'react';
 import AdminStats from './AdminStats';
 import AdminSurveys from './AdminSurveys';
@@ -6,6 +6,7 @@ import AwsServiceHealth from './AwsServiceHealth';
 import ClientLogs from './ClientLogs';
 import { UserContext } from './Context';
 import ErrorReports from './ErrorReports';
+import PageHeader from './PageHeader';
 import PendingOrganizations from './PendingOrganizations';
 import SurveyMetrics from './survey-metrics/SurveyMetrics';
 import { Tab, Tabs } from './Tabs';
@@ -26,11 +27,7 @@ export default function Admin() {
       }}
     >
       <Card>
-        <CardHeader>
-          <CardTitle className='mb-0'>
-            <h4 className='mb-0'>Admin</h4>
-          </CardTitle>
-        </CardHeader>
+        <PageHeader title='Admin' />
         <CardContent>
           <Tabs>
             <Tab label='Pending Organisations'>

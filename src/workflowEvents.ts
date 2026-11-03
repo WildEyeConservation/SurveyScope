@@ -28,6 +28,8 @@ export interface WorkflowEventsRequest {
 
 interface QueryPage {
   events?: WorkflowEvent[];
+  totals?: WorkflowContribution[];
+  count?: number;
   nextToken?: string | null;
 }
 
@@ -129,4 +131,47 @@ export function eventToCsvRow(
     ),
     eventId: event.eventId,
   };
+}
+
+// Older backends return raw events instead of totals.
+export async function fetchWorkflowTotals(
+  client: unknown,
+  request: WorkflowEventsRequest,
+  onProgress?: (count: number) => void,
+): Promise<WorkflowContribution[]> {
+  const query = resolveEventsQuery(client);
+  if (!query) throw new Error(EVENTS_QUERY_UNAVAILABLE);
+  if (request.runIds.length === 0) return [];
+
+  const totals: WorkflowContribution[] = [];
+  let read = 0;
+  let nextToken: string | null | undefined;
+  do {
+    const { data, errors } = await query({
+      projectId: request.projectId,
+      runIds: request.runIds,
+      startAt: request.startAt,
+      endAt: request.endAt,
+      summary: true,
+      nextToken: nextToken ?? undefined,
+    });
+    if (errors?.length) {
+      throw new Error(
+        errors.map((entry) => entry.message ?? 'Unknown error').join('; '),
+      );
+    }
+    const page = (
+      typeof data === 'string' ? JSON.parse(data) : (data ?? {})
+    ) as QueryPage;
+    if (page.totals) {
+      totals.push(...page.totals);
+      read += page.count ?? 0;
+    } else {
+      totals.push(...(page.events ?? []).map(eventToContribution));
+      read += page.events?.length ?? 0;
+    }
+    onProgress?.(read);
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return totals;
 }

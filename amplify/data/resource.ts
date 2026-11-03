@@ -1426,6 +1426,7 @@ const schema = a
         endAt: a.string(),
         nextToken: a.string(),
         limit: a.integer(),
+        summary: a.boolean(),
       })
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
@@ -1823,6 +1824,7 @@ const schema = a
     allow.resource(removeUserFromOrganization),
     allow.resource(updateOrganizationMemberAdmin),
     allow.resource(deleteQueue),
+    allow.resource(queryWorkflowEvents),
     allow.resource(cancelIndividualIdJob),
     allow.resource(syncOrganizationGroups),
     allow.resource(launchIndividualId),

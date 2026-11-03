@@ -1,16 +1,11 @@
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { useContext, useState } from 'react';
 import { UserContext } from './Context';
 import Info from './organization/Info';
 import Users from './organization/Users';
 import OrganizationSelector from './OrganizationSelector';
+import PageHeader from './PageHeader';
 import { Tab, Tabs } from './Tabs';
 
 export default function Permissions() {
@@ -38,15 +33,12 @@ export default function Permissions() {
       }}
     >
       <Card>
-        <CardHeader className='mb-0 flex justify-between'>
-          <CardTitle className='mb-0'>
-            <h4 className='mb-0'>Permissions</h4>
-          </CardTitle>
+        <PageHeader title='Permissions'>
           <OrganizationSelector
             organization={organization}
             setOrganization={setOrganization}
           />
-        </CardHeader>
+        </PageHeader>
         <CardContent>
           {organization.id && (
             <PermissionsBody

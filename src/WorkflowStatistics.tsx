@@ -1,13 +1,7 @@
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
 import { fieldBase, fieldSizes } from '@/components/ui/input';
 import {
@@ -19,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import exportFromJSON from 'export-from-json';
-import { RefreshCw, XIcon } from 'lucide-react';
+import { CameraIcon, DownloadIcon, RefreshCw, XIcon } from 'lucide-react';
 import {
   useCallback,
   useContext,
@@ -29,10 +23,12 @@ import {
   useState,
 } from 'react';
 import { neutraliseCsvRows } from '../shared/csv';
-import { GlobalContext } from './Context';
+import { GlobalContext, UserContext } from './Context';
+import PageHeader from './PageHeader';
 import MyTable from './Table';
 import WorkflowSnapshotModal from './WorkflowSnapshotModal';
 import { useUsers } from './apiInterface';
+import { LIGHT_THEME } from './survey/mapTheme';
 import { fetchAllPaginatedResults } from './utils';
 import { eventToCsvRow, fetchAllWorkflowEvents } from './workflowEvents';
 import { WORKFLOW_REGISTRY, type WorkflowType } from './workflowRegistry';
@@ -145,6 +141,8 @@ function startOfLocalDay(date: Date): Date {
 
 export default function WorkflowStatistics() {
   const { client } = useContext(GlobalContext)!;
+  const { cognitoGroups, myMembershipHook, myOrganizationHook } =
+    useContext(UserContext)!;
   const { users: allUsers } = useUsers();
 
   const [projects, setProjects] = useState<ProjectOption[]>([]);
@@ -532,39 +530,18 @@ export default function WorkflowStatistics() {
       endString ?? 'all'
     }`.replace(/[\s()]/g, '_');
 
-  function exportDailyStats() {
-    if (visibleBuckets.length === 0) return;
-    const rows = visibleBuckets.map((bucket) => ({
-      workflow:
-        WORKFLOW_REGISTRY[bucket.workflowType as WorkflowType]?.label ??
-        bucket.workflowType,
-      workflowType: bucket.workflowType,
-      date: bucket.date,
-      user: userName(bucket.userId),
-      userId: bucket.userId,
-      annotationSetId: bucket.annotationSetId,
-      run: runName(bucket.workflowRunId),
-      workflowRunId: bucket.workflowRunId,
-      completedUnits:
-        bucket.workflowType === 'info-tags'
-          ? (bucket.metrics.annotationsProcessed ?? '')
-          : bucket.completedUnits,
-      skippedUnits: bucket.skippedUnits,
-      activeTimeMs: bucket.activeTimeMs,
-      waitingTimeMs: bucket.waitingTimeMs,
-      ...Object.fromEntries(
-        Object.entries(bucket.metrics).map(([key, value]) => [
-          `metric_${key}`,
-          value,
-        ]),
-      ),
-    }));
-    exportFromJSON({
-      data: neutraliseCsvRows(rows),
-      fileName: `${exportBaseName}_DailyStats`,
-      exportType: exportFromJSON.types.csv,
-    });
-  }
+  // Raw events name annotators; the backend enforces the same rule.
+  const projectOrganizationId = projects.find(
+    (candidate) => candidate.id === project?.value,
+  )?.organizationId;
+  const canExportTaskEvents =
+    cognitoGroups.includes('sysadmin') ||
+    !!myOrganizationHook.data?.some(
+      (m) => m.organizationId === projectOrganizationId && m.isAdmin,
+    ) ||
+    !!myMembershipHook.data?.some(
+      (m) => m.projectId === project?.value && m.isAdmin,
+    );
 
   async function exportTaskEvents() {
     if (!project || visibleRunIds.length === 0) return;
@@ -617,11 +594,7 @@ export default function WorkflowStatistics() {
       }}
     >
       <Card>
-        <CardHeader>
-          <CardTitle className='mb-0'>
-            <h4 className='mb-0'>Workflow Statistics</h4>
-          </CardTitle>
-        </CardHeader>
+        <PageHeader title='Workflow Statistics' />
         <CardContent>
           <div className='-mx-2 flex flex-wrap items-end gap-y-4'>
             <div className='w-full px-2 md:w-1/3'>
@@ -836,33 +809,27 @@ export default function WorkflowStatistics() {
           )}
         </CardContent>
         {hasLoaded && !loading && (
-          <CardFooter className='flex justify-center gap-2'>
+          <CardFooter className='flex justify-end gap-2'>
             <Button
               variant='primary'
-              style={{ flex: 1 }}
               onClick={() => setShowSnapshot(true)}
               disabled={visibleRunIds.length === 0 || !startDate || !endDate}
             >
+              <CameraIcon className='size-4' />
               Snapshot
             </Button>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={exportDailyStats}
-              disabled={visibleBuckets.length === 0}
-            >
-              Export daily stats
-            </Button>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={exportTaskEvents}
-              disabled={visibleRunIds.length === 0 || exportProgress !== null}
-            >
-              {exportProgress
-                ? `Exporting… ${exportProgress}`
-                : 'Export task events'}
-            </Button>
+            {canExportTaskEvents && (
+              <Button
+                variant='outline-primary'
+                onClick={exportTaskEvents}
+                disabled={visibleRunIds.length === 0 || exportProgress !== null}
+              >
+                <DownloadIcon className='size-4' />
+                {exportProgress
+                  ? `Exporting… ${exportProgress}`
+                  : 'Export task events'}
+              </Button>
+            )}
           </CardFooter>
         )}
       </Card>
@@ -923,7 +890,11 @@ function DateField({
             {value ? format(value, 'yyyy/MM/dd') : placeholder}
           </button>
         </PopoverTrigger>
-        <PopoverContent className='w-auto p-0' align='start'>
+        <PopoverContent
+          className='w-auto border-black/10 bg-white p-0 text-[#212529]'
+          style={LIGHT_THEME}
+          align='start'
+        >
           <Calendar
             mode='single'
             selected={value ?? undefined}

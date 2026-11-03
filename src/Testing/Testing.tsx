@@ -1,7 +1,8 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useContext, useState } from 'react';
 import { GlobalContext, TestingContext } from '../Context';
 import OrganizationSelector from '../OrganizationSelector';
+import PageHeader from '../PageHeader';
 import { Tab, Tabs } from '../Tabs';
 import { Schema } from '../amplify/client-schema';
 import { useOptimisticUpdates } from '../useOptimisticUpdates';
@@ -84,15 +85,12 @@ export default function Testing() {
         }}
       >
         <Card>
-          <CardHeader className='mb-0 flex justify-between'>
-            <CardTitle className='mb-0'>
-              <h4 className='mb-0'>User Testing</h4>
-            </CardTitle>
+          <PageHeader title='User Testing'>
             <OrganizationSelector
               organization={organization}
               setOrganization={setOrganization}
             />
-          </CardHeader>
+          </PageHeader>
           <CardContent>
             {organization.id && (
               <Tabs defaultTab={0}>

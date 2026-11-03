@@ -1,11 +1,99 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { authorizeWorkflowStatsItem, requireWorkflowStatsUser } from '../workflowStats/readAuthorization';
+import { env } from '$amplify/env/queryWorkflowEvents';
+import type { GraphQLResult } from '@aws-amplify/api-graphql';
+import { Amplify } from 'aws-amplify';
+import { generateClient } from 'aws-amplify/data';
+import {
+  assertSurveyAdmin,
+  authorizeWorkflowStatsItem,
+  requireWorkflowStatsUser,
+} from '../workflowStats/readAuthorization';
 import {
   BatchGetCommand,
   DynamoDBDocumentClient,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { AppSyncResolverHandler } from 'aws-lambda';
+import { summariseEvents, type EventTotals } from './summarise';
+
+Amplify.configure(
+  {
+    API: {
+      GraphQL: {
+        endpoint: env.AMPLIFY_DATA_GRAPHQL_ENDPOINT,
+        region: env.AWS_REGION,
+        defaultAuthMode: 'iam',
+      },
+    },
+  },
+  {
+    Auth: {
+      credentialsProvider: {
+        getCredentialsAndIdentityId: async () => ({
+          credentials: {
+            accessKeyId: env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+            sessionToken: env.AWS_SESSION_TOKEN,
+          },
+        }),
+        clearCredentialsAndIdentityId: () => {},
+      },
+    },
+  }
+);
+
+const gqlClient = generateClient({ authMode: 'iam' });
+
+async function executeGraphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+  const response = (await gqlClient.graphql({ query, variables } as never)) as GraphQLResult<T>;
+  if (response.errors?.length) {
+    throw new Error(`GraphQL error: ${JSON.stringify(response.errors.map((e) => e.message))}`);
+  }
+  if (!response.data) throw new Error('GraphQL response missing data');
+  return response.data;
+}
+
+const adminLookup = {
+  organizationOf: async (projectId: string) =>
+    (
+      await executeGraphql<{ getProject?: { organizationId?: string | null } | null }>(
+        `query GetProject($id: ID!) { getProject(id: $id) { organizationId } }`,
+        { id: projectId }
+      )
+    ).getProject?.organizationId ?? null,
+  isOrganizationAdmin: async (organizationId: string, userId: string) =>
+    !!(
+      await executeGraphql<{ getOrganizationMembership?: { isAdmin?: boolean | null } | null }>(
+        `query GetOrganizationMembership($organizationId: ID!, $userId: String!) {
+          getOrganizationMembership(organizationId: $organizationId, userId: $userId) { isAdmin }
+        }`,
+        { organizationId, userId }
+      )
+    ).getOrganizationMembership?.isAdmin,
+  isProjectAdmin: async (projectId: string, userId: string) => {
+    let nextToken: string | null | undefined;
+    do {
+      const data = await executeGraphql<{
+        userProjectMembershipsByUserId?: {
+          items: { projectId: string; isAdmin?: boolean | null }[];
+          nextToken?: string | null;
+        };
+      }>(
+        `query Memberships($userId: String!, $nextToken: String) {
+          userProjectMembershipsByUserId(userId: $userId, limit: 1000, nextToken: $nextToken) {
+            items { projectId isAdmin }
+            nextToken
+          }
+        }`,
+        { userId, nextToken }
+      );
+      const page = data.userProjectMembershipsByUserId;
+      if (page?.items.some((m) => m.projectId === projectId && m.isAdmin)) return true;
+      nextToken = page?.nextToken;
+    } while (nextToken);
+    return false;
+  },
+};
 
 interface QueryWorkflowEventsArguments {
   projectId: string;
@@ -14,6 +102,8 @@ interface QueryWorkflowEventsArguments {
   endAt?: string | null;
   nextToken?: string | null;
   limit?: number | null;
+  /** Per-user totals instead of task events; open to all organization members. */
+  summary?: boolean | null;
 }
 
 interface WorkflowEvent {
@@ -33,10 +123,9 @@ interface WorkflowEvent {
   metrics: Record<string, number>;
 }
 
-interface QueryWorkflowEventsResult {
-  events: WorkflowEvent[];
-  nextToken: string | null;
-}
+type QueryWorkflowEventsResult =
+  | { events: WorkflowEvent[]; nextToken: string | null }
+  | { totals: EventTotals[]; count: number; nextToken: string | null };
 
 // The page cursor names the run being read and DynamoDB's own continuation
 // key inside it, so a multi-run export resumes exactly where it stopped.
@@ -64,6 +153,8 @@ const documentClient = DynamoDBDocumentClient.from(
 // few hundred bytes once serialized, so this keeps a page under about 1 MB.
 const DEFAULT_PAGE_SIZE = 1_500;
 const MAX_PAGE_SIZE = 2_000;
+// Summaries return totals only, so a page can read far more events.
+const SUMMARY_PAGE_SIZE = 20_000;
 const MAX_RUNS = 50;
 
 function assertIdentifier(value: unknown, field: string): string {
@@ -179,14 +270,17 @@ export const handler: AppSyncResolverHandler<
 > = async (event) => {
   requireWorkflowStatsUser(event.identity);
   const projectId = assertIdentifier(event.arguments.projectId, 'projectId');
+  const summary = event.arguments.summary === true;
+  if (!summary) await assertSurveyAdmin(event.identity, projectId, adminLookup);
   const startAt = optionalTimestamp(event.arguments.startAt, 'startAt');
   const endAt = optionalTimestamp(event.arguments.endAt, 'endAt');
   if (startAt && endAt && startAt > endAt) {
     throw new Error('startAt cannot be after endAt');
   }
   const requestedLimit = event.arguments.limit;
-  const pageSize =
-    typeof requestedLimit === 'number' && requestedLimit > 0
+  const pageSize = summary
+    ? SUMMARY_PAGE_SIZE
+    : typeof requestedLimit === 'number' && requestedLimit > 0
       ? Math.min(Math.floor(requestedLimit), MAX_PAGE_SIZE)
       : DEFAULT_PAGE_SIZE;
 
@@ -197,14 +291,18 @@ export const handler: AppSyncResolverHandler<
       )
     ),
   ];
-  if (runIds.length === 0) return { events: [], nextToken: null };
+  if (runIds.length === 0) {
+    return summary ? { totals: [], count: 0, nextToken: null } : { events: [], nextToken: null };
+  }
   if (runIds.length > MAX_RUNS) {
     throw new Error(`At most ${MAX_RUNS} runs can be queried at once`);
   }
   await assertRunsBelongToProject(runIds, projectId, event.identity);
 
   const cursor = decodeCursor(event.arguments.nextToken);
-  if (cursor.runIndex >= runIds.length) return { events: [], nextToken: null };
+  if (cursor.runIndex >= runIds.length) {
+    return summary ? { totals: [], count: 0, nextToken: null } : { events: [], nextToken: null };
+  }
 
   const events: WorkflowEvent[] = [];
   let runIndex = cursor.runIndex;
@@ -254,5 +352,6 @@ export const handler: AppSyncResolverHandler<
 
   const nextToken =
     runIndex < runIds.length ? encodeCursor({ runIndex, lastKey }) : null;
+  if (summary) return { totals: summariseEvents(events), count: events.length, nextToken };
   return { events, nextToken };
 };

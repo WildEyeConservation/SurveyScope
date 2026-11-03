@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { authorizeWorkflowStatsItem, requireWorkflowStatsUser } from './readAuthorization';
+import { assertSurveyAdmin, authorizeWorkflowStatsItem, requireWorkflowStatsUser } from './readAuthorization';
 
 test('ordinary organization members can read statistics without admin roles', () => {
   const user = { sub: 'member', groups: ['organization-a'] };
@@ -29,4 +29,20 @@ test('anonymous and non-user identities cannot use reporting queries', () => {
     assert.throws(() => requireWorkflowStatsUser(identity), /Unauthorized/);
     assert.throws(() => authorizeWorkflowStatsItem(identity, { organizationId: 'organization-a' }), /Unauthorized/);
   }
+});
+
+test('task event exports require a survey or organization admin', async () => {
+  const lookup = (orgAdmin: boolean, projectAdmin: boolean) => ({
+    organizationOf: async () => 'organization-a',
+    isOrganizationAdmin: async () => orgAdmin,
+    isProjectAdmin: async () => projectAdmin,
+  });
+  const member = { sub: 'member', groups: ['organization-a'] };
+  await assert.rejects(assertSurveyAdmin(member, 'survey', lookup(false, false)), /only survey admins/);
+  await assert.doesNotReject(assertSurveyAdmin(member, 'survey', lookup(false, true)));
+  await assert.doesNotReject(assertSurveyAdmin(member, 'survey', lookup(true, false)));
+  const outsider = { sub: 'outsider', groups: ['organization-b'] };
+  await assert.rejects(assertSurveyAdmin(outsider, 'survey', lookup(true, true)), /another organization/);
+  const sysadmin = { sub: 'admin', groups: ['sysadmin'] };
+  await assert.doesNotReject(assertSurveyAdmin(sysadmin, 'survey', lookup(false, false)));
 });

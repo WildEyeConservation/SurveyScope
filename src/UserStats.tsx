@@ -26,6 +26,7 @@ import { GlobalContext, UserContext } from './Context';
 import { loadRows } from './rowChunks';
 import type { UserStatsType } from './schemaTypes';
 import SnapshotStatsModal from './SnapshotStatsModal';
+import { LIGHT_THEME } from './survey/mapTheme';
 import MyTable from './Table';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -670,7 +671,11 @@ function DateField({
             {value ? format(value, 'yyyy/MM/dd') : placeholder}
           </button>
         </PopoverTrigger>
-        <PopoverContent className='w-auto p-0' align='start'>
+        <PopoverContent
+          className='w-auto border-black/10 bg-white p-0 text-[#212529]'
+          style={LIGHT_THEME}
+          align='start'
+        >
           <Calendar
             mode='single'
             selected={value ?? undefined}

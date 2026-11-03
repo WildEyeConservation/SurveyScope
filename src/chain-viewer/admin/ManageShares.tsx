@@ -13,6 +13,7 @@ import './admin.css';
 import { useQueryClient } from '@tanstack/react-query';
 import { isShareOperationBusy } from '../../../amplify/chain-shares/lifecycle';
 import { GlobalContext } from '../../Context';
+import PageHeader from '../../PageHeader';
 import { useUsers } from '../../apiInterface';
 import { fetchAllPaginatedResults } from '../../utils';
 import { checkShareResponse } from './shareResponse';
@@ -306,9 +307,7 @@ export default function ManageShares() {
   return (
     <div style={{ width: '100%' }}>
       <Card className='mb-4'>
-        <CardHeader>
-          <h4 className='mb-0'>Share a chain review</h4>
-        </CardHeader>
+        <PageHeader title='Share a chain review' />
         <CardContent>
           <form
             onSubmit={(e) => {

@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
@@ -12,6 +12,7 @@ import { Maximize2, Minimize2 } from 'lucide-react';
 import { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalContext, UserContext } from '../Context';
+import PageHeader from '../PageHeader';
 import MyTable from '../Table';
 import { Schema } from '../amplify/client-schema';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress';
@@ -679,74 +680,63 @@ export default function Jobs() {
       }}
     >
       <Card>
-        <CardHeader className='flex flex-col gap-4 lg:flex-row lg:items-center'>
-          <CardTitle className='mb-0 shrink-0' style={{ whiteSpace: 'nowrap' }}>
-            <h4 className='mb-0'>Jobs Available</h4>
-          </CardTitle>
-          <div className='flex w-full flex-col gap-2 lg:ms-auto lg:flex-row lg:items-center lg:justify-end'>
-            <Input
-              className='w-full'
-              type='text'
-              style={{
-                minWidth: 0,
-                width: '100%',
-                maxWidth: isMobile ? '100%' : '250px',
-              }}
-              placeholder='Search'
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <NativeSelect
-              className='w-full'
-              value={organizationFilter}
-              onChange={(e) => setOrganizationFilter(e.target.value)}
-              style={{
-                minWidth: 0,
-                width: '100%',
-                maxWidth: isMobile ? '100%' : '250px',
-              }}
+        <PageHeader title='Jobs Available'>
+          <Input
+            className='w-full'
+            type='text'
+            style={{
+              minWidth: 0,
+              width: '100%',
+              maxWidth: isMobile ? '100%' : '250px',
+            }}
+            placeholder='Search'
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <NativeSelect
+            className='w-full'
+            value={organizationFilter}
+            onChange={(e) => setOrganizationFilter(e.target.value)}
+            style={{
+              minWidth: 0,
+              width: '100%',
+              maxWidth: isMobile ? '100%' : '250px',
+            }}
+          >
+            <option value=''>All organisations</option>
+            {organizationOptions.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.name}
+              </option>
+            ))}
+          </NativeSelect>
+          <NativeSelect
+            className='w-full'
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{
+              minWidth: 0,
+              width: '100%',
+              maxWidth: isMobile ? '100%' : '250px',
+            }}
+          >
+            <option value='createdAt'>Created (newest first)</option>
+            <option value='createdAt-reverse'>Created (oldest first)</option>
+            <option value='name'>Name (A-Z)</option>
+            <option value='name-reverse'>Name (Z-A)</option>
+          </NativeSelect>
+          {!isMobile && (
+            <Button
+              variant='info'
+              size='icon'
+              className='flex-none'
+              onClick={() => setCompactMode(!compactMode)}
+              title={compactMode ? 'Expand view' : 'Compact view'}
             >
-              <option value=''>All organisations</option>
-              {organizationOptions.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              className='w-full'
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              style={{
-                minWidth: 0,
-                width: '100%',
-                maxWidth: isMobile ? '100%' : '250px',
-              }}
-            >
-              <option value='createdAt'>Created (newest first)</option>
-              <option value='createdAt-reverse'>Created (oldest first)</option>
-              <option value='name'>Name (A-Z)</option>
-              <option value='name-reverse'>Name (Z-A)</option>
-            </NativeSelect>
-            {!isMobile && (
-              <Button
-                variant='info'
-                onClick={() => setCompactMode(!compactMode)}
-                title={compactMode ? 'Expand view' : 'Compact view'}
-                style={{
-                  minWidth: 'fit-content',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {compactMode ? (
-                  <Maximize2 size={16} />
-                ) : (
-                  <Minimize2 size={16} />
-                )}
-              </Button>
-            )}
-          </div>
-        </CardHeader>
+              {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+            </Button>
+          )}
+        </PageHeader>
         <CardContent className='overflow-x-auto'>
           {isLoading ? (
             <Spinner />

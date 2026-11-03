@@ -1,12 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
@@ -28,6 +22,7 @@ import ConfirmationModal from '../ConfirmationModal.tsx';
 import { GlobalContext, UserContext } from '../Context.tsx';
 import EditAnnotationSetModal from '../EditAnnotationSet.tsx';
 import FilesUploadComponent from '../FilesUploadComponent.tsx';
+import PageHeader from '../PageHeader';
 import MyTable from '../Table.tsx';
 import { Schema } from '../amplify/client-schema.ts';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress.tsx';
@@ -1136,77 +1131,67 @@ export default function Surveys() {
         }}
       >
         <Card>
-          <CardHeader className='flex flex-col gap-4 lg:flex-row lg:items-center'>
-            <CardTitle
-              className='mb-0 shrink-0'
-              style={{ whiteSpace: 'nowrap' }}
+          <PageHeader title='Your Surveys'>
+            <Input
+              className='w-full'
+              type='text'
+              style={{
+                minWidth: 0,
+                width: '100%',
+                maxWidth: isMobile ? '100%' : '250px',
+              }}
+              placeholder='Search'
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <NativeSelect
+              className='w-full'
+              value={organizationFilter}
+              onChange={(e) => setOrganizationFilter(e.target.value)}
+              style={{
+                minWidth: 0,
+                width: '100%',
+                maxWidth: isMobile ? '100%' : '250px',
+              }}
             >
-              <h4 className='mb-0'>Your Surveys</h4>
-            </CardTitle>
-            <div className='flex w-full flex-col gap-2 lg:ms-auto lg:flex-row lg:items-center lg:justify-end'>
-              <Input
-                className='w-full'
-                type='text'
-                style={{
-                  minWidth: 0,
-                  width: '100%',
-                  maxWidth: isMobile ? '100%' : '250px',
-                }}
-                placeholder='Search'
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <NativeSelect
-                className='w-full'
-                value={organizationFilter}
-                onChange={(e) => setOrganizationFilter(e.target.value)}
-                style={{
-                  minWidth: 0,
-                  width: '100%',
-                  maxWidth: isMobile ? '100%' : '250px',
-                }}
-              >
-                <option value=''>All organisations</option>
-                {organizationOptions.map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.name}
-                  </option>
-                ))}
-              </NativeSelect>
-              <NativeSelect
-                className='w-full'
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                style={{
-                  minWidth: 0,
-                  width: '100%',
-                  maxWidth: isMobile ? '100%' : '250px',
-                }}
-              >
-                <option value='createdAt'>Created (newest first)</option>
-                <option value='createdAt-reverse'>
-                  Created (oldest first)
+              <option value=''>All organisations</option>
+              {organizationOptions.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
                 </option>
-                <option value='name'>Name (A-Z)</option>
-                <option value='name-reverse'>Name (Z-A)</option>
-                <option value='activeJobs'>Active jobs first</option>
-              </NativeSelect>
-              {!isMobile && (
-                <Button
-                  variant='info'
-                  size='icon'
-                  onClick={() => setCompactMode(!compactMode)}
-                  title={compactMode ? 'Expand view' : 'Compact view'}
-                >
-                  {compactMode ? (
-                    <Maximize2 size={16} />
-                  ) : (
-                    <Minimize2 size={16} />
-                  )}
-                </Button>
-              )}
-            </div>
-          </CardHeader>
+              ))}
+            </NativeSelect>
+            <NativeSelect
+              className='w-full'
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              style={{
+                minWidth: 0,
+                width: '100%',
+                maxWidth: isMobile ? '100%' : '250px',
+              }}
+            >
+              <option value='createdAt'>Created (newest first)</option>
+              <option value='createdAt-reverse'>Created (oldest first)</option>
+              <option value='name'>Name (A-Z)</option>
+              <option value='name-reverse'>Name (Z-A)</option>
+              <option value='activeJobs'>Active jobs first</option>
+            </NativeSelect>
+            {!isMobile && (
+              <Button
+                variant='info'
+                size='icon'
+                onClick={() => setCompactMode(!compactMode)}
+                title={compactMode ? 'Expand view' : 'Compact view'}
+              >
+                {compactMode ? (
+                  <Maximize2 size={16} />
+                ) : (
+                  <Minimize2 size={16} />
+                )}
+              </Button>
+            )}
+          </PageHeader>
           <CardContent
             className={
               isMobile

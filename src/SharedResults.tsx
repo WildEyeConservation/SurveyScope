@@ -1,8 +1,9 @@
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalContext, UserContext } from './Context.tsx';
+import PageHeader from './PageHeader';
 import { fetchAllPaginatedResults } from './utils.tsx';
 
 export default function SharedResults() {
@@ -62,11 +63,7 @@ export default function SharedResults() {
       }}
     >
       <Card>
-        <CardHeader className='flex items-center justify-between gap-2'>
-          <CardTitle className='mb-0 w-full' style={{ maxWidth: '300px' }}>
-            <h4 className='mb-0'>Shared Results</h4>
-          </CardTitle>
-        </CardHeader>
+        <PageHeader title='Shared Results' />
         <CardContent className='flex flex-col gap-2'>
           {annotationSets.length > 0 ? (
             annotationSets.map((annotationSet) => (

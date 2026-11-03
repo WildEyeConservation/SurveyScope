@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { ExternalLink } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUsers } from '../../apiInterface';
+import PageHeader from '../../PageHeader';
 import { useSharedChainData } from '../shared/useSharedChainData';
 import { AnnotationCrop } from './AnnotationCrop';
 import { divergesCategory, divergesObscured } from './shareStats';
@@ -182,9 +183,7 @@ export default function DisagreementExplorer() {
   return (
     <div style={{ width: '100%' }}>
       <Card className='mb-4'>
-        <CardHeader>
-          <h4 className='mb-0'>Disagreement Explorer</h4>
-        </CardHeader>
+        <PageHeader title='Disagreement Explorer' />
         <CardContent>
           <div className='flex flex-row flex-wrap items-end gap-4'>
             <div style={{ minWidth: 280, flex: 1 }}>

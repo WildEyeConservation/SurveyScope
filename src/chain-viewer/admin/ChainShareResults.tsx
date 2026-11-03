@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Table } from '@/components/ui/table';
 import { useEffect, useMemo, useState } from 'react';
+import PageHeader from '../../PageHeader';
 
 import './admin.css';
 
@@ -164,9 +165,7 @@ export default function ChainShareResults() {
   return (
     <div style={{ width: '100%' }}>
       <Card className='mb-4'>
-        <CardHeader>
-          <h4 className='mb-0'>Results</h4>
-        </CardHeader>
+        <PageHeader title='Results' />
         <CardContent>
           <div className='flex flex-row flex-wrap items-end gap-4'>
             <div style={{ minWidth: 320, flex: 1 }}>
