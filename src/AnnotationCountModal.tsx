@@ -5,7 +5,9 @@ import { cn } from '@/lib/utils';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Body, Footer, Header, Modal, Title } from './Modal';
 
+import { isOnEffort, type BoundaryStatus } from '../shared/boundaryStatus';
 import { GlobalContext } from './Context';
+import { loadProjectImages } from './projectImages';
 import { loadRows } from './rowChunks';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -57,7 +59,7 @@ const AnnotationCountModal: React.FC<Props> = ({
         client,
         'annotationsByAnnotationSetId',
         setId,
-        ['categoryId', 'objectId', 'source'],
+        ['categoryId', 'objectId', 'source', 'imageId'],
         { signal, onProgress: setLoaded },
       ),
       loadRows(client, 'categoriesByProjectId', projectId, ['name'], {
@@ -68,9 +70,18 @@ const AnnotationCountModal: React.FC<Props> = ({
         selectionSet: ['id', 'color'] as const,
         signal,
       }).catch(() => []),
+      loadProjectImages(client, projectId, ['boundaryStatus'], { signal }),
     ])
-      .then(([rows, names, colours]) => {
+      .then(([rows, names, colours, images]) => {
         if (signal.aborted) return;
+        const outside = new Set(
+          images
+            .filter(
+              (image) =>
+                !isOnEffort(image.boundaryStatus as BoundaryStatus | null),
+            )
+            .map((image) => image.id),
+        );
         const colourById = new Map(colours.map((c) => [c.id, c.color]));
         setCategories(
           new Map(
@@ -84,12 +95,14 @@ const AnnotationCountModal: React.FC<Props> = ({
           ),
         );
         setAnnotations(
-          rows.map((a) => ({
-            id: a.id,
-            objectId: a.objectId,
-            source: a.source,
-            categoryId: a.categoryId,
-          })),
+          rows
+            .filter((a) => !outside.has(a.imageId ?? ''))
+            .map((a) => ({
+              id: a.id,
+              objectId: a.objectId,
+              source: a.source,
+              categoryId: a.categoryId,
+            })),
         );
       })
       .catch((err) => {

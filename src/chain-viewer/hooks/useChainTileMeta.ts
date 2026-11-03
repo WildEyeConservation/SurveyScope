@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState } from 'react';
+import type { BoundaryStatus } from '../../../shared/boundaryStatus';
 import { GlobalContext } from '../../Context';
 import type { AnnotationImageMeta, Chain } from '../types';
 import {
@@ -13,6 +14,7 @@ type ChainImageRow = {
   cameraId?: string | null;
   cameraSerial?: string | null;
   camera?: { name?: string | null } | null;
+  boundaryStatus?: BoundaryStatus | null;
 };
 
 type GetChainImage = (
@@ -75,6 +77,7 @@ export function useChainTileMeta(chain: Chain | null) {
                     'cameraId',
                     'cameraSerial',
                     'camera.name',
+                    'boundaryStatus',
                   ] as const,
                 },
               ),
@@ -116,6 +119,7 @@ export function useChainTileMeta(chain: Chain | null) {
             cameraName: img.camera?.name ?? null,
             cameraSerial: img.cameraSerial ?? null,
             sourceKey: sourceKeyById.get(a.imageId) ?? null,
+            boundaryStatus: img.boundaryStatus ?? null,
           });
         }
         return next;

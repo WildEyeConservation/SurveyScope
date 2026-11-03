@@ -3,6 +3,7 @@ import {
   names,
   uniqueNamesGenerator,
 } from 'unique-names-generator';
+import { OUTSIDE_SURVEY_AREA } from '../../shared/boundaryStatus';
 import { formatInfoTagsForDisplay } from '../infoTags';
 import type { ExtendedAnnotationType } from '../schemaTypes';
 import { isWithinLocationBounds } from '../utils';
@@ -127,8 +128,10 @@ export function buildAnnotationPopupLines(
   categoryName: (categoryId: string) => string,
   users: ReadonlyArray<{ id: string; name?: string | null }>,
   infoTags?: string[],
+  outside?: boolean,
 ): string[] {
   const lines = [`Label: ${categoryName(annotation.categoryId)}`];
+  if (outside) lines.push(OUTSIDE_SURVEY_AREA);
   if (infoTags?.length) {
     lines.push(`Info tags: ${formatInfoTagsForDisplay(infoTags)}`);
   }

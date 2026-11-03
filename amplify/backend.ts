@@ -65,6 +65,7 @@ import { pretileImage } from './functions/pretileImage/resource';
 import { refreshTiles } from './functions/refreshTiles/resource';
 import { reconcilePretileLaunches } from './functions/reconcilePretileLaunches/resource';
 import { extendTileLifecycles } from './functions/extendTileLifecycles/resource';
+import { expireInactiveQueues } from './functions/expireInactiveQueues/resource';
 import { launchIndividualId } from './functions/launchIndividualId/resource';
 import { updateImageTransect } from './functions/updateImageTransect/resource';
 import { claimIndividualIdTransect } from './functions/claimIndividualIdTransect/resource';
@@ -148,6 +149,7 @@ const backend = defineBackend({
   refreshTiles,
   reconcilePretileLaunches,
   extendTileLifecycles,
+  expireInactiveQueues,
   launchIndividualId,
   updateImageTransect,
   claimIndividualIdTransect,
@@ -1156,6 +1158,7 @@ for (const launchResource of [
 // the run still being active, so they need no read permission.
 for (const finishResource of [
   backend.cleanupJobs,
+  backend.expireInactiveQueues,
   backend.deleteQueue,
   backend.completeIndividualIdTransect,
   backend.cancelIndividualIdJob,
@@ -2697,6 +2700,52 @@ backend.extendTileLifecycles.resources.lambda.addToRolePolicy(
   })
 );
 backend.extendTileLifecycles.addEnvironment('REFRESH_TILES_QUEUE_URL', refreshTilesQueue.queueUrl);
+
+const expireInactiveQueuesFunction = backend.expireInactiveQueues.resources.lambda;
+expireInactiveQueuesFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['sqs:DeleteQueue'],
+    resources: ['*'],
+  })
+);
+expireInactiveQueuesFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['lambda:InvokeFunction'],
+    resources: [
+      backend.reconcileFalseNegatives.resources.lambda.functionArn,
+      backend.reconcileHomographies.resources.lambda.functionArn,
+    ],
+  })
+);
+backend.expireInactiveQueues.addEnvironment(
+  'RECONCILE_FALSE_NEGATIVES_FUNCTION_NAME',
+  backend.reconcileFalseNegatives.resources.lambda.functionName
+);
+backend.expireInactiveQueues.addEnvironment(
+  'RECONCILE_HOMOGRAPHIES_FUNCTION_NAME',
+  backend.reconcileHomographies.resources.lambda.functionName
+);
+expireInactiveQueuesFunction.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['ses:SendEmail'],
+    resources: [
+      Stack.of(expireInactiveQueuesFunction).formatArn({
+        service: 'ses',
+        resource: 'identity',
+        resourceName: 'surveyscope.org',
+      }),
+    ],
+    conditions: {
+      StringEquals: { 'ses:FromAddress': 'no-reply@surveyscope.org' },
+    },
+  })
+);
+if (process.env.AUTH_REPLY_TO_EMAIL) {
+  backend.expireInactiveQueues.addEnvironment(
+    'REPLY_TO_EMAIL',
+    process.env.AUTH_REPLY_TO_EMAIL
+  );
+}
 
 const launchLambdasUsingPretile = [
   backend.launchAnnotationSet,

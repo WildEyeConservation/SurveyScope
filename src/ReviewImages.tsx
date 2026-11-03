@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { BoundaryStatus } from '../shared/boundaryStatus';
 import AnnotationWorkspace from './AnnotationWorkspace';
 import { GlobalContext, ProjectContext } from './Context';
 import {
@@ -288,6 +289,8 @@ export default function ReviewImages({
                 id: selected.id,
                 width: selected.width,
                 height: selected.height,
+                boundaryStatus:
+                  selected.boundaryStatus as BoundaryStatus | null,
               },
               annotationSetId,
               x: selected.width / 2,

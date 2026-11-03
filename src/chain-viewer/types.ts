@@ -1,3 +1,4 @@
+import type { BoundaryStatus } from '../../shared/boundaryStatus';
 import type { PixelTransform } from '../individual-id/types';
 import type { ImageNeighbourType, ImageType } from '../schemaTypes';
 
@@ -47,6 +48,7 @@ export interface AnnotationImageMeta {
   cameraName: string | null;
   cameraSerial: string | null;
   sourceKey: string | null;
+  boundaryStatus?: BoundaryStatus | null;
 }
 
 /**

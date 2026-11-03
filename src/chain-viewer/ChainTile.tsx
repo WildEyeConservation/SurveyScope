@@ -8,6 +8,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../../shared/boundaryStatus';
 import type { AnnotationImageMeta, ChainAnnotation } from './types';
 import {
   CHAIN_TILE_SIZE,
@@ -321,6 +322,11 @@ export function ChainTile({
             <div style={{ opacity: 0.85, marginTop: 2 }}>
               Camera: {popupCamera ?? 'Unknown'}
             </div>
+            {meta && !isOnEffort(meta.boundaryStatus) && (
+              <div style={{ fontWeight: 600, marginTop: 2 }}>
+                {OUTSIDE_SURVEY_AREA}
+              </div>
+            )}
           </>
         )}
       </div>

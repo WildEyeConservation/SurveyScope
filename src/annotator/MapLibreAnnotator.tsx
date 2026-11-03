@@ -11,6 +11,7 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { isHotkeyPressed, useHotkeys } from 'react-hotkeys-hook';
+import { isOnEffort } from '../../shared/boundaryStatus';
 import type { AnnotationImage, AnnotationLocation } from '../annotationTypes';
 import ChangeCategoryModal from '../ChangeCategoryModal';
 import { ImageContext, ManagementContext, ProjectContext } from '../Context';
@@ -199,6 +200,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   // map's interaction handlers.
   const infoTagsRef = useRef(infoTags);
   infoTagsRef.current = infoTags;
+  const outsideRef = useRef(false);
+  outsideRef.current = !isOnEffort(image.boundaryStatus);
 
   const annotations = useMemo(
     () =>
@@ -443,6 +446,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             categoryName,
             allUsers,
             infoTagsRef.current?.get(annotation.id),
+            outsideRef.current,
           );
           lines.forEach((text) => {
             const row = document.createElement('div');

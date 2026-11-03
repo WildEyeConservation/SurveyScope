@@ -9,6 +9,7 @@ import { useParams } from 'react-router-dom';
 import { GlobalContext, UserContext } from './Context';
 import QCAnnotationReview from './QCAnnotationReview';
 import { TaskBuffer } from './TaskBuffer';
+import { touchQueue } from './touchQueue';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -38,6 +39,7 @@ export default function QCReviewTask() {
   // Fetch queue URL and annotationSetId on mount.
   useEffect(() => {
     if (!queueId) return;
+    touchQueue(client, queueId);
     client.models.Queue.get({ id: queueId }).then(({ data }) => {
       if (data?.url) setQueueUrl(data.url as string);
       if (data?.annotationSetId) setAnnotationSetId(data.annotationSetId);

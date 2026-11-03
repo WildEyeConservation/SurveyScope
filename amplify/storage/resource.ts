@@ -10,6 +10,7 @@ import { launchFalseNegatives } from "../functions/launchFalseNegatives/resource
 import { processTilingBatch } from "../functions/processTilingBatch/resource"
 import { monitorTilingTasks } from "../functions/monitorTilingTasks/resource"
 import { cleanupJobs } from "../functions/cleanupJobs/resource"
+import { expireInactiveQueues } from "../functions/expireInactiveQueues/resource"
 import { findAndRequeueMissingLocations } from "../functions/findAndRequeueMissingLocations/resource"
 import { reconcileFalseNegatives } from "../functions/reconcileFalseNegatives/resource"
 import { launchQCReview } from "../functions/launchQCReview/resource"
@@ -70,6 +71,7 @@ export const outputBucket = defineStorage({
       allow.resource(monitorTilingTasks).to(['write']),
       allow.resource(findAndRequeueMissingLocations).to(['read']),
       allow.resource(cleanupJobs).to(['delete']),
+      allow.resource(expireInactiveQueues).to(['delete']),
       allow.resource(reconcileHomographies).to(['read', 'delete']),
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],

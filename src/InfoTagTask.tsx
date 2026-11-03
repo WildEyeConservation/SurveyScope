@@ -18,6 +18,7 @@ import ClaimedInfoTagImage from './ClaimedInfoTagImage';
 import { GlobalContext, UserContext } from './Context';
 import { createInfoTagDelivery } from './infoTagDelivery';
 import { TaskBuffer } from './TaskBuffer';
+import { touchQueue } from './touchQueue';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -52,6 +53,7 @@ export default function InfoTagTask() {
 
   useEffect(() => {
     if (!queueId) return;
+    touchQueue(client, queueId);
     client.models.Queue.get({ id: queueId }).then(({ data }) => {
       if (data?.url) setQueueUrl(data.url);
       if (data?.annotationSetId) setAnnotationSetId(data.annotationSetId);

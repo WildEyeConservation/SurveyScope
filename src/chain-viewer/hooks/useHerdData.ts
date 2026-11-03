@@ -40,7 +40,14 @@ export function useHerdData() {
       const images = await loadProjectImages(
         client,
         project!.id,
-        ['width', 'height', 'originalPath', 'timestamp', 'cameraId'],
+        [
+          'width',
+          'height',
+          'originalPath',
+          'timestamp',
+          'cameraId',
+          'boundaryStatus',
+        ],
         { onProgress: (n) => setProgress((p) => ({ ...p, images: n })) },
       );
 

@@ -8,6 +8,7 @@ import {
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { GlobalContext, UserContext } from '../Context';
+import { touchQueue } from '../touchQueue';
 import {
   HomographyWorkbenchWorker,
   type HomographyMessage,
@@ -39,6 +40,7 @@ export default function HomographyTask() {
   // Fetch queue URL on mount
   useEffect(() => {
     if (!queueId) return;
+    touchQueue(client, queueId);
     client.models.Queue.get({ id: queueId }).then(({ data }) => {
       if (data?.url) setQueueUrl(data.url as string);
     });

@@ -13,7 +13,13 @@ import { fetchAllPaginatedResults } from '../../utils';
 // Amplify's return type doesn't reflect custom selectionSets, so we type this explicitly.
 type ImageWithNeighbours = Pick<
   ImageType,
-  'id' | 'width' | 'height' | 'originalPath' | 'timestamp' | 'cameraId'
+  | 'id'
+  | 'width'
+  | 'height'
+  | 'originalPath'
+  | 'timestamp'
+  | 'cameraId'
+  | 'boundaryStatus'
 > & {
   leftNeighbours?: ImageNeighbourType[] | null;
   rightNeighbours?: ImageNeighbourType[] | null;
@@ -135,6 +141,7 @@ export function useTransectData(input: UseTransectDataInput) {
             'originalPath',
             'timestamp',
             'cameraId',
+            'boundaryStatus',
             'leftNeighbours.*',
             'rightNeighbours.*',
           ],
@@ -324,6 +331,7 @@ async function fetchChainData(opts: {
             'originalPath',
             'timestamp',
             'cameraId',
+            'boundaryStatus',
             'leftNeighbours.*',
             'rightNeighbours.*',
           ],
@@ -367,6 +375,7 @@ async function fetchChainData(opts: {
             'originalPath',
             'timestamp',
             'cameraId',
+            'boundaryStatus',
           ],
         },
       ),

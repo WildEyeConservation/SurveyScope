@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ExtendedAnnotationType } from '../schemaTypes';
-import { buildAnnotationFeatureProperties } from './annotationFeatures';
+import {
+  buildAnnotationFeatureProperties,
+  buildAnnotationPopupLines,
+} from './annotationFeatures';
 
 const annotation = (
   overrides: Partial<ExtendedAnnotationType> = {},
@@ -58,4 +61,16 @@ test('marker status and transient styles stay consistent across viewers', () => 
   assert.equal(shadow.borderWidth, 2);
   assert.equal(shadow.opacity, 0.75);
   assert.equal(shadow.active, true);
+});
+
+test('popup flags annotations outside the survey area only', () => {
+  const lines = (outside?: boolean) =>
+    buildAnnotationPopupLines(annotation(), () => 'Elephant', [], [], outside);
+
+  assert.deepEqual(lines(true).slice(0, 2), [
+    'Label: Elephant',
+    'Outside survey area',
+  ]);
+  assert.ok(!lines(false).includes('Outside survey area'));
+  assert.ok(!lines().includes('Outside survey area'));
 });

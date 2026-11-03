@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useEffect, useMemo, useState } from 'react';
+import type { BoundaryStatus } from '../shared/boundaryStatus';
 import AnnotationWorkspace from './AnnotationWorkspace';
 import { GlobalContext } from './Context';
 
@@ -32,6 +33,7 @@ export default function AnnotationViewerModal({
     id: string;
     width: number;
     height: number;
+    boundaryStatus?: BoundaryStatus | null;
   } | null>(null);
 
   useEffect(() => {
@@ -43,16 +45,32 @@ export default function AnnotationViewerModal({
       }
       const resp: any = await (client as any).models.Image.get(
         { id: imageId },
-        { selectionSet: ['id', 'width', 'height', 'timestamp'] },
+        {
+          selectionSet: [
+            'id',
+            'width',
+            'height',
+            'timestamp',
+            'boundaryStatus',
+          ],
+        },
       );
       const data = (resp?.data ?? null) as {
         id: string;
         width: number;
         height: number;
+        boundaryStatus?: BoundaryStatus | null;
       } | null;
       if (!cancelled) {
         setImageMeta(
-          data ? { id: data.id, width: data.width, height: data.height } : null,
+          data
+            ? {
+                id: data.id,
+                width: data.width,
+                height: data.height,
+                boundaryStatus: data.boundaryStatus,
+              }
+            : null,
         );
       }
     }
@@ -98,6 +116,7 @@ export default function AnnotationViewerModal({
                     id: imageMeta.id,
                     width: imageMeta.width,
                     height: imageMeta.height,
+                    boundaryStatus: imageMeta.boundaryStatus,
                   },
                   annotationSetId,
                   x: imageMeta.width / 2,

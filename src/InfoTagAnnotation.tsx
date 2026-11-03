@@ -22,6 +22,7 @@ import {
   SearchCheck,
   Undo2,
 } from 'lucide-react';
+import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../shared/boundaryStatus';
 import {
   MAX_INFO_TAGS_PER_ANNOTATION,
   type InfoTagResponse,
@@ -243,7 +244,7 @@ export default function InfoTagAnnotation({
     Promise.all([
       client.models.Image.get(
         { id: imageId },
-        { selectionSet: ['id', 'width', 'height'] as const },
+        { selectionSet: ['id', 'width', 'height', 'boundaryStatus'] as const },
       ),
       client.models.ImageFile.imagesByimageId({ imageId }),
       fetchImageAnnotationsWithTags(client, imageId, annotationSetId),
@@ -413,6 +414,7 @@ export default function InfoTagAnnotation({
               ? 'pending'
               : 'context',
           infoTags: JSON.stringify(namesForAnnotation(annotation.id)),
+          outside: !isOnEffort(image?.boundaryStatus),
         },
         geometry: {
           type: 'Point',
@@ -424,6 +426,7 @@ export default function InfoTagAnnotation({
     annotations,
     categories,
     completedIds,
+    image,
     map,
     namesForAnnotation,
     targets,
@@ -626,6 +629,9 @@ export default function InfoTagAnnotation({
           names = [];
         }
         const tags = escapeHtml(formatInfoTagsForDisplay(names) || '—');
+        const outside = feature.properties?.outside
+          ? `<div style="font-size:11px;font-weight:600">${OUTSIDE_SURVEY_AREA}</div>`
+          : '';
         popup
           .setLngLat(feature.geometry.coordinates as [number, number])
           .setHTML(
@@ -633,6 +639,7 @@ export default function InfoTagAnnotation({
               `<div style="font-size:11px;font-weight:600">${escapeHtml(
                 state,
               )}</div>` +
+              outside +
               `<div style="font-size:11px">Tags: ${tags}</div></div>`,
           )
           .addTo(instance);

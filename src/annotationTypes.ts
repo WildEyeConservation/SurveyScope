@@ -14,6 +14,7 @@ export type AnnotationImage = Pick<ImageType, 'id' | 'width' | 'height'> &
       | 'altitude_wgs84'
       | 'altitude_egm96'
       | 'altitude_agl'
+      | 'boundaryStatus'
     >
   >;
 
