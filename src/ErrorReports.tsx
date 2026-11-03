@@ -158,7 +158,7 @@ export default function ErrorReports() {
     { content: 'User', style: { width: '20%' }, sort: true },
     { content: 'Message', style: { width: '35%' }, sort: true },
     { content: 'Page', style: { width: '20%' }, sort: true },
-    { content: 'Details', style: { width: '10%' } },
+    { content: 'Details', style: { width: '10%' }, className: 'text-center' },
   ];
 
   const tableData = sortedReports.map((report) => ({

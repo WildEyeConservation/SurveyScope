@@ -5,6 +5,7 @@ import { GlobalContext } from './Context';
 export const useUsers = () => {
   const { client } = useContext(GlobalContext)!;
   const [result, setResult] = useState<UserType[]>([]);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let isMounted = true;
     const fetchAllUsers = async () => {
@@ -22,6 +23,8 @@ export const useUsers = () => {
         if (isMounted) setResult(aggregated);
       } catch (error) {
         console.error('Failed to list users', error);
+      } finally {
+        if (isMounted) setLoaded(true);
       }
     };
     fetchAllUsers();
@@ -29,5 +32,5 @@ export const useUsers = () => {
       isMounted = false;
     };
   }, [client]);
-  return { users: result };
+  return { users: result, loaded };
 };

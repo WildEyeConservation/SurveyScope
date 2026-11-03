@@ -194,11 +194,20 @@ export default function Surveys() {
         columns={columnsFromHeadings([
           { content: 'Name', style: { width: '40%' }, sort: true },
           { content: 'Use tests from other surveys' },
-          { content: 'Add Locations', style: { width: '120px' } },
-          { content: 'Edit Locations', style: { width: '120px' } },
+          {
+            content: 'Add Locations',
+            style: { width: '120px' },
+            className: 'text-center',
+          },
+          {
+            content: 'Edit Locations',
+            style: { width: '120px' },
+            className: 'text-center',
+          },
           {
             content: 'Configuration',
             style: { width: '120px' },
+            className: 'text-center',
           },
         ])}
         data={cellRows(tableData)}

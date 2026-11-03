@@ -151,7 +151,7 @@ export default function DataTable<T extends RowData>({
                     <button
                       type='button'
                       onClick={header.column.getToggleSortingHandler()}
-                      className='flex items-center gap-1 text-left font-bold whitespace-nowrap hover:text-white'
+                      className='inline-flex items-center gap-1 text-left font-bold whitespace-nowrap hover:text-white'
                     >
                       {label}
                       <Icon

@@ -63,7 +63,11 @@ export default function PendingOrganizations() {
     { content: 'Brief Description', style: { width: '20%' }, sort: true },
     { content: 'Requested By', style: { width: '20%' }, sort: true },
     { content: 'Date', style: { width: '20%' }, sort: true },
-    { content: 'Review Request', style: { width: '20%' } },
+    {
+      content: 'Review Request',
+      style: { width: '20%' },
+      className: 'text-center',
+    },
   ];
 
   return (

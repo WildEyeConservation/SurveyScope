@@ -61,7 +61,7 @@ export default function Users() {
         header: 'Test user',
         // Sorting by it would move a row while it is being changed.
         enableSorting: false,
-        meta: { className: 'w-48' },
+        meta: { className: 'w-48 text-center' },
         cell: ({ row }) => (
           <div
             role='radiogroup'

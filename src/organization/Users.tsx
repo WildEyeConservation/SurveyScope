@@ -28,7 +28,7 @@ export default function Users({
 }) {
   const { client, showModal, modalToShow } = useContext(GlobalContext)!;
   const { user: authUser } = useContext(UserContext)!;
-  const { users } = useUsers();
+  const { users, loaded: usersLoaded } = useUsers();
 
   const {
     data: memberships,
@@ -53,7 +53,7 @@ export default function Users({
     },
   });
 
-  const isLoading = !users || membershipsLoading;
+  const isLoading = !usersLoaded || membershipsLoading;
   const [userToEdit, setUserToEdit] = useState<{
     id: string;
     name: string;
@@ -147,6 +147,7 @@ export default function Users({
       {
         accessorKey: 'isAdmin',
         header: 'Role',
+        meta: { className: 'text-center' },
         cell: ({ row }) => {
           const { userId, name, isAdmin, isSelf } = row.original;
           return (
@@ -186,6 +187,7 @@ export default function Users({
         id: 'access',
         header: 'Survey access',
         enableSorting: false,
+        meta: { className: 'text-center' },
         cell: ({ row }) =>
           row.original.isAdmin && process.env.NODE_ENV !== 'development' ? (
             <span className='text-muted-foreground'>All surveys</span>

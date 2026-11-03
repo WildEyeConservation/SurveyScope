@@ -168,7 +168,7 @@ export default function ExceptionsModal({
         header: 'Access',
         // Sorting by access would move a row while it is being changed.
         enableSorting: false,
-        meta: { className: 'w-px' },
+        meta: { className: 'w-px text-center' },
         cell: ({ row }) => {
           const permission = row.original;
           return (

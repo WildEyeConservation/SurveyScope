@@ -306,7 +306,7 @@ export default function SurveyStructure({
           ) : (
             <GridTable className='overflow-x-auto text-[13px]'>
               <GridHead
-                className='grid min-w-[820px] [scrollbar-gutter:stable] overflow-hidden'
+                className='grid min-w-[820px] [scrollbar-gutter:stable] overflow-hidden p-0'
                 style={{ gridTemplateColumns: gridColumns }}
               >
                 {headers.map(([key, label]) => (

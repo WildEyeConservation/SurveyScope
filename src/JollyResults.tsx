@@ -226,14 +226,14 @@ export default function JollyResults() {
         id: 'remove',
         header: () => resultsMemberships.length,
         enableSorting: false,
-        meta: { className: 'w-12 text-right' },
+        meta: { className: 'w-12 text-center' },
         cell: ({ row }) => (
           <button
             type='button'
             aria-label='Remove access'
             title='Remove access'
             onClick={() => removeResultsMembership(row.original.userId)}
-            className='ml-auto flex size-7 flex-none items-center justify-center text-muted-foreground hover:text-danger'
+            className='mx-auto flex size-7 flex-none items-center justify-center text-muted-foreground hover:text-danger'
           >
             <X className='size-4' />
           </button>

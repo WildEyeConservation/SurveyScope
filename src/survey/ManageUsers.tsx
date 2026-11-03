@@ -2,7 +2,7 @@ import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
-import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import { SearchIcon } from 'lucide-react';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext } from '../Context';
@@ -12,15 +12,29 @@ import { fetchAllPaginatedResults } from '../utils';
 import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
 import { SectionTitle } from './SurveyStructure';
 
-type UserPermission = {
+type Membership = {
   userId: string;
-  userName: string;
-  userEmail: string;
   membershipId: string | null;
   annotationAccess: boolean;
   isAdmin: boolean;
   isOrgAdmin: boolean;
 };
+
+type UserPermission = Membership & { userName: string; userEmail: string };
+
+type Level = 'none' | 'annotate' | 'admin';
+const LEVELS: { value: Level; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'annotate', label: 'Annotate' },
+  { value: 'admin', label: 'Admin' },
+];
+
+const levelOf = (p: Membership): Level =>
+  p.isOrgAdmin || p.isAdmin
+    ? 'admin'
+    : p.annotationAccess
+      ? 'annotate'
+      : 'none';
 
 export default function ManageUsers({
   projectId,
@@ -30,12 +44,12 @@ export default function ManageUsers({
   organizationId: string;
 }) {
   const { client, showModal } = useContext(GlobalContext)!;
-  const { users } = useUsers();
+  const { users, loaded: usersLoaded } = useUsers();
 
-  const [permissions, setPermissions] = useState<UserPermission[]>([]);
-  const [originalPermissions, setOriginalPermissions] = useState<
-    UserPermission[]
-  >([]);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [originalMemberships, setOriginalMemberships] = useState<Membership[]>(
+    [],
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [confirmingClose, setConfirmingClose] = useState(false);
@@ -47,9 +61,6 @@ export default function ManageUsers({
 
   const fetchData = useCallback(
     async function fetchData(signal?: AbortSignal) {
-      if (!users) return;
-      setIsLoading(true);
-
       try {
         const [orgMemberships, projectMemberships] = await Promise.all([
           fetchAllPaginatedResults(
@@ -71,38 +82,25 @@ export default function ManageUsers({
           ),
         ]);
 
-        const userPermissions: UserPermission[] = orgMemberships.map(
-          (orgMembership) => {
-            const user = users.find((u) => u.id === orgMembership.userId);
-            const projectMembership = projectMemberships.find(
-              (pm) => pm.userId === orgMembership.userId,
-            );
-
-            return {
-              userId: orgMembership.userId,
-              userName: user?.name ?? 'Unknown',
-              userEmail: user?.email ?? '',
-              membershipId: projectMembership?.id ?? null,
-              annotationAccess: !!projectMembership,
-              isAdmin: !!projectMembership?.isAdmin,
-              isOrgAdmin: !!orgMembership.isAdmin,
-            };
-          },
-        );
-
-        // Sort: org admins first, then alphabetically by name
-        userPermissions.sort((a, b) => {
-          if (a.isOrgAdmin !== b.isOrgAdmin) return a.isOrgAdmin ? -1 : 1;
-          return a.userName.localeCompare(b.userName);
+        const loaded: Membership[] = orgMemberships.map((orgMembership) => {
+          const projectMembership = projectMemberships.find(
+            (pm) => pm.userId === orgMembership.userId,
+          );
+          return {
+            userId: orgMembership.userId,
+            membershipId: projectMembership?.id ?? null,
+            annotationAccess: !!projectMembership,
+            isAdmin: !!projectMembership?.isAdmin,
+            isOrgAdmin: !!orgMembership.isAdmin,
+          };
         });
-
-        setPermissions(userPermissions);
-        setOriginalPermissions(userPermissions);
+        setMemberships(loaded);
+        setOriginalMemberships(loaded);
       } finally {
         if (!signal?.aborted) setIsLoading(false);
       }
     },
-    [users, client, projectId, organizationId],
+    [client, projectId, organizationId],
   );
 
   useEffect(() => {
@@ -114,8 +112,25 @@ export default function ManageUsers({
     return () => controller.abort();
   }, [fetchData]);
 
-  const changed = (p: UserPermission) =>
-    !originalPermissions.some(
+  const permissions = useMemo<UserPermission[]>(() => {
+    const byId = new Map(users.map((u) => [u.id, u]));
+    return memberships
+      .map((m) => ({
+        ...m,
+        userName: byId.get(m.userId)?.name ?? 'Unknown',
+        userEmail: byId.get(m.userId)?.email ?? '',
+      }))
+      .sort((a, b) =>
+        a.isOrgAdmin !== b.isOrgAdmin
+          ? a.isOrgAdmin
+            ? -1
+            : 1
+          : a.userName.localeCompare(b.userName),
+      );
+  }, [memberships, users]);
+
+  const changed = (p: Membership) =>
+    !originalMemberships.some(
       (op) =>
         op.userId === p.userId &&
         op.annotationAccess === p.annotationAccess &&
@@ -178,15 +193,12 @@ export default function ManageUsers({
     if (await handleSave()) showModal(null);
   };
 
-  const update = useCallback(
-    (userId: string, change: Partial<UserPermission>) => {
-      setSaveResult(null);
-      setPermissions((prev) =>
-        prev.map((p) => (p.userId === userId ? { ...p, ...change } : p)),
-      );
-    },
-    [],
-  );
+  const update = useCallback((userId: string, change: Partial<Membership>) => {
+    setSaveResult(null);
+    setMemberships((prev) =>
+      prev.map((p) => (p.userId === userId ? { ...p, ...change } : p)),
+    );
+  }, []);
 
   const columns = useMemo<DataColumn<UserPermission>[]>(
     () => [
@@ -212,63 +224,48 @@ export default function ManageUsers({
         meta: { className: 'max-w-80 truncate' },
       },
       {
-        accessorKey: 'annotationAccess',
-        header: 'Can annotate',
+        id: 'access',
+        header: 'Access',
+        // Sorting by access would move a row while it is being changed.
         enableSorting: false,
-        meta: { className: 'w-36' },
+        meta: { className: 'w-px text-center' },
         cell: ({ row }) => {
           const p = row.original;
           return (
-            <span
-              className='inline-flex'
-              title={
-                p.isOrgAdmin
-                  ? 'Organisation admins always have full access'
-                  : p.isAdmin
-                    ? 'Survey admins can always annotate'
-                    : undefined
-              }
-            >
-              <Switch
-                aria-label={`${p.userName} can annotate`}
-                checked={p.annotationAccess}
-                disabled={p.isOrgAdmin || p.isAdmin || isSaving}
-                onCheckedChange={(checked) =>
-                  update(p.userId, { annotationAccess: checked })
-                }
-              />
-            </span>
-          );
-        },
-      },
-      {
-        accessorKey: 'isAdmin',
-        header: 'Survey admin',
-        enableSorting: false,
-        meta: { className: 'w-36' },
-        cell: ({ row }) => {
-          const p = row.original;
-          return (
-            <span
-              className='inline-flex'
+            <div
+              role='radiogroup'
+              aria-label={`Access for ${p.userName}`}
               title={
                 p.isOrgAdmin
                   ? 'Organisation admins always have full access'
                   : undefined
               }
+              className='inline-flex border border-white/30'
             >
-              <Switch
-                aria-label={`${p.userName} is a survey admin`}
-                checked={p.isAdmin}
-                disabled={p.isOrgAdmin || isSaving}
-                onCheckedChange={(checked) =>
-                  update(p.userId, {
-                    isAdmin: checked,
-                    annotationAccess: checked || p.annotationAccess,
-                  })
-                }
-              />
-            </span>
+              {LEVELS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type='button'
+                  role='radio'
+                  aria-checked={levelOf(p) === value}
+                  disabled={p.isOrgAdmin || isSaving}
+                  onClick={() =>
+                    update(p.userId, {
+                      annotationAccess: value !== 'none',
+                      isAdmin: value === 'admin',
+                    })
+                  }
+                  className={cn(
+                    'px-2.5 py-1 transition-colors disabled:opacity-60',
+                    levelOf(p) === value
+                      ? 'bg-primary text-white'
+                      : 'enabled:hover:bg-white/10',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           );
         },
       },
@@ -304,7 +301,7 @@ export default function ManageUsers({
           columns={columns}
           data={visible}
           getRowId={(p) => p.userId}
-          loading={isLoading}
+          loading={isLoading || !usersLoaded}
           loadingMessage={
             <span className='flex items-center gap-2'>
               <Spinner animation='border' size='sm' />

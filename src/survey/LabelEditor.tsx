@@ -358,13 +358,13 @@ export default function LabelEditor({
         id: 'remove',
         header: '',
         enableSorting: false,
-        meta: { className: 'w-12' },
+        meta: { className: 'w-12 text-center' },
         cell: ({ row }) => (
           <button
             type='button'
             aria-label={`Remove ${row.original.name || noun}`}
             title={`Remove ${noun}`}
-            className='flex size-8 items-center justify-center text-muted-foreground hover:text-danger'
+            className='mx-auto flex size-8 items-center justify-center text-muted-foreground hover:text-danger'
             disabled={row.original.removeDisabled}
             onClick={row.original.onRemove}
           >

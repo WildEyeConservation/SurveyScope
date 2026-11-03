@@ -148,6 +148,7 @@ const AnnotationCountModal: React.FC<Props> = ({
         id: 'bar',
         header: '',
         enableSorting: false,
+        meta: { className: 'w-1/2' },
         cell: ({ row }) => (
           <div className='h-2 bg-white/10'>
             <div
