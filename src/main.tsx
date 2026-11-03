@@ -20,10 +20,6 @@ import {
   ChainViewerPage,
   SharedChainViewerPage,
 } from './chain-viewer';
-import ChainShareAdminLayout from './chain-viewer/admin/ChainShareAdminLayout.tsx';
-import ChainShareResults from './chain-viewer/admin/ChainShareResults.tsx';
-import DisagreementExplorer from './chain-viewer/admin/DisagreementExplorer.tsx';
-import ManageShares from './chain-viewer/admin/ManageShares.tsx';
 import { GlobalContextProvider } from './Context';
 import ErrorPage from './error-page';
 import HomographyEditPage from './homography/HomographyEditPage';
@@ -113,14 +109,8 @@ const router = createBrowserRouter([
         element: <SharedChainViewerPage />,
       },
       {
-        path: 'chain-share-admin',
-        element: <ChainShareAdminLayout />,
-        children: [
-          { index: true, element: <Navigate to='shares' replace /> },
-          { path: 'shares', element: <ManageShares /> },
-          { path: 'results', element: <ChainShareResults /> },
-          { path: 'disagreements', element: <DisagreementExplorer /> },
-        ],
+        path: 'chain-share-admin/*',
+        element: <Navigate to='/shared-chains?tab=manage' replace />,
       },
       {
         path: 'image-neighbour-viewer',

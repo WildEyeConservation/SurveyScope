@@ -238,6 +238,7 @@ const AnnotationCountModal: React.FC<Props> = ({
                 </div>
               </div>
               <DataTable
+                storageKey='annotation-counts'
                 columns={columns}
                 data={rows}
                 getRowId={(row) => row.name}

@@ -615,6 +615,7 @@ export default function JollyResults() {
                 </div>
                 {resultsMemberships.length > 0 && (
                   <DataTable
+                    storageKey='jolly-shared-with'
                     columns={sharedColumns}
                     data={sharedRows}
                     getRowId={(m) => m.userId}
@@ -681,6 +682,7 @@ export default function JollyResults() {
                   </div>
                   <div className='min-h-0 grow overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10'>
                     <DataTable
+                      storageKey='jolly-results'
                       columns={columnsFromHeadings(tableHeadings)}
                       data={cellRows(tableData)}
                       getRowId={(row) => row.id}

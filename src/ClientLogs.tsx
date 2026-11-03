@@ -271,6 +271,7 @@ export default function ClientLogs() {
       </div>
 
       <DataTable
+        storageKey='client-logs'
         columns={columns}
         data={filteredLogs}
         getRowId={(log) => log.id}

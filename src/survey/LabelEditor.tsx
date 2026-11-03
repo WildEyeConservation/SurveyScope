@@ -383,6 +383,7 @@ export default function LabelEditor({
         <div className='text-xs text-muted-foreground'>{description}</div>
       </div>
       <DataTable
+        storageKey='survey-labels'
         columns={columns}
         data={rows}
         getRowId={(row) => row.id}

@@ -304,6 +304,7 @@ export default function ExceptionsModal({
             </div>
           </div>
           <DataTable
+            storageKey='organization-exceptions'
             columns={columns}
             data={visible}
             getRowId={(row) => row.projectId}

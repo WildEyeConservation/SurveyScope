@@ -684,6 +684,7 @@ function BreakdownCard(props: {
         </div>
         {view === 'surveys' ? (
           <DataTable
+            storageKey='admin-stats-surveys'
             key='surveys'
             columns={surveyColumns}
             data={visibleSurveys}
@@ -694,6 +695,7 @@ function BreakdownCard(props: {
           />
         ) : (
           <DataTable
+            storageKey='admin-stats-organisations'
             key='organizations'
             columns={organizationColumns}
             data={visibleOrganizations}

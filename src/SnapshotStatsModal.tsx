@@ -215,6 +215,7 @@ export default function SnapshotStatsModal({
           </div>
           <div className='mt-4 overflow-x-auto'>
             <DataTable
+              storageKey='snapshot-stats'
               columns={columnsFromHeadings(tableHeadings)}
               data={cellRows(
                 Object.keys(snapshotStats).map((userId) => ({

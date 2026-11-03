@@ -577,6 +577,7 @@ export default function UserStats() {
               </div>
             ) : (
               <DataTable
+                storageKey='user-stats'
                 columns={columnsFromHeadings(tableHeadings)}
                 data={cellRows(tableData)}
                 getRowId={(row) => row.id}

@@ -104,6 +104,7 @@ function DataTable({
   }));
   return (
     <SharedTable
+      storageKey='survey-metrics'
       columns={columns}
       data={rows.map((cells, index) => ({ id: String(index), cells }))}
       getRowId={(row) => row.id}

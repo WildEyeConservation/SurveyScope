@@ -82,6 +82,7 @@ export default function PendingOrganizations() {
         </Button>
       </div>
       <DataTable
+        storageKey='pending-organisations'
         columns={columnsFromHeadings(tableHeadings)}
         data={cellRows(tableData)}
         getRowId={(row) => row.id}

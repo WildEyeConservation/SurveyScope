@@ -13,7 +13,7 @@ const alertVariants = cva(
         secondary: 'bg-secondary',
         success: 'bg-success',
         info: 'bg-info',
-        warning: 'bg-warning',
+        warning: 'bg-warning text-[#212529] [&_a]:text-[#212529]',
         danger: 'bg-danger',
         destructive: 'bg-danger',
         light: 'bg-light',
@@ -53,7 +53,7 @@ const Alert = React.forwardRef(function Alert(
           type='button'
           aria-label='Close'
           onClick={onClose}
-          className='absolute top-0 right-0 p-4 text-white opacity-50 hover:opacity-75'
+          className='absolute top-0 right-0 p-4 text-current opacity-50 hover:opacity-75'
         >
           <XIcon className='size-4' />
         </button>

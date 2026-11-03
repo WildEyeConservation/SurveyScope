@@ -211,6 +211,7 @@ export default function EditCameras({
       >
         <SectionTitle className='border-b-0 pb-0'>Lens settings</SectionTitle>
         <DataTable
+          storageKey='survey-cameras'
           columns={columns}
           data={tableRows}
           getRowId={(row) => row.id}

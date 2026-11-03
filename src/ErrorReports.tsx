@@ -357,6 +357,7 @@ export default function ErrorReports() {
         <p className='text-danger'>Failed to load error reports: {loadError}</p>
       )}
       <DataTable
+        storageKey='error-reports'
         columns={columns}
         data={filteredReports}
         getRowId={(report) => report.id}

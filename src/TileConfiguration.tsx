@@ -1088,6 +1088,7 @@ function DevTransectTable({
         use each transect's first and last image.
       </span>
       <DataTable
+        storageKey='tile-configuration'
         columns={transectColumns}
         data={rows}
         getRowId={(row) => row.transectId}

@@ -745,6 +745,7 @@ export default function Jobs() {
             <Spinner />
           ) : (
             <DataTable
+              storageKey='jobs'
               columns={columnsFromHeadings(
                 Array.from(
                   { length: tableData[0]?.rowData.length ?? 1 },

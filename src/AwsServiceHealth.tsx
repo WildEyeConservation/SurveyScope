@@ -1057,6 +1057,7 @@ function QueuesCard(props: {
           </label>
         </div>
         <DataTable
+          storageKey='aws-health-queues'
           key={scope}
           columns={
             scope === 'system'
@@ -1176,6 +1177,7 @@ function ServicesCard(props: {
           </Alert>
         )}
         <DataTable
+          storageKey='aws-health-services'
           columns={columns}
           data={services}
           getRowId={(row) => row.id}

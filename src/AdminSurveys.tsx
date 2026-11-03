@@ -470,6 +470,7 @@ export default function AdminSurveys() {
       )}
 
       <DataTable
+        storageKey='admin-surveys'
         columns={columns}
         data={visible}
         getRowId={(row) => row.id}

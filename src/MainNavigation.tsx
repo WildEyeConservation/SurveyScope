@@ -200,10 +200,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
                 </>
               )}
               {cognitoGroups.includes('sysadmin') && (
-                <>
-                  <NavItem to={`SSAdmin`}>Admin</NavItem>
-                  <NavItem to={`chain-share-admin`}>Chain Shares</NavItem>
-                </>
+                <NavItem to={`SSAdmin`}>Admin</NavItem>
               )}
               {/* Shared Results hidden for now.
               <OverlayTrigger

@@ -629,6 +629,7 @@ export default function Results() {
               </div>
             </div>
             <DataTable
+              storageKey='testing-annotators'
               columns={testerColumns}
               data={testers}
               getRowId={(row) => row.userId}
@@ -775,6 +776,7 @@ export default function Results() {
                 </div>
               </div>
               <DataTable
+                storageKey='testing-focus'
                 columns={testColumns}
                 data={focus}
                 getRowId={(row) => row.id}

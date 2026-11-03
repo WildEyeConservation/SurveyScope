@@ -263,6 +263,7 @@ export default function Users({
         </div>
 
         <DataTable
+          storageKey='organization-users'
           columns={columns}
           data={rows}
           getRowId={(row) => row.userId}

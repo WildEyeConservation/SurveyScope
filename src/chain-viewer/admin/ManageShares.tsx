@@ -1,19 +1,33 @@
-import { Badge } from '@/components/ui/badge';
+import DataTable, { type DataColumn } from '@/components/DataTable';
+import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { Table } from '@/components/ui/table';
-import { RotateCw } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  BarChart3,
+  Plus,
+  RefreshCw,
+  Share2,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-
-import './admin.css';
 
 import { useQueryClient } from '@tanstack/react-query';
 import { isShareOperationBusy } from '../../../amplify/chain-shares/lifecycle';
+import type { UserType } from '../../../amplify/shared/types';
 import { GlobalContext } from '../../Context';
-import PageHeader from '../../PageHeader';
 import { useUsers } from '../../apiInterface';
 import { fetchAllPaginatedResults } from '../../utils';
 import { checkShareResponse } from './shareResponse';
@@ -42,12 +56,15 @@ type Option = { label: string; value: string };
  * timeout while the Lambda keeps running, so a new share appears in the list
  * once the snapshot finishes — use Refresh.
  */
-export default function ManageShares() {
+export default function ManageShares({
+  onShowResults,
+}: {
+  onShowResults: (shareId: string) => void;
+}) {
   const { client } = useContext(GlobalContext)!;
   const { users } = useUsers();
   const queryClient = useQueryClient();
 
-  // --- Create form state ---
   const [surveys, setSurveys] = useState<Option[]>([]);
   const [selectedSurvey, setSelectedSurvey] = useState<Option | null>(null);
   const [sets, setSets] = useState<Option[]>([]);
@@ -55,13 +72,11 @@ export default function ManageShares() {
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // --- Active shares state ---
   const [shares, setShares] = useState<ShareRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<
-    Record<string, Option | null>
-  >({});
   const [busyShare, setBusyShare] = useState<string | null>(null);
+  const [managing, setManaging] = useState<ShareRow | null>(null);
+  const [revoking, setRevoking] = useState<ShareRow | null>(null);
 
   const {
     data: reviewersByShare,
@@ -214,9 +229,7 @@ export default function ManageShares() {
   }, [queryClient]);
 
   const onAddReviewer = useCallback(
-    async (shareId: string) => {
-      const user = selectedUser[shareId];
-      if (!user) return;
+    async (shareId: string, user: Option) => {
       setBusyShare(shareId);
       try {
         checkShareResponse(
@@ -236,13 +249,11 @@ export default function ManageShares() {
         setBusyShare(null);
       }
     },
-    [client, selectedUser, refreshReviewers],
+    [client, refreshReviewers],
   );
 
   const onRemoveReviewer = useCallback(
-    async (shareId: string) => {
-      const user = selectedUser[shareId];
-      if (!user) return;
+    async (shareId: string, user: Option) => {
       setBusyShare(shareId);
       try {
         checkShareResponse(
@@ -262,18 +273,11 @@ export default function ManageShares() {
         setBusyShare(null);
       }
     },
-    [client, selectedUser, refreshReviewers],
+    [client, refreshReviewers],
   );
 
   const onRevoke = useCallback(
     async (shareId: string) => {
-      if (
-        !window.confirm(
-          `Revoke share ${shareId}? This deletes the snapshot data. Reviewer feedback is kept.`,
-        )
-      ) {
-        return;
-      }
       setBusyShare(shareId);
       try {
         checkShareResponse(
@@ -304,234 +308,414 @@ export default function ManageShares() {
     return () => clearInterval(interval);
   }, [operationRunning, loadShares]);
 
+  const shareName = (share: ShareRow) =>
+    `${share.surveyName ?? '—'}, ${share.annotationSetName ?? share.annotationSetId}`;
+
+  const columns: DataColumn<ShareRow>[] = [
+    {
+      id: 'survey',
+      header: 'Survey',
+      accessorFn: (share) => share.surveyName ?? '',
+      cell: ({ row: { original: share } }) => (
+        <div>
+          <div className='font-medium'>{share.surveyName ?? '—'}</div>
+          <div className='text-sm text-muted-foreground'>
+            {share.annotationSetName ?? share.annotationSetId}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      accessorFn: (share) => share.status ?? '',
+      cell: ({ row: { original: share } }) => {
+        const timedOut =
+          ['creating', 'revoking'].includes(share.status ?? '') &&
+          !isShareOperationBusy(share);
+        return (
+          <div className='flex flex-col items-start gap-1'>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm',
+                share.status === 'active'
+                  ? 'bg-success/20 text-success'
+                  : 'bg-warning/20 text-warning',
+              )}
+            >
+              {isShareOperationBusy(share) && (
+                <Spinner animation='border' size='sm' />
+              )}
+              {share.status ?? 'unknown'}
+            </span>
+            {share.errorMessage && (
+              <span className='text-sm text-danger'>{share.errorMessage}</span>
+            )}
+            {timedOut && (
+              <span className='text-sm text-warning'>
+                Timed out. Remove reviewers, then clean up.
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: 'reviewers',
+      header: 'Reviewers',
+      accessorFn: (share) => reviewersByShare?.[share.shareId]?.length ?? 0,
+      cell: ({ row: { original: share } }) => {
+        const assigned = reviewersByShare?.[share.shareId] ?? [];
+        return assigned.length === 0 ? (
+          <span className='text-muted-foreground'>
+            {reviewersLoaded ? 'None yet' : '…'}
+          </span>
+        ) : (
+          <div className='flex flex-wrap gap-1'>
+            {assigned.map((u) => (
+              <span
+                key={u.id}
+                title={u.email ?? u.id}
+                className='rounded-full bg-white/15 px-2 py-0.5 text-sm'
+              >
+                {userNameById.get(u.id) ?? u.id}
+              </span>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      enableSorting: false,
+      cell: ({ row: { original: share } }) => {
+        const assigned = reviewersByShare?.[share.shareId] ?? [];
+        const recovering = share.status !== 'active';
+        return (
+          <div className='flex justify-center gap-2'>
+            <Button
+              variant='outline-light'
+              disabled={busyShare === share.shareId || !reviewersLoaded}
+              onClick={() => setManaging(share)}
+            >
+              <UsersRound size={16} />
+              Reviewers
+            </Button>
+            <Button
+              variant='outline-light'
+              disabled={share.status !== 'active'}
+              onClick={() => onShowResults(share.shareId)}
+            >
+              <BarChart3 size={16} />
+              Results
+            </Button>
+            <span
+              title={
+                assigned.length > 0
+                  ? 'Remove all reviewers before revoking this share.'
+                  : undefined
+              }
+            >
+              <Button
+                variant='outline-danger'
+                disabled={
+                  busyShare === share.shareId ||
+                  isShareOperationBusy(share) ||
+                  assigned.length > 0 ||
+                  !reviewersLoaded ||
+                  reviewersRefreshing
+                }
+                onClick={() => setRevoking(share)}
+              >
+                {recovering ? 'Clean up' : 'Revoke'}
+              </Button>
+            </span>
+          </div>
+        );
+      },
+      meta: { className: 'w-px text-center' },
+    },
+  ];
+
   return (
-    <div style={{ width: '100%' }}>
-      <Card className='mb-4'>
-        <PageHeader title='Share a chain review' />
+    <div className='flex flex-col gap-4'>
+      <Card>
+        <CardHeader className='py-3'>
+          <div className='font-semibold'>New share</div>
+        </CardHeader>
         <CardContent>
           <form
+            className='flex flex-wrap items-end gap-2'
             onSubmit={(e) => {
               e.preventDefault();
               void onCreate();
             }}
           >
-            <div className='flex flex-row flex-wrap items-end gap-2'>
-              <div style={{ minWidth: 260, flex: 1 }}>
-                <Label>Survey</Label>
-                <Combobox
-                  value={selectedSurvey}
-                  onChange={(option) => setSelectedSurvey(option)}
-                  options={surveys}
-                  placeholder='Select survey…'
-                  clearable
-                  name='Survey'
-                />
+            <div className='min-w-64 flex-1'>
+              <Label className='mb-1'>Survey</Label>
+              <Combobox
+                value={selectedSurvey}
+                onChange={(option) => setSelectedSurvey(option)}
+                options={surveys}
+                placeholder='Select a survey…'
+                clearable
+                name='Survey'
+              />
+            </div>
+            <div className='min-w-64 flex-1'>
+              <Label className='mb-1'>Annotation set</Label>
+              <Combobox
+                value={selectedSet}
+                onChange={(option) => setSelectedSet(option)}
+                options={sets}
+                placeholder={
+                  selectedSurvey
+                    ? 'Select an annotation set…'
+                    : 'Select a survey first'
+                }
+                disabled={!selectedSurvey}
+                clearable
+                name='Annotation set'
+              />
+            </div>
+            <Button type='submit' disabled={creating || !selectedSet}>
+              {creating ? (
+                <Spinner animation='border' size='sm' />
+              ) : (
+                <Share2 size={16} />
+              )}
+              Create share
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {message && (
+        <Alert variant='info' onClose={() => setMessage(null)} className='mb-0'>
+          {message}
+        </Alert>
+      )}
+      {reviewersFailed && (
+        <Alert variant='danger' className='mb-0'>
+          Could not load reviewer membership. Refresh before revoking a share.
+        </Alert>
+      )}
+
+      <div className='flex items-center justify-between gap-2'>
+        <h5 className='mb-0'>Shares</h5>
+        <Button
+          variant='outline-primary'
+          disabled={loading || reviewersRefreshing}
+          onClick={() => {
+            void loadShares();
+            refreshReviewers();
+          }}
+        >
+          <RefreshCw
+            size={16}
+            className={cn((loading || reviewersRefreshing) && 'animate-spin')}
+          />
+          Refresh
+        </Button>
+      </div>
+      <DataTable
+        storageKey='chain-shares'
+        columns={columns}
+        data={shares}
+        getRowId={(share) => share.shareId}
+        pageSize={false}
+        initialSorting={[{ id: 'survey', desc: false }]}
+        loading={loading && shares.length === 0}
+        loadingMessage='Loading shares…'
+        emptyIcon={Share2}
+        emptyMessage='No shares yet. Create one above.'
+      />
+
+      <ReviewersDialog
+        share={managing}
+        title={managing ? shareName(managing) : ''}
+        reviewers={managing ? (reviewersByShare?.[managing.shareId] ?? []) : []}
+        userOptions={userOptions}
+        userNameById={userNameById}
+        busy={!!managing && busyShare === managing.shareId}
+        onAdd={(user) => managing && void onAddReviewer(managing.shareId, user)}
+        onRemove={(user) =>
+          managing && void onRemoveReviewer(managing.shareId, user)
+        }
+        onClose={() => setManaging(null)}
+      />
+
+      <Dialog open={!!revoking} onOpenChange={(o) => !o && setRevoking(null)}>
+        <DialogContent>
+          <DialogHeader closeButton>
+            <DialogTitle>
+              {revoking?.status === 'active'
+                ? 'Revoke share'
+                : 'Clean up share'}
+            </DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            {revoking && shareName(revoking)}: this deletes the snapshot data.
+            Reviewer feedback is kept.
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              variant='ghost'
+              className='mr-auto'
+              onClick={() => setRevoking(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant='danger'
+              onClick={() => {
+                if (revoking) void onRevoke(revoking.shareId);
+                setRevoking(null);
+              }}
+            >
+              {revoking?.status === 'active' ? 'Revoke' : 'Clean up'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ReviewersDialog(props: {
+  share: ShareRow | null;
+  title: string;
+  reviewers: UserType[];
+  userOptions: Option[];
+  userNameById: Map<string, string>;
+  busy: boolean;
+  onAdd: (user: Option) => void;
+  onRemove: (user: Option) => void;
+  onClose: () => void;
+}) {
+  const [toAdd, setToAdd] = useState<Option | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const assignedIds = new Set(props.reviewers.map((u) => u.id));
+  const available = props.userOptions.filter((o) => !assignedIds.has(o.value));
+  const active = props.share?.status === 'active';
+  const close = () => {
+    setConfirming(false);
+    setToAdd(null);
+    props.onClose();
+  };
+
+  return (
+    <Dialog open={!!props.share} onOpenChange={(o) => !o && close()}>
+      <DialogContent>
+        <DialogHeader closeButton>
+          <DialogTitle>Reviewers</DialogTitle>
+        </DialogHeader>
+        <DialogBody className='flex flex-col gap-4'>
+          <div className='text-muted-foreground'>{props.title}</div>
+          {props.reviewers.length === 0 ? (
+            <div className='text-muted-foreground'>No reviewers yet.</div>
+          ) : (
+            <div className='flex flex-col gap-1'>
+              {props.reviewers.map((u) => {
+                const name = props.userNameById.get(u.id) ?? u.id;
+                return (
+                  <div
+                    key={u.id}
+                    className='flex items-center gap-3 bg-black/15 px-3 py-2'
+                  >
+                    <span className='flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/25 font-semibold text-primary uppercase'>
+                      {name.charAt(0)}
+                    </span>
+                    <div className='min-w-0 flex-1'>
+                      <div className='truncate font-medium'>{name}</div>
+                      {u.email && (
+                        <div className='truncate text-sm text-muted-foreground'>
+                          {u.email}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type='button'
+                      disabled={props.busy}
+                      title={`Remove ${name}`}
+                      aria-label={`Remove ${name}`}
+                      onClick={() =>
+                        props.onRemove({ value: u.id, label: name })
+                      }
+                      className='rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-danger/20 hover:text-danger disabled:opacity-50'
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {confirming && toAdd ? (
+            <div className='flex flex-col gap-3 border border-warning/60 bg-warning/10 p-3'>
+              <div>
+                Give <strong>{toAdd.label}</strong> access to {props.title}?
+                They will be able to open the chain viewer for this share and
+                record feedback.
               </div>
-              <div style={{ minWidth: 260, flex: 1 }}>
-                <Label>Annotation set</Label>
+              <div className='flex justify-end gap-2'>
+                <Button
+                  variant='ghost'
+                  className='mr-auto'
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  disabled={props.busy}
+                  onClick={() => {
+                    props.onAdd(toAdd);
+                    setToAdd(null);
+                    setConfirming(false);
+                  }}
+                >
+                  <Plus size={16} />
+                  Add reviewer
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className='flex items-end gap-2'>
+              <div className='min-w-0 flex-1'>
+                <Label className='mb-1'>Add a reviewer</Label>
                 <Combobox
-                  value={selectedSet}
-                  onChange={(option) => setSelectedSet(option)}
-                  options={sets}
+                  value={toAdd}
+                  onChange={setToAdd}
+                  options={available}
                   placeholder={
-                    selectedSurvey
-                      ? 'Select annotation set…'
-                      : 'Pick a survey first'
+                    active ? 'Select an account…' : 'Share is not active'
                   }
-                  disabled={!selectedSurvey}
+                  disabled={!active}
                   clearable
-                  name='Annotation set'
+                  name='Reviewer account'
                 />
               </div>
-              <Button type='submit' disabled={creating || !selectedSet}>
-                {creating ? (
+              <Button
+                disabled={!active || !toAdd || props.busy}
+                onClick={() => setConfirming(true)}
+              >
+                {props.busy ? (
                   <Spinner animation='border' size='sm' />
                 ) : (
-                  'Create share'
+                  <Plus size={16} />
                 )}
+                Add
               </Button>
             </div>
-          </form>
-
-          {message && <p className='mt-4 mb-0 text-info'>{message}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className='flex items-center justify-between'>
-          <h4 className='mb-0'>Shares and recovery</h4>
-          <Button
-            variant='outline-light'
-            size='sm'
-            onClick={() => {
-              void loadShares();
-              refreshReviewers();
-            }}
-          >
-            <RotateCw size={14} className='mr-1' />
-            Refresh
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='ghost' className='mr-auto' onClick={close}>
+            Close
           </Button>
-        </CardHeader>
-        <CardContent className='p-0'>
-          {reviewersFailed && (
-            <p className='p-4 text-danger'>
-              Could not load reviewer membership. Refresh before revoking a
-              share.
-            </p>
-          )}
-          {loading ? (
-            <div className='p-4'>
-              <Spinner animation='border' size='sm' />
-            </div>
-          ) : shares.length === 0 ? (
-            <p className='mb-0 p-4'>No shares to manage.</p>
-          ) : (
-            <Table
-              responsive
-              hover
-              size='sm'
-              className='chain-share-table mb-0 align-middle'
-            >
-              <thead>
-                <tr>
-                  <th>Survey</th>
-                  <th>Annotation set</th>
-                  <th>Status</th>
-                  <th>Reviewers</th>
-                  <th style={{ width: 360 }}>Manage reviewer</th>
-                  <th style={{ width: 100, textAlign: 'end' }}>Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shares.map((share) => {
-                  const assigned = reviewersByShare?.[share.shareId] ?? [];
-                  const operationBusy = isShareOperationBusy(share);
-                  const recovering = share.status !== 'active';
-                  return (
-                    <tr key={share.shareId}>
-                      <td className='font-semibold'>
-                        {share.surveyName ?? '—'}
-                      </td>
-                      <td>
-                        {share.annotationSetName ?? share.annotationSetId}
-                      </td>
-                      <td>
-                        <Badge
-                          variant={
-                            share.status === 'active' ? 'success' : 'warning'
-                          }
-                          className='uppercase'
-                        >
-                          {share.status ?? 'unknown'}
-                        </Badge>
-                        {share.errorMessage && (
-                          <div className='text-sm text-danger'>
-                            {share.errorMessage}
-                          </div>
-                        )}
-                        {['creating', 'revoking'].includes(
-                          share.status ?? '',
-                        ) &&
-                          !operationBusy && (
-                            <div className='text-sm text-warning'>
-                              Operation timed out. Remove reviewers, then clean
-                              up.
-                            </div>
-                          )}
-                      </td>
-                      <td style={{ minWidth: 160 }}>
-                        {assigned.length === 0 ? (
-                          <span className='text-muted-foreground italic'>
-                            No reviewers
-                          </span>
-                        ) : (
-                          <div className='flex flex-row flex-wrap gap-1'>
-                            {assigned.map((u) => (
-                              <Badge
-                                variant='info'
-                                key={u.id}
-                                title={u.email ?? u.id}
-                              >
-                                {userNameById.get(u.id) ?? u.id}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ minWidth: 340 }}>
-                        <div className='flex flex-row items-center gap-2'>
-                          <div style={{ flex: 1, minWidth: 160 }}>
-                            <Combobox
-                              value={selectedUser[share.shareId] ?? null}
-                              onChange={(option) =>
-                                setSelectedUser((prev) => ({
-                                  ...prev,
-                                  [share.shareId]: option,
-                                }))
-                              }
-                              options={userOptions}
-                              placeholder='Select account…'
-                              clearable
-                              name='Reviewer account'
-                            />
-                          </div>
-                          <Button
-                            size='sm'
-                            variant='warning'
-                            disabled={
-                              busyShare === share.shareId ||
-                              share.status !== 'active' ||
-                              !selectedUser[share.shareId]
-                            }
-                            onClick={() => void onAddReviewer(share.shareId)}
-                          >
-                            Add
-                          </Button>
-                          <Button
-                            size='sm'
-                            variant='outline-warning'
-                            disabled={
-                              busyShare === share.shareId ||
-                              !selectedUser[share.shareId]
-                            }
-                            onClick={() => void onRemoveReviewer(share.shareId)}
-                          >
-                            Remove
-                          </Button>
-                        </div>
-                      </td>
-                      <td style={{ textAlign: 'end' }}>
-                        <span
-                          title={
-                            assigned.length > 0
-                              ? 'Remove all reviewers before revoking this share.'
-                              : undefined
-                          }
-                        >
-                          <Button
-                            size='sm'
-                            variant='danger'
-                            disabled={
-                              busyShare === share.shareId ||
-                              operationBusy ||
-                              assigned.length > 0 ||
-                              !reviewersLoaded ||
-                              reviewersRefreshing
-                            }
-                            onClick={() => void onRevoke(share.shareId)}
-                          >
-                            {recovering ? 'Clean up' : 'Revoke'}
-                          </Button>
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

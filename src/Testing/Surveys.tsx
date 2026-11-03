@@ -191,6 +191,7 @@ export default function Surveys() {
     <div className='mt-4 flex w-full flex-col gap-2'>
       <h5 className='mb-0'>Surveys</h5>
       <DataTable
+        storageKey='testing-surveys'
         columns={columnsFromHeadings([
           { content: 'Name', style: { width: '40%' }, sort: true },
           { content: 'Use tests from other surveys' },

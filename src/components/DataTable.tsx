@@ -28,7 +28,7 @@ import {
   Inbox,
   type LucideIcon,
 } from 'lucide-react';
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useId, useState, type CSSProperties, type ReactNode } from 'react';
 import { dataTableFeatures, type DataColumn } from './dataTableFeatures';
 
 export type { DataColumn } from './dataTableFeatures';
@@ -40,19 +40,21 @@ export interface DataColumnMeta {
   style?: CSSProperties;
 }
 
-const PAGE_SIZE_KEY = 'tableItemsPerPage';
+const pageSizeKey = (storageKey: string) => `tableItemsPerPage:${storageKey}`;
 const PAGE_SIZES = [5, 10, 25, 50, 100];
 const ALL_ROWS: PaginationState = {
   pageIndex: 0,
   pageSize: Number.MAX_SAFE_INTEGER,
 };
 
-function storedPageSize(fallback: number) {
-  const stored = Number(localStorage.getItem(PAGE_SIZE_KEY));
+function storedPageSize(storageKey: string, fallback: number) {
+  const stored = Number(localStorage.getItem(pageSizeKey(storageKey)));
   return stored > 0 ? stored : fallback;
 }
 
 export interface DataTableProps<T extends RowData> {
+  /** Unique per table; remembers the rows-per-page choice for this table. */
+  storageKey: string;
   columns: DataColumn<T>[];
   data: T[];
   getRowId?: (row: T) => string;
@@ -75,6 +77,7 @@ export interface DataTableProps<T extends RowData> {
 }
 
 export default function DataTable<T extends RowData>({
+  storageKey,
   columns,
   data,
   getRowId,
@@ -93,9 +96,12 @@ export default function DataTable<T extends RowData>({
   hideHeader = false,
   footer,
 }: DataTableProps<T>) {
+  const rowsPerPageId = useId();
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [pagination, setPagination] = useState<PaginationState>(() =>
-    pageSize ? { pageIndex: 0, pageSize: storedPageSize(pageSize) } : ALL_ROWS,
+    pageSize
+      ? { pageIndex: 0, pageSize: storedPageSize(storageKey, pageSize) }
+      : ALL_ROWS,
   );
 
   const table = useTable({
@@ -268,15 +274,15 @@ export default function DataTable<T extends RowData>({
       {pageSize && data.length > PAGE_SIZES[0] && (
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>
-            <label htmlFor='rowsPerPage' className='mb-0'>
+            <label htmlFor={rowsPerPageId} className='mb-0'>
               Rows per page:
             </label>
             <NativeSelect
-              id='rowsPerPage'
+              id={rowsPerPageId}
               value={pagination.pageSize}
               onChange={(e) => {
                 const size = Number(e.target.value);
-                localStorage.setItem(PAGE_SIZE_KEY, String(size));
+                localStorage.setItem(pageSizeKey(storageKey), String(size));
                 setPagination({ pageIndex: 0, pageSize: size });
               }}
               style={{ width: 'auto' }}

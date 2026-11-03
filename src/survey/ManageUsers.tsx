@@ -298,6 +298,7 @@ export default function ManageUsers({
           />
         </div>
         <DataTable
+          storageKey='survey-members'
           columns={columns}
           data={visible}
           getRowId={(p) => p.userId}

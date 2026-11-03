@@ -262,6 +262,7 @@ export default function Logs({ projectId }: { projectId: string }) {
           </Button>
         </div>
         <DataTable
+          storageKey='survey-logs'
           columns={columns}
           data={error ? [] : visible}
           getRowId={(log) => log.id}

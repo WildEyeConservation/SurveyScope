@@ -182,6 +182,7 @@ export default function WorkflowSnapshotModal({
               <div className='mb-2 font-semibold'>{section.label}</div>
               <div className='overflow-x-auto'>
                 <DataTable
+                  storageKey={`workflow-snapshot-${section.workflowType}`}
                   columns={columnsFromHeadings(section.headings)}
                   data={section.rows.map((row) => ({
                     id: row.id,

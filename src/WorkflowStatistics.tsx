@@ -691,6 +691,7 @@ export default function WorkflowStatistics() {
                   <h6 className='mb-2'>{section.label}</h6>
                   <div className='overflow-x-auto'>
                     <DataTable
+                      storageKey={`workflow-statistics-${section.workflowType}`}
                       columns={columnsFromHeadings(section.headings)}
                       data={section.rows.map((row) => ({
                         id: row.id,
@@ -716,6 +717,7 @@ export default function WorkflowStatistics() {
                   <h6 className='mb-2'>Runs</h6>
                   <div className='overflow-x-auto'>
                     <DataTable
+                      storageKey='workflow-statistics-runs'
                       columns={columnsFromHeadings([
                         {
                           content: 'Run',

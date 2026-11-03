@@ -1213,6 +1213,7 @@ export default function Surveys() {
               )
             ) : (
               <DataTable
+                storageKey='surveys'
                 columns={columnsFromHeadings([
                   { content: 'Survey', style: { width: '50%' } },
                   { content: 'Annotation Sets', style: { width: '50%' } },

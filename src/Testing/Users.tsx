@@ -124,6 +124,7 @@ export default function Users() {
         </span>
       </div>
       <DataTable
+        storageKey='testing-users'
         columns={columns}
         data={rows}
         getRowId={(row) => row.userId}
