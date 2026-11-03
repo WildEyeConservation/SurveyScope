@@ -572,7 +572,7 @@ export default function Jobs() {
                     <Button
                       size={compactMode ? 'sm' : undefined}
                       className='ms-1'
-                      variant='outline-primary'
+                      variant='outline-light'
                       onClick={() => handleKeepJob(queue.id)}
                       style={{ whiteSpace: 'nowrap' }}
                     >
