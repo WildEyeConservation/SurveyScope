@@ -59,6 +59,7 @@ const queuesByProjectIdQuery = /* GraphQL */ `
         id
         hidden
         lastObservationAt
+        lastAccessedAt
       }
       nextToken
     }
@@ -92,6 +93,7 @@ type QueueRow = {
   id: string;
   hidden: boolean | null;
   lastObservationAt: string | null;
+  lastAccessedAt: string | null;
 };
 
 type ImageRow = {
@@ -182,8 +184,9 @@ async function getExpiringImages(
 function isRecentlyActive(queues: QueueRow[], cutoffMs: number): boolean {
   return queues.some((q) => {
     if (q.hidden) return false;
-    if (!q.lastObservationAt) return false;
-    return Date.parse(q.lastObservationAt) > cutoffMs;
+    return [q.lastObservationAt, q.lastAccessedAt].some(
+      (time) => !!time && Date.parse(time) > cutoffMs
+    );
   });
 }
 

@@ -20,6 +20,7 @@ import ClaimedInfoTagImage from './ClaimedInfoTagImage';
 import { createInfoTagDelivery } from './infoTagDelivery';
 import { fetchAllPaginatedResults } from './utils';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
+import { touchQueue } from './touchQueue';
 
 const VISIBILITY_TIMEOUT_SECONDS = 3600;
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
@@ -52,6 +53,7 @@ export default function InfoTagTask() {
 
   useEffect(() => {
     if (!queueId) return;
+    touchQueue(client, queueId);
     client.models.Queue.get({ id: queueId }).then(({ data }) => {
       if (data?.url) setQueueUrl(data.url);
       if (data?.annotationSetId) setAnnotationSetId(data.annotationSetId);

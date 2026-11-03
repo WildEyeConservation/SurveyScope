@@ -62,6 +62,7 @@ import { createChainShare } from '../functions/createChainShare/resource';
 import { revokeChainShare } from '../functions/revokeChainShare/resource';
 import { reportClientError } from '../functions/reportClientError/resource';
 import { getAdminStats } from '../functions/getAdminStats/resource';
+import { expireInactiveQueues } from '../functions/expireInactiveQueues/resource';
 import { generateTile } from '../storage/generateTile/resource';
 
 const schema = a
@@ -563,6 +564,9 @@ const schema = a
         emptyQueueTimestamp: a.string(),
         requeuesCompleted: a.integer().default(0),
         lastObservationAt: a.string(),
+        lastAccessedAt: a.string(),
+        inactivityWarnedAt: a.string(),
+        cancelAfter: a.string(),
         group: a.string(),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
@@ -1581,6 +1585,15 @@ const schema = a
         dataSource: a.ref('Queue'),
       }))
       .authorization((allow) => [allow.authenticated()]),
+    touchQueue: a
+      .mutation()
+      .arguments({ id: a.id().required() })
+      .returns(a.boolean())
+      .handler(a.handler.custom({
+        entry: './touchQueue.js',
+        dataSource: a.ref('Queue'),
+      }))
+      .authorization((allow) => [allow.authenticated()]),
     incrementRegistrationProgress: a
       .mutation()
       .arguments({
@@ -1834,6 +1847,7 @@ const schema = a
     allow.resource(createChainShare),
     allow.resource(revokeChainShare),
     allow.resource(reportClientError),
+    allow.resource(expireInactiveQueues),
   ]);
 
 export type ServerSchema = typeof schema;

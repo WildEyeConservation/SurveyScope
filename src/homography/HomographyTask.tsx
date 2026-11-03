@@ -12,6 +12,7 @@ import {
   type HomographyMessage,
 } from './HomographyWorkbenchWorker';
 import type { Point } from './ManualHomographyEditor';
+import { touchQueue } from '../touchQueue';
 
 export default function HomographyTask() {
   const { queueId } = useParams<{ queueId: string }>();
@@ -38,6 +39,7 @@ export default function HomographyTask() {
   // Fetch queue URL on mount
   useEffect(() => {
     if (!queueId) return;
+    touchQueue(client, queueId);
     client.models.Queue.get({ id: queueId }).then(({ data }) => {
       if (data?.url) setQueueUrl(data.url as string);
     });
