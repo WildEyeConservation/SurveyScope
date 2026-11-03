@@ -6,6 +6,7 @@ import {
 import type { ExtendedAnnotationType } from '../schemaTypes';
 import { isWithinLocationBounds } from '../utils';
 import { formatInfoTagsForDisplay } from '../infoTags';
+import { OUTSIDE_SURVEY_AREA } from '../../shared/boundaryStatus';
 
 export interface AnnotationBounds {
   x: number;
@@ -126,9 +127,11 @@ export function buildAnnotationPopupLines(
   annotation: ExtendedAnnotationType,
   categoryName: (categoryId: string) => string,
   users: ReadonlyArray<{ id: string; name?: string | null }>,
-  infoTags?: string[]
+  infoTags?: string[],
+  outside?: boolean
 ): string[] {
   const lines = [`Label: ${categoryName(annotation.categoryId)}`];
+  if (outside) lines.push(OUTSIDE_SURVEY_AREA);
   if (infoTags?.length) {
     lines.push(`Info tags: ${formatInfoTagsForDisplay(infoTags)}`);
   }

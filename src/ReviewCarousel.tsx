@@ -5,6 +5,7 @@ import { TaskBuffer } from './TaskBuffer';
 import BufferSource from './BufferSource';
 import { Spinner } from 'react-bootstrap';
 import { useInfoTagData } from './useInfoTags';
+import type { BoundaryStatus } from '../shared/boundaryStatus';
 
 type LabeledValue = { label: string; value: string };
 
@@ -23,7 +24,13 @@ interface LocationLike {
     y: number;
     width: number;
     height: number;
-    image: { id: string; width: number; height: number; timestamp: number };
+    image: {
+      id: string;
+      width: number;
+      height: number;
+      timestamp: number;
+      boundaryStatus?: BoundaryStatus | null;
+    };
     annotationSetId: string;
     id?: string;
   };
@@ -107,6 +114,7 @@ export default function ReviewCarousel({
                     'image.width',
                     'image.height',
                     'image.timestamp',
+                    'image.boundaryStatus',
                   ],
                   filter: { setId: { eq: selectedAnnotationSet } },
                   nextToken: nextNextToken,
@@ -123,6 +131,7 @@ export default function ReviewCarousel({
                   width: number;
                   height: number;
                   timestamp: number;
+                  boundaryStatus?: BoundaryStatus | null;
                 };
               }>;
               nextToken?: string | null;
@@ -151,6 +160,7 @@ export default function ReviewCarousel({
                     width: image.width,
                     height: image.height,
                     timestamp: image.timestamp,
+                    boundaryStatus: image.boundaryStatus,
                   },
                   annotationSetId: selectedAnnotationSet,
                 },
@@ -191,6 +201,7 @@ export default function ReviewCarousel({
                     'image.width',
                     'image.height',
                     'image.timestamp',
+                    'image.boundaryStatus',
                   ],
                   filter: { setId: { eq: selectedAnnotationSet } },
                   nextToken: nextNextToken,
@@ -205,6 +216,7 @@ export default function ReviewCarousel({
                   width: number;
                   height: number;
                   timestamp: number;
+                  boundaryStatus?: BoundaryStatus | null;
                 };
               }>;
               nextToken?: string | null;
@@ -236,6 +248,7 @@ export default function ReviewCarousel({
                     width: image.width,
                     height: image.height,
                     timestamp: image.timestamp,
+                    boundaryStatus: image.boundaryStatus,
                   },
                   annotationSetId: selectedAnnotationSet,
                 },

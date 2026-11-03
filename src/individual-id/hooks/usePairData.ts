@@ -12,7 +12,13 @@ import { attachInfoTagsToAnnotations } from '../../infoTags';
 
 type ImageWithNeighbours = Pick<
   ImageType,
-  'id' | 'width' | 'height' | 'originalPath' | 'timestamp' | 'cameraId'
+  | 'id'
+  | 'width'
+  | 'height'
+  | 'originalPath'
+  | 'timestamp'
+  | 'cameraId'
+  | 'boundaryStatus'
 > & {
   leftNeighbours?: ImageNeighbourType[] | null;
   rightNeighbours?: ImageNeighbourType[] | null;
@@ -101,6 +107,7 @@ export function usePairData(input: UsePairDataInput) {
               'originalPath',
               'timestamp',
               'cameraId',
+              'boundaryStatus',
               'leftNeighbours.*',
               'rightNeighbours.*',
             ],
@@ -116,6 +123,7 @@ export function usePairData(input: UsePairDataInput) {
               'originalPath',
               'timestamp',
               'cameraId',
+              'boundaryStatus',
               'leftNeighbours.*',
               'rightNeighbours.*',
             ],
@@ -245,6 +253,7 @@ export function usePairData(input: UsePairDataInput) {
                 'originalPath',
                 'timestamp',
                 'cameraId',
+                'boundaryStatus',
               ],
             }
           );

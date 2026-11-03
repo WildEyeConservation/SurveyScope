@@ -9,6 +9,11 @@ import { useImageInfoTags } from './useInfoTags';
 import { formatInfoTagsForDisplay } from './infoTags';
 import { buildAnnotationFeatureProperties } from './annotator/annotationFeatures';
 import type { ExtendedAnnotationType } from './schemaTypes';
+import {
+  isOnEffort,
+  OUTSIDE_SURVEY_AREA,
+  type BoundaryStatus,
+} from '../shared/boundaryStatus';
 
 type AnnotationItem = {
   id: string;
@@ -35,6 +40,7 @@ export default function LightImageView({
   const [imageMeta, setImageMeta] = useState<{
     width: number;
     height: number;
+    boundaryStatus?: BoundaryStatus | null;
   } | null>(null);
   const [sourceKey, setSourceKey] = useState<string | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationItem[]>([]);
@@ -48,12 +54,13 @@ export default function LightImageView({
       // Load image metadata
       const { data: image } = await (client as any).models.Image.get({
         id: imageId,
-        selectionSet: ['id', 'width', 'height'] as const,
+        selectionSet: ['id', 'width', 'height', 'boundaryStatus'] as const,
       });
       if (!image || cancelled) return;
       setImageMeta({
         width: image.width as number,
         height: image.height as number,
+        boundaryStatus: image.boundaryStatus,
       });
 
       // Load source key for slippy map tiles
@@ -141,6 +148,7 @@ export default function LightImageView({
     return categoryColorMap;
   }, [filteredAnnotations]);
 
+  const outside = !isOnEffort(imageMeta?.boundaryStatus);
   const lightAnnotations = useMemo<LightAnnotation[]>(
     () =>
       filteredAnnotations.map((a) => {
@@ -156,6 +164,7 @@ export default function LightImageView({
           y: a.y,
           popupLines: [
             `Label: ${a.category?.name || 'Unknown'}`,
+            ...(outside ? [OUTSIDE_SURVEY_AREA] : []),
             `Sighting: ${isPrimary ? 'Primary' : 'Secondary'}`,
             ...(infoTags?.length
               ? [`Info tags: ${formatInfoTagsForDisplay(infoTags)}`]
@@ -163,7 +172,7 @@ export default function LightImageView({
           ],
         };
       }),
-    [filteredAnnotations, categoryColors, infoTagsByAnnotation]
+    [filteredAnnotations, categoryColors, infoTagsByAnnotation, outside]
   );
 
   if (!imageMeta || !sourceKey || !annotationsLoaded)

@@ -15,6 +15,8 @@ export function isOnEffort(status: BoundaryStatus | null | undefined): boolean {
   return status !== 'outside' && status !== 'excluded';
 }
 
+export const OUTSIDE_SURVEY_AREA = 'Outside survey area';
+
 export function boundaryRecomputePending(
   project: {
     boundaryRecomputeRequested?: boolean | null;

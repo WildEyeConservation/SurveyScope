@@ -52,6 +52,7 @@ import {
   ANNOTATION_MARKER_LAYERS,
   registerAnnotationMarkerImages,
 } from './annotationMarkerLayers';
+import { isOnEffort } from '../../shared/boundaryStatus';
 
 /*
 MapLibre-based image viewer for the species-labelling workflow, including
@@ -194,6 +195,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   // map's interaction handlers.
   const infoTagsRef = useRef(infoTags);
   infoTagsRef.current = infoTags;
+  const outsideRef = useRef(false);
+  outsideRef.current = !isOnEffort(image.boundaryStatus);
 
   const annotations = useMemo(
     () =>
@@ -402,7 +405,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             annotation,
             categoryName,
             allUsers,
-            infoTagsRef.current?.get(annotation.id)
+            infoTagsRef.current?.get(annotation.id),
+            outsideRef.current
           );
           lines.forEach((text) => {
             const row = document.createElement('div');

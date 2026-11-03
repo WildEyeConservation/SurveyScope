@@ -249,7 +249,11 @@ export default function AnnotationSetResults({
             image: anno.image.originalPath || 'Unknown',
             transect: anno.image.transectId || 'Unknown',
             stratum: stratumName(anno.image),
-            surveyArea: anno.image.boundaryStatus ?? 'inside',
+            surveyArea: isOnEffort(
+              anno.image.boundaryStatus as BoundaryStatus | null
+            )
+              ? 'inside'
+              : 'outside',
             timestamp: anno.image.timestamp,
             latitude: anno.image.latitude,
             longitude: anno.image.longitude,
