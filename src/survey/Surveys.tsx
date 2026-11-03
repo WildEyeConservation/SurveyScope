@@ -648,7 +648,7 @@ export default function Surveys() {
                       </Badge>
                       <Button
                         size={size}
-                        variant='outline-light'
+                        variant='primary'
                         onClick={() =>
                           handleKeepJob(
                             project.id,
