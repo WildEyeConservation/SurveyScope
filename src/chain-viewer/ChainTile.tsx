@@ -14,6 +14,10 @@ import {
   getCropZoomRange,
 } from './utils/tileCrop';
 import type { AnnotationImageMeta, ChainAnnotation } from './types';
+import {
+  isOnEffort,
+  OUTSIDE_SURVEY_AREA,
+} from '../../shared/boundaryStatus';
 
 interface Props {
   annotation: ChainAnnotation;
@@ -319,6 +323,11 @@ export function ChainTile({
             <div style={{ opacity: 0.85, marginTop: 2 }}>
               Camera: {popupCamera ?? 'Unknown'}
             </div>
+            {meta && !isOnEffort(meta.boundaryStatus) && (
+              <div style={{ fontWeight: 600, marginTop: 2 }}>
+                {OUTSIDE_SURVEY_AREA}
+              </div>
+            )}
           </>
         )}
       </div>

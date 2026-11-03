@@ -28,6 +28,7 @@ export function LocationLoader() {
           'image.altitude_wgs84',
           'image.altitude_egm96',
           'image.altitude_agl',
+          'image.boundaryStatus',
         ],
       }
     ).then(({ data }) => {

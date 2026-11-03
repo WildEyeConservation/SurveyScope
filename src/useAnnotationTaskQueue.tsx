@@ -35,6 +35,7 @@ const LOCATION_SELECTION = [
   'image.altitude_wgs84',
   'image.altitude_egm96',
   'image.altitude_agl',
+  'image.boundaryStatus',
 ] as const;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

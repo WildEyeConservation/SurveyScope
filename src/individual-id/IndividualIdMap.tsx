@@ -26,6 +26,7 @@ import {
   type LocationOverlayRow,
   type LocationSourceConfig,
 } from './MapLocationOverlay';
+import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../../shared/boundaryStatus';
 
 /**
  * Visual classification of a marker.
@@ -580,6 +581,8 @@ export function IndividualIdMap({
   const localHoverKeyRef = useRef<string | null>(null);
   /** Whichever candidate the popup is currently showing. */
   const popupKeyRef = useRef<string | null>(null);
+  const outsideRef = useRef(false);
+  outsideRef.current = !isOnEffort(image.boundaryStatus);
   const hideTimerRef = useRef<number | null>(null);
   // Latest markers (read inside marker hover handlers via ref so they don't
   // need to be re-bound when the markers prop changes).
@@ -704,6 +707,11 @@ export function IndividualIdMap({
       <div style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.4px;margin-top:2px">
         ${kindLabel}
       </div>
+      ${
+        outsideRef.current
+          ? `<div style="font-size:10px;margin-top:3px;font-weight:700">${OUTSIDE_SURVEY_AREA}</div>`
+          : ''
+      }
       ${infoTagsHtml}
       ${
         data.conflictHighlight

@@ -24,6 +24,7 @@ import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 import { recordWorkflowTask } from './recordWorkflowTask';
 import { reviewWorkflowTask } from './reviewWorkflowTask';
 import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
+import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../shared/boundaryStatus';
 
 // ── Constants ──
 
@@ -247,7 +248,7 @@ export default function QCAnnotationReview({
 
     client.models.Image.get(
       { id: annotation.imageId },
-      { selectionSet: ['id', 'width', 'height'] }
+      { selectionSet: ['id', 'width', 'height', 'boundaryStatus'] }
     ).then(({ data }) => {
       if (!mounted || !data) return;
       setImage(data);
@@ -317,6 +318,7 @@ export default function QCAnnotationReview({
           label: categories.find((c) => c.id === a.categoryId)?.name ?? 'Unknown',
           reviewed: a.reviewed,
           infoTags: JSON.stringify(a.infoTags),
+          outside: !isOnEffort(image?.boundaryStatus),
         },
         geometry: {
           type: 'Point',
@@ -324,7 +326,7 @@ export default function QCAnnotationReview({
         },
       })),
     });
-  }, [map, otherAnnotations, categories, px2lngLat, scale]);
+  }, [map, otherAnnotations, categories, image, px2lngLat, scale]);
 
   // ── Tile loading ──
   const updateVisibleTiles = useCallback(
@@ -567,10 +569,14 @@ export default function QCAnnotationReview({
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
+        const outside = feat.properties?.outside
+          ? `<div style="font-size:11px;font-weight:600">${OUTSIDE_SURVEY_AREA}</div>`
+          : '';
         hoverPopup
           .setLngLat(coords)
           .setHTML(
             `<div style="color:#000"><div>${escaped}</div>` +
+            outside +
             `<div style="color:${statusColor};font-weight:600;font-size:11px">${statusText}</div>` +
             `${hasInfoTagsRef.current ? `<div style="font-size:11px">Tags: ${escapedTags}</div>` : ''}</div>`
           )

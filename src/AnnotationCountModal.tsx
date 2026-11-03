@@ -4,6 +4,8 @@ import { Modal, Body, Header, Footer, Title } from './Modal';
 
 import { GlobalContext } from './Context';
 import { loadRows } from './rowChunks';
+import { loadProjectImages } from './projectImages';
+import { isOnEffort, type BoundaryStatus } from '../shared/boundaryStatus';
 import MyTable from './Table';
 import LabeledToggleSwitch from './LabeledToggleSwitch';
 
@@ -38,21 +40,33 @@ const AnnotationCountModal: React.FC<Props> = ({
       setLoading(true);
 
       // Categories load by survey: a set can use another set's category.
-      const [rows, categories] = await Promise.all([
+      const [rows, categories, images] = await Promise.all([
         loadRows(client, 'annotationsByAnnotationSetId', setId, [
           'categoryId',
           'objectId',
           'source',
+          'imageId',
         ]),
         loadRows(client, 'categoriesByProjectId', projectId, ['name']),
+        loadProjectImages(client, projectId, ['boundaryStatus']),
       ]);
       const names = new Map(categories.map((c) => [c.id, c.name]));
-      const result = rows.map((a) => ({
-        id: a.id,
-        objectId: a.objectId,
-        source: a.source,
-        category: names.get(a.categoryId ?? '') ?? 'Unknown',
-      }));
+      const outside = new Set(
+        images
+          .filter(
+            (image) =>
+              !isOnEffort(image.boundaryStatus as BoundaryStatus | null)
+          )
+          .map((image) => image.id)
+      );
+      const result = rows
+        .filter((a) => !outside.has(a.imageId ?? ''))
+        .map((a) => ({
+          id: a.id,
+          objectId: a.objectId,
+          source: a.source,
+          category: names.get(a.categoryId ?? '') ?? 'Unknown',
+        }));
       setAnnotations(result);
 
       setLoading(false);

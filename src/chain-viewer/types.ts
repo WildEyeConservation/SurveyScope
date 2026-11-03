@@ -1,5 +1,6 @@
 import type { ImageNeighbourType, ImageType } from '../schemaTypes';
 import type { PixelTransform } from '../individual-id/types';
+import type { BoundaryStatus } from '../../shared/boundaryStatus';
 
 /**
  * Minimal annotation shape pulled up-front for the chain viewer. Image and
@@ -47,6 +48,7 @@ export interface AnnotationImageMeta {
   cameraName: string | null;
   cameraSerial: string | null;
   sourceKey: string | null;
+  boundaryStatus?: BoundaryStatus | null;
 }
 
 /**
