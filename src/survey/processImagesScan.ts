@@ -36,7 +36,6 @@ export const MODELS: Record<
 
 export type ScanImage = { id: string; originalPath: string };
 
-// Loads the images once and checks every model's processedBy rows against them.
 export async function findUnprocessedByModel(
   client: unknown,
   projectId: string,

@@ -997,8 +997,7 @@ async function fetchObservationPointsDetailed(
   return map;
 }
 
-// IDs of reviewed locations, so a launched tile counts as reviewed only
-// when that exact tile was looked at.
+// Match exact tiles, not geometric overlap.
 async function fetchObservedLocationIds(
   client: DataClient,
   annotationSetId: string,

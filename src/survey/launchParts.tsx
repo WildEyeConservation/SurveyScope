@@ -92,7 +92,6 @@ function RowLabel({
   );
 }
 
-// A row inside AdvancedOptions: label on the left, control on the right.
 export function SettingRow({
   label,
   hint,
