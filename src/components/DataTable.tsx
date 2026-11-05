@@ -135,6 +135,8 @@ export default function DataTable<T extends RowData>({
           'overflow-x-auto border border-dark',
           // The frame draws the outer edge, so cells skip theirs.
           '[&_thead_tr:first-child>*]:border-t-0 [&_tr:last-child>*]:border-b-0 [&_tr>*:first-child]:border-l-0 [&_tr>*:last-child]:border-r-0',
+          // Without a header the first body row meets the frame instead.
+          hideHeader && '[&_tbody_tr:first-child>*]:border-t-0',
           className,
         )}
       >
