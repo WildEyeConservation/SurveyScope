@@ -18,7 +18,7 @@ const buttonVariants = cva(
           'border-transparent bg-success text-white hover:bg-[#4e9c4e] active:bg-[#4a934a]',
         info: 'border-transparent bg-info text-white hover:bg-[#4da3bd] active:bg-[#499ab2]',
         warning:
-          'border-transparent bg-warning text-white hover:bg-[#d9a406] active:bg-[#cc9a06]',
+          'border-transparent bg-warning text-[#212529] hover:bg-[#d9a406] active:bg-[#cc9a06]',
         danger:
           'border-transparent bg-danger text-white hover:bg-[#b84743] active:bg-[#ae423f]',
         destructive:
@@ -35,7 +35,7 @@ const buttonVariants = cva(
         'outline-info':
           'border-info bg-transparent text-info hover:bg-info hover:text-white',
         'outline-warning':
-          'border-warning bg-transparent text-warning hover:bg-warning hover:text-white',
+          'border-warning bg-transparent text-warning hover:bg-warning hover:text-[#212529]',
         'outline-danger':
           'border-danger bg-transparent text-danger hover:bg-danger hover:text-white',
         'outline-light':
