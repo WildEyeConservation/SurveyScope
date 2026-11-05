@@ -146,11 +146,20 @@ export default function useAnnotationTaskQueue() {
       if (config?.projectId) {
         configRef.current = config;
 
+        // False-negative jobs show large tiles, so a small test box stands out.
+        const { data: queue } = currentPM.queueId
+          ? await client.models.Queue.get(
+              { id: currentPM.queueId },
+              { selectionSet: ['name'] },
+            )
+          : { data: null };
         const shouldTest =
-          myOrganizationHook.data?.find(
+          queue?.name !== 'False Negatives' &&
+          (myOrganizationHook.data?.find(
             (membership) =>
               membership.organizationId === config.project.organizationId,
-          )?.isTested ?? false;
+          )?.isTested ??
+            false);
         testUserRef.current = shouldTest;
       }
     }
