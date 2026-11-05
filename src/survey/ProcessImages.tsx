@@ -48,6 +48,8 @@ export default function ProcessImages({
     const { signal } = controller;
     setScan(null);
     setImagesLoaded(0);
+    // Only the scan reports errors without a model.
+    setError((e) => (e?.model === null ? null : e));
     Promise.all([
       findUnprocessedByModel(client, projectId, MODEL_VALUES, {
         signal,
@@ -256,7 +258,7 @@ export default function ProcessImages({
               variant='link'
               size='sm'
               className='p-0 text-muted-foreground hover:text-foreground'
-              disabled={!scan || !!queueing}
+              disabled={(!scan && !error) || !!queueing}
               onClick={() => setScanKey((key) => key + 1)}
             >
               <RefreshCwIcon className='size-3.5' />
