@@ -1,8 +1,9 @@
-import DataTable from '@/components/DataTable';
-import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Combobox } from '@/components/ui/combobox';
-import { Eye, Plus, Settings2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Eye, Plus, SearchIcon, SearchX, Settings2 } from 'lucide-react';
+import { DateTime } from 'luxon';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { GlobalContext, TestingContext } from '../Context';
 import AddLocationsModal from './AddLocationsModal';
@@ -23,6 +24,7 @@ export default function Surveys() {
   const { client, modalToShow, showModal } = useContext(GlobalContext)!;
 
   const [selectedSurvey, setSelectedSurvey] = useState<Option | null>(null);
+  const [search, setSearch] = useState('');
   const [selectedLocationPools, setSelectedLocationPools] = useState<{
     [surveyId: string]: Option[];
   }>({});
@@ -106,80 +108,107 @@ export default function Surveys() {
     locationPools.find((pool) => pool.ownerProjectId === surveyId);
   const selectedPreset = selectedSurvey && surveyPreset(selectedSurvey.value);
 
-  const tableData = surveys
-    .filter((survey) => !survey.hidden)
-    .map((survey) => {
-      const isDisabled = [
-        'addLocationsToPoolModal',
-        'editLocationPoolModal',
-        'configModal',
-      ].includes(modalToShow || '');
-      const hasPreset = !!surveyPreset(survey.id);
+  type SurveyRow = (typeof surveys)[number];
+  const isDisabled = [
+    'addLocationsToPoolModal',
+    'editLocationPoolModal',
+    'configModal',
+  ].includes(modalToShow || '');
+  const open = (survey: SurveyRow, modal: string) => {
+    setSelectedSurvey({ label: survey.name, value: survey.id });
+    showModal(modal);
+  };
 
-      return {
-        id: survey.id,
-        rowData: [
-          survey.name,
-          <Combobox
-            multiple
-            value={(selectedLocationPools[survey.id] ?? []).filter(
-              (pool) => pool.value !== surveyPreset(survey.id)?.id,
-            )}
-            options={locationPools
-              .filter((pool) => pool.ownerProjectId !== survey.id)
-              .map((pool) => ({
-                label: pool.name,
-                value: pool.id,
-              }))}
-            onChange={(options) => handlePoolsChange(survey.id, options)}
-            placeholder='Select surveys'
-            name='Assigned location pools'
-          />,
-          <Button
-            variant='success'
-            className='w-full'
-            onClick={() => {
-              setSelectedSurvey({
-                label: survey.name,
-                value: survey.id,
-              });
-              showModal('addLocationsToPoolModal');
-            }}
-            disabled={isDisabled || !hasPreset}
-          >
-            <Plus />
-          </Button>,
-          <Button
-            variant='info'
-            className='w-full'
-            onClick={() => {
-              setSelectedSurvey({
-                label: survey.name,
-                value: survey.id,
-              });
-              showModal('editLocationPoolModal');
-            }}
-            disabled={isDisabled || !hasPreset}
-          >
-            <Eye />
-          </Button>,
-          <Button
-            variant='primary'
-            className='w-full'
-            onClick={() => {
-              setSelectedSurvey({
-                label: survey.name,
-                value: survey.id,
-              });
-              showModal('configModal');
-            }}
-            disabled={isDisabled}
-          >
-            <Settings2 />
-          </Button>,
-        ],
-      };
-    });
+  const query = search.trim().toLowerCase();
+  const visibleSurveys = surveys.filter(
+    (survey) =>
+      !survey.hidden && (!query || survey.name.toLowerCase().includes(query)),
+  );
+
+  const actionColumn = (
+    id: string,
+    header: string,
+    cell: (survey: SurveyRow) => React.ReactNode,
+  ): DataColumn<SurveyRow> => ({
+    id,
+    header,
+    enableSorting: false,
+    cell: ({ row }) => cell(row.original),
+    meta: { className: 'w-[120px] text-center' },
+  });
+
+  const columns: DataColumn<SurveyRow>[] = [
+    {
+      id: 'name',
+      header: 'Name',
+      accessorFn: (survey) => survey.name,
+      meta: { style: { width: '30%' } },
+    },
+    {
+      id: 'createdAt',
+      header: 'Created',
+      accessorFn: (survey) => survey.createdAt ?? '',
+      cell: ({ row }) =>
+        row.original.createdAt
+          ? DateTime.fromISO(row.original.createdAt).toLocaleString(
+              DateTime.DATE_MED,
+            )
+          : '',
+      meta: { className: 'whitespace-nowrap' },
+    },
+    {
+      id: 'pools',
+      header: 'Use tests from other surveys',
+      enableSorting: false,
+      cell: ({ row: { original: survey } }) => (
+        <Combobox
+          multiple
+          value={(selectedLocationPools[survey.id] ?? []).filter(
+            (pool) => pool.value !== surveyPreset(survey.id)?.id,
+          )}
+          options={locationPools
+            .filter((pool) => pool.ownerProjectId !== survey.id)
+            .map((pool) => ({
+              label: pool.name,
+              value: pool.id,
+            }))}
+          onChange={(options) => handlePoolsChange(survey.id, options)}
+          placeholder='Select surveys'
+          name='Assigned location pools'
+        />
+      ),
+    },
+    actionColumn('add', 'Add Locations', (survey) => (
+      <Button
+        variant='success'
+        className='w-full'
+        onClick={() => open(survey, 'addLocationsToPoolModal')}
+        disabled={isDisabled || !surveyPreset(survey.id)}
+      >
+        <Plus />
+      </Button>
+    )),
+    actionColumn('edit', 'Edit Locations', (survey) => (
+      <Button
+        variant='info'
+        className='w-full'
+        onClick={() => open(survey, 'editLocationPoolModal')}
+        disabled={isDisabled || !surveyPreset(survey.id)}
+      >
+        <Eye />
+      </Button>
+    )),
+    actionColumn('config', 'Configuration', (survey) => (
+      <Button
+        variant='primary'
+        className='w-full'
+        onClick={() => open(survey, 'configModal')}
+        disabled={isDisabled}
+      >
+        <Settings2 />
+      </Button>
+    )),
+  ];
 
   useEffect(() => {
     if (!modalToShow && selectedSurvey) {
@@ -188,33 +217,32 @@ export default function Surveys() {
   }, [modalToShow]);
 
   return (
-    <div className='mt-4 flex w-full flex-col gap-2'>
+    <div className='mt-4 flex w-full flex-col gap-4'>
       <h5 className='mb-0'>Surveys</h5>
+      <div className='flex flex-wrap items-center gap-2'>
+        <div className='relative min-w-72 flex-1'>
+          <SearchIcon className='pointer-events-none absolute inset-y-0 left-3 my-auto size-4 text-[#6c757d]' />
+          <Input
+            type='search'
+            aria-label='Search surveys'
+            placeholder='Survey name…'
+            className='pl-9'
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
       <DataTable
         storageKey='testing-surveys'
-        columns={columnsFromHeadings([
-          { content: 'Name', style: { width: '40%' }, sort: true },
-          { content: 'Use tests from other surveys' },
-          {
-            content: 'Add Locations',
-            style: { width: '120px' },
-            className: 'text-center',
-          },
-          {
-            content: 'Edit Locations',
-            style: { width: '120px' },
-            className: 'text-center',
-          },
-          {
-            content: 'Configuration',
-            style: { width: '120px' },
-            className: 'text-center',
-          },
-        ])}
-        data={cellRows(tableData)}
-        getRowId={(row) => row.id}
+        columns={columns}
+        data={visibleSurveys}
+        getRowId={(survey) => survey.id}
+        initialSorting={[{ id: 'createdAt', desc: true }]}
         pageSize={5}
-        emptyMessage='No surveys found'
+        emptyIcon={search ? SearchX : undefined}
+        emptyMessage={
+          search ? 'No surveys match these filters' : 'No surveys found'
+        }
       />
       {selectedSurvey && (
         <ConfigModal
