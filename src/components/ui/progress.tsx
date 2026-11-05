@@ -64,18 +64,25 @@ function Progress({
   className,
   children,
   style,
+  label,
   ...barProps
 }: ProgressBarProps & { children?: React.ReactNode }) {
   return (
     <div
       data-slot='progress'
       className={cn(
-        'flex h-4 overflow-hidden bg-secondary text-xs leading-none',
+        'relative flex h-4 overflow-hidden bg-secondary text-xs leading-none',
         className,
       )}
       style={style}
     >
       {children ?? <ProgressBar {...barProps} />}
+      {/* Over the whole track so a short bar doesn't clip it. */}
+      {label != null && (
+        <span className='absolute inset-0 flex items-center justify-center whitespace-nowrap text-white'>
+          {label}
+        </span>
+      )}
     </div>
   );
 }
