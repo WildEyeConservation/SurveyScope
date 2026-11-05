@@ -48,6 +48,9 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
     number | ''
   >('');
   const [removing, setRemoving] = useState(false);
+  // Remounts the buffer after a removal so it pages over the shortened list.
+  const [bufferKey, setBufferKey] = useState(0);
+  const [poolSetIds, setPoolSetIds] = useState<string[]>([]);
   const currentLocation = useRef<{
     locationId: string;
     annotationSetId: string;
@@ -55,6 +58,7 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
 
   const fetcher: FetcherType<LocationReferenceTask> = useCallback(async () => {
     const loc = locationsRef.current[locationIndexRef.current];
+    if (!loc) return null as unknown as LocationReferenceTask;
     locationIndexRef.current = locationIndexRef.current + 1;
     const id = crypto.randomUUID();
     return {
@@ -89,6 +93,9 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
         limit: 10000,
       } as any,
     )) as any[];
+    setPoolSetIds([
+      ...new Set(baseLocs.map((l) => l.annotationSetId as string)),
+    ]);
 
     // If no filters, keep as-is
     if (
@@ -192,6 +199,8 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
     }
   }, [index, locations]);
 
+  const filtered = !!selectedCategoryId || maxAnnotations !== '';
+
   async function handleRemove() {
     const loc = locations[index];
     if (!loc) return;
@@ -201,7 +210,12 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
       locationId: loc.locationId,
       annotationSetId: loc.annotationSetId,
     } as any);
-    await refreshLocations();
+    const remaining = locations.filter((_, i) => i !== index);
+    locationsRef.current = remaining;
+    locationIndexRef.current = 0;
+    setLocations(remaining);
+    setIndex(Math.max(0, Math.min(index, remaining.length - 1)));
+    setBufferKey((key) => key + 1);
     setRemoving(false);
   }
 
@@ -294,96 +308,120 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
             className='flex flex-col gap-4 px-4 pt-0 pb-4'
             style={{ height: '75vh' }}
           >
-            {loading ? (
-              <p className='flex items-center gap-2 p-2'>
-                <Spinner animation='border' size='sm' /> {loadedCount} locations
-                checked
-              </p>
-            ) : locations.length === 0 ? (
-              <p>No locations in this preset.</p>
-            ) : (
-              <div className='flex h-full flex-row gap-4'>
-                {/* Left controls column */}
-                <div
-                  className='mt-4 flex flex-col gap-4 border-r border-dark pe-4'
-                  style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
-                >
-                  <div className='flex flex-col gap-3 border border-white/15 bg-white/[0.07] p-3'>
-                    <div>
-                      <Label className='mb-1'>Label</Label>
-                      <NativeSelect
-                        value={pendingCategoryId}
-                        onChange={(e) => setPendingCategoryId(e.target.value)}
-                      >
-                        <option value=''>All labels</option>
-                        {locations[index] && (
-                          <CategoryOptions
-                            annotationSetId={locations[index].annotationSetId}
-                          />
-                        )}
-                      </NativeSelect>
-                    </div>
-                    <div>
-                      <Label className='mb-1'>Max annotations</Label>
-                      <Input
-                        type='number'
-                        min={0}
-                        placeholder='No limit'
-                        value={pendingMaxAnnotations}
-                        onChange={(e) =>
-                          setPendingMaxAnnotations(
-                            e.target.value === ''
-                              ? ''
-                              : Number(e.target.value) || '',
-                          )
-                        }
-                      />
-                    </div>
-                    <Button
-                      variant='primary'
-                      onClick={applyFilters}
-                      disabled={loading}
+            <div className='flex h-full flex-row gap-4'>
+              {/* Left controls column */}
+              <div
+                className='mt-4 flex flex-col gap-4 border-r border-dark pe-4'
+                style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
+              >
+                <div className='flex flex-col gap-3 border border-white/15 bg-white/[0.07] p-3'>
+                  <div>
+                    <Label className='mb-1'>Label</Label>
+                    <NativeSelect
+                      value={pendingCategoryId}
+                      onChange={(e) => setPendingCategoryId(e.target.value)}
                     >
-                      Apply filter
-                    </Button>
+                      <option value=''>All labels</option>
+                      {poolSetIds.map((setId) => (
+                        <CategoryOptions key={setId} annotationSetId={setId} />
+                      ))}
+                    </NativeSelect>
                   </div>
-                </div>
-
-                {/* Right image column */}
-                <div className='flex h-full w-full grow flex-col'>
-                  <div className='mt-4 h-full w-full'>
-                    <TaskBuffer
-                      index={index}
-                      setIndex={setIndex}
-                      fetcher={fetcher}
-                      preloadN={5}
-                      historyN={5}
-                      renderTask={(task) => (
-                        <LightLocationView {...task} location={task.location} />
-                      )}
+                  <div>
+                    <Label className='mb-1'>Max annotations</Label>
+                    <Input
+                      type='number'
+                      min={0}
+                      placeholder='No limit'
+                      value={pendingMaxAnnotations}
+                      onChange={(e) =>
+                        setPendingMaxAnnotations(
+                          e.target.value === ''
+                            ? ''
+                            : Number(e.target.value) || '',
+                        )
+                      }
                     />
                   </div>
-                  <div className='flex w-full flex-col gap-2 pt-4'>
-                    {locations[index] && (
-                      <a
-                        className={buttonVariants({ variant: 'outline-info' })}
-                        target='_blank'
-                        href={`/surveys/${surveyId}/location/${locations[index].locationId}/${locations[index].annotationSetId}`}
-                      >
-                        Edit Location
-                      </a>
-                    )}
+                  <Button
+                    variant='primary'
+                    onClick={applyFilters}
+                    disabled={loading}
+                  >
+                    Apply filter
+                  </Button>
+                  {filtered && (
                     <Button
-                      variant='danger'
-                      onClick={handleRemove}
-                      disabled={removing}
+                      variant='ghost'
+                      disabled={loading}
+                      onClick={() => {
+                        setPendingCategoryId('');
+                        setPendingMaxAnnotations('');
+                        setSelectedCategoryId('');
+                        setMaxAnnotations('');
+                      }}
                     >
-                      {removing ? 'Removing...' : 'Remove from pool'}
+                      Clear filters
                     </Button>
-                  </div>
+                  )}
                 </div>
               </div>
-            )}
+
+              {/* Right image column */}
+              <div className='flex h-full w-full grow flex-col'>
+                {loading ? (
+                  <p className='mt-4 flex items-center gap-2 p-2'>
+                    <Spinner animation='border' size='sm' /> {loadedCount}{' '}
+                    locations checked
+                  </p>
+                ) : locations.length === 0 ? (
+                  <p className='mt-4 p-2 text-muted-foreground'>
+                    {filtered
+                      ? 'No locations match these filters.'
+                      : 'No locations in this preset.'}
+                  </p>
+                ) : (
+                  <>
+                    <div className='mt-4 h-full w-full'>
+                      <TaskBuffer
+                        key={bufferKey}
+                        index={index}
+                        setIndex={setIndex}
+                        fetcher={fetcher}
+                        preloadN={5}
+                        historyN={5}
+                        renderTask={(task) => (
+                          <LightLocationView
+                            {...task}
+                            location={task.location}
+                          />
+                        )}
+                      />
+                    </div>
+                    <div className='flex w-full flex-col gap-2 pt-4'>
+                      {locations[index] && (
+                        <a
+                          className={buttonVariants({
+                            variant: 'outline-info',
+                          })}
+                          target='_blank'
+                          href={`/surveys/${surveyId}/location/${locations[index].locationId}/${locations[index].annotationSetId}`}
+                        >
+                          Edit Location
+                        </a>
+                      )}
+                      <Button
+                        variant='danger'
+                        onClick={handleRemove}
+                        disabled={removing}
+                      >
+                        {removing ? 'Removing...' : 'Remove from pool'}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         </Body>
         <Footer>
