@@ -663,9 +663,9 @@ export default function QCAnnotationReview({
         px2lngLat(0, image.height),
         px2lngLat(image.width, 0),
       );
-      // Temporarily fit to get the base zoom, then override.
-      m.fitBounds(imageBounds, { padding: 20, animate: false });
-      const baseZoom = m.getZoom();
+      // Measured without moving, so no whole-image tiles load.
+      const baseZoom =
+        m.cameraForBounds(imageBounds, { padding: 20 })?.zoom ?? m.getZoom();
       baseZoomRef.current = baseZoom;
       const targetZoom = baseZoom + zoomOffset;
 
@@ -1085,13 +1085,16 @@ export default function QCAnnotationReview({
         }}
       >
         <div className='flex items-center gap-4'>
-          <Badge variant='info'>{displayCategory?.name ?? 'Unknown'}</Badge>
+          <span className='flex items-center gap-2 text-sm'>
+            Reviewing:
+            <Badge variant='info'>{displayCategory?.name ?? 'Unknown'}</Badge>
+          </span>
           {reviewedCatId && (
             <Badge variant='success' style={{ fontSize: '11px' }}>
               Reviewed
             </Badge>
           )}
-          <span className='text-muted-foreground' style={{ fontSize: '12px' }}>
+          <span className='text-xs text-muted-foreground opacity-70'>
             Tip: Hold Tab to hide the marker
           </span>
         </div>
@@ -1277,8 +1280,7 @@ export default function QCAnnotationReview({
         <div className='flex items-center gap-2'>
           <Button
             className='flex items-center justify-center gap-1'
-            variant='primary'
-            style={{ width: 160 }}
+            variant='ghost'
             onClick={prev}
             disabled={!prev}
           >
