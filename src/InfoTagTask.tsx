@@ -17,6 +17,7 @@ import { useParams } from 'react-router-dom';
 import ClaimedInfoTagImage from './ClaimedInfoTagImage';
 import { GlobalContext, UserContext } from './Context';
 import { createInfoTagDelivery } from './infoTagDelivery';
+import { plural } from './survey/launchLabel';
 import { TaskBuffer } from './TaskBuffer';
 import { touchQueue } from './touchQueue';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
@@ -299,9 +300,14 @@ export default function InfoTagTask() {
         )}
       </div>
       <Badge className='flex w-full flex-row flex-wrap items-center justify-center gap-4 bg-secondary p-2'>
-        <p className='mb-0'>{imagesRemaining} images remaining</p>
+        <p className='mb-0'>
+          {imagesRemaining === '1' ? '1 image' : `${imagesRemaining} images`}{' '}
+          remaining
+        </p>
         <span className='hidden sm:block'>|</span>
-        <p className='mb-0'>{index} images completed in this session</p>
+        <p className='mb-0'>
+          {plural(index, 'image')} completed in this session
+        </p>
       </Badge>
     </div>
   );

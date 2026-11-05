@@ -3,6 +3,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { GlobalContext, UserContext } from '../Context';
+import { plural } from '../survey/launchLabel';
 
 type ProjectProgressProps = {
   projectId: string;
@@ -18,6 +19,7 @@ export default function ProjectProgress({
   const [isLoading, setIsLoading] = useState(true);
   const [queueInfo, setQueueInfo] = useState<{
     url: string;
+    infoTags: boolean;
     batchSize: number;
     totalBatches: number;
     launchedCount: number | null;
@@ -43,6 +45,7 @@ export default function ProjectProgress({
           {
             selectionSet: [
               'queues.url',
+              'queues.tag',
               'queues.batchSize',
               'queues.totalBatches',
               'queues.launchedCount',
@@ -69,6 +72,7 @@ export default function ProjectProgress({
       const emptyQueueTimestamp = q.emptyQueueTimestamp ?? null;
       setQueueInfo({
         url,
+        infoTags: q.tag === 'info-tags',
         batchSize,
         totalBatches,
         launchedCount,
@@ -127,6 +131,25 @@ export default function ProjectProgress({
   }
 
   const { batchSize, totalBatches } = queueInfo;
+  // Info-tag jobs hand out one image at a time, so count images.
+  if (
+    queueInfo.infoTags &&
+    queueInfo.launchedCount &&
+    !isScanning &&
+    !isPolling
+  ) {
+    return (
+      <div className='flex w-full flex-col'>
+        <p className='mb-0'>{plural(jobsRemaining, 'image')} remaining</p>
+        <Progress
+          value={queueInfo.launchedCount - jobsRemaining}
+          max={queueInfo.launchedCount}
+          animated
+          className='w-full'
+        />
+      </div>
+    );
+  }
   if (batchSize > 0) {
     const batchesRemaining = Math.ceil(jobsRemaining / batchSize);
     if (isScanning) {
@@ -161,7 +184,9 @@ export default function ProjectProgress({
     }
     return (
       <div className='flex w-full flex-col'>
-        <p className='mb-0'>{batchesRemaining} batches remaining</p>
+        <p className='mb-0'>
+          {plural(batchesRemaining, 'batch', 'batches')} remaining
+        </p>
         <Progress
           value={totalBatches - batchesRemaining}
           max={totalBatches}
