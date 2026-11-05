@@ -679,6 +679,8 @@ const schema = a
         testAnimals: a.integer().required(),
         totalMissedAnimals: a.integer().required(),
         passedOnTotal: a.boolean().required(),
+        // Set when per-label counts were recorded for every linked label.
+        labelsLinked: a.boolean(),
         categoryCounts: a.hasMany('TestResultCategoryCount', 'testResultId'),
         group: a.string(),
       })

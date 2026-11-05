@@ -130,7 +130,9 @@ export function resolveCategoryIdForSet(
   if (currentCategory.annotationSetId === targetSetId)
     return currentCategory.id;
   const sameName = categories.find(
-    (c) => c.annotationSetId === targetSetId && c.name === currentCategory.name,
+    (c) =>
+      c.annotationSetId === targetSetId &&
+      c.name.toLowerCase() === currentCategory.name.toLowerCase(),
   );
   if (sameName) return sameName.id;
   const unknown = categories.find(

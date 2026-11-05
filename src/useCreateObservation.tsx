@@ -25,6 +25,7 @@ interface UseCreateObservationProps {
   testPresetId?: string;
   /** The ephemeral set the user's test annotations were written to. */
   testSetId?: string;
+  labelNames?: string[];
   /** Queue ID persisted on the Observation for server-side progress aggregation. */
   queueId?: string;
   /** Stable SQS message identifier used to make Observation creation retry safe. */
@@ -44,6 +45,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     ack,
     testPresetId,
     testSetId,
+    labelNames,
     queueId,
     observationId,
     observationSource,
@@ -68,6 +70,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     annotationSetId,
     testSetId: isTest ? testSetId : undefined,
     testPresetId,
+    labelNames,
   });
 
   const newAck = useCallback(

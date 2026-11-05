@@ -1,6 +1,7 @@
 import { useCallback, useContext } from 'react';
 import { Schema } from './amplify/client-schema';
 import { GlobalContext, ProjectContext, UserContext } from './Context';
+import { hasModelField } from './modelFields';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 
 interface UseCreateTestResultProps {
@@ -9,6 +10,8 @@ interface UseCreateTestResultProps {
   /** The ephemeral set the user's test annotations were written to. */
   testSetId?: string;
   testPresetId?: string;
+  /** Job labels used for name-based scoring. */
+  labelNames?: string[];
 }
 
 /*
@@ -17,12 +20,15 @@ currentAnnoCount) against the expected per-category counts stored for the test
 location, and records a TestResult plus per-category counts. If the user
 already completed this test in the session (e.g. paged back to it), the
 existing result is updated instead of creating a duplicate.
+
+Only name-linked labels contribute to per-label accuracy; totals include all labels.
 */
 export default function useCreateTestResult({
   locationId,
   annotationSetId,
   testSetId,
   testPresetId,
+  labelNames,
 }: UseCreateTestResultProps) {
   const { project, categoriesHook, currentPM } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
@@ -102,6 +108,10 @@ export default function useCreateTestResult({
       0,
     );
 
+    const linkedFlag = (
+      hasModelField('TestResult', 'labelsLinked') ? { labelsLinked: true } : {}
+    ) as object;
+
     let testResult: Schema['TestResult']['type'];
     if (existingTestResult) {
       //update the test result
@@ -112,6 +122,7 @@ export default function useCreateTestResult({
           totalMissedAnimals: totalTestCounts - totalUserCounts,
           // Placeholder to satisfy current schema; not used for reporting
           passedOnTotal: false,
+          ...linkedFlag,
         },
       );
       testResult = updatedTestResult!;
@@ -127,6 +138,7 @@ export default function useCreateTestResult({
         // Placeholder to satisfy current schema; not used for reporting
         passedOnTotal: false,
         group: project.organizationId,
+        ...linkedFlag,
       });
       testResult = newTestResult!;
     }
@@ -136,56 +148,25 @@ export default function useCreateTestResult({
       return;
     }
 
-    // Track count of animals missed vs animals in tests, by category
-    if (userAnnotationsEntries.length > 0) {
-      for (const [categoryName, count] of userAnnotationsEntries) {
-        const category = categoryCounts.find(
-          (c) => c.category.name.toLowerCase() === categoryName,
-        );
-
-        if (!category) {
-          console.error('Category not found', categoryName);
-          continue;
-        }
-
-        if (existingTestResult) {
-          //update the test result category count
-          await client.models.TestResultCategoryCount.update({
-            testResultId: existingTestResult.id,
-            categoryName: categoryName,
-            userCount: count,
-            testCount: category.count || 0,
-          });
-        } else {
-          await client.models.TestResultCategoryCount.create({
-            testResultId: testResult.id,
-            categoryName: categoryName,
-            userCount: count,
-            testCount: category.count || 0,
-            group: project.organizationId,
-          });
-        }
-      }
-    } else {
-      // User missed all animals; create entries with userCount = 0
-      for (const categoryCount of categoryCounts) {
-        if (existingTestResult) {
-          //update the test result category count
-          await client.models.TestResultCategoryCount.update({
-            testResultId: existingTestResult.id,
-            categoryName: categoryCount.category.name,
-            userCount: 0,
-            testCount: categoryCount.count || 0,
-          });
-        } else {
-          await client.models.TestResultCategoryCount.create({
-            testResultId: testResult.id,
-            categoryName: categoryCount.category.name,
-            userCount: 0,
-            testCount: categoryCount.count || 0,
-            group: project.organizationId,
-          });
-        }
+    const jobLabels = new Set(labelNames?.map((name) => name.toLowerCase()));
+    const linked = categoryCounts.filter(
+      (c) => !jobLabels.size || jobLabels.has(c.category.name.toLowerCase()),
+    );
+    for (const c of linked) {
+      const counts = {
+        testResultId: testResult.id,
+        categoryName: c.category.name,
+        userCount: annotationCounts[c.category.name.toLowerCase()] ?? 0,
+        testCount: c.count ?? 0,
+      };
+      const { data: updated } = existingTestResult
+        ? await client.models.TestResultCategoryCount.update(counts)
+        : { data: null };
+      if (!updated) {
+        await client.models.TestResultCategoryCount.create({
+          ...counts,
+          group: project.organizationId,
+        });
       }
     }
 
@@ -212,5 +193,6 @@ export default function useCreateTestResult({
     annotationSetId,
     annotationSetToUse,
     testPresetId,
+    labelNames,
   ]);
 }

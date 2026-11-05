@@ -522,10 +522,11 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         projectId: project.id,
         x: xy.x,
         y: xy.y,
+        // Test marks must retain the labels shown in the legend.
         categoryId: resolveCategoryIdForSet(
           currentCategory,
-          projectCategories ?? [],
-          location.annotationSetId,
+          [...(categories ?? []), ...(projectCategories ?? [])],
+          categories?.[0]?.annotationSetId ?? location.annotationSetId,
         ),
         source,
         obscured: false,
@@ -590,6 +591,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     menu,
     currentCategory,
     projectCategories,
+    categories,
     source,
     setId,
     project,

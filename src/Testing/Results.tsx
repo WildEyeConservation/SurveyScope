@@ -37,6 +37,7 @@ import {
 import { neutraliseCsvRows } from '../../shared/csv';
 import { useUsers } from '../apiInterface';
 import { GlobalContext, TestingContext } from '../Context';
+import { hasModelField } from '../modelFields';
 import { fetchAllPaginatedResults } from '../utils';
 import {
   resolveStatsQuery,
@@ -55,6 +56,7 @@ type TestResult = {
   locationId: string;
   annotationSetId: string;
   testPreset: { name: string; ownerProjectId?: string | null };
+  labelsLinked?: boolean | null;
   categoryCounts: {
     categoryName: string;
     userCount: number;
@@ -151,6 +153,9 @@ export default function Results() {
                 'categoryCounts.categoryName',
                 'categoryCounts.userCount',
                 'categoryCounts.testCount',
+                ...(hasModelField('TestResult', 'labelsLinked')
+                  ? ['labelsLinked' as 'id']
+                  : []),
               ],
             },
           ),
@@ -282,6 +287,12 @@ export default function Results() {
   })();
 
   const differences = new Map(labelAccuracy.map((l) => [l.name, l.difference]));
+  // Test animals whose label the job lacks have no per-label count.
+  const unmatchedTests = focus.filter(
+    (r) =>
+      r.labelsLinked &&
+      r.categoryCounts.reduce((sum, c) => sum + c.testCount, 0) < r.testAnimals,
+  ).length;
 
   // Leaves room past the longest bar for its name.
   const accuracyDomain = (() => {
@@ -749,6 +760,13 @@ export default function Results() {
                       </Bar>
                     </BarChart>
                   </ChartContainer>
+                  {unmatchedTests > 0 && (
+                    <div className='text-xs text-muted-foreground'>
+                      {unmatchedTests} test
+                      {unmatchedTests === 1 ? ' was' : 's were'} left out due to
+                      unmatched labels.
+                    </div>
+                  )}
                 </ChartCard>
               </div>
             </>

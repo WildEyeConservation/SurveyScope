@@ -85,6 +85,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     hideNavButtons,
     embedded,
   } = props;
+  const labelNames = useMemo(() => categories.map((c) => c.name), [categories]);
   const { onNext, waiting, waitingMessage } = useTaskCompletion({
     location,
     ack,
@@ -93,6 +94,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     isTest,
     testPresetId,
     testSetId,
+    labelNames,
     queueId,
     observationId,
     observationSource,
@@ -212,6 +214,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   }, [surveyId]);
   const [isFalseNegativesJob, setIsFalseNegativesJob] =
     useState<boolean>(false);
+  const [jobSetId, setJobSetId] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     async function checkQueue() {
@@ -225,8 +228,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
           return;
         }
         const { data: q } = await client.models.Queue.get({ id: queueId });
-        if (!cancelled)
+        if (!cancelled) {
           setIsFalseNegativesJob((q?.name ?? '') === 'False Negatives');
+          setJobSetId(q?.annotationSetId ?? null);
+        }
       } catch {
         if (!cancelled) setIsFalseNegativesJob(false);
       }
@@ -276,11 +281,17 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     });
   };
 
-  // A test's annotation set may belong to another project, in which case its
-  // categories must be fetched by set id for the legend, hotkeys and icons.
+  // Use job labels to avoid revealing test answers.
+  const legendSetId = isTest ? (jobSetId ?? '') : annotationSetId;
+
+  // Fetch cross-project categories by annotation set.
   useEffect(() => {
     let cancelled = false;
     async function ensureCategories() {
+      if (isTest) {
+        setLegendCategories(projectCategories ?? null);
+        return;
+      }
       try {
         const { data: annSet } = await client.models.AnnotationSet.get({
           id: annotationSetId,
@@ -317,7 +328,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [client, annotationSetId, surveyId, projectCategories]);
+  }, [client, annotationSetId, surveyId, projectCategories, isTest]);
   const annotationsHook = useOptimisticUpdates<
     Schema['Annotation']['type'],
     'Annotation'
@@ -348,9 +359,9 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   const filteredCategories = useMemo(
     () =>
       (legendCategories ?? projectCategories)?.filter(
-        (c) => c.annotationSetId == annotationSetId,
+        (c) => c.annotationSetId == legendSetId,
       ) ?? [],
-    [legendCategories, projectCategories, annotationSetId],
+    [legendCategories, projectCategories, legendSetId],
   );
 
   async function handleShare() {
@@ -480,7 +491,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
           </div>
           <div className='flex flex-col items-center gap-4'>
             <SideLegend
-              annotationSetId={annotationSetId}
+              annotationSetId={legendSetId}
               categoriesOverride={legendCategories ?? undefined}
               collapsed={legendCollapsed}
               onToggleCollapse={toggleLegendCollapsed}
