@@ -2,7 +2,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PairCompletionState } from '../types';
-import { completionColor } from '../utils/completion';
+import {
+  ATTENTION_COLOR,
+  completionColor,
+  DONE_COLOR,
+} from '../utils/completion';
 import type { Lane } from '../utils/lanes';
 
 interface Props {
@@ -208,10 +212,33 @@ export function ProgressBar({
   const headerLeft = (() => {
     if (hover) {
       const lane = lanes[hover.lane];
-      const within = `Pair ${hover.local + 1} / ${lane.entries.length}`;
+      const state = states[lane.entries[hover.local]];
+      const status =
+        state?.status === 'incomplete'
+          ? `${state.remaining} of ${state.total} left`
+          : 'done';
+      const within = `Pair ${hover.local + 1} / ${lane.entries.length} · ${status}`;
       return multi ? `${lane.label} · ${within}` : within;
     }
-    return `${acceptedCount} / ${states.length} done`;
+    return (
+      <span className='flex items-center gap-3'>
+        {acceptedCount} / {states.length} done
+        <span className='flex items-center gap-1'>
+          <i
+            className='inline-block size-2 rounded-full'
+            style={{ background: DONE_COLOR }}
+          />
+          done
+        </span>
+        <span className='flex items-center gap-1'>
+          <i
+            className='inline-block size-2 rounded-full'
+            style={{ background: ATTENTION_COLOR }}
+          />
+          needs attention
+        </span>
+      </span>
+    );
   })();
 
   return (

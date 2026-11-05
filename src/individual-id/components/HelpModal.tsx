@@ -24,6 +24,7 @@ function DemoMarker({
   obscured = false,
   color = '#4F9DDE',
   seed = 'detweb-primary',
+  outline,
 }: {
   kind: MarkerKind;
   status?: 'pending' | 'accepted';
@@ -31,6 +32,7 @@ function DemoMarker({
   obscured?: boolean;
   color?: string;
   seed?: string;
+  outline?: string;
 }) {
   const size = 20;
   const shadows: string[] = [];
@@ -69,9 +71,11 @@ function DemoMarker({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: isShadow
-              ? '2px solid #ffffff'
-              : '1px solid rgba(0, 0, 0, 0.7)',
+            border: outline
+              ? `3px solid ${outline}`
+              : isShadow
+                ? '2px solid #ffffff'
+                : '1px solid rgba(0, 0, 0, 0.7)',
             opacity: isShadow ? 0.75 : 1,
             boxShadow: shadows.join(', '),
           }}
@@ -169,8 +173,8 @@ export function HelpModal({ show, onHide }: Props) {
               pattern (jdenticon) inside a dark border.
             </Row>
             <Row demo={<DemoMarker kind='secondary' />} label='Secondary'>
-              A real annotation that is already linked to a primary on the other
-              image. Dark border, no pattern — just a coloured dot.
+              A real annotation already linked into another annotation's
+              identity. Dark border, no pattern — just a coloured dot.
             </Row>
             <Row demo={<DemoMarker kind='shadow' />} label='Proposed'>
               A position the system predicts for the animal but with no
@@ -187,26 +191,30 @@ export function HelpModal({ show, onHide }: Props) {
             </Row>
           </Section>
 
-          <Section title='Markers from other labels'>
+          <Section title='Markers outside the task'>
             <Row
               demo={
                 <DemoMarker kind='primary' color='#E0A33D' seed='other-label' />
               }
               label='Informational marker'
             >
-              A marker in a <em>different colour</em> belongs to another label.
-              It is shown only so you can see that animal is already marked — it
-              is <strong>not part of this task</strong> and is ignored by
-              linking, accepting and pair completion. You can still drag it, or
-              use its popup to change its label or delete it. Changing its label
-              to the label you are working on promotes it into the workflow as a
-              normal marker.
+              A marker in its own label's colour belongs to another label. It is
+              shown only so you can see that animal is already marked — it is{' '}
+              <strong>not part of this task</strong> and is ignored by linking,
+              accepting and pair completion. You can still drag it, or use its
+              popup to change its label or delete it. Changing its label to the
+              label you are working on brings it (and the rest of its chain)
+              into the workflow as a normal marker.
             </Row>
+            <p style={{ opacity: 0.85, fontSize: 13, marginBottom: 0 }}>
+              Markers of your label that fall outside the other image's overlap
+              look normal but are left out of matching and pair completion too.
+            </p>
           </Section>
 
           <Section title='Selection & status'>
             <Row demo={<DemoMarker kind='primary' active />} label='Selected'>
-              Orange border — this is the active marker. Keyboard actions and
+              Orange ring — this is the active marker. Keyboard actions and
               manual links apply to it.
             </Row>
             <Row
@@ -214,6 +222,20 @@ export function HelpModal({ show, onHide }: Props) {
               label='Accepted'
             >
               Green ring — the pair is linked and counted. Done.
+            </Row>
+            <Row
+              demo={<DemoMarker kind='primary' outline='#a855f7' />}
+              label='Blocked link'
+            >
+              Purple border — a link was refused because it would merge two
+              chains that conflict. Press <strong>Esc</strong> to clear it.
+            </Row>
+            <Row
+              demo={<DemoMarker kind='primary' outline='#dc2626' />}
+              label='Duplicate'
+            >
+              Red border — this animal's chain already has another annotation on
+              the same image. One of them is likely a mistake.
             </Row>
           </Section>
 
@@ -244,8 +266,13 @@ export function HelpModal({ show, onHide }: Props) {
               </div>
             </div>
             <p style={{ opacity: 0.85, fontSize: 13 }}>
-              The zoom and rotate controls do the obvious thing and need no
-              explanation.
+              Clicking an empty spot adds a new annotation there and selects it.
+              Dragging a real marker saves its new position straight away; a
+              proposed marker's position is kept until you accept it. Hover a
+              marker for its popup: comment, view its chain, split the chain
+              from here, mark it obscured, change its label or delete it (just
+              this one or the whole chain). The image name at the top of each
+              map copies when clicked.
             </p>
           </Section>
 
@@ -271,20 +298,22 @@ export function HelpModal({ show, onHide }: Props) {
             <ol style={{ opacity: 0.9, fontSize: 14, paddingLeft: 18 }}>
               <li className='mb-2'>
                 Press <strong>Space</strong>. The next candidate becomes active
-                (orange) and both images pan to it. Drag the real marker and the
-                proposed marker to line them up precisely.
+                (orange), and the maps pan to it if it is off screen. Drag the
+                real marker and the proposed marker to line them up precisely.
               </li>
               <li className='mb-2'>
                 Press <strong>Space</strong> again to <strong>accept</strong>{' '}
                 the pair (green ring) — the two markers are now linked, and
-                focus advances to the next candidate.
+                focus moves to the nearest candidate that still needs attention.
               </li>
             </ol>
             <p style={{ opacity: 0.85, fontSize: 14 }}>
-              <strong>Manual linking:</strong> select a marker (orange active
-              border), then on the <em>other</em> image{' '}
-              <strong>Ctrl/⌘ + left-click</strong> a real marker to link the two
-              directly.
+              <strong>Manual linking:</strong> select a marker (orange ring),
+              then on the <em>other</em> image{' '}
+              <strong>Ctrl/⌘ + left-click</strong> a real marker. You are asked
+              to confirm, and the link is saved straight away. This works when
+              the selected marker has no real partner yet; two markers that are
+              both already real can't be re-linked this way.
             </p>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 6 }}>
               <strong>Keyboard shortcuts</strong>
@@ -309,35 +338,79 @@ export function HelpModal({ show, onHide }: Props) {
                 <strong>Esc</strong> — clear the focused candidate.
               </li>
               <li>
-                <strong>Hold Tab</strong> — hide all markers to see the imagery
-                underneath.
+                <strong>Hold Tab</strong> — hide all markers and overlays to see
+                the imagery underneath.
               </li>
               <li>
-                <strong>Ctrl+←/→</strong> — previous or next image pair.
+                <strong>Ctrl+←/→</strong> — previous or next image pair in the
+                current camera row.
+              </li>
+            </ul>
+          </Section>
+
+          <Section title='Toolbar'>
+            <ul
+              style={{
+                opacity: 0.9,
+                fontSize: 14,
+                paddingLeft: 18,
+                marginBottom: 0,
+              }}
+            >
+              <li>
+                <strong>Help</strong> opens this guide;{' '}
+                <strong>collapse</strong> hides the toolbar's details and the
+                progress bar.
+              </li>
+              <li>
+                <strong>Arrows</strong> move to the previous or next image pair.
+              </li>
+              <li>
+                <strong>Matches accepted</strong> counts this pair's accepted
+                matches.
+              </li>
+              <li>
+                <strong>Pairing settings</strong> set the pairing radius: a
+                match is only proposed when its partner lands within this many
+                image pixels. The active marker shows a ring at that radius.
+              </li>
+              <li>
+                <strong>Edit homography</strong> opens this pair's alignment for
+                fixing; <strong>Share</strong> copies a link to this pair.
+              </li>
+              <li>
+                <strong>Save &amp; Exit</strong> returns to Jobs. Accepted links
+                are already saved.
               </li>
             </ul>
           </Section>
 
           <Section title='Navigating pairs'>
             <p style={{ opacity: 0.85, fontSize: 14 }}>
-              Move freely between image pairs with the{' '}
-              <strong>←/→ arrow buttons</strong> in the toolbar, or by clicking
-              a pair marker in the <strong>progress bar</strong> below it. Your
-              changes are always preserved when you move.
+              Move between image pairs with the toolbar arrows, or click a dot
+              in the <strong>progress bar</strong>: green pairs are done, yellow
+              ones still need attention, and a white outline marks the current
+              pair. There is a row for each camera, plus rows for pairs that
+              span two cameras.
+            </p>
+            <p style={{ opacity: 0.85, fontSize: 14 }}>
+              Accepted links are saved as you go. If you leave a pair with
+              matches you haven't accepted, you'll be asked to confirm, and
+              those matches won't be linked.
             </p>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
-              <strong>Simple view</strong> is on by default: it shows only the
-              pairs that still need your attention, plus the three pairs on each
-              side for continuity. Turn it off to see every pair in the
-              transect.
+              <strong>Simple view</strong> is on by default: it shows the pairs
+              that still need your attention, the three pairs on each side, and
+              any pairs captured in between. Turn it off to see every pair in
+              the transect.
             </p>
           </Section>
 
           <Section title='Finishing a pair'>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
-              Once every marker pair on the current images is accepted, a dialog
-              appears offering to jump to the next pair that needs attention —
-              or you can choose to stay on the current pair.
+              When you finish a pair and another pair still needs attention, a
+              dialog offers to take you there — preferring an earlier pair you
+              skipped — or you can stay on the current pair.
             </p>
           </Section>
 
@@ -348,7 +421,8 @@ export function HelpModal({ show, onHide }: Props) {
               where an animal you were tracking may have reappeared after going
               out of view. If any are found a dialog appears (you can't skip it)
               and you're taken through them just like normal pairs — with an
-              orange banner at the top so you know which phase you're in.
+              orange banner at the top for the rest of the session so you know
+              which phase you're in.
             </p>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 0 }}>
               Finishing a reunion round may merge chains and expose new
@@ -362,8 +436,9 @@ export function HelpModal({ show, onHide }: Props) {
               Concurrency is handled by isolating transects. The transect you
               are looking at now is <strong>yours</strong> — no one else can
               touch it while you work. It is only released back to the worker
-              pool for someone else to continue if you are inactive for{' '}
-              <strong>30 minutes</strong>.
+              pool for someone else to continue if you go{' '}
+              <strong>30 minutes</strong> without clicking or typing (moving the
+              mouse doesn't count).
             </p>
           </Section>
         </DialogBody>

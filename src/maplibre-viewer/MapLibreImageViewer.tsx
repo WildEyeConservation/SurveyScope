@@ -33,6 +33,9 @@ export const POINT_COLORS = [
   '#dcbeff',
 ];
 
+export const PREVIEW_LINE_COLOR = '#00e5ff';
+export const SAVED_LINE_COLOR = '#ff3b30';
+
 const TILE_SIZE = 256;
 const SOURCE_POINTS = 'points';
 const LAYER_CIRCLES = 'points-circle';
@@ -362,7 +365,7 @@ export function MapLibreImageViewer({
         source: SOURCE_PREVIEW,
         filter: ['==', ['get', 'type'], 'grid'],
         paint: {
-          'line-color': '#00e5ff',
+          'line-color': PREVIEW_LINE_COLOR,
           'line-width': 1,
           'line-opacity': 0.4,
         },
@@ -374,7 +377,7 @@ export function MapLibreImageViewer({
         source: SOURCE_PREVIEW,
         filter: ['==', ['get', 'type'], 'outline'],
         paint: {
-          'line-color': '#00e5ff',
+          'line-color': PREVIEW_LINE_COLOR,
           'line-width': 3,
           'line-dasharray': [2, 1],
         },
@@ -395,7 +398,7 @@ export function MapLibreImageViewer({
         source: SOURCE_SAVED,
         filter: ['==', ['get', 'type'], 'grid'],
         paint: {
-          'line-color': '#ff3b30',
+          'line-color': SAVED_LINE_COLOR,
           'line-width': 1,
           'line-opacity': 0.4,
         },
@@ -407,7 +410,7 @@ export function MapLibreImageViewer({
         source: SOURCE_SAVED,
         filter: ['==', ['get', 'type'], 'outline'],
         paint: {
-          'line-color': '#ff3b30',
+          'line-color': SAVED_LINE_COLOR,
           'line-width': 3,
           'line-dasharray': [2, 1],
         },

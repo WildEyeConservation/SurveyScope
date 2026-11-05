@@ -1,6 +1,21 @@
 import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { useQueries } from '@tanstack/react-query';
-import { HelpCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  PencilRuler,
+  Settings2,
+  Share2,
+} from 'lucide-react';
 import * as maplibregl from 'maplibre-gl';
 import {
   useCallback,
@@ -1127,56 +1142,131 @@ function PairToolbar({
             }}
           >
             <Button
-              size='sm'
+              size='icon-sm'
               variant='info'
               onClick={() => setHelpOpen(true)}
               title='How ChainLinker works'
+              aria-label='How ChainLinker works'
             >
-              <HelpCircle size={16} style={{ verticalAlign: 'middle' }} />
+              <HelpCircle size={16} />
             </Button>
           </span>
           <Button
-            size='sm'
+            size='icon-sm'
             variant='outline-light'
             onClick={() => onCollapsedChange(!collapsed)}
             title={collapsed ? 'Expand' : 'Collapse'}
+            aria-label={collapsed ? 'Expand' : 'Collapse'}
           >
-            {collapsed ? '▴' : '▾'}
+            {collapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </Button>
           {onPrev && (
             <Button
+              size='icon-sm'
               onClick={onPrev}
               title='Previous image pair (Ctrl+←)'
-              size='sm'
+              aria-label='Previous image pair'
             >
-              ←
+              <ArrowLeft size={16} />
             </Button>
           )}
           {onNext && (
-            <Button size='sm' onClick={onNext} title='Next image pair (Ctrl+→)'>
-              →
+            <Button
+              size='icon-sm'
+              onClick={onNext}
+              title='Next image pair (Ctrl+→)'
+              aria-label='Next image pair'
+            >
+              <ArrowRight size={16} />
             </Button>
           )}
           {!collapsed && (
-            <span style={{ opacity: 0.85 }}>
-              {acceptedCount} / {candidatesCount} accepted
+            <span className='text-sm font-medium'>
+              {acceptedCount} of {candidatesCount}{' '}
+              {candidatesCount === 1 ? 'match' : 'matches'} accepted
             </span>
           )}
         </div>
         <div className='flex flex-row items-center gap-2'>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                size='icon-sm'
+                variant='outline-light'
+                title='Pairing settings'
+                aria-label='Pairing settings'
+              >
+                <Settings2 size={16} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              side='top'
+              align='end'
+              className='flex w-80 flex-col gap-2'
+            >
+              <label htmlFor='ii-leniency' className='mb-0 font-semibold'>
+                Pairing radius
+              </label>
+              <div className='flex items-center gap-2'>
+                <input
+                  id='ii-leniency'
+                  type='range'
+                  min={0}
+                  max={1000}
+                  step={10}
+                  value={leniency}
+                  onChange={(e) =>
+                    onLeniencyChange(parseInt(e.target.value, 10))
+                  }
+                  className='min-w-0 flex-1'
+                />
+                <input
+                  type='number'
+                  aria-label='Pairing radius in pixels'
+                  min={0}
+                  max={1000}
+                  step={1}
+                  value={leniency}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (Number.isNaN(n)) return;
+                    onLeniencyChange(Math.max(0, Math.min(1000, n)));
+                  }}
+                  style={{
+                    width: 64,
+                    background: '#3B4753',
+                    color: '#f8f9fa',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    padding: '2px 4px',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                />
+                <span className='text-xs'>px</span>
+              </div>
+              <p className='mb-0 text-xs text-muted-foreground'>
+                A match is only proposed when its partner projects within this
+                many image pixels. The active marker shows a ring at this
+                radius.
+              </p>
+            </PopoverContent>
+          </Popover>
           {editHomographyHref && (
             <Button
-              size='sm'
+              size='icon-sm'
               variant='outline-light'
               onClick={() => navigate(editHomographyHref)}
               title='Edit the homography for this image pair'
+              aria-label='Edit homography'
             >
-              Edit homography
+              <PencilRuler size={16} />
             </Button>
           )}
           <Button
-            size='sm'
+            size='icon-sm'
             variant='outline-light'
+            aria-label='Copy a link to this pair'
             onClick={async () => {
               // shareHref is a route path; expand to an absolute URL so the
               // clipboard payload is openable outside this tab.
@@ -1193,57 +1283,16 @@ function PairToolbar({
             }}
             title={shareCopied ? 'Link copied' : 'Copy a link to this pair'}
           >
-            {shareCopied ? 'Copied!' : 'Share'}
+            {shareCopied ? <Check size={16} /> : <Share2 size={16} />}
           </Button>
-          <Button size='sm' onClick={() => navigate('/jobs')}>
+          <Button
+            size='sm'
+            className='h-[31px]'
+            onClick={() => navigate('/jobs')}
+          >
             Save & Exit
           </Button>
         </div>
-      </div>
-      <div
-        className='ii-toolbar-centre flex flex-row items-center gap-2'
-        title='Munkres only proposes a match if the projected distance to a partner is below this many image pixels. The active marker shows a ring at this radius.'
-      >
-        <label
-          htmlFor='ii-leniency'
-          style={{ opacity: 0.8, fontSize: 11, marginBottom: 0 }}
-        >
-          Pairing radius
-        </label>
-        <input
-          id='ii-leniency'
-          type='range'
-          min={0}
-          max={1000}
-          step={10}
-          value={leniency}
-          onChange={(e) => onLeniencyChange(parseInt(e.target.value, 10))}
-          className='ii-toolbar-slider'
-        />
-        <input
-          type='number'
-          aria-label='Pairing radius in pixels'
-          min={0}
-          max={1000}
-          step={1}
-          value={leniency}
-          onChange={(e) => {
-            const n = parseInt(e.target.value, 10);
-            if (Number.isNaN(n)) return;
-            onLeniencyChange(Math.max(0, Math.min(1000, n)));
-          }}
-          style={{
-            width: 60,
-            background: '#3B4753',
-            color: '#f8f9fa',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-            borderRadius: 4,
-            fontSize: 12,
-            padding: '2px 4px',
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        />
-        <span style={{ opacity: 0.85, fontSize: 11 }}>px</span>
       </div>
       <HelpModal show={helpOpen} onHide={() => setHelpOpen(false)} />
     </div>

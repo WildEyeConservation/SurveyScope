@@ -1,11 +1,14 @@
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import { Redo2, Undo2 } from 'lucide-react';
 import type { Matrix } from 'mathjs';
 import { inv } from 'mathjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
+import {
+  PREVIEW_LINE_COLOR,
+  SAVED_LINE_COLOR,
+} from '../maplibre-viewer/MapLibreImageViewer';
 import type { ImageType } from '../schemaTypes';
 import { makeTransform } from '../utils';
 import {
@@ -20,6 +23,7 @@ type Props = {
   images: [ImageType, ImageType];
   onSave: (H: Matrix) => void;
   onSkip?: () => void;
+  onCancel?: () => void;
   onImagesReady?: () => void;
   isSaving?: boolean;
   isSkipping?: boolean;
@@ -53,6 +57,7 @@ export function HomographyWorkbench({
   images,
   onSave,
   onSkip,
+  onCancel,
   onImagesReady,
   isSaving = false,
   isSkipping = false,
@@ -215,6 +220,7 @@ export function HomographyWorkbench({
           setPoints2={setPoints2}
           onSave={onSave}
           onSkip={onSkip}
+          onCancel={onCancel}
           onAction={recordAction}
           isSaving={isSaving}
           isSkipping={isSkipping}
@@ -224,61 +230,59 @@ export function HomographyWorkbench({
 
       {/* Main content */}
       <div className='flex h-full w-full flex-col items-center'>
-        <div className='mb-2 flex w-full items-center'>
-          {/* Left: navigation */}
-          <div className='flex items-center gap-2'>{headerLeft}</div>
-
-          {/* Center: preview toggle + undo/redo */}
-          <div className='mx-auto flex items-center gap-4'>
-            <div className='flex items-center gap-2'>
-              <Switch
-                id='preview-homography'
-                checked={previewHomography}
-                onCheckedChange={setPreviewHomography}
-                disabled={!canPreview}
-              />
-              <Label htmlFor='preview-homography' className='mb-0'>
-                Preview
-              </Label>
-            </div>
-            {savedTransforms && (
-              <div className='flex items-center gap-2'>
-                <Switch
-                  id='view-saved-homography'
-                  checked={showSavedHomography}
-                  onCheckedChange={setShowSavedHomography}
-                />
-                <Label htmlFor='view-saved-homography' className='mb-0'>
-                  View saved homography (red)
-                </Label>
-              </div>
-            )}
-            <div className='flex items-center gap-1 border-l border-secondary ps-4'>
-              <Button
-                size='sm'
-                variant='outline-secondary'
-                onClick={undo}
-                disabled={history.length === 0}
-                title='Undo (Ctrl+Z)'
-                className='flex items-center p-1'
-              >
-                <Undo2 size={16} />
-              </Button>
-              <Button
-                size='sm'
-                variant='outline-secondary'
-                onClick={redo}
-                disabled={redoStack.length === 0}
-                title='Redo (Ctrl+Y / Ctrl+Shift+Z)'
-                className='flex items-center p-1'
-              >
-                <Redo2 size={16} />
-              </Button>
-            </div>
+        <div className='mb-2 flex w-full items-center gap-2'>
+          <div className='flex flex-1 items-center gap-2'>
+            {headerLeft}
+            <Button
+              size='icon-sm'
+              variant='outline-secondary'
+              onClick={undo}
+              disabled={history.length === 0}
+              title='Undo (Ctrl+Z)'
+              aria-label='Undo'
+            >
+              <Undo2 size={16} />
+            </Button>
+            <Button
+              size='icon-sm'
+              variant='outline-secondary'
+              onClick={redo}
+              disabled={redoStack.length === 0}
+              title='Redo (Ctrl+Y / Ctrl+Shift+Z)'
+              aria-label='Redo'
+            >
+              <Redo2 size={16} />
+            </Button>
           </div>
 
-          {/* Right: save & exit */}
-          <div className='flex items-center gap-2'>{headerRight}</div>
+          <div className='flex items-center gap-2'>
+            <span className='text-sm text-muted-foreground'>Show</span>
+            <OverlayChip
+              label='New fit'
+              color={PREVIEW_LINE_COLOR}
+              on={previewHomography}
+              onToggle={() => setPreviewHomography((on) => !on)}
+              disabled={!canPreview}
+              title={
+                canPreview
+                  ? 'The fit from your current points'
+                  : `Needs at least ${MIN_HOMOGRAPHY_POINTS} point pairs`
+              }
+            />
+            {savedTransforms && (
+              <OverlayChip
+                label='Saved'
+                color={SAVED_LINE_COLOR}
+                on={showSavedHomography}
+                onToggle={() => setShowSavedHomography((on) => !on)}
+                title='The homography saved for this pair'
+              />
+            )}
+          </div>
+
+          <div className='flex flex-1 items-center justify-end gap-2'>
+            {headerRight}
+          </div>
         </div>
         <MapLibrePairViewer
           onImagesReady={onImagesReady}
@@ -293,5 +297,36 @@ export function HomographyWorkbench({
         />
       </div>
     </div>
+  );
+}
+
+function OverlayChip(props: {
+  label: string;
+  color: string;
+  on: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+  title: string;
+}) {
+  return (
+    <button
+      type='button'
+      aria-pressed={props.on}
+      disabled={props.disabled}
+      title={props.title}
+      onClick={props.onToggle}
+      className={cn(
+        'inline-flex h-[31px] items-center gap-2 border px-3 text-sm transition-colors disabled:opacity-50',
+        props.on
+          ? 'border-primary bg-primary/20'
+          : 'border-white/30 enabled:hover:bg-white/10',
+      )}
+    >
+      <span
+        className='inline-block h-[3px] w-3.5'
+        style={{ background: props.color }}
+      />
+      {props.label}
+    </button>
   );
 }

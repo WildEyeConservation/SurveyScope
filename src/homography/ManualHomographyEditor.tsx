@@ -121,6 +121,7 @@ export function ManualHomographyEditor({
   setPoints2,
   onSave,
   onSkip,
+  onCancel,
   onAction,
   isSaving = false,
   isSkipping = false,
@@ -132,6 +133,7 @@ export function ManualHomographyEditor({
   setPoints2: (updater: Point[] | ((prev: Point[]) => Point[])) => void;
   onSave: (H: Matrix) => void;
   onSkip?: () => void;
+  onCancel?: () => void;
   onAction?: () => void;
   isSaving?: boolean;
   isSkipping?: boolean;
@@ -142,6 +144,13 @@ export function ManualHomographyEditor({
     points1.length >= MIN_HOMOGRAPHY_POINTS &&
     points2.length >= MIN_HOMOGRAPHY_POINTS &&
     points1.length === points2.length;
+  const pairCount = Math.min(points1.length, points2.length);
+  const saveHint =
+    canCompute || isSaved
+      ? null
+      : pairCount < MIN_HOMOGRAPHY_POINTS
+        ? `${pairCount} of ${MIN_HOMOGRAPHY_POINTS} point pairs needed to save`
+        : 'Place the matching point on the other image to save';
 
   const handleRemovePair = useCallback(
     (index: number) => {
@@ -416,9 +425,9 @@ export function ManualHomographyEditor({
               <div className='py-6 text-center text-sm opacity-50'>
                 <Circle size={24} className='mb-2 opacity-25' />
                 <p className='mb-0'>
-                  No points yet. Click on both
+                  No points yet. Click the same spot on
                   <br />
-                  images to begin matching.
+                  both images to add a point pair.
                 </p>
               </div>
             )}
@@ -459,22 +468,32 @@ export function ManualHomographyEditor({
               Saved
             </Badge>
           )}
-          <Button
-            size='sm'
-            onClick={handleSave}
-            disabled={!canCompute || isSaving}
-            className='mt-2 flex w-full items-center justify-center gap-2 py-2'
-            variant={
-              canCompute ? (isSaved ? 'warning' : 'primary') : 'secondary'
-            }
-          >
-            <Save size={16} />
-            {isSaving
-              ? 'Saving...'
-              : isSaved
-                ? 'Overwrite Homography'
-                : 'Save Homography'}
-          </Button>
+          <div className='mt-2 flex gap-2'>
+            {onCancel && (
+              <Button variant='ghost' onClick={onCancel} disabled={isSaving}>
+                Cancel
+              </Button>
+            )}
+            {/* Disabled buttons show no tooltip, so the wrapper carries it. */}
+            <span className='flex flex-1' title={saveHint ?? undefined}>
+              <Button
+                size='sm'
+                onClick={handleSave}
+                disabled={!canCompute || isSaving}
+                className='flex flex-1 items-center justify-center gap-2 py-2'
+                variant={
+                  canCompute ? (isSaved ? 'warning' : 'primary') : 'secondary'
+                }
+              >
+                <Save size={16} />
+                {isSaving
+                  ? 'Saving...'
+                  : isSaved
+                    ? 'Overwrite Homography'
+                    : 'Save Homography'}
+              </Button>
+            </span>
+          </div>
 
           {!isSaved && (
             <div className='border-t border-secondary pt-4'>

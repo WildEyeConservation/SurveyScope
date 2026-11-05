@@ -16,6 +16,9 @@ export function evaluatePairCompletion(
   };
 }
 
+export const DONE_COLOR = '#2ecc71';
+export const ATTENTION_COLOR = '#f1c40f';
+
 export function completionColor(state: PairCompletionState): string {
-  return state.status === 'incomplete' ? '#f1c40f' : '#2ecc71';
+  return state.status === 'incomplete' ? ATTENTION_COLOR : DONE_COLOR;
 }

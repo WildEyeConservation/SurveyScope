@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Matrix } from 'mathjs';
 import { inv, matrix } from 'mathjs';
@@ -261,16 +260,7 @@ export default function HomographyEditPage() {
           onPointsChange={handlePointsChange}
           isSaved={isSaved}
           savedTransforms={savedTransforms}
-          headerRight={
-            <Button
-              variant='outline-secondary'
-              size='sm'
-              onClick={goBack}
-              disabled={isSaving}
-            >
-              Cancel
-            </Button>
-          }
+          onCancel={goBack}
         />
       </div>
     </div>
