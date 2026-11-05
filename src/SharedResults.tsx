@@ -1,7 +1,9 @@
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { useContext, useEffect, useState } from 'react';
-import { GlobalContext, UserContext } from './Context.tsx';
-import { Card, Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
+import { GlobalContext, UserContext } from './Context.tsx';
+import PageHeader from './PageHeader';
 import { fetchAllPaginatedResults } from './utils.tsx';
 
 export default function SharedResults() {
@@ -16,7 +18,7 @@ export default function SharedResults() {
     async function fetchAnnotationSets() {
       const jollyResultsMemberships = await fetchAllPaginatedResults<any>(
         client.models.JollyResultsMembership.list as any,
-        { filter: { userId: { eq: user?.userId } }, limit: 10000 } as any
+        { filter: { userId: { eq: user?.userId } }, limit: 10000 } as any,
       );
       const annotationSets = await Promise.all(
         jollyResultsMemberships.map(async (result) => {
@@ -24,21 +26,26 @@ export default function SharedResults() {
             { id: result.annotationSetId },
             {
               selectionSet: ['id', 'name', 'projectId', 'project.name'],
-            }
+            },
           );
           return annotationSet;
-        })
+        }),
       );
       if (annotationSets) {
         setAnnotationSets(
           annotationSets
-            .filter((annotationSet): annotationSet is NonNullable<typeof annotationSet> => annotationSet !== null)
+            .filter(
+              (
+                annotationSet,
+              ): annotationSet is NonNullable<typeof annotationSet> =>
+                annotationSet !== null,
+            )
             .map((annotationSet) => ({
               id: annotationSet.id,
               name: annotationSet.name,
               projectId: annotationSet.projectId,
               projectName: annotationSet.project.name,
-            }))
+            })),
         );
       }
     }
@@ -52,21 +59,18 @@ export default function SharedResults() {
         width: '100%',
         maxWidth: '1555px',
         marginTop: '16px',
-        marginBottom: '16px',
+        paddingBottom: '16px',
+        alignSelf: 'flex-start',
       }}
     >
       <Card>
-        <Card.Header className='d-flex justify-content-between align-items-center gap-2'>
-          <Card.Title className='mb-0 w-100' style={{ maxWidth: '300px' }}>
-            <h4 className='mb-0'>Shared Results</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body className='d-flex flex-column gap-2'>
+        <PageHeader title='Shared Results' />
+        <CardContent className='flex flex-col gap-2'>
           {annotationSets.length > 0 ? (
             annotationSets.map((annotationSet) => (
               <div
                 key={annotationSet.id}
-                className='d-flex flex-row justify-content-between align-items-center gap-2 border border-dark p-3'
+                className='flex flex-row items-center justify-between gap-2 border border-dark p-4'
               >
                 <div>
                   <p className='mb-0'>Survey: {annotationSet.projectName}</p>
@@ -76,7 +80,7 @@ export default function SharedResults() {
                   variant='primary'
                   onClick={() => {
                     navigate(
-                      `/jolly/${annotationSet.projectId}/${annotationSet.id}`
+                      `/jolly/${annotationSet.projectId}/${annotationSet.id}`,
                     );
                   }}
                 >
@@ -87,7 +91,7 @@ export default function SharedResults() {
           ) : (
             <p>No results have been shared with you.</p>
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
     </div>
   );

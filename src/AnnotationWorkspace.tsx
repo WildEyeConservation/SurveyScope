@@ -1,33 +1,34 @@
-import { useMemo, useContext, useEffect, useRef, useState } from 'react';
-import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
-import { SideLegend } from './Legend';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { LogOut, RotateCcw, SearchCheck, Share2 } from 'lucide-react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   GlobalContext,
+  ImageContext,
   ProjectContext,
   UserContext,
-  ImageContext,
   type AnnotationsHook,
 } from './Context';
-import { useOptimisticUpdates } from './useOptimisticUpdates';
 import { ImageContextFromHook } from './ImageContext';
+import { SideLegend } from './Legend';
 import { Schema } from './amplify/client-schema';
-import useImageStats from './useImageStats';
-import { Badge, Button } from 'react-bootstrap';
-import { Share2, SearchCheck, RotateCcw, LogOut } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
-import MapLibreAnnotator from './annotator/MapLibreAnnotator';
-import { useImageInfoTags } from './useInfoTags';
-import type { CategoryType } from './schemaTypes';
 import type {
   AnnotationLocation,
   AnnotationWorkspaceProps,
   TaskAcknowledgement,
 } from './annotationTypes';
+import MapLibreAnnotator from './annotator/MapLibreAnnotator';
 import {
   publishSharedDefaultZoom,
   storedDefaultZoom,
   subscribeToSharedDefaultZoom,
 } from './defaultZoomEvents';
+import type { CategoryType } from './schemaTypes';
+import useImageStats from './useImageStats';
+import { useImageInfoTags } from './useInfoTags';
+import { useOptimisticUpdates } from './useOptimisticUpdates';
+import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
 
 interface AnnotationSessionProps {
   location: AnnotationLocation;
@@ -51,6 +52,7 @@ interface AnnotationSessionProps {
   hideFnAnnotations?: boolean;
   showMapLegend?: boolean;
   infoTags?: Map<string, string[]>;
+  embedded?: boolean;
 }
 
 /*
@@ -81,7 +83,9 @@ function AnnotationSession(props: AnnotationSessionProps) {
     zoom,
     viewBoundsScale,
     hideNavButtons,
+    embedded,
   } = props;
+  const labelNames = useMemo(() => categories.map((c) => c.name), [categories]);
   const { onNext, waiting, waitingMessage } = useTaskCompletion({
     location,
     ack,
@@ -90,6 +94,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     isTest,
     testPresetId,
     testSetId,
+    labelNames,
     queueId,
     observationId,
     observationSource,
@@ -103,7 +108,8 @@ function AnnotationSession(props: AnnotationSessionProps) {
         visible={visible}
         zoom={zoom}
         viewBoundsScale={viewBoundsScale}
-        next={onNext}
+        // Embedded viewers browse images; they don't complete queue tasks.
+        next={embedded ? next : onNext}
         prev={prev}
         hideNavButtons={hideNavButtons}
         stats={stats}
@@ -115,6 +121,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
         hideFnAnnotations={hideFnAnnotations}
         showMapLegend={showMapLegend}
         infoTags={infoTags}
+        embedded={embedded}
       />
       {waiting && <WaitingOverlay message={waitingMessage} />}
     </div>
@@ -139,6 +146,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     revalidate,
     taskTag,
     viewBoundsScale,
+    embedded = false,
   } = props;
 
   const { annotationSetId } = location;
@@ -190,7 +198,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   const { surveyId } = useParams();
   // Read localStorage synchronously so tiles are never loaded at the wrong zoom.
   const [defaultZoom, setDefaultZoom] = useState<number | null>(
-    () => storedDefaultZoom(surveyId) ?? zoom ?? null
+    () => storedDefaultZoom(surveyId) ?? zoom ?? null,
   );
 
   // TaskBuffer keeps upcoming workspaces mounted. Synchronize a shared zoom
@@ -201,17 +209,18 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         if (updatedSurveyId === surveyId) {
           setDefaultZoom(updatedZoom);
         }
-      }
+      },
     );
   }, [surveyId]);
   const [isFalseNegativesJob, setIsFalseNegativesJob] =
     useState<boolean>(false);
+  const [jobSetId, setJobSetId] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     async function checkQueue() {
       try {
         const membership = myMembershipHook.data?.find(
-          (membership) => membership.projectId === surveyId
+          (membership) => membership.projectId === surveyId,
         );
         const queueId = membership?.queueId;
         if (!queueId) {
@@ -219,8 +228,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
           return;
         }
         const { data: q } = await client.models.Queue.get({ id: queueId });
-        if (!cancelled)
+        if (!cancelled) {
           setIsFalseNegativesJob((q?.name ?? '') === 'False Negatives');
+          setJobSetId(q?.annotationSetId ?? null);
+        }
       } catch {
         if (!cancelled) setIsFalseNegativesJob(false);
       }
@@ -233,7 +244,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
 
   const testSetId = useMemo(
     () => (isTest ? crypto.randomUUID() : annotationSetId),
-    [isTest, annotationSetId]
+    [isTest, annotationSetId],
   );
   const {
     project,
@@ -270,11 +281,17 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     });
   };
 
-  // A test's annotation set may belong to another project, in which case its
-  // categories must be fetched by set id for the legend, hotkeys and icons.
+  // Use job labels to avoid revealing test answers.
+  const legendSetId = isTest ? (jobSetId ?? '') : annotationSetId;
+
+  // Fetch cross-project categories by annotation set.
   useEffect(() => {
     let cancelled = false;
     async function ensureCategories() {
+      if (isTest) {
+        setLegendCategories(projectCategories ?? null);
+        return;
+      }
       try {
         const { data: annSet } = await client.models.AnnotationSet.get({
           id: annotationSetId,
@@ -300,7 +317,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         console.error(
           'Failed to ensure categories for annotation set',
           annotationSetId,
-          e
+          e,
         );
         if (!cancelled) {
           setLegendCategories(projectCategories ?? null);
@@ -311,7 +328,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     return () => {
       cancelled = true;
     };
-  }, [client, annotationSetId, surveyId, projectCategories]);
+  }, [client, annotationSetId, surveyId, projectCategories, isTest]);
   const annotationsHook = useOptimisticUpdates<
     Schema['Annotation']['type'],
     'Annotation'
@@ -320,9 +337,9 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     async (nextToken: string | null | undefined) =>
       client.models.Annotation.annotationsByImageIdAndSetId(
         { imageId: location.image.id, setId: { eq: location.annotationSetId } },
-        { limit: 10000, nextToken }
+        { limit: 10000, nextToken },
       ),
-    subscriptionFilter
+    subscriptionFilter,
   ) as unknown as AnnotationsHook;
   const stats = useImageStats(annotationsHook);
 
@@ -336,15 +353,15 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   // ephemeral set, so there is nothing to look up there.
   const infoTagsByAnnotation = useImageInfoTags(
     location.image.id,
-    annotationSetId
+    annotationSetId,
   );
 
   const filteredCategories = useMemo(
     () =>
       (legendCategories ?? projectCategories)?.filter(
-        (c) => c.annotationSetId == annotationSetId
+        (c) => c.annotationSetId == legendSetId,
       ) ?? [],
-    [legendCategories, projectCategories, annotationSetId]
+    [legendCategories, projectCategories, legendSetId],
   );
 
   async function handleShare() {
@@ -375,6 +392,32 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     }
   }
 
+  const session = (
+    <AnnotationSession
+      stats={stats}
+      visible={visible}
+      location={location}
+      zoom={defaultZoom ?? undefined}
+      viewBoundsScale={viewBoundsScale}
+      prev={prev}
+      next={next}
+      ack={ack}
+      hideNavButtons={hideNavButtons}
+      testPresetId={testPresetId}
+      isTest={isTest}
+      testSetId={testSetId}
+      queueId={queueId}
+      observationId={observationId}
+      observationSource={source}
+      allowOutside={allowOutside}
+      categories={filteredCategories}
+      hideFnAnnotations={!isFalseNegativesJob}
+      showMapLegend={embedded || legendCollapsed}
+      infoTags={infoTagsByAnnotation}
+      embedded={embedded}
+    />
+  );
+
   return (
     <ImageContextFromHook
       hook={annotationsHook}
@@ -386,125 +429,108 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         localAnnotationCreated.current = true;
       }}
     >
-      <div
-        className={`d-flex flex-md-row flex-column w-100 h-100 gap-3 overflow-auto ${
-          legendCollapsed ? 'legend-collapsed' : 'justify-content-center'
-        }`}
-      >
+      {embedded ? (
+        session
+      ) : (
         <div
-          className={`d-flex flex-column ${
-            legendCollapsed ? 'align-items-stretch' : 'align-items-center'
-          } w-100 h-100 gap-3`}
-          style={{
-            maxWidth: legendCollapsed ? 'none' : '1024px',
-            flex: legendCollapsed ? 1 : undefined,
-          }}
+          className={`flex h-full w-full flex-col gap-4 overflow-auto md:flex-row ${
+            legendCollapsed ? 'legend-collapsed' : 'justify-center'
+          }`}
         >
           <div
-            className='d-flex flex-row justify-content-center align-items-center w-100 gap-3 overflow-hidden'
-            style={{ position: 'relative', height: '26px' }}
+            className={`flex flex-col ${
+              legendCollapsed ? 'items-stretch' : 'items-center'
+            } h-full w-full min-w-0 gap-4`}
+            style={{
+              maxWidth: legendCollapsed ? 'none' : '1024px',
+              flex: legendCollapsed ? 1 : undefined,
+            }}
           >
             <div
-              className='d-flex flex-row gap-2'
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-              }}
+              className='flex w-full flex-row items-center justify-center gap-4 overflow-hidden'
+              style={{ position: 'relative', height: '26px' }}
             >
-              <Share2
-                size={24}
-                onClick={!isTest ? handleShare : undefined}
-                style={{ cursor: 'pointer' }}
-              />
-            </div>
-            {visible && (
-              <>
-                <Badge bg='secondary'>
-                  Working on:{' '}
-                  {taskTag || currentTaskTag
-                    ? `${taskTag || currentTaskTag}`
-                    : 'Viewing image'}
-                </Badge>
-                {!hideZoomSetting && (
-                  <SetDefaultZoom
-                    setDefaultZoom={setDefaultZoom}
-                    originalZoom={zoom ?? null}
-                    adminMemberships={myMembershipHook.data
-                      ?.filter((membership) => membership.isAdmin)
-                      .map((membership) => ({
-                        projectId: membership.projectId,
-                        queueId: membership.queueId!,
-                      }))}
-                  />
-                )}
-              </>
-            )}
-          </div>
-          <AnnotationSession
-            stats={stats}
-            visible={visible}
-            location={location}
-            zoom={defaultZoom ?? undefined}
-            viewBoundsScale={viewBoundsScale}
-            prev={prev}
-            next={next}
-            ack={ack}
-            hideNavButtons={hideNavButtons}
-            testPresetId={testPresetId}
-            isTest={isTest}
-            testSetId={testSetId}
-            queueId={queueId}
-            observationId={observationId}
-            observationSource={source}
-            allowOutside={allowOutside}
-            categories={filteredCategories}
-            hideFnAnnotations={!isFalseNegativesJob}
-            showMapLegend={legendCollapsed}
-            infoTags={infoTagsByAnnotation}
-          />
-        </div>
-        <div className='d-flex flex-column align-items-center gap-3'>
-          <SideLegend
-            annotationSetId={annotationSetId}
-            categoriesOverride={legendCategories ?? undefined}
-            collapsed={legendCollapsed}
-            onToggleCollapse={toggleLegendCollapsed}
-          />
-          {isAnnotatePath &&
-            (legendCollapsed ? (
-              <Button
-                variant='success'
-                onClick={() => navigate('/jobs')}
-                className='d-none d-md-flex align-items-center justify-content-center'
-                style={{ width: '40px', height: '40px', padding: 0 }}
-                title='Save & Exit'
+              <div
+                className='flex flex-row gap-2'
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                }}
               >
-                <LogOut size={20} />
-              </Button>
-            ) : (
-              <div className='d-none d-md-block w-100 ps-2'>
+                <Share2
+                  size={24}
+                  onClick={!isTest ? handleShare : undefined}
+                  style={{ cursor: 'pointer' }}
+                />
+              </div>
+              {visible && (
+                <>
+                  <Badge variant='secondary'>
+                    Working on:{' '}
+                    {taskTag || currentTaskTag
+                      ? `${taskTag || currentTaskTag}`
+                      : 'Viewing image'}
+                  </Badge>
+                  {!hideZoomSetting && (
+                    <SetDefaultZoom
+                      setDefaultZoom={setDefaultZoom}
+                      originalZoom={zoom ?? null}
+                      adminMemberships={myMembershipHook.data
+                        ?.filter((membership) => membership.isAdmin)
+                        .map((membership) => ({
+                          projectId: membership.projectId,
+                          queueId: membership.queueId!,
+                        }))}
+                    />
+                  )}
+                </>
+              )}
+            </div>
+            {session}
+          </div>
+          <div className='flex flex-col items-center gap-4'>
+            <SideLegend
+              annotationSetId={legendSetId}
+              categoriesOverride={legendCategories ?? undefined}
+              collapsed={legendCollapsed}
+              onToggleCollapse={toggleLegendCollapsed}
+            />
+            {isAnnotatePath &&
+              (legendCollapsed ? (
                 <Button
                   variant='success'
                   onClick={() => navigate('/jobs')}
-                  className='d-none d-md-block w-100'
+                  className='hidden items-center justify-center md:flex'
+                  style={{ width: '40px', height: '40px', padding: 0 }}
+                  title='Save & Exit'
                 >
-                  Save & Exit
+                  <LogOut size={20} />
                 </Button>
-              </div>
-            ))}
-          {/* Mobile-only Save & Exit; the pair above is hidden below md. */}
-          {isAnnotatePath && (
-            <Button
-              variant='success'
-              onClick={() => navigate('/jobs')}
-              className='w-100 d-md-none'
-            >
-              Save & Exit
-            </Button>
-          )}
+              ) : (
+                <div className='hidden w-full ps-2 md:block'>
+                  <Button
+                    variant='success'
+                    onClick={() => navigate('/jobs')}
+                    className='hidden w-full md:block'
+                  >
+                    Save & Exit
+                  </Button>
+                </div>
+              ))}
+            {/* Mobile-only Save & Exit; the pair above is hidden below md. */}
+            {isAnnotatePath && (
+              <Button
+                variant='success'
+                onClick={() => navigate('/jobs')}
+                className='w-full md:hidden'
+              >
+                Save & Exit
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </ImageContextFromHook>
   );
 }
@@ -541,12 +567,12 @@ function SetDefaultZoom({
   const saveDefaultZoom = async () => {
     if (!storedZoom) {
       const currentProjectMembership = adminMemberships.find(
-        (membership) => membership.projectId === surveyId!
+        (membership) => membership.projectId === surveyId!,
       );
 
       if (currentProjectMembership) {
         const result = window.prompt(
-          'Set as default zoom for all users on this job? (y/n)'
+          'Set as default zoom for all users on this job? (y/n)',
         );
 
         if (result === null) {
@@ -590,7 +616,7 @@ function SetDefaultZoom({
 
   return (
     <button
-      className='p-0 m-0 border-0 bg-transparent d-flex align-items-center text-white'
+      className='m-0 flex items-center border-0 bg-transparent p-0 text-white'
       style={{
         position: 'absolute',
         top: 0,
@@ -599,7 +625,7 @@ function SetDefaultZoom({
       onClick={saveDefaultZoom}
     >
       {storedZoom ? <RotateCcw size={24} /> : <SearchCheck size={24} />}
-      <span className='ms-2 mb-0 d-none d-md-block'>
+      <span className='ms-2 mb-0 hidden md:block'>
         {storedZoom ? 'Reset zoom' : 'Set as default zoom'}
       </span>
     </button>

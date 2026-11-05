@@ -1,11 +1,12 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   encodeHeader,
   HEADER_GUESS_BYTES,
   pyramid,
   type TilePackMeta,
 } from '../../shared/tilePack';
+import type { TileRequestTiming } from './tileLoadStats';
 import {
   isAbort,
   makeLimiter,
@@ -15,18 +16,17 @@ import {
   TilePackRequestFailed,
   type TilePackAccess,
 } from './tilePackReader';
-import type { TileRequestTiming } from './tileLoadStats';
 
 // Tile `i` is `lengthOf(i)` bytes, each of value `i % 251`.
 function buildPack(
   meta: TilePackMeta,
-  lengthOf: (index: number) => number = () => 4
+  lengthOf: (index: number) => number = () => 4,
 ) {
   const { tileCount } = pyramid(meta);
   const lengths = Array.from({ length: tileCount }, (_, i) => lengthOf(i));
   const header = encodeHeader(meta, lengths);
   const file = new Uint8Array(
-    header.length + lengths.reduce((a, b) => a + b, 0)
+    header.length + lengths.reduce((a, b) => a + b, 0),
   );
   file.set(header, 0);
   let offset = header.length;
@@ -58,7 +58,7 @@ function storage(file: Uint8Array, expired: string[] = []) {
   const fetchFn: typeof fetch = async (input, init) => {
     const url = String(input);
     const range = /^bytes=(\d+)-(\d+)$/.exec(
-      new Headers(init?.headers).get('Range') ?? ''
+      new Headers(init?.headers).get('Range') ?? '',
     );
     if (!range) throw new Error('Expected a range request');
     const first = Number(range[1]);
@@ -88,7 +88,7 @@ function storage(file: Uint8Array, expired: string[] = []) {
 
 const access = (
   url: string,
-  expiresAt = Number.MAX_SAFE_INTEGER
+  expiresAt = Number.MAX_SAFE_INTEGER,
 ): TilePackAccess => ({ url, expiresAt });
 const never = async (): Promise<TilePackAccess> => {
   throw new Error('No refresh expected');
@@ -204,7 +204,7 @@ test('renews once on 403 and retries; concurrent reads share the renewal', async
   // Header twice (refused, then renewed), then both adjacent tiles at once.
   assert.deepEqual(
     store.calls.map((c) => c.url),
-    ['old', 'new', 'new']
+    ['old', 'new', 'new'],
   );
 });
 
@@ -236,7 +236,7 @@ test('renews a URL about to expire before using it', async () => {
   await pack.header();
   assert.deepEqual(
     store.calls.map((c) => c.url),
-    ['new']
+    ['new'],
   );
 });
 
@@ -428,7 +428,8 @@ test('merges adjacent tiles requested together and splits non-adjacent ones', as
     [0],
   ]);
   const offsetOf = (index: number) =>
-    headerLength + Array.from({ length: index }, (_, i) => i + 1).reduce((a, b) => a + b, 0);
+    headerLength +
+    Array.from({ length: index }, (_, i) => i + 1).reduce((a, b) => a + b, 0);
   assert.deepEqual(store.calls.slice(1), [
     { url: 'u', first: offsetOf(0), last: offsetOf(0) },
     { url: 'u', first: offsetOf(3), last: offsetOf(5) - 1 },
@@ -446,7 +447,9 @@ test('asks for the header size it was given', async () => {
     headerGuessBytes: headerLength + 10,
   });
   await pack.header();
-  assert.deepEqual(store.calls, [{ url: 'u', first: 0, last: headerLength + 9 }]);
+  assert.deepEqual(store.calls, [
+    { url: 'u', first: 0, last: headerLength + 9 },
+  ]);
 });
 
 test('an aborted tile rejects without cancelling bytes others still need', async () => {
@@ -515,8 +518,10 @@ test('a merged read reports its timing to every caller waiting on it', async () 
   });
   await pack.header();
   const seen: Record<string, number[]> = { a: [], b: [] };
-  const record = (task: string) => ({ bytes }: { bytes: number }) =>
-    seen[task].push(bytes);
+  const record =
+    (task: string) =>
+    ({ bytes }: { bytes: number }) =>
+      seen[task].push(bytes);
   const a = record('a');
   await Promise.all([
     pack.tile(2, 0, 0, undefined, a),

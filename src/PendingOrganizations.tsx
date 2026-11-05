@@ -1,18 +1,22 @@
-import MyTable from './Table';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable from '@/components/DataTable';
+import { Button } from '@/components/ui/button';
 import { useContext, useState } from 'react';
-import { GlobalContext } from './Context';
-import { useOptimisticUpdates } from './useOptimisticUpdates';
 import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
-import { Button } from 'react-bootstrap';
+import { GlobalContext } from './Context';
 import CreateOrganization from './organization/CreateOrganization';
+import { useOptimisticUpdates } from './useOptimisticUpdates';
 
 export default function PendingOrganizations() {
   const { client, showModal, modalToShow } = useContext(GlobalContext);
   const { users } = useUsers();
 
   const [selectedRequest, setSelectedRequest] = useState<
-    (Schema['OrganizationRegistration']['type'] & { requestedByEmail: string }) | null
+    | (Schema['OrganizationRegistration']['type'] & {
+        requestedByEmail: string;
+      })
+    | null
   >(null);
 
   const { data: requests } = useOptimisticUpdates<
@@ -21,7 +25,7 @@ export default function PendingOrganizations() {
   >('OrganizationRegistration', async (nextToken) =>
     client.models.OrganizationRegistration.list({
       nextToken,
-    })
+    }),
   );
 
   const tableData = requests
@@ -59,20 +63,17 @@ export default function PendingOrganizations() {
     { content: 'Brief Description', style: { width: '20%' }, sort: true },
     { content: 'Requested By', style: { width: '20%' }, sort: true },
     { content: 'Date', style: { width: '20%' }, sort: true },
-    { content: 'Review Request', style: { width: '20%' } },
+    {
+      content: 'Review Request',
+      style: { width: '20%' },
+      className: 'text-center',
+    },
   ];
 
   return (
-    <div className='m-2'>
-      <h5>Pending Organisations</h5>
-      <MyTable
-        tableData={tableData}
-        tableHeadings={tableHeadings}
-        pagination={true}
-        itemsPerPage={10}
-        emptyMessage='No pending organisations'
-      />
-      <div className='d-flex justify-content-center align-items-center border-top pt-3 border-dark mt-3'>
+    <>
+      <div className='mb-4 flex items-center justify-between'>
+        <h5 className='mb-0'>Pending Organisations</h5>
         <Button
           variant='primary'
           onClick={() => showModal('createOrganization')}
@@ -80,6 +81,14 @@ export default function PendingOrganizations() {
           Create Organisation
         </Button>
       </div>
+      <DataTable
+        storageKey='pending-organisations'
+        columns={columnsFromHeadings(tableHeadings)}
+        data={cellRows(tableData)}
+        getRowId={(row) => row.id}
+        pageSize={10}
+        emptyMessage='No pending organisations'
+      />
       <CreateOrganization
         show={modalToShow === 'createOrganization'}
         onHide={() => {
@@ -88,6 +97,6 @@ export default function PendingOrganizations() {
         }}
         request={selectedRequest ?? undefined}
       />
-    </div>
+    </>
   );
 }

@@ -9,7 +9,7 @@ export interface FailedImageRow {
 
 export function failedImagesCsvName(
   rows: FailedImageRow[],
-  fallback: string
+  fallback: string,
 ): string {
   const roots = new Set(rows.map((row) => row.originalPath.split(/[/\\]/)[0]));
   const base = roots.size === 1 ? [...roots][0] : fallback;
@@ -18,7 +18,7 @@ export function failedImagesCsvName(
 
 export function downloadFailedImagesCsv(
   filename: string,
-  rows: FailedImageRow[]
+  rows: FailedImageRow[],
 ): void {
   const lines = [
     ['originalPath', 'filename', 'reason', 'category'].join(','),
@@ -30,7 +30,7 @@ export function downloadFailedImagesCsv(
         row.category ?? '',
       ]
         .map(escapeCsvValue)
-        .join(',')
+        .join(','),
     ),
   ];
   const blob = new Blob([lines.join('\n')], {

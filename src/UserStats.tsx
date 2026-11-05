@@ -1,23 +1,39 @@
-import MyTable from './Table';
-import { useContext, useEffect, useState } from 'react';
-import { GlobalContext, UserContext } from './Context';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
-import type { UserStatsType } from './schemaTypes';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable from '@/components/DataTable';
+import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Combobox } from '@/components/ui/combobox';
+import { fieldBase, fieldSizes } from '@/components/ui/field';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 import exportFromJSON from 'export-from-json';
+import { XIcon } from 'lucide-react';
+import { useContext, useEffect, useState } from 'react';
 import { neutraliseCsvRows } from '../shared/csv';
 import { useUsers } from './apiInterface';
-import Select from 'react-select';
-import { Card, Button, Spinner } from 'react-bootstrap';
-import SnapshotStatsModal from './SnapshotStatsModal';
-import { fetchAllPaginatedResults } from './utils';
+import { GlobalContext, UserContext } from './Context';
 import { loadRows } from './rowChunks';
+import type { UserStatsType } from './schemaTypes';
+import SnapshotStatsModal from './SnapshotStatsModal';
+import { LIGHT_THEME } from './survey/mapTheme';
+import { fetchAllPaginatedResults } from './utils';
 
 export default function UserStats() {
-  const { myOrganizationHook, myMembershipHook } =
-    useContext(UserContext)!;
-  const { client, modalToShow, showModal } =
-    useContext(GlobalContext)!;
+  const { myOrganizationHook, myMembershipHook } = useContext(UserContext)!;
+  const { client, modalToShow, showModal } = useContext(GlobalContext)!;
   const { users: allUsers } = useUsers();
   const [projects, setProjects] = useState<
     {
@@ -34,7 +50,15 @@ export default function UserStats() {
   const [stats, setStats] = useState<
     Record<
       string,
-      { observationCount: number; annotationCount: number; activeTime: number; sightingCount: number; searchTime: number; annotationTime: number; waitingTime: number }
+      {
+        observationCount: number;
+        annotationCount: number;
+        activeTime: number;
+        sightingCount: number;
+        searchTime: number;
+        annotationTime: number;
+        waitingTime: number;
+      }
     >
   >({});
   const [startDate, setStartDate] = useState<Date | null>(new Date());
@@ -43,9 +67,9 @@ export default function UserStats() {
 
   const [selectedSets, setSelectedSets] = useState<
     | {
-      label: string;
-      value: string;
-    }[]
+        label: string;
+        value: string;
+      }[]
     | undefined
   >([]);
 
@@ -57,20 +81,20 @@ export default function UserStats() {
   // Check if user is admin for the selected project
   const isProjectAdmin = project
     ? myMembershipHook.data?.find((m) => m.projectId === project.value)
-      ?.isAdmin || false
+        ?.isAdmin || false
     : false;
 
   const startString = startDate
     ? `${startDate?.getFullYear()}-${String(startDate?.getMonth() + 1).padStart(
-      2,
-      '0'
-    )}-${String(startDate?.getDate()).padStart(2, '0')}`
+        2,
+        '0',
+      )}-${String(startDate?.getDate()).padStart(2, '0')}`
     : null;
   const endString = endDate
     ? `${endDate?.getFullYear()}-${String(endDate?.getMonth() + 1).padStart(
-      2,
-      '0'
-    )}-${String(endDate?.getDate()).padStart(2, '0')}`
+        2,
+        '0',
+      )}-${String(endDate?.getDate()).padStart(2, '0')}`
     : null;
 
   useEffect(() => {
@@ -90,15 +114,15 @@ export default function UserStats() {
               'annotationSets.name',
               'organization.name',
             ] as string[],
-          }
-        )
+          },
+        ),
       );
 
       const projectResults = await Promise.all(projectPromises);
       const validProjects = projectResults
         .map((result) => result.data)
         .filter(
-          (project): project is NonNullable<typeof project> => project !== null
+          (project): project is NonNullable<typeof project> => project !== null,
         );
 
       setProjects(validProjects as typeof projects);
@@ -111,9 +135,7 @@ export default function UserStats() {
   useEffect(() => {
     let cancelled = false;
     const subs: { unsubscribe: () => void }[] = [];
-    const selectedSetIds = new Set(
-      selectedSets?.map((set) => set.value) ?? []
-    );
+    const selectedSetIds = new Set(selectedSets?.map((set) => set.value) ?? []);
     const selectedProjectId = project?.value;
 
     // Reset state when selectedSets changes
@@ -137,7 +159,7 @@ export default function UserStats() {
 
         const fetched = await fetchAllPaginatedResults<UserStatsType>(
           client.models.UserStats.list,
-          { filter, limit: 10000 }
+          { filter, limit: 10000 },
         );
         if (!cancelled) {
           setUserStats(fetched);
@@ -171,7 +193,7 @@ export default function UserStats() {
                   s.userId === updatedItem.userId &&
                   s.date === updatedItem.date &&
                   s.setId === updatedItem.setId &&
-                  s.projectId === updatedItem.projectId
+                  s.projectId === updatedItem.projectId,
               );
               if (!exists) return [...prev, updatedItem];
               return prev.map((s) =>
@@ -180,13 +202,13 @@ export default function UserStats() {
                 s.setId === updatedItem.setId &&
                 s.projectId === updatedItem.projectId
                   ? { ...s, ...updatedItem }
-                  : s
+                  : s,
               );
             });
           }
         },
         error: (error) => console.error('UserStats onUpdate error:', error),
-      })
+      }),
     );
 
     // Subscribe to real-time updates via custom pub/sub channels per annotation set
@@ -265,7 +287,7 @@ export default function UserStats() {
               newStats[s.userId].observationCount += s.observationCount;
               newStats[s.userId].annotationCount = Math.max(
                 0,
-                newStats[s.userId].annotationCount + s.annotationCount
+                newStats[s.userId].annotationCount + s.annotationCount,
               );
               newStats[s.userId].activeTime += s.activeTime;
               newStats[s.userId].sightingCount += s.sightingCount || 0;
@@ -325,7 +347,7 @@ export default function UserStats() {
   async function queryObservations(
     annotationSetId: string,
     lowerLimitOverride?: string,
-    upperLimitOverride?: string
+    upperLimitOverride?: string,
   ): Promise<any[]> {
     const lower = lowerLimitOverride ?? `${startString}T00:00:00Z`;
     const upper = upperLimitOverride ?? `${endString}T23:59:59Z`;
@@ -342,7 +364,7 @@ export default function UserStats() {
         'locationId',
         'location.confidence',
       ],
-      { between: [lower, upper] }
+      { between: [lower, upper] },
     );
     return allObs.map((o) => ({
       createdAt: o.createdAt,
@@ -396,18 +418,24 @@ export default function UserStats() {
         waitingTime_ms: s.waitingTime || 0,
       }))
       .sort((a, b) =>
-        a.date < b.date ? -1 : a.date > b.date ? 1 : a.username < b.username ? -1 : 1
+        a.date < b.date
+          ? -1
+          : a.date > b.date
+            ? 1
+            : a.username < b.username
+              ? -1
+              : 1,
       );
 
     const fileName =
       `${project.label}_DetailedStats_${startString || 'all'}_${endString || 'all'}`.replace(
         / /g,
-        '_'
+        '_',
       );
     exportFromJSON({
       data: neutraliseCsvRows(rows),
       fileName,
-      exportType: exportFromJSON.types.csv
+      exportType: exportFromJSON.types.csv,
     });
   };
 
@@ -425,19 +453,21 @@ export default function UserStats() {
         const fileName =
           `${project?.label}_Observations_${startString}_${endString}`.replace(
             / /g,
-            '_'
+            '_',
           );
         const exportType = exportFromJSON.types.csv;
         exportFromJSON({
-          data: neutraliseCsvRows(observations.map((o) => {
-            const { confidence, ...rest } = o;
-            return {
-              ...rest,
-              annotationCount: Math.max(0, o.annotationCount || 0),
-              owner: userLookup.get(o.owner),
-              locationConfidence: confidence,
-            };
-          })),
+          data: neutraliseCsvRows(
+            observations.map((o) => {
+              const { confidence, ...rest } = o;
+              return {
+                ...rest,
+                annotationCount: Math.max(0, o.annotationCount || 0),
+                owner: userLookup.get(o.owner),
+                locationConfidence: confidence,
+              };
+            }),
+          ),
           fileName,
           exportType,
         });
@@ -454,85 +484,78 @@ export default function UserStats() {
         width: '100%',
         maxWidth: '1555px',
         marginTop: '16px',
-        marginBottom: '16px',
+        paddingBottom: '16px',
+        alignSelf: 'flex-start',
       }}
     >
       <Card>
-        <Card.Header>
-          <Card.Title className='mb-0'>
+        <CardHeader>
+          <CardTitle className='mb-0'>
             <h4 className='mb-0'>Annotation Statistics</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body>
-          <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
-            <div className='d-flex align-items-center gap-2'>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
+            <div className='flex items-center gap-2'>
               <label htmlFor='start-date' className='mb-0'>
                 From:
               </label>
-              <DatePicker
+              <DateField
                 id='start-date'
-                selected={startDate ?? undefined}
+                value={startDate}
                 onChange={(date) => setStartDate(date)}
-                selectsStart
-                startDate={startDate ?? undefined}
-                endDate={endDate ?? undefined}
-                className='form-control'
-                isClearable
-                dateFormat='yyyy/MM/dd'
-                placeholderText='No start date'
+                rangeStart={startDate}
+                rangeEnd={endDate}
+                placeholder='No start date'
+                className='w-48'
               />
             </div>
-            <div className='d-flex align-items-center gap-2'>
+            <div className='flex items-center gap-2'>
               <label htmlFor='end-date' className='mb-0'>
                 To:
               </label>
-              <DatePicker
+              <DateField
                 id='end-date'
-                selected={endDate ?? undefined}
+                value={endDate}
                 onChange={(date) => setEndDate(date)}
-                selectsEnd
-                startDate={startDate ?? undefined}
-                endDate={endDate ?? undefined}
-                className='form-control'
-                isClearable
-                dateFormat='yyyy/MM/dd'
-                placeholderText='No end date'
+                rangeStart={startDate}
+                rangeEnd={endDate}
+                placeholder='No end date'
+                className='w-48'
               />
             </div>
           </div>
 
-          <div className='mt-3'>
+          <div className='mt-4'>
             <label className='mb-2'>Select Survey</label>
-            <Select
-              className='text-black'
+            <Combobox
               value={project}
               options={projects.map((p) => ({
                 label: `${p.name} (${p.organization.name})`,
                 value: p.id,
               }))}
-              onChange={(e) => {
-                setProject(e);
-                const sets = projects
-                  .find((p) => p.id === e?.value)
-                  ?.annotationSets?.map((s) => ({ label: s.name, value: s.id })) || [];
+              onChange={(option) => {
+                setProject(option);
+                const sets =
+                  projects
+                    .find((p) => p.id === option?.value)
+                    ?.annotationSets?.map((s) => ({
+                      label: s.name,
+                      value: s.id,
+                    })) || [];
                 setSelectedSets(sets);
               }}
-              styles={{
-                valueContainer: (base) => ({
-                  ...base,
-                  overflowY: 'auto',
-                }),
-              }}
+              placeholder='Select a survey'
+              name='Survey'
             />
           </div>
 
-          <div className='mt-3'>
+          <div className='mt-4'>
             <label className=''>Select Annotation Sets</label>
-            <Select
-              className='text-black basic-multi-select'
-              value={selectedSets}
-              onChange={(e) => setSelectedSets([...e])}
-              isMulti
+            <Combobox
+              value={selectedSets ?? []}
+              onChange={(options) => setSelectedSets(options)}
+              multiple
               name='Annotation sets'
               options={
                 projects
@@ -542,29 +565,22 @@ export default function UserStats() {
                     value: s.id,
                   })) || []
               }
-              classNamePrefix='select'
-              closeMenuOnSelect={false}
-              styles={{
-                valueContainer: (base) => ({
-                  ...base,
-                  overflowY: 'auto',
-                }),
-              }}
+              placeholder='Select annotation sets'
             />
           </div>
 
-          <div className='mt-3 overflow-x-auto'>
+          <div className='mt-4 overflow-x-auto'>
             {loadingStats ? (
-              <div className='d-flex justify-content-center align-items-center py-5'>
-                <Spinner animation='border' role='status'>
-                  <span className='visually-hidden'>Loading stats...</span>
-                </Spinner>
-                <span className='ms-3'>Loading stats...</span>
+              <div className='flex items-center justify-center py-12'>
+                <Spinner animation='border' />
+                <span className='ms-4'>Loading stats...</span>
               </div>
             ) : (
-              <MyTable
-                tableHeadings={tableHeadings}
-                tableData={tableData}
+              <DataTable
+                storageKey='user-stats'
+                columns={columnsFromHeadings(tableHeadings)}
+                data={cellRows(tableData)}
+                getRowId={(row) => row.id}
                 emptyMessage={
                   project && selectedSets && selectedSets.length > 0
                     ? 'No stats found'
@@ -573,35 +589,38 @@ export default function UserStats() {
               />
             )}
           </div>
-        </Card.Body>
-        {isProjectAdmin && selectedSets && selectedSets.length > 0 && !loadingStats && (
-          <Card.Footer className='d-flex justify-content-center gap-2'>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={() => showModal('snapshotStats')}
-              disabled={!project || !selectedSets?.length}
-            >
-              Snapshot
-            </Button>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={handleExportDetailedStats}
-              disabled={!project || !selectedSets?.length || loadingStats}
-            >
-              Export Daily Stats
-            </Button>
-            <Button
-              variant='primary'
-              style={{ flex: 1 }}
-              onClick={handleExportData}
-              disabled={exporting}
-            >
-              {exporting ? 'Loading...' : 'Export Raw Observation Data'}
-            </Button>
-          </Card.Footer>
-        )}
+        </CardContent>
+        {isProjectAdmin &&
+          selectedSets &&
+          selectedSets.length > 0 &&
+          !loadingStats && (
+            <CardFooter className='flex justify-center gap-2'>
+              <Button
+                variant='primary'
+                style={{ flex: 1 }}
+                onClick={() => showModal('snapshotStats')}
+                disabled={!project || !selectedSets?.length}
+              >
+                Snapshot
+              </Button>
+              <Button
+                variant='primary'
+                style={{ flex: 1 }}
+                onClick={handleExportDetailedStats}
+                disabled={!project || !selectedSets?.length || loadingStats}
+              >
+                Export Daily Stats
+              </Button>
+              <Button
+                variant='primary'
+                style={{ flex: 1 }}
+                onClick={handleExportData}
+                disabled={exporting}
+              >
+                {exporting ? 'Loading...' : 'Export Raw Observation Data'}
+              </Button>
+            </CardFooter>
+          )}
       </Card>
       <SnapshotStatsModal
         show={modalToShow === 'snapshotStats'}
@@ -615,6 +634,89 @@ export default function UserStats() {
         allUsers={allUsers.map((u) => ({ id: u.id, name: u.name || u.id }))}
         queryObservations={queryObservations}
       />
+    </div>
+  );
+}
+
+function DateField({
+  id,
+  value,
+  onChange,
+  placeholder,
+  rangeStart,
+  rangeEnd,
+  minDate,
+  className,
+}: {
+  id?: string;
+  value: Date | null;
+  onChange: (date: Date | null) => void;
+  placeholder: string;
+  rangeStart: Date | null;
+  rangeEnd: Date | null;
+  minDate?: Date | null;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={cn('relative', className)}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            id={id}
+            type='button'
+            className={cn(
+              fieldBase,
+              fieldSizes.default,
+              'text-left',
+              value ? 'pr-8' : 'text-[#6c757d]',
+            )}
+          >
+            {value ? format(value, 'yyyy/MM/dd') : placeholder}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          className='w-auto border-black/10 bg-white p-0 text-[#212529]'
+          style={LIGHT_THEME}
+          align='start'
+        >
+          <Calendar
+            mode='single'
+            selected={value ?? undefined}
+            defaultMonth={value ?? undefined}
+            disabled={minDate ? { before: minDate } : undefined}
+            modifiers={
+              rangeStart && rangeEnd
+                ? { inRange: { from: rangeStart, to: rangeEnd } }
+                : undefined
+            }
+            modifiersClassNames={{ inRange: 'bg-accent' }}
+            onSelect={(date) => {
+              if (date) {
+                // keep the previous time of day when changing the date
+                if (value)
+                  date.setHours(
+                    value.getHours(),
+                    value.getMinutes(),
+                    value.getSeconds(),
+                  );
+                onChange(date);
+              }
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+      {value && (
+        <button
+          type='button'
+          aria-label='Clear'
+          className='absolute top-1/2 right-2 -translate-y-1/2 text-[#6c757d] opacity-75 hover:opacity-100'
+          onClick={() => onChange(null)}
+        >
+          <XIcon className='size-4' />
+        </button>
+      )}
     </div>
   );
 }

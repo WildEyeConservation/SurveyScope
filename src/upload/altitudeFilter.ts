@@ -11,7 +11,7 @@ const MIN_GROUND_ELEVATION = -500;
 export function altitudeBandFrom(
   target: string,
   deviation: string,
-  unit: AltitudeUnit
+  unit: AltitudeUnit,
 ): AltitudeBand | null {
   if (target.trim() === '' || deviation.trim() === '') return null;
   const t = Number(target);
@@ -25,7 +25,7 @@ export function altitudeBandFrom(
 
 export function isOutsideAltitudeBand(
   agl: number | undefined,
-  band: AltitudeBand
+  band: AltitudeBand,
 ): boolean {
   return agl !== undefined && (agl < band.min || agl > band.max);
 }
@@ -33,7 +33,7 @@ export function isOutsideAltitudeBand(
 export async function computeAglByRow(
   rows: GpsRow[],
   altitudeIsAgl: boolean,
-  getElevation: (lat: number, lng: number) => Promise<number | null>
+  getElevation: (lat: number, lng: number) => Promise<number | null>,
 ): Promise<Map<GpsRow, number>> {
   const result = new Map<GpsRow, number>();
   // One failed lookup skips the rest of its tile instead of refetching per row.

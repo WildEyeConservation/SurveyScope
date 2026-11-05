@@ -1,9 +1,40 @@
-import { Form, Button, Spinner } from 'react-bootstrap';
-import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { Schema } from '../amplify/client-schema';
-import { useState, useContext } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { FormText, Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
+import { useContext, useMemo, useState } from 'react';
 import { GlobalContext } from '../Context';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
+import { Schema } from '../amplify/client-schema';
 import LabelEditor from './LabelEditor';
+
+function bigrams(text: string) {
+  const clean = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  const pairs = new Map<string, number>();
+  for (let i = 0; i < clean.length - 1; i++) {
+    const pair = clean.slice(i, i + 2);
+    pairs.set(pair, (pairs.get(pair) ?? 0) + 1);
+  }
+  return pairs;
+}
+
+// Dice coefficient over character pairs: 1 for identical names, 0 for none shared.
+function nameSimilarity(a: string, b: string) {
+  const x = bigrams(a);
+  const y = bigrams(b);
+  let shared = 0;
+  let total = 0;
+  for (const [pair, count] of x) {
+    shared += Math.min(count, y.get(pair) ?? 0);
+    total += count;
+  }
+  for (const count of y.values()) total += count;
+  return total ? (2 * shared) / total : 0;
+}
 
 export default function AddAnnotationSetModal({
   show,
@@ -21,7 +52,12 @@ export default function AddAnnotationSetModal({
   const { client } = useContext(GlobalContext)!;
   const [name, setName] = useState('');
   const [saveLabels, setSaveLabels] = useState<
-    ((annotationSetId: string, projectId: string, group: string) => Promise<void>) | null
+    | ((
+        annotationSetId: string,
+        projectId: string,
+        group: string,
+      ) => Promise<void>)
+    | null
   >(null);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedAnnotationSet, setSelectedAnnotationSet] =
@@ -33,11 +69,24 @@ export default function AddAnnotationSetModal({
   >([]);
   const [loadingLabels, setLoadingLabels] = useState(false);
 
+  const rankedProjects = useMemo(() => {
+    const score = new Map(
+      allProjects.map((p) => [
+        p.id,
+        p.id === project.id
+          ? Infinity
+          : nameSimilarity(p.name ?? '', project.name ?? ''),
+      ]),
+    );
+    return [...allProjects].sort(
+      (a, b) =>
+        score.get(b.id)! - score.get(a.id)! ||
+        (a.name ?? '').localeCompare(b.name ?? ''),
+    );
+  }, [allProjects, project.id, project.name]);
+
   async function handleSave() {
-    if (!name) {
-      alert('Please enter a name for the annotation set');
-      return;
-    }
+    if (!name.trim()) return;
 
     setBusy(true);
     setStatusMessage('Creating annotation set...');
@@ -52,7 +101,7 @@ export default function AddAnnotationSetModal({
     });
 
     const { data: annotationSet } = await client.models.AnnotationSet.create({
-      name,
+      name: name.trim(),
       projectId: project.id,
       group: project.organizationId,
     });
@@ -71,7 +120,7 @@ export default function AddAnnotationSetModal({
   }
 
   async function handleAnnotationSetChange(
-    e: React.ChangeEvent<HTMLSelectElement>
+    e: React.ChangeEvent<HTMLSelectElement>,
   ) {
     const annotationSetId = e.target.value;
     setSelectedAnnotationSet(annotationSetId);
@@ -99,59 +148,62 @@ export default function AddAnnotationSetModal({
         <Title>Add Annotation Set</Title>
       </Header>
       <Body>
-        <Form className='d-flex flex-column gap-2 p-3'>
-          <Form.Group>
-            <Form.Label className='mb-0'>Name</Form.Label>
-            <span
-              className='text-muted d-block mb-1'
-              style={{ fontSize: '12px' }}
-            >
-              A descriptive name for your annotation set to help you identify
-              it.
-            </span>
-            <Form.Control
+        <form
+          className='flex flex-col gap-4 p-4'
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSave();
+          }}
+        >
+          <div>
+            <Label htmlFor='annotation-set-name'>Name</Label>
+            <Input
+              id='annotation-set-name'
               type='text'
               value={name}
-              placeholder='Enter a name'
+              placeholder='e.g. Elephant count 2026'
               onChange={(e) => setName(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='mb-0'>Load Labels</Form.Label>
-            <span
-              className='text-muted d-block mb-1'
-              style={{ fontSize: '12px' }}
-            >
-              Load labels from a previous annotation set.
-            </span>
-            <Form.Select
-              value={selectedProject}
-              disabled={loadingLabels}
-              onChange={(e) => setSelectedProject(e.target.value)}
-            >
-              <option value=''>Select a survey</option>
-              {allProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </Form.Select>
-            <Form.Select
-              className='mt-1'
-              disabled={!selectedProject || loadingLabels}
-              value={selectedAnnotationSet}
-              onChange={handleAnnotationSetChange}
-            >
-              <option value=''>Select an annotation set</option>
-              {allProjects
-                .find((p) => p.id === selectedProject)
-                ?.annotationSets.map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
+          </div>
+          <div>
+            <Label>Copy labels from another annotation set</Label>
+            <div className='grid gap-2 sm:grid-cols-2'>
+              <NativeSelect
+                aria-label='Survey'
+                value={selectedProject}
+                disabled={loadingLabels}
+                onChange={(e) => {
+                  setSelectedProject(e.target.value);
+                  setSelectedAnnotationSet('');
+                }}
+              >
+                <option value=''>Survey</option>
+                {rankedProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.id === project.id ? `${p.name} (this survey)` : p.name}
                   </option>
                 ))}
-            </Form.Select>
-          </Form.Group>
+              </NativeSelect>
+              <NativeSelect
+                aria-label='Annotation set'
+                disabled={!selectedProject || loadingLabels}
+                value={selectedAnnotationSet}
+                onChange={handleAnnotationSetChange}
+              >
+                <option value=''>
+                  {loadingLabels ? 'Loading labels…' : 'Annotation set'}
+                </option>
+                {allProjects
+                  .find((p) => p.id === selectedProject)
+                  ?.annotationSets.map((s: any) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+              </NativeSelect>
+            </div>
+            <FormText>Optional. Replaces the labels below.</FormText>
+          </div>
           <LabelEditor
             defaultLabels={[
               {
@@ -165,19 +217,28 @@ export default function AddAnnotationSetModal({
             setHandleSave={setSaveLabels}
             onStatusChange={setStatusMessage}
           />
-        </Form>
+        </form>
         <Footer>
+          <Button
+            variant='ghost'
+            className='mr-auto'
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
           {statusMessage && (
-            <span className='text-muted me-auto d-flex align-items-center gap-2' style={{ fontSize: 12 }}>
+            <span className='flex items-center gap-2 text-xs text-muted-foreground'>
               <Spinner size='sm' />
               {statusMessage}
             </span>
           )}
-          <Button variant='primary' onClick={handleSave} disabled={busy}>
+          <Button
+            variant='primary'
+            onClick={handleSave}
+            disabled={busy || !name.trim()}
+          >
             {busy ? 'Creating...' : 'Create'}
-          </Button>
-          <Button variant='dark' onClick={onClose} disabled={busy}>
-            Cancel
           </Button>
         </Footer>
       </Body>

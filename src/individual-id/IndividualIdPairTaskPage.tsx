@@ -49,14 +49,14 @@ export function IndividualIdPairTaskPage() {
 
   if (!image1Id || !image2Id || !categoryId || !annotationSetId) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing one of <code>image1Id</code>, <code>image2Id</code>,{' '}
         <code>categoryId</code>, or <code>annotationSetId</code> in the URL.
       </div>
     );
   }
   if (!surveyId) {
-    return <div className='p-4 text-light'>Missing surveyId in the URL.</div>;
+    return <div className='p-6 text-light'>Missing surveyId in the URL.</div>;
   }
 
   return (

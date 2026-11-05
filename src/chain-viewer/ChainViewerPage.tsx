@@ -17,14 +17,14 @@ export function ChainViewerPage() {
 
   if (!annotationSetId) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing <code>annotationSetId</code> in the URL.
       </div>
     );
   }
   if (!isSysadmin) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Chain viewer is restricted to sysadmins.
       </div>
     );

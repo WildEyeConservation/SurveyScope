@@ -2,33 +2,35 @@ export function graphqlOperation(query: string, variables: any) {
   return { query, variables };
 }
 
-import { useContext, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useContext, useEffect, useRef, useState } from 'react';
+
 import './App.css';
+
 import { configure } from 'react-hotkeys';
 // import { withAuthenticator } from "@aws-amplify/ui-react";
-import '@aws-amplify/ui-react/styles.css';
-import { User } from './UserContext.js';
-import 'bootswatch/dist/superhero/bootstrap.min.css';
-import { fetchAuthSession, AuthUser } from 'aws-amplify/auth';
-import { BrowserView, MobileView } from 'react-device-detect';
-import MainNavigation from './MainNavigation.tsx';
-import { Button as PrimaryButton } from 'react-bootstrap';
+import { Button as PrimaryButton } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import {
+  Button as AmplifyButton,
   Authenticator,
+  Heading,
+  Link,
+  Text,
   useAuthenticator,
   View,
-  Button as AmplifyButton,
-  Text,
-  Link,
-  Heading,
 } from '@aws-amplify/ui-react';
+import { AuthUser, fetchAuthSession } from 'aws-amplify/auth';
+import { BrowserView, MobileView } from 'react-device-detect';
+import MainNavigation from './MainNavigation.tsx';
+import { User } from './UserContext.js';
 //import { ErrorHandler } from './ErrorHandler';
 //import {TaskProgressHandler} from './TaskProgressHandler';
-import UploadManager from './upload/UploadManager.tsx';
+import ClientLogger from './ClientLogger.tsx';
 import { loadCognitoGroups, useCognitoGroups } from './cognitoGroups';
 import { GlobalContext } from './Context';
-import ClientLogger from './ClientLogger.tsx';
+import UploadManager from './upload/UploadManager.tsx';
 
 configure({ ignoreRepeatedEventsWhenKeyHeldDown: false });
 
@@ -44,7 +46,7 @@ interface AppProps {
   user?: AuthUser;
 }
 
-function App({ signOut = () => { }, user }: AppProps) {
+function App({ signOut = () => {}, user }: AppProps) {
   const [session, setSession] = useState<any>();
   const cognitoGroups = useCognitoGroups();
   const queryClient = useQueryClient();
@@ -72,7 +74,7 @@ function App({ signOut = () => { }, user }: AppProps) {
   }, []);
   const alertUser = (e: BeforeUnloadEvent) => {
     alert(
-      'If you use refresh to load new data it may result in some of your work being lost.'
+      'If you use refresh to load new data it may result in some of your work being lost.',
     );
     e.preventDefault();
     e.returnValue = '';
@@ -142,7 +144,7 @@ function App({ signOut = () => { }, user }: AppProps) {
         <MobileView>
           <Logo />
           <div
-            className='d-flex flex-column justify-content-center align-items-center text-center p-3'
+            className='flex flex-col items-center justify-center p-4 text-center'
             style={{
               height: 'calc(100vh - 64px)',
             }}
@@ -186,8 +188,8 @@ export default function AppWithAuthenticator() {
               reach out to us.
             </Text>
             <Text marginTop='small'>
-              If you would like to register a brand new organisation, please do so
-              through our{' '}
+              If you would like to register a brand new organisation, please do
+              so through our{' '}
               <Link
                 href='https://wildeyeconservation.org/surveyscope-registration/'
                 isExternal
@@ -213,16 +215,19 @@ export default function AppWithAuthenticator() {
   }, []);
 
   return (
-    <Authenticator components={components} variation='modal' hideSignUp>
-      {({ signOut, user }) => <App signOut={signOut} user={user} />}
-    </Authenticator>
+    <TooltipProvider>
+      <Authenticator components={components} variation='modal' hideSignUp>
+        {({ signOut, user }) => <App signOut={signOut} user={user} />}
+      </Authenticator>
+      <Toaster />
+    </TooltipProvider>
   );
 }
 
 function Logo() {
   return (
-    <div className='p-3 w-100 d-flex flex-column justify-content-center align-items-center bg-secondary'>
-      <div className='d-flex flex-row align-items-center flex-nowrap'>
+    <div className='flex w-full flex-col items-center justify-center bg-secondary p-4'>
+      <div className='flex flex-row flex-nowrap items-center'>
         <img
           src='/Logo.png'
           alt='Logo'

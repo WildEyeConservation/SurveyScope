@@ -1,25 +1,19 @@
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Matrix } from 'mathjs';
 import { inv, matrix } from 'mathjs';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { GlobalContext } from '../Context';
 import type { ImageType } from '../schemaTypes';
 import { array2Matrix, makeTransform } from '../utils';
 import { sameAppPath } from './backHref';
 import { HomographyWorkbench } from './HomographyWorkbench';
-import { type Point } from './ManualHomographyEditor';
 import {
-  resolveNeighbourDirection,
-  flatToPoints,
   countSuggestedPointsKept,
+  flatToPoints,
+  resolveNeighbourDirection,
 } from './HomographyWorkbenchWorker';
+import { type Point } from './ManualHomographyEditor';
 
 // Standalone, query-param driven editor for a single neighbour pair's
 // homography. Unlike HomographyTask/HomographyWorkbenchWorker, this is not
@@ -77,7 +71,7 @@ export default function HomographyEditPage() {
         if (cancelled) return;
         if (!a?.data || !b?.data) {
           setImagesError(
-            `Could not load one or both images (${image1Id}, ${image2Id}).`
+            `Could not load one or both images (${image1Id}, ${image2Id}).`,
           );
           return;
         }
@@ -109,10 +103,10 @@ export default function HomographyEditPage() {
         const dir = await resolveNeighbourDirection(client, image1Id, image2Id);
         if (cancelled) return;
         const p1 = flatToPoints(
-          dir.isForward ? dir.suggestedPoints1 : dir.suggestedPoints2
+          dir.isForward ? dir.suggestedPoints1 : dir.suggestedPoints2,
         );
         const p2 = flatToPoints(
-          dir.isForward ? dir.suggestedPoints2 : dir.suggestedPoints1
+          dir.isForward ? dir.suggestedPoints2 : dir.suggestedPoints1,
         );
         const n = Math.min(p1.length, p2.length);
         if (n > 0) {
@@ -125,7 +119,7 @@ export default function HomographyEditPage() {
         // image1→image2; we orient to [primary→secondary, secondary→primary]
         // to match what the workbench expects for `images=[primary, secondary]`.
         const arr = array2Matrix(
-          (dir.homography as number[] | null | undefined) ?? null
+          (dir.homography as number[] | null | undefined) ?? null,
         );
         if (arr) {
           try {
@@ -157,7 +151,7 @@ export default function HomographyEditPage() {
       // Any edit invalidates the "Saved" indicator.
       if (isSaved) setIsSaved(false);
     },
-    [isSaved]
+    [isSaved],
   );
 
   const goBack = useCallback(() => {
@@ -177,11 +171,7 @@ export default function HomographyEditPage() {
         const flat: number[] = (H.toArray() as number[][]).flat();
         const flatInverse: number[] = (inv(H).toArray() as number[][]).flat();
 
-        const dir = await resolveNeighbourDirection(
-          client,
-          image1Id,
-          image2Id
-        );
+        const dir = await resolveNeighbourDirection(client, image1Id, image2Id);
 
         const kept =
           suggestedTotalRef.current > 0
@@ -231,34 +221,36 @@ export default function HomographyEditPage() {
       // can retry or fall back to Cancel.
       if (savedOk) goBack();
     },
-    [client, image1Id, image2Id, queryClient, goBack]
+    [client, image1Id, image2Id, queryClient, goBack],
   );
 
   if (!image1Id || !image2Id) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing one of <code>image1Id</code> or <code>image2Id</code> in the
         URL.
       </div>
     );
   }
   if (imagesError) {
-    return <div className='p-4 text-light'>{imagesError}</div>;
+    return <div className='p-6 text-light'>{imagesError}</div>;
   }
   if (!images || !pointsLoaded) {
     return (
-      <div className='d-flex justify-content-center align-items-center h-100'>
-        <div className='text-muted'>Loading homography editor...</div>
+      <div className='flex h-full items-center justify-center'>
+        <div className='text-muted-foreground'>
+          Loading homography editor...
+        </div>
       </div>
     );
   }
 
   return (
     <div
-      className='d-flex flex-column align-items-center w-100 h-100'
+      className='flex h-full w-full flex-col items-center'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-100 h-100'>
+      <div className='h-full w-full'>
         <HomographyWorkbench
           images={images}
           onSave={handleSave}
@@ -268,15 +260,7 @@ export default function HomographyEditPage() {
           onPointsChange={handlePointsChange}
           isSaved={isSaved}
           savedTransforms={savedTransforms}
-          headerRight={
-            <button
-              className='btn btn-sm btn-outline-secondary'
-              onClick={goBack}
-              disabled={isSaving}
-            >
-              Cancel
-            </button>
-          }
+          onCancel={goBack}
         />
       </div>
     </div>

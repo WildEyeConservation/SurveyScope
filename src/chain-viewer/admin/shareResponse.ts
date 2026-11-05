@@ -5,7 +5,7 @@ import {
 
 export function checkShareResponse(
   result: LaunchMutationResult | null | undefined,
-  description: string
+  description: string,
 ) {
   const body = parseLaunchResponse(result, description);
   if (result?.data == null) throw new Error(`${description}: no response data`);

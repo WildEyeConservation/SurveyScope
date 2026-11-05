@@ -15,6 +15,28 @@ export function isOnEffort(status: BoundaryStatus | null | undefined): boolean {
   return status !== 'outside' && status !== 'excluded';
 }
 
+// An annotation can be marked outside on an inside image, e.g. beyond a fence.
+export function isAnnotationOnEffort(
+  status: BoundaryStatus | null | undefined,
+  outsideBoundary: boolean | null | undefined
+): boolean {
+  return !outsideBoundary && isOnEffort(status);
+}
+
+export function chainsMarkedOutside(
+  annotations: Iterable<{
+    id: string;
+    objectId?: string | null;
+    outsideBoundary?: boolean | null;
+  }>
+): Set<string> {
+  const chains = new Set<string>();
+  for (const a of annotations) {
+    if (a.outsideBoundary) chains.add(a.objectId ?? a.id);
+  }
+  return chains;
+}
+
 export const OUTSIDE_SURVEY_AREA = 'Outside survey area';
 
 export function boundaryRecomputePending(

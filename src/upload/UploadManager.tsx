@@ -12,8 +12,8 @@ import { uploadOrchestrator } from './core/UploadOrchestrator';
 import {
   onUploadUiRequest,
   setUploadUiState,
-  withResuming,
   useUploadStatus,
+  withResuming,
 } from './uploadUi';
 
 // Handles resume/delete UI; transfer state lives in ./core.
@@ -98,12 +98,12 @@ export default function UploadManager() {
 
       const { data: memberships } =
         await client.models.UserProjectMembership.userProjectMembershipsByProjectId(
-          { projectId: id }
+          { projectId: id },
         );
       await Promise.all(
         memberships.map((membership) =>
-          client.models.UserProjectMembership.delete({ id: membership.id })
-        )
+          client.models.UserProjectMembership.delete({ id: membership.id }),
+        ),
       );
       setUploadUiState({ deleteStep: 2 });
 
@@ -115,7 +115,11 @@ export default function UploadManager() {
     } catch (error) {
       console.error('Error deleting project:', error);
     } finally {
-      setUploadUiState({ deletingProjectId: null, deleteStep: 0, deleteTotal: 0 });
+      setUploadUiState({
+        deletingProjectId: null,
+        deleteStep: 0,
+        deleteTotal: 0,
+      });
     }
   };
 
@@ -161,9 +165,14 @@ export default function UploadManager() {
           status: 'uploading',
         });
         if (errors?.length) {
-          console.error(`Ping failed for project ${heartbeatProjectId}:`, errors);
+          console.error(
+            `Ping failed for project ${heartbeatProjectId}:`,
+            errors,
+          );
         } else if (!data) {
-          console.error(`Ping returned no data for project ${heartbeatProjectId}`);
+          console.error(
+            `Ping returned no data for project ${heartbeatProjectId}`,
+          );
         }
       } catch (error) {
         console.error('Error pinging project:', error);

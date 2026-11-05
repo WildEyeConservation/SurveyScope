@@ -42,7 +42,7 @@ export function formatDuration(ms: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   return `${hours}:${String(minutes).padStart(2, '0')}:${String(
-    seconds
+    seconds,
   ).padStart(2, '0')}`;
 }
 
@@ -50,7 +50,7 @@ export function localDateString(date: Date | null): string | undefined {
   if (!date) return undefined;
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
     2,
-    '0'
+    '0',
   )}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
@@ -63,7 +63,7 @@ export function localDayStart(date: Date): string {
     0,
     0,
     0,
-    0
+    0,
   ).toISOString();
 }
 
@@ -76,7 +76,7 @@ export function localDayEnd(date: Date): string {
     23,
     59,
     59,
-    999
+    999,
   ).toISOString();
 }
 
@@ -151,7 +151,10 @@ function emptyTotals(): Totals {
 }
 
 function accumulate(totals: Totals, contribution: WorkflowContribution) {
-  if (contribution.completedUnits > 0 && contribution.metrics.annotationsProcessed === undefined) {
+  if (
+    contribution.completedUnits > 0 &&
+    contribution.metrics.annotationsProcessed === undefined
+  ) {
     totals.processedCountComplete = false;
   }
   totals.completedUnits += contribution.completedUnits;
@@ -170,7 +173,7 @@ function accumulate(totals: Totals, contribution: WorkflowContribution) {
  */
 export function buildWorkflowSections(
   contributions: WorkflowContribution[],
-  userName: (userId: string) => string
+  userName: (userId: string) => string,
 ): WorkflowSection[] {
   const byWorkflow = new Map<string, WorkflowContribution[]>();
   contributions.forEach((contribution) => {
@@ -186,11 +189,15 @@ export function buildWorkflowSections(
         ? WORKFLOW_REGISTRY[workflowType]
         : undefined;
       const metricKeys = definition
-        ? definition.metricKeys.filter((key) =>
-            key !== (workflowType === 'info-tags' ? 'annotationsProcessed' : '') &&
-            items.some((item) => item.metrics[key] !== undefined)
+        ? definition.metricKeys.filter(
+            (key) =>
+              key !==
+                (workflowType === 'info-tags' ? 'annotationsProcessed' : '') &&
+              items.some((item) => item.metrics[key] !== undefined),
           )
-        : [...new Set(items.flatMap((item) => Object.keys(item.metrics)))].sort();
+        : [
+            ...new Set(items.flatMap((item) => Object.keys(item.metrics))),
+          ].sort();
 
       const unitPlural = definition?.unit.plural ?? 'units';
       const unitSingular = definition?.unit.singular ?? 'unit';
@@ -209,13 +216,18 @@ export function buildWorkflowSections(
 
       const cellsFor = (totals: Totals): (string | number)[] => [
         isInfoTags
-          ? totals.processedCountComplete ? totals.metrics.annotationsProcessed ?? 0 : '—'
+          ? totals.processedCountComplete
+            ? (totals.metrics.annotationsProcessed ?? 0)
+            : '—'
           : totals.completedUnits,
         ...(showSkipped ? [totals.skippedUnits] : []),
         formatDuration(totals.activeTimeMs),
         isInfoTags
           ? totals.processedCountComplete
-            ? perUnitAverage(totals.activeTimeMs, totals.metrics.annotationsProcessed ?? 0)
+            ? perUnitAverage(
+                totals.activeTimeMs,
+                totals.metrics.annotationsProcessed ?? 0,
+              )
             : '—'
           : perUnitAverage(totals.activeTimeMs, totals.completedUnits),
         ...(showSearchAverage ? [searchAverage(totals.metrics)] : []),
@@ -223,12 +235,14 @@ export function buildWorkflowSections(
         ...metricKeys.map((key) =>
           key === 'annotationsProcessed' && !totals.processedCountComplete
             ? '—'
-            : formatMetric(key, totals.metrics[key] ?? 0)
+            : formatMetric(key, totals.metrics[key] ?? 0),
         ),
       ];
 
       const rows = [...byUser.entries()]
-        .sort(([, left], [, right]) => right.completedUnits - left.completedUnits)
+        .sort(
+          ([, left], [, right]) => right.completedUnits - left.completedUnits,
+        )
         .map(([userId, totals]) => ({
           id: `${workflowType}:${userId}`,
           userId,
@@ -245,19 +259,28 @@ export function buildWorkflowSections(
             description: COMMON_COLUMN_DESCRIPTIONS.username,
           },
           {
-            content: isInfoTags ? 'Annotations processed' : `${unitPlural} completed`,
+            content: isInfoTags
+              ? 'Annotations processed'
+              : `${unitPlural} completed`,
             sort: true,
             description: COMMON_COLUMN_DESCRIPTIONS.completed(unitPlural),
           },
           ...(showSkipped
-            ? [{ content: 'Skipped', description: COMMON_COLUMN_DESCRIPTIONS.skipped }]
+            ? [
+                {
+                  content: 'Skipped',
+                  description: COMMON_COLUMN_DESCRIPTIONS.skipped,
+                },
+              ]
             : []),
           {
             content: 'Time spent',
             description: COMMON_COLUMN_DESCRIPTIONS.timeSpent,
           },
           {
-            content: isInfoTags ? 'Seconds per annotation processed' : `Seconds per ${unitSingular}`,
+            content: isInfoTags
+              ? 'Seconds per annotation processed'
+              : `Seconds per ${unitSingular}`,
             description: isInfoTags
               ? 'Active time divided by annotations processed, including unchanged annotations. Unavailable when the selection includes older completions without processed counts.'
               : COMMON_COLUMN_DESCRIPTIONS.average(unitPlural),
@@ -287,13 +310,13 @@ export function buildWorkflowSections(
 
 /** Flattens a section into CSV-ready rows keyed by its column headings. */
 export function sectionToCsvRows(
-  section: WorkflowSection
+  section: WorkflowSection,
 ): Record<string, string | number>[] {
   const keys = section.headings.map((heading) => heading.content);
   return [
     ...section.rows.map((row) => row.cells),
     ...(section.footer ? [section.footer] : []),
-  ].map(
-    (cells) => Object.fromEntries(keys.map((key, index) => [key, cells[index]]))
+  ].map((cells) =>
+    Object.fromEntries(keys.map((key, index) => [key, cells[index]])),
   );
 }

@@ -1,15 +1,15 @@
-import pLimit from 'p-limit';
 import { Amplify } from 'aws-amplify';
-import outputs from '../amplify_outputs.json';
-Amplify.configure(outputs);
 import { generateClient } from 'aws-amplify/api';
-import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
+import pLimit from 'p-limit';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
+import outputs from '../amplify_outputs.json';
+import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
 import {
   splitCallOptions,
   startCancellable,
   type ClientCallOptions,
 } from './clientCancellation';
+Amplify.configure(outputs);
 
 /* Here we generate a graphQL client with the Amplify API module, and then we wrap the client methods
 to limit the number of concurrent requests to the GraphQL API, as well as to check for errors.
@@ -59,7 +59,7 @@ async function executeWithRetry<T>(
   signal?: AbortSignal,
   maxRetries: number = 4,
   baseDelay: number = 1000,
-  maxDelay: number = 30000
+  maxDelay: number = 30000,
 ): Promise<T> {
   let retryCount = 0;
 
@@ -83,7 +83,7 @@ async function executeWithRetry<T>(
 
       const delay = Math.min(
         baseDelay * Math.pow(2, retryCount) + Math.random() * 1000,
-        maxDelay
+        maxDelay,
       );
       console.warn(`Retry ${retryCount}/${maxRetries} after ${delay}ms`);
       await new Promise((resolve) => setTimeout(resolve, delay));
@@ -117,7 +117,7 @@ declare module '../amplify/shared/data-schema.generated' {
         rotation?: number | null;
         setId: string;
       },
-      options?: CustomOperationOptions
+      options?: CustomOperationOptions,
     ): CustomOperationResult<unknown>;
   }
 }
@@ -146,8 +146,8 @@ function wrapClientMethods(obj: unknown): unknown {
               startCancellable(
                 () => value(...callArgs),
                 signal,
-                (request) => rawClient.cancel(request)
-              )
+                (request) => rawClient.cancel(request),
+              ),
             );
 
           const result = shouldRetry

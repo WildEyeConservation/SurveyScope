@@ -13,7 +13,7 @@ export async function logAdminAction(
   userId: string,
   message: string,
   projectId: string,
-  group: string
+  group: string,
 ): Promise<void> {
   try {
     await client.models.AdminActionLog.create({

@@ -1,5 +1,5 @@
-import { getTileBlob, imageTileContext } from '../../StorageLayer';
 import { maxTileZoom } from '../../../shared/imageTiles';
+import { getTileBlob, imageTileContext } from '../../StorageLayer';
 
 export interface LoadedSample {
   url: string;
@@ -22,13 +22,13 @@ const canvasToSample = (canvas: HTMLCanvasElement): Promise<LoadedSample> =>
         resolve({ url, revoke: () => URL.revokeObjectURL(url) });
       },
       'image/jpeg',
-      0.85
-    )
+      0.85,
+    ),
   );
 
 export async function loadLocalSample(
   file: File,
-  rotationCCW: number
+  rotationCCW: number,
 ): Promise<LoadedSample> {
   const bitmap = await createImageBitmap(file, {
     imageOrientation: 'from-image',
@@ -36,7 +36,7 @@ export async function loadLocalSample(
   try {
     const scale = Math.min(
       1,
-      PREVIEW_MAX_PX / Math.max(bitmap.width, bitmap.height)
+      PREVIEW_MAX_PX / Math.max(bitmap.width, bitmap.height),
     );
     const width = Math.round(bitmap.width * scale);
     const height = Math.round(bitmap.height * scale);
@@ -56,7 +56,7 @@ export async function loadLocalSample(
 
 export async function loadStoredSample(
   image: { id: string; width: number; height: number },
-  sourceKey: string
+  sourceKey: string,
 ): Promise<LoadedSample> {
   const maxZ = maxTileZoom(image);
   const z = Math.min(maxZ, 3);
@@ -74,12 +74,12 @@ export async function loadStoredSample(
       const col = index % cols;
       const blob = await getTileBlob(
         `slippymaps/${sourceKey}/${z}/${row}/${col}.png`,
-        context
+        context,
       );
       const bitmap = await createImageBitmap(blob);
       ctx.drawImage(bitmap, col * 256, row * 256, 256, 256);
       bitmap.close();
-    })
+    }),
   );
   return canvasToSample(canvas);
 }
@@ -92,6 +92,6 @@ export function strideSamples<T>(items: T[], count = 7): T[] {
   const stride = items.length / count;
   return Array.from(
     { length: count },
-    (_, i) => items[Math.floor(i * stride + stride / 2)]
+    (_, i) => items[Math.floor(i * stride + stride / 2)],
   );
 }

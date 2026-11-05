@@ -1,6 +1,6 @@
 import { ChainTile } from './ChainTile';
-import { rotationKeyFor } from './utils/rotationKey';
 import type { AnnotationImageMeta, Chain } from './types';
+import { rotationKeyFor } from './utils/rotationKey';
 
 interface Props {
   chain: Chain;

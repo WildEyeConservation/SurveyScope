@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { viewTiles } from './viewTiles';
 
 const image = { width: 6336, height: 9504 };
@@ -13,10 +13,7 @@ test('queue zoom 6 shows full resolution tiles around the location', () => {
   });
   // 1:1 pixels: 1024x512 around (3000, 5000) spans columns 9-13, rows 18-20.
   assert.ok(tiles.every((t) => t.z === 6));
-  assert.deepEqual(
-    [...new Set(tiles.map((t) => t.col))],
-    [9, 10, 11, 12, 13]
-  );
+  assert.deepEqual([...new Set(tiles.map((t) => t.col))], [9, 10, 11, 12, 13]);
   assert.deepEqual([...new Set(tiles.map((t) => t.row))], [18, 19, 20]);
 });
 

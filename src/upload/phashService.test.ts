@@ -1,5 +1,5 @@
-import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import test, { type TestContext } from 'node:test';
 import { PhashService } from './phashService';
 
 class FakeWorker {

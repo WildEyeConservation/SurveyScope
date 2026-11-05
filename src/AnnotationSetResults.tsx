@@ -1,30 +1,42 @@
-import { Button } from 'react-bootstrap';
-import { Modal, Body, Header, Footer, Title } from './Modal';
-import { useNavigate } from 'react-router-dom';
-import { fetchAllPaginatedResults } from './utils.tsx';
-import { loadRows } from './rowChunks';
-import { loadProjectImages } from './projectImages';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import exportFromJSON from 'export-from-json';
-import { neutraliseCsvRows } from '../shared/csv';
-import { GlobalContext } from './Context.tsx';
-import { useContext, useState, useEffect, useMemo } from 'react';
-import { useUsers } from './apiInterface';
-import GenerateJollyResults from './GenerateJollyResults.tsx';
-import { Spinner } from 'react-bootstrap';
 import {
-  fetchAllInfoTagsForSet,
-  formatInfoTagsForCsv,
-} from './infoTags';
+  ChartColumnIcon,
+  DownloadIcon,
+  SearchIcon,
+  WaypointsIcon,
+} from 'lucide-react';
 import {
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  chainsMarkedOutside,
   createStratumAssigner,
+  isAnnotationOnEffort,
   isOnEffort,
   type BoundaryStatus,
   type LatLngRing,
 } from '../shared/boundaryStatus';
+import { neutraliseCsvRows } from '../shared/csv';
 import {
   hasDistanceInputs,
   perpendicularDistance,
 } from '../shared/distanceSampling';
+import { outsideBoundaryFields } from './annotationBoundary';
+import { useUsers } from './apiInterface';
+import { GlobalContext } from './Context.tsx';
+import GenerateJollyResults from './GenerateJollyResults.tsx';
+import { fetchAllInfoTagsForSet, formatInfoTagsForCsv } from './infoTags';
+import { Body, Footer, Header, Modal, Title } from './Modal';
+import { loadProjectImages } from './projectImages';
+import { loadRows } from './rowChunks';
+import { fetchAllPaginatedResults } from './utils.tsx';
 
 const NO_IMAGE = {
   originalPath: null,
@@ -44,10 +56,11 @@ const formatDistance = (distance: number | null) =>
 
 function flatToRing(coordinates: (number | null)[] | null | undefined) {
   const flat = (coordinates ?? []).filter(
-    (n): n is number => typeof n === 'number' && Number.isFinite(n)
+    (n): n is number => typeof n === 'number' && Number.isFinite(n),
   );
   const ring: LatLngRing = [];
-  for (let i = 0; i + 1 < flat.length; i += 2) ring.push([flat[i], flat[i + 1]]);
+  for (let i = 0; i + 1 < flat.length; i += 2)
+    ring.push([flat[i], flat[i + 1]]);
   return ring.length >= 3 ? ring : null;
 }
 
@@ -66,13 +79,17 @@ export default function AnnotationSetResults({
   const { client, showModal } = useContext(GlobalContext)!;
   const [loading, setLoading] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
+  const [exportError, setExportError] = useState('');
   const { users } = useUsers();
 
   const userMap = useMemo(() => {
-    return users.reduce((acc, user) => {
-      acc[user.id] = user.name ?? '';
-      return acc;
-    }, {} as Record<string, string>);
+    return users.reduce(
+      (acc, user) => {
+        acc[user.id] = user.name ?? '';
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
   }, [users]);
 
   const [jollyResultsExists, setJollyResultsExists] = useState(false);
@@ -86,11 +103,11 @@ export default function AnnotationSetResults({
       try {
         const data = await fetchAllPaginatedResults(
           client.models.JollyResult.jollyResultsBySurveyId,
-          { surveyId, selectionSet: ['annotationSetId'] }
+          { surveyId, selectionSet: ['annotationSetId'] },
         );
         if (mounted) {
           setJollyResultsExists(
-            data.some((r) => r.annotationSetId === annotationSet.id)
+            data.some((r) => r.annotationSetId === annotationSet.id),
           );
         }
       } catch (error) {
@@ -112,13 +129,10 @@ export default function AnnotationSetResults({
       {
         id: surveyId,
       },
-      { selectionSet: ['name'] }
+      { selectionSet: ['name'] },
     );
 
-    if (!survey) {
-      console.error('Survey not found');
-      return;
-    }
+    if (!survey) throw new Error('Survey not found');
 
     let fetched = 0;
     const [annotationSetsResult, images, categories] = await Promise.all([
@@ -140,15 +154,16 @@ export default function AnnotationSetResults({
               'reviewCatId',
               'reviewedBy',
               'infoTaggedBy',
+              ...outsideBoundaryFields<'outsideBoundary'>(),
             ],
             {
               onProgress: (count) => {
                 fetched = count;
                 setExportStatus(`Fetching annotations... (${fetched} fetched)`);
               },
-            }
-          )
-        )
+            },
+          ),
+        ),
       ),
       loadProjectImages(client, surveyId, [
         'originalPath',
@@ -166,10 +181,13 @@ export default function AnnotationSetResults({
     ]);
     const imageById = new Map(images.map((image) => [image.id, image]));
 
-    const categoryMap = categories.reduce((acc, category) => {
-      acc[category.id] = category.name ?? '';
-      return acc;
-    }, {} as Record<string, string>);
+    const categoryMap = categories.reduce(
+      (acc, category) => {
+        acc[category.id] = category.name ?? '';
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
 
     setExportStatus('Fetching strata...');
     const strata = (
@@ -181,14 +199,15 @@ export default function AnnotationSetResults({
     ).filter((stratum) => !stratum.offEffort);
     // Matches the Jolly calculation: by position, not by transect.
     const assignStratum = createStratumAssigner(
-      strata.map((stratum) => flatToRing(stratum.coordinates))
+      strata.map((stratum) => flatToRing(stratum.coordinates)),
     );
     const stratumName = (image: {
       latitude?: number | null;
       longitude?: number | null;
       boundaryStatus?: string | null;
     }) => {
-      if (!isOnEffort(image.boundaryStatus as BoundaryStatus | null)) return 'None';
+      if (!isOnEffort(image.boundaryStatus as BoundaryStatus | null))
+        return 'None';
       if (
         typeof image.latitude !== 'number' ||
         typeof image.longitude !== 'number'
@@ -210,7 +229,7 @@ export default function AnnotationSetResults({
           'sensorWidthMm',
           'tiltDegrees',
         ] as const,
-      }
+      },
     );
     const cameraById = new Map(cameras.map((camera) => [camera.id, camera]));
 
@@ -218,8 +237,8 @@ export default function AnnotationSetResults({
       annotationSets.map((set) =>
         fetchAllInfoTagsForSet(client, set.id, (count) => {
           setExportStatus(`Fetching info tags... (${count} fetched)`);
-        })
-      )
+        }),
+      ),
     );
 
     let i = 0;
@@ -227,10 +246,19 @@ export default function AnnotationSetResults({
 
     for (const rows of annotationSetsResult) {
       a += rows.length;
-      const annotations = rows.map((anno) => ({
-        ...anno,
-        image: imageById.get(anno.imageId ?? '') ?? NO_IMAGE,
-      }));
+      const markedChains = chainsMarkedOutside(rows);
+      const annotations = rows.map((anno) => {
+        const image = imageById.get(anno.imageId ?? '') ?? NO_IMAGE;
+        const marked = markedChains.has(anno.objectId ?? anno.id);
+        return {
+          ...anno,
+          image,
+          onEffort: isAnnotationOnEffort(
+            image.boundaryStatus as BoundaryStatus | null,
+            marked,
+          ),
+        };
+      });
 
       const fileName = `SurveyScope-${survey.name}-${annotationSets[i].name}`;
       const exportType = exportFromJSON.types.csv;
@@ -243,41 +271,39 @@ export default function AnnotationSetResults({
       }));
       const includeDistance = distanceInputs.every(hasDistanceInputs);
       exportFromJSON({
-        data: neutraliseCsvRows(annotations.map((anno, index) => {
-          return {
-            category: categoryMap[anno.categoryId ?? ''] || 'Unknown',
-            image: anno.image.originalPath || 'Unknown',
-            transect: anno.image.transectId || 'Unknown',
-            stratum: stratumName(anno.image),
-            surveyArea: isOnEffort(
-              anno.image.boundaryStatus as BoundaryStatus | null
-            )
-              ? 'inside'
-              : 'outside',
-            timestamp: anno.image.timestamp,
-            latitude: anno.image.latitude,
-            longitude: anno.image.longitude,
-            obscured: anno.obscured ?? false,
-            annotator: userMap[anno.owner ?? ''] || 'Unknown',
-            isPrimary: anno.objectId === anno.id,
-            x: anno.x,
-            y: anno.y,
-            ...(includeDistance
-              ? {
-                  perpendicularDistanceM: formatDistance(
-                    perpendicularDistance(distanceInputs[index])
-                  ),
-                }
-              : {}),
-            source: anno.source,
-            infoTags: formatInfoTagsForCsv(
-              infoTagsBySet[i].get(anno.id) ?? []
-            ),
-            infoTaggedBy: userMap[anno.infoTaggedBy ?? ''],
-            reviewedBy: userMap[anno.reviewedBy ?? ''],
-            reviewedCategory: categoryMap[anno.reviewCatId ?? ''],
-          };
-        })),
+        data: neutraliseCsvRows(
+          annotations.map((anno, index) => {
+            return {
+              category: categoryMap[anno.categoryId ?? ''] || 'Unknown',
+              image: anno.image.originalPath || 'Unknown',
+              transect: anno.image.transectId || 'Unknown',
+              stratum: anno.onEffort ? stratumName(anno.image) : 'None',
+              surveyArea: anno.onEffort ? 'inside' : 'outside',
+              timestamp: anno.image.timestamp,
+              latitude: anno.image.latitude,
+              longitude: anno.image.longitude,
+              obscured: anno.obscured ?? false,
+              annotator: userMap[anno.owner ?? ''] || 'Unknown',
+              isPrimary: anno.objectId === anno.id,
+              x: anno.x,
+              y: anno.y,
+              ...(includeDistance
+                ? {
+                    perpendicularDistanceM: formatDistance(
+                      perpendicularDistance(distanceInputs[index]),
+                    ),
+                  }
+                : {}),
+              source: anno.source,
+              infoTags: formatInfoTagsForCsv(
+                infoTagsBySet[i].get(anno.id) ?? [],
+              ),
+              infoTaggedBy: userMap[anno.infoTaggedBy ?? ''],
+              reviewedBy: userMap[anno.reviewedBy ?? ''],
+              reviewedCategory: categoryMap[anno.reviewCatId ?? ''],
+            };
+          }),
+        ),
         fileName,
         exportType,
       });
@@ -285,9 +311,8 @@ export default function AnnotationSetResults({
       i++;
     }
 
-
     setExportStatus(`Exported ${a} annotations`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     setExportStatus('');
   }
 
@@ -302,6 +327,122 @@ export default function AnnotationSetResults({
     navigate(`/jolly/${surveyId}/${annotationSetId}`);
   }
 
+  const exporting = exportStatus !== '';
+  const actions: {
+    icon: ReactNode;
+    title: string;
+    detail: ReactNode;
+    buttons: ReactNode;
+  }[] = [
+    {
+      icon: <SearchIcon />,
+      title: 'Explore',
+      detail: 'Go through the annotations freely, outside of a workflow.',
+      buttons: (
+        <Button
+          variant='primary'
+          onClick={() =>
+            navigate(`/surveys/${surveyId}/set/${annotationSet.id}/review`)
+          }
+        >
+          Explore
+        </Button>
+      ),
+    },
+    {
+      icon: <DownloadIcon />,
+      title: 'CSV export',
+      detail: exporting ? (
+        <span className='flex items-center gap-2'>
+          <Spinner size='sm' />
+          {exportStatus}
+        </span>
+      ) : exportError ? (
+        <span className='text-danger'>{exportError}</span>
+      ) : (
+        'Every annotation with its related data.'
+      ),
+      buttons: (
+        <Button
+          variant='primary'
+          disabled={users.length === 0 || exporting}
+          title={users.length === 0 ? 'Loading users...' : undefined}
+          onClick={() => {
+            setExportError('');
+            exportData([annotationSet]).catch((error) => {
+              console.error('CSV export failed', error);
+              setExportStatus('');
+              setExportError('The export failed. Try again.');
+            });
+          }}
+        >
+          {exporting ? 'Exporting...' : 'Download'}
+        </Button>
+      ),
+    },
+    {
+      icon: <WaypointsIcon />,
+      title: 'Chain Viewer',
+      detail:
+        'Each primary annotation with its linked sightings across neighbouring images.',
+      buttons: (
+        <Button
+          variant='primary'
+          onClick={() =>
+            navigate(
+              `/surveys/${surveyId}/set/${annotationSet.id}/chain-viewer`,
+            )
+          }
+        >
+          Open
+        </Button>
+      ),
+    },
+    {
+      icon: <ChartColumnIcon />,
+      title: 'Jolly II',
+      detail: loading
+        ? 'Checking for results...'
+        : jollyResultsExists
+          ? 'Population estimates are ready. Regenerate after changing annotations.'
+          : 'Population estimates for this annotation set.',
+      buttons: jollyResultsExists ? (
+        <>
+          <Button
+            variant='outline-primary'
+            disabled={loading}
+            onClick={() => {
+              if (
+                window.confirm(
+                  'Regenerating replaces the existing Jolly results for this annotation set. Continue?',
+                )
+              ) {
+                generateSurveyResults();
+              }
+            }}
+          >
+            Regenerate
+          </Button>
+          <Button
+            variant='primary'
+            disabled={loading}
+            onClick={() => viewSurveyResults(annotationSet.id)}
+          >
+            View
+          </Button>
+        </>
+      ) : (
+        <Button
+          variant='primary'
+          disabled={loading}
+          onClick={generateSurveyResults}
+        >
+          Generate
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <>
       <Modal show={show} onHide={onClose} strict={true} size='lg'>
@@ -309,101 +450,30 @@ export default function AnnotationSetResults({
           <Title>{annotationSet.name} Results</Title>
         </Header>
         <Body>
-          <div className='d-flex flex-column gap-4 p-3'>
-            <div>
-              <h5 className='mb-0'>Explore</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
-                Explore your annotation set by searching for all sightings of a
-                specific species. Can be used to find and correct
-                errors, and reannotate unknown sightings.
-              </span>
-              <Button
-                className='d-block mt-1'
-                variant='primary'
-                onClick={() =>
-                  navigate(
-                    `/surveys/${surveyId}/set/${annotationSet.id}/review`
-                  )
-                }
-              >
-                Explore
-              </Button>
-            </div>
-            <div>
-              <h5 className='mb-0'>CSV File</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
-                Download a CSV file of your annotation set.
-              </span>
-              {exportStatus && <p className='text-muted' style={{ fontSize: '14px' }}><Spinner animation='border' size='sm' /> {exportStatus}</p>}
-              <Button
-                className='d-block mt-1'
-                variant='primary'
-                disabled={users.length === 0}
-                onClick={() => {
-                  exportData([annotationSet]);
-                }}
-              >
-                Download
-              </Button>
-            </div>
-            <div>
-              <h5 className='mb-0'>Chain Viewer</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
-                Inspect linked-individual chains: every primary annotation
-                and all its linked sightings across neighbour images.
-              </span>
-              <Button
-                className='d-block mt-1'
-                variant='primary'
-                onClick={() =>
-                  navigate(
-                    `/surveys/${surveyId}/set/${annotationSet.id}/chain-viewer`
-                  )
-                }
-              >
-                Open Chain Viewer
-              </Button>
-            </div>
-            <div>
-              <h5 className='mb-0'>Jolly II</h5>
-              <span className='text-muted' style={{ fontSize: '14px' }}>
-                Generate and view the Jolly results for this annotation set.
-              </span>
-              <div className='d-flex flex-row gap-2'>
-                <Button
-                  className='d-block mt-1'
-                  variant='primary'
-                  disabled={loading}
-                  onClick={() => {
-                    if (
-                      jollyResultsExists &&
-                      !window.confirm(
-                        'Jolly results already exist for this annotation set. Recalculating will overwrite existing results. Continue?'
-                      )
-                    ) {
-                      return;
-                    }
-                    generateSurveyResults();
-                  }}
+          <div className='p-4'>
+            <div className='divide-y divide-white/10 border border-white/15 bg-white/[0.07]'>
+              {actions.map((action) => (
+                <div
+                  key={action.title}
+                  className='flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3'
                 >
-                  Generate Results
-                </Button>
-                <Button
-                  className='d-block mt-1'
-                  variant='primary'
-                  disabled={loading || !jollyResultsExists}
-                  onClick={() => {
-                    viewSurveyResults(annotationSet.id);
-                  }}
-                >
-                  View Results
-                </Button>
-              </div>
+                  <span className='text-muted-foreground [&_svg]:size-5'>
+                    {action.icon}
+                  </span>
+                  <div className='flex min-w-0 flex-1 flex-col'>
+                    <span className='font-semibold'>{action.title}</span>
+                    <span className='text-sm text-muted-foreground'>
+                      {action.detail}
+                    </span>
+                  </div>
+                  <div className='flex gap-2'>{action.buttons}</div>
+                </div>
+              ))}
             </div>
           </div>
         </Body>
         <Footer>
-          <Button variant='dark' onClick={onClose} disabled={loading}>
+          <Button variant='ghost' className='mr-auto' onClick={onClose}>
             Close
           </Button>
         </Footer>

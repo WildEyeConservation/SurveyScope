@@ -36,36 +36,46 @@ export const MODELS: Record<
 
 export type ScanImage = { id: string; originalPath: string };
 
-export async function findUnprocessedImages(
+export async function findUnprocessedByModel(
   client: unknown,
   projectId: string,
-  source: string,
+  models: readonly ModelValue[],
   {
     signal,
     onProgress,
   }: { signal?: AbortSignal; onProgress?: (count: number) => void } = {},
-): Promise<ScanImage[]> {
-  const [images, processed] = await Promise.all([
+): Promise<{ total: number; unprocessed: Record<string, ScanImage[]> }> {
+  const [images, ...processed] = await Promise.all([
     loadProjectImages(client, projectId, ['id', 'originalPath'], {
       signal,
       onProgress,
     }),
-    loadRows(
-      client,
-      'processedByProjectIdAndSource',
-      projectId,
-      ['imageId', 'source'],
-      { signal, beginsWith: source },
+    ...models.map((model) =>
+      loadRows(
+        client,
+        'processedByProjectIdAndSource',
+        projectId,
+        ['imageId', 'source'],
+        { signal, beginsWith: MODELS[model].source },
+      ),
     ),
   ]);
-  const done = new Set(
-    processed.filter((row) => row.source === source).map((row) => row.imageId),
-  );
-  return images.flatMap((image) =>
-    image.originalPath && !done.has(image.id)
+  const scannable = images.flatMap((image) =>
+    image.originalPath
       ? [{ id: image.id, originalPath: image.originalPath }]
       : [],
   );
+  const unprocessed: Record<string, ScanImage[]> = {};
+  models.forEach((model, i) => {
+    const source = MODELS[model].source;
+    const done = new Set(
+      processed[i]
+        .filter((row) => row.source === source)
+        .map((row) => row.imageId),
+    );
+    unprocessed[model] = scannable.filter((image) => !done.has(image.id));
+  });
+  return { total: scannable.length, unprocessed };
 }
 
 export async function dispatchBatches<T>(

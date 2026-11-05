@@ -1,20 +1,20 @@
+import { Combobox } from '@/components/ui/combobox';
+import { Spinner } from '@/components/ui/spinner';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Spinner } from 'react-bootstrap';
-import Select, { type SingleValue } from 'react-select';
+import ChangeCategoryModal from '../../ChangeCategoryModal';
 import type { Lane } from '../../individual-id/utils/lanes';
-import type { ImageType } from '../../schemaTypes';
-import { buildHerdRuns } from '../utils/herdRuns';
-import { buildHerdDisplayPairs } from '../utils/herdPairs';
+import type { CategoryType, ImageType } from '../../schemaTypes';
 import { CHAIN_LOCATION_SOURCES, HerdMapPair } from '../HerdMapPair';
 import { HerdNavBar } from '../HerdNavBar';
 import { ChainTilesModal } from '../components/ChainTilesModal';
-import ChangeCategoryModal from '../../ChangeCategoryModal';
-import { CommentModal } from './CommentModal';
-import type { CategoryType } from '../../schemaTypes';
 import type { ChainAnnotation } from '../types';
-import { useSharedChainData } from './useSharedChainData';
+import { buildHerdDisplayPairs } from '../utils/herdPairs';
+import { buildHerdRuns } from '../utils/herdRuns';
+import { CommentModal } from './CommentModal';
 import { useChainReviewFeedback } from './useChainReviewFeedback';
+import { useSharedChainData } from './useSharedChainData';
+
 import '../ChainViewer.css';
 
 interface Props {
@@ -51,19 +51,19 @@ export function SharedHerdViewHarness({ shareId }: Props) {
 
   const sourceKeyFor = useCallback(
     (imageId: string) => data?.sourceKeyByImageId[imageId],
-    [data?.sourceKeyByImageId]
+    [data?.sourceKeyByImageId],
   );
 
   const locationRowsFor = useCallback(
     (imageId: string) => data?.locationRowsByImageId[imageId],
-    [data?.locationRowsByImageId]
+    [data?.locationRowsByImageId],
   );
 
   // ChainTilesModal expects a Map; rebuild it here (component-local, not the
   // persisted query data) from the JSON-safe record.
   const tileMetaMap = useMemo(
     () => new Map(Object.entries(data?.metaByAnnotationId ?? {})),
-    [data?.metaByAnnotationId]
+    [data?.metaByAnnotationId],
   );
 
   // ---- Category filter / colours (from the snapshot) ----
@@ -76,8 +76,10 @@ export function SharedHerdViewHarness({ shareId }: Props) {
     () =>
       (data?.categories ?? [])
         .slice()
-        .sort((a, b) => a.name.localeCompare(b.name)) as unknown as CategoryType[],
-    [data?.categories]
+        .sort((a, b) =>
+          a.name.localeCompare(b.name),
+        ) as unknown as CategoryType[],
+    [data?.categories],
   );
 
   const categoryOptions = useMemo(
@@ -85,7 +87,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       (data?.categories ?? [])
         .map((c) => ({ label: c.name, value: c.id }))
         .sort((a, b) => a.label.localeCompare(b.label)),
-    [data?.categories]
+    [data?.categories],
   );
 
   const categoryColors = useMemo(() => {
@@ -101,7 +103,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       selectedCategory
         ? annotations.filter((a) => a.categoryId === selectedCategory.value)
         : annotations,
-    [annotations, selectedCategory]
+    [annotations, selectedCategory],
   );
 
   const annotationsByImage = useMemo(() => {
@@ -114,7 +116,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
     const ps = buildHerdDisplayPairs(
       data?.imagesById ?? {},
       data?.rawNeighbours ?? [],
-      annotationsByImage
+      annotationsByImage,
     );
     const cs = ps.map((p) => {
       const aAnns = annotationsByImage[p.image1Id] ?? [];
@@ -128,8 +130,12 @@ export function SharedHerdViewHarness({ shareId }: Props) {
   }, [data?.imagesById, data?.rawNeighbours, annotationsByImage]);
 
   const { runIdByIndex, runStarts } = useMemo(
-    () => buildHerdRuns(chainSets, pairs.map((pair) => pair.herdId)),
-    [chainSets, pairs]
+    () =>
+      buildHerdRuns(
+        chainSets,
+        pairs.map((pair) => pair.herdId),
+      ),
+    [chainSets, pairs],
   );
 
   const navLane: Lane = useMemo(
@@ -140,28 +146,31 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       entries: pairs.map((_, i) => i),
       timestamps: pairs.map((p) => p.imageA.timestamp ?? 0),
     }),
-    [pairs]
+    [pairs],
   );
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [imageBearings, setImageBearings] = useState<Map<string, number>>(
-    () => new Map()
+    () => new Map(),
   );
   const initialChainParamHandledRef = useRef<string | null>(null);
 
   const bearingForImage = useCallback(
     (image: ImageType) => imageBearings.get(image.id) ?? 0,
-    [imageBearings]
+    [imageBearings],
   );
-  const onImageBearingChange = useCallback((image: ImageType, bearing: number) => {
-    setImageBearings((current) => {
-      if (current.get(image.id) === bearing) return current;
-      const next = new Map(current);
-      next.set(image.id, bearing);
-      return next;
-    });
-  }, []);
+  const onImageBearingChange = useCallback(
+    (image: ImageType, bearing: number) => {
+      setImageBearings((current) => {
+        if (current.get(image.id) === bearing) return current;
+        const next = new Map(current);
+        next.set(image.id, bearing);
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (currentIndex >= pairs.length) setCurrentIndex(0);
@@ -172,12 +181,12 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       if (target < 0 || target >= pairs.length) return;
       setCurrentIndex(target);
     },
-    [pairs.length]
+    [pairs.length],
   );
 
   const stepFrame = useCallback(
     (delta: 1 | -1) => goTo(currentIndex + delta),
-    [goTo, currentIndex]
+    [goTo, currentIndex],
   );
 
   const jumpHerd = useCallback(
@@ -191,7 +200,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
         else if (run > 0) goTo(runStarts[run - 1]);
       }
     },
-    [runIdByIndex, runStarts, currentIndex, goTo]
+    [runIdByIndex, runStarts, currentIndex, goTo],
   );
 
   const currentRun = runIdByIndex[currentIndex] ?? 0;
@@ -209,10 +218,10 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       void setObscured(
         annotationId,
         current.objectId ?? current.id,
-        !current.obscured
+        !current.obscured,
       );
     },
-    [annotations, setObscured]
+    [annotations, setObscured],
   );
 
   // ---- Label opinion (chain-wide, records feedback per member) ----
@@ -235,7 +244,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       }
       return Array.from(ids);
     },
-    [annotations]
+    [annotations],
   );
 
   const handleChangeLabel = useCallback(
@@ -249,7 +258,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
         chainId: current.objectId ?? current.id,
       });
     },
-    [annotations, buildChainIds]
+    [annotations, buildChainIds],
   );
 
   const applyLabelChange = useCallback(
@@ -261,7 +270,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
         void setRelabel(aid, target.chainId, newCategoryId);
       }
     },
-    [labelChange, setRelabel]
+    [labelChange, setRelabel],
   );
 
   // ---- Comment opinion (per annotation, records feedback) ----
@@ -281,7 +290,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
         current: overlay.get(annotationId)?.comment ?? '',
       });
     },
-    [annotations, overlay]
+    [annotations, overlay],
   );
 
   const applyComment = useCallback(
@@ -291,7 +300,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       setCommentTarget(null);
       void setComment(target.annotationId, target.chainId, text);
     },
-    [commentTarget, setComment]
+    [commentTarget, setComment],
   );
 
   // ---- Chain-tiles modal ----
@@ -301,7 +310,7 @@ export function SharedHerdViewHarness({ shareId }: Props) {
       const a = annotations.find((x) => x.id === annotationId);
       if (a) setTilesChainId(a.objectId ?? a.id);
     },
-    [annotations]
+    [annotations],
   );
   useEffect(() => {
     if (chainParam) setTilesChainId(chainParam);
@@ -328,25 +337,23 @@ export function SharedHerdViewHarness({ shareId }: Props) {
 
   return (
     <div
-      className='w-100 h-100 d-flex flex-column'
+      className='flex h-full w-full flex-col'
       style={{ minHeight: 0, paddingTop: 12, paddingBottom: 12 }}
     >
       <div
-        className='d-flex flex-row align-items-center gap-3 px-3 py-2'
+        className='flex flex-row items-center gap-4 px-4 py-2'
         style={{ flexShrink: 0, background: '#4E5D6C', color: '#f8f9fa' }}
       >
         <div style={{ fontWeight: 600 }}>{title}</div>
         <div style={{ width: 220 }}>
-          <Select
+          <Combobox
             value={selectedCategory}
-            onChange={(v: SingleValue<{ label: string; value: string }>) =>
-              setSelectedCategory(v)
-            }
-            isClearable
+            onChange={(option) => setSelectedCategory(option)}
+            clearable
             options={categoryOptions}
-            className='text-black'
             placeholder='All labels'
-            isDisabled={loading}
+            disabled={loading}
+            name='Label filter'
           />
         </div>
         {!loading && pairs.length > 0 && (
@@ -355,14 +362,14 @@ export function SharedHerdViewHarness({ shareId }: Props) {
             {runStarts.length}
           </div>
         )}
-        <span className='ms-auto' style={{ fontSize: 13, opacity: 0.85 }}>
+        <span className='ml-auto' style={{ fontSize: 13, opacity: 0.85 }}>
           Read-only review
         </span>
       </div>
 
       {loading ? (
         <div
-          className='d-flex align-items-center justify-content-center text-muted'
+          className='flex items-center justify-center text-muted-foreground'
           style={{ flex: 1 }}
         >
           {isError ? (
@@ -372,14 +379,14 @@ export function SharedHerdViewHarness({ shareId }: Props) {
             </span>
           ) : (
             <span>
-              <Spinner animation='border' size='sm' className='me-2' />
+              <Spinner animation='border' size='sm' className='mr-2' />
               Loading shared chain data…
             </span>
           )}
         </div>
       ) : pairs.length === 0 ? (
         <div
-          className='d-flex align-items-center justify-content-center text-muted'
+          className='flex items-center justify-center text-muted-foreground'
           style={{ flex: 1 }}
         >
           <span>No image pairs with animals to review.</span>

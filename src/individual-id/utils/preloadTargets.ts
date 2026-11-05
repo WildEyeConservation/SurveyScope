@@ -13,7 +13,7 @@ export interface ZoomRingPreloadTarget {
 export function preloadPairIndices(
   entries: readonly number[],
   currentIndex: number,
-  completionTarget?: number
+  completionTarget?: number,
 ) {
   return [
     ...new Set([
@@ -21,13 +21,13 @@ export function preloadPairIndices(
       ...adjacentPairIndices(entries, currentIndex),
     ]),
   ].filter(
-    (index): index is number => index !== undefined && index !== currentIndex
+    (index): index is number => index !== undefined && index !== currentIndex,
   );
 }
 
 /** Snapped to tile cells so sub-tile drags do not restart preloading. */
 export function serializePreloadTargets(
-  targets: readonly ZoomRingPreloadTarget[]
+  targets: readonly ZoomRingPreloadTarget[],
 ): string {
   return JSON.stringify(
     targets.map(({ image, points }) => {
@@ -55,6 +55,6 @@ export function serializePreloadTargets(
         },
         points: [...cells.values()].sort((a, b) => a.y - b.y || a.x - b.x),
       };
-    })
+    }),
   );
 }

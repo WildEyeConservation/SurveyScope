@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
 import * as jdenticon from 'jdenticon';
 import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { CategoryType } from '../../schemaTypes';
 import type { MatchCandidate } from '../types';
 import { nameFor } from '../utils/identity';
@@ -140,7 +140,7 @@ export function OovPanel({
               onHoverChange={onHoverChange}
               onDelete={onDelete}
             />
-          )
+          ),
         )}
       </div>
     </div>
@@ -169,8 +169,9 @@ function CollapsedAvatar({
   const real = side === 'A' ? candidate.realA : candidate.realB;
   const isPrimary = !real?.objectId || real.objectId === real.id;
   const identiconSvg = useMemo(
-    () => (isPrimary ? jdenticon.toSvg(candidate.identityKey, AVATAR_SIZE) : ''),
-    [candidate.identityKey, isPrimary]
+    () =>
+      isPrimary ? jdenticon.toSvg(candidate.identityKey, AVATAR_SIZE) : '',
+    [candidate.identityKey, isPrimary],
   );
   const handleClick = (ev: React.MouseEvent) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.button === 0) {
@@ -187,8 +188,8 @@ function CollapsedAvatar({
   const ring = active
     ? '0 0 0 2px #ff8c1a'
     : passiveHover
-    ? '0 0 0 2px #ffd28a'
-    : 'none';
+      ? '0 0 0 2px #ffd28a'
+      : 'none';
   return (
     <div
       onClick={handleClick}
@@ -243,7 +244,7 @@ function OovCard({
   const isPrimary = !real?.objectId || real.objectId === real.id;
   const identiconSvg = useMemo(
     () => (isPrimary ? jdenticon.toSvg(candidate.identityKey, 20) : ''),
-    [candidate.identityKey, isPrimary]
+    [candidate.identityKey, isPrimary],
   );
   const [hover, setHover] = useState(false);
   const showActions = hover;
@@ -271,8 +272,8 @@ function OovCard({
   const outline = active
     ? '2px solid #ff8c1a'
     : passiveHover
-    ? '2px solid #ffd28a'
-    : '1px solid rgba(255,255,255,0.15)';
+      ? '2px solid #ffd28a'
+      : '1px solid rgba(255,255,255,0.15)';
 
   return (
     <div

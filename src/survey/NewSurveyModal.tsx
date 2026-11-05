@@ -1,14 +1,15 @@
-import { Button, Form } from 'react-bootstrap';
-import { useRef, useState } from 'react';
-import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { GlobalContext, UserContext } from '../Context';
-import { useContext, useEffect } from 'react';
-import Select from 'react-select';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
-import MyTable from '../Table';
+import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
+import { Input } from '@/components/ui/input';
+import { FormText, Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useUsers } from '../apiInterface';
-import { fetchAllPaginatedResults } from '../utils';
+import { GlobalContext, UserContext } from '../Context';
 import { FilesUploadForm, UploadWizardStep } from '../FilesUploadComponent';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
+import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
 import StepIndicator from './new-survey/StepIndicator';
 
@@ -19,8 +20,12 @@ const WIZARD_STEPS = [
   'Survey Area',
   'Filter Images',
   'Cameras',
-  'Review & Create',
+  'Model',
+  'Checklist',
 ];
+const ALL_MEMBERS_ANNOTATE = { value: 'Yes', label: 'Yes' };
+
+const LOCATION_STEP = WIZARD_STEPS.indexOf('Location Data');
 
 // Which upload-form section each wizard step shows ('none' while the modal's
 // own details step is visible).
@@ -31,6 +36,7 @@ const CORE_STEPS: UploadWizardStep[] = [
   'surveyArea',
   'filter',
   'cameras',
+  'model',
   'review',
 ];
 
@@ -57,8 +63,7 @@ export default function NewSurveyModal({
   const [globalAnnotationAccess, setGlobalAnnotationAccess] = useState<{
     label: string;
     value: string;
-  } | null>(null);
-  const [addPermissionExceptions, setAddPermissionExceptions] = useState(false);
+  } | null>(ALL_MEMBERS_ANNOTATE);
   const [permissionExceptions, setPermissionExceptions] = useState<
     {
       user: {
@@ -87,10 +92,23 @@ export default function NewSurveyModal({
   const [gpsReady, setGpsReady] = useState(false);
   const [imagesReady, setImagesReady] = useState(false);
   const [locationReady, setLocationReady] = useState(false);
+  const [confirmLocation, setConfirmLocation] = useState<(() => void) | null>(
+    null,
+  );
   const [stepIndex, setStepIndex] = useState(0);
+  const membersCanAnnotate = globalAnnotationAccess?.value === 'Yes';
+  const savedExceptions = permissionExceptions.filter((pe) => !pe.temp);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [furthestIndex, setFurthestIndex] = useState(0);
+  const [checklistComplete, setChecklistComplete] = useState(false);
 
-  const canSubmit = !loading && filesReady && name && organization && gpsReady;
+  const canSubmit =
+    !loading &&
+    filesReady &&
+    name &&
+    organization &&
+    gpsReady &&
+    checklistComplete;
 
   const stepReady = (index: number): boolean => {
     switch (index) {
@@ -181,7 +199,7 @@ export default function NewSurveyModal({
       user.userId,
       `Created project "${name}" in organization "${organization.label}"`,
       project.id,
-      organization.value
+      organization.value,
     ).catch(console.error);
 
     const admins = await fetchAllPaginatedResults(
@@ -190,7 +208,7 @@ export default function NewSurveyModal({
         organizationId: organization.value,
         filter: { isAdmin: { eq: true } },
         selectionSet: ['userId'],
-      }
+      },
     );
 
     await Promise.all(
@@ -201,7 +219,7 @@ export default function NewSurveyModal({
           isAdmin: true,
           group: organization.value,
         });
-      })
+      }),
     );
 
     const exceptions = permissionExceptions.filter((pe) => !pe.temp);
@@ -216,12 +234,12 @@ export default function NewSurveyModal({
             group: organization.value,
           });
         }
-      })
+      }),
     );
 
     // users already exclude current user and admins
     const other = (users[organization.value] ?? []).filter(
-      (u) => !exceptions.some((e) => e.user.id === u.id)
+      (u) => !exceptions.some((e) => e.user.id === u.id),
     );
 
     if (globalAnnotationAccess?.value === 'Yes') {
@@ -233,7 +251,7 @@ export default function NewSurveyModal({
             isAdmin: false,
             group: organization.value,
           });
-        })
+        }),
       );
     }
 
@@ -275,7 +293,7 @@ export default function NewSurveyModal({
   useEffect(() => {
     if (allUsers && myOrganizationHook.data) {
       const adminOrganizations = myOrganizationHook.data.filter(
-        (o) => o.isAdmin
+        (o) => o.isAdmin,
       );
 
       Promise.all(
@@ -288,10 +306,10 @@ export default function NewSurveyModal({
                 },
                 {
                   selectionSet: ['name', 'id', 'memberships.*'],
-                }
+                },
               )
-            ).data
-        )
+            ).data,
+        ),
       ).then((organizations) => {
         setOrganizations(
           organizations
@@ -299,7 +317,7 @@ export default function NewSurveyModal({
             .map((o) => ({
               label: o.name,
               value: o.id,
-            }))
+            })),
         );
 
         if (organizations.length === 1 && organizations[0]) {
@@ -316,14 +334,17 @@ export default function NewSurveyModal({
               (acc, o) => ({
                 ...acc,
                 [o.id]: o.memberships
-                  .filter((m: { isAdmin: boolean | null; userId: string }) => !m.isAdmin)
+                  .filter(
+                    (m: { isAdmin: boolean | null; userId: string }) =>
+                      !m.isAdmin,
+                  )
                   .map((m: { userId: string }) => ({
                     id: m.userId,
                     name: allUsers.find((u) => u.id === m.userId)?.name || '',
                   })),
               }),
-              {}
-            )
+              {},
+            ),
         );
       });
     }
@@ -332,15 +353,13 @@ export default function NewSurveyModal({
   useEffect(() => {
     if (organization) {
       setPermissionExceptions([]);
-      setAddPermissionExceptions(false);
     }
   }, [organization]);
 
   useEffect(() => {
     if (!show) {
       setName('');
-      setGlobalAnnotationAccess(null);
-      setAddPermissionExceptions(false);
+      setGlobalAnnotationAccess(ALL_MEMBERS_ANNOTATE);
       setPermissionExceptions([]);
       setUploadSubmitFn(null);
       createdProjectIdRef.current = null;
@@ -356,251 +375,243 @@ export default function NewSurveyModal({
         <Title>New Survey</Title>
       </Header>
       <Body>
-        <Form className='d-flex flex-column gap-2 p-3'>
+        <form className='flex flex-col gap-2 p-4'>
           <StepIndicator
             steps={WIZARD_STEPS}
             currentIndex={stepIndex}
             furthestIndex={furthestIndex}
             onSelect={setStepIndex}
           />
-          {/* d-none (not inline display) because d-flex is !important */}
-          <div
-            className={
-              stepIndex === 0 ? 'd-flex flex-column gap-2' : 'd-none'
-            }
-          >
-          <Form.Group>
-            <Form.Label>Name</Form.Label>
-            <Form.Control
-              type='text'
-              placeholder='Enter a unique identifying name for the survey.'
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label>Organisation</Form.Label>
-            <Select
-              className='text-black'
-              value={organization}
-              options={organizations}
-              onChange={(e) => setOrganization(e)}
-              styles={{
-                valueContainer: (base) => ({
-                  ...base,
-                  overflowY: 'auto',
-                }),
-              }}
-            />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='mb-0'>Permissions</Form.Label>
-            <span
-              className='text-muted d-block mb-1'
-              style={{ fontSize: 12, lineHeight: 1.2 }}
-            >
-              Select the user permissions for all organisation members excluding
-              yourself and admins.
-            </span>
-            <div className='mb-2'>
-              <Form.Label style={{ fontSize: 14 }}>
-                Annotation Access:
-              </Form.Label>
-              <Select
-                className='text-black'
-                value={globalAnnotationAccess}
-                placeholder='Default (No)'
-                options={[
-                  { value: 'Yes', label: 'Yes' },
-                  { value: 'No', label: 'No' },
-                ]}
-                onChange={(e) => setGlobalAnnotationAccess(e)}
-                styles={{
-                  valueContainer: (base) => ({
-                    ...base,
-                    overflowY: 'auto',
-                  }),
-                }}
-              />
-            </div>
-            <Form.Switch
-              style={{ fontSize: 14 }}
-              id='addPermissionExceptions'
-              label='Add Permission Exceptions'
-              checked={addPermissionExceptions}
-              onChange={(e) => {
-                if (!organization) {
-                  alert('Please select an organisation first');
-                  return;
-                }
-                setAddPermissionExceptions(e.target.checked);
-                if (!e.target.checked) {
-                  setPermissionExceptions([]);
-                }
-              }}
-            />
-            {addPermissionExceptions && (
-              <>
-                <MyTable
-                  tableHeadings={[
-                    { content: 'Username', style: { width: '33%' } },
-                    { content: 'Annotation Access', style: { width: '33%' } },
-                    { content: 'Remove Exception', style: { width: '33%' } },
-                  ]}
-                  tableData={permissionExceptions.map((exception) => ({
-                    id: exception.user.id,
-                    rowData: [
-                      <Select
-                        className='text-black'
-                        value={{
-                          label: exception.user.name,
-                          value: exception.user.id,
-                        }}
-                        options={users[organization?.value || '']
-                          ?.filter(
-                            (u) =>
-                              !permissionExceptions.some(
-                                (pe) => pe.user.id === u.id
-                              )
-                          )
-                          .map((u) => ({
-                            label: u.name,
-                            value: u.id,
-                          }))}
-                        onChange={(selected) => {
-                          setPermissionExceptions(
-                            permissionExceptions.map((pe) =>
-                              pe.user.id === exception.user.id
-                                ? {
-                                    ...pe,
-                                    user: {
-                                      ...pe.user,
-                                      id: selected?.value || pe.user.id,
-                                      name: selected?.label || pe.user.name,
-                                    },
-                                    temp: false,
-                                  }
-                                : pe
-                            )
-                          );
-                        }}
-                      />,
-                      <LabeledToggleSwitch
-                        className='mb-0'
-                        leftLabel='No'
-                        rightLabel='Yes'
-                        checked={exception.annotationAccess}
-                        onChange={(checked) => {
-                          setPermissionExceptions(
-                            permissionExceptions.map((pe) =>
-                              pe.user.id === exception.user.id
-                                ? { ...pe, annotationAccess: checked }
-                                : pe
-                            )
-                          );
-                        }}
-                      />,
-                      <Button
-                        variant='danger'
-                        size='sm'
-                        onClick={() => {
-                          setPermissionExceptions(
-                            permissionExceptions.filter(
-                              (e) => e.user.id !== exception.user.id
-                            )
-                          );
-                        }}
-                      >
-                        Remove
-                      </Button>,
-                    ],
-                  }))}
+          <div className={stepIndex === 0 ? 'flex flex-col gap-2' : 'hidden'}>
+            <div className='grid grid-cols-[1.4fr_1fr] gap-3'>
+              <div>
+                <Label htmlFor='survey-name'>Survey name</Label>
+                <Input
+                  id='survey-name'
+                  type='text'
+                  placeholder='A unique name for the survey'
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                 />
-                <Button
-                  variant='info'
-                  size='sm'
-                  onClick={() => {
-                    if (permissionExceptions.some((e) => e.temp)) {
-                      alert(
-                        'Please complete the current permission exception before adding another'
-                      );
-                      return;
-                    }
-                    setPermissionExceptions([
-                      ...permissionExceptions,
-                      {
-                        user: {
-                          id: crypto.randomUUID(),
-                          name: 'Select a user',
-                        },
-                        annotationAccess: false,
-                        temp: true,
-                      },
-                    ]);
-                  }}
-                >
-                  +
-                </Button>
-              </>
-            )}
-          </Form.Group>
+              </div>
+              <div>
+                <Label>Organisation</Label>
+                <Combobox
+                  value={organization}
+                  options={organizations}
+                  onChange={(option) => setOrganization(option)}
+                  placeholder='Select organisation'
+                  name='Organisation'
+                />
+              </div>
+            </div>
+            <div>
+              <div className='mt-3 mb-3 border-b border-white/10 pb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase'>
+                Who can annotate
+              </div>
+              <div
+                role='radiogroup'
+                aria-label='Who can annotate'
+                className='grid grid-cols-2 gap-2.5'
+              >
+                {[
+                  {
+                    value: 'Yes',
+                    title: 'All members',
+                    detail:
+                      'Everyone in the organisation can annotate this survey.',
+                  },
+                  {
+                    value: 'No',
+                    title: 'Only admins',
+                    detail: "Members can't annotate unless added below.",
+                  },
+                ].map((choice) => {
+                  const selected =
+                    membersCanAnnotate === (choice.value === 'Yes');
+                  return (
+                    <button
+                      key={choice.value}
+                      type='button'
+                      role='radio'
+                      aria-checked={selected}
+                      onClick={() => {
+                        if (selected) return;
+                        setGlobalAnnotationAccess({
+                          value: choice.value,
+                          label: choice.value,
+                        });
+                        setPermissionExceptions([]);
+                      }}
+                      className={cn(
+                        'flex items-center gap-3 border px-4 py-3 text-left transition-colors',
+                        selected
+                          ? 'border-primary bg-primary/15'
+                          : 'border-white/15 bg-white/[0.07] hover:border-white/40',
+                      )}
+                    >
+                      <span className='flex min-w-0 flex-1 flex-col'>
+                        <span className='font-semibold'>{choice.title}</span>
+                        <span className='text-sm text-muted-foreground'>
+                          {choice.detail}
+                        </span>
+                      </span>
+                      {selected && (
+                        <CheckIcon className='size-5 shrink-0 text-primary' />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className='mt-3'>
+                <Label>
+                  {membersCanAnnotate
+                    ? "Members who can't annotate"
+                    : 'Members who can annotate anyway'}
+                </Label>
+                <Combobox
+                  multiple
+                  value={permissionExceptions.map((pe) => ({
+                    label: pe.user.name,
+                    value: pe.user.id,
+                  }))}
+                  options={(users[organization?.value || ''] ?? []).map(
+                    (u) => ({
+                      label: u.name,
+                      value: u.id,
+                    }),
+                  )}
+                  onChange={(selected) =>
+                    setPermissionExceptions(
+                      selected.map((option) => ({
+                        user: { id: option.value, name: option.label },
+                        annotationAccess: !membersCanAnnotate,
+                        temp: false,
+                      })),
+                    )
+                  }
+                  disabled={!organization}
+                  placeholder={
+                    organization
+                      ? 'Add a member…'
+                      : 'Select an organisation first'
+                  }
+                  name='Permission exceptions'
+                />
+                <FormText>
+                  You and organisation admins can always annotate.
+                </FormText>
+              </div>
+            </div>
           </div>
           <FilesUploadForm
             setOnSubmit={setUploadSubmitFn}
             setReadyToSubmit={setFilesReady}
             setGpsDataReady={setGpsReady}
             setImagesReady={setImagesReady}
+            setChecklistComplete={setChecklistComplete}
+            onEditStep={(step) => {
+              const index = CORE_STEPS.indexOf(step);
+              if (index >= 0) setStepIndex(index);
+            }}
             currentStep={CORE_STEPS[stepIndex]}
             setLocationReady={setLocationReady}
+            setConfirmLocation={setConfirmLocation}
+            onLocationConfirmed={() => {
+              if (stepIndex === LOCATION_STEP) goNext();
+            }}
             summaryDetails={[
-              { label: 'Survey name', value: name.trim() || 'Not entered' },
+              { text: `Named the survey ${name.trim()}`, done: !!name.trim() },
               {
-                label: 'Organisation',
-                value: organization?.label || 'Not selected',
-              },
-              { label: 'GPS', value: gpsReady ? 'Exists' : 'Missing' },
-              {
-                label: 'Default annotation access',
-                value: globalAnnotationAccess?.label || 'No',
+                text: `Organisation: ${organization?.label ?? 'not selected'}`,
+                done: !!organization,
               },
               {
-                label: 'Permission exceptions',
-                value: String(
-                  permissionExceptions.filter((exception) => !exception.temp)
-                    .length
-                ),
+                text: membersCanAnnotate
+                  ? 'All members can annotate'
+                  : 'Only admins can annotate',
               },
+              savedExceptions.length > 0
+                ? {
+                    text: `${
+                      membersCanAnnotate
+                        ? "Can't annotate"
+                        : 'Can annotate anyway'
+                    }: ${savedExceptions.map((pe) => pe.user.name).join(', ')}`,
+                    done: true,
+                  }
+                : { text: 'No member exceptions', done: false },
             ]}
           />
-        </Form>
+        </form>
       </Body>
 
       <Footer>
-        {stepIndex > 0 && (
-          <Button
-            variant='secondary'
-            disabled={loading}
-            onClick={() => setStepIndex(stepIndex - 1)}
-          >
-            Back
-          </Button>
-        )}
-        {stepIndex < WIZARD_STEPS.length - 1 ? (
-          <Button
-            variant='primary'
-            disabled={!stepReady(stepIndex)}
-            onClick={goNext}
-          >
-            Next
-          </Button>
+        {confirmingCancel ? (
+          <>
+            <div className='mr-auto'>
+              <div>Discard this new survey?</div>
+              <div className='text-xs text-muted-foreground'>
+                Everything entered so far will be lost.
+              </div>
+            </div>
+            <Button
+              variant='outline-light'
+              onClick={() => setConfirmingCancel(false)}
+            >
+              Keep editing
+            </Button>
+            <Button variant='danger' onClick={() => showModal(null)}>
+              Discard
+            </Button>
+          </>
         ) : (
-          <Button variant='primary' onClick={handleSave} disabled={!canSubmit}>
-            {loading ? 'Creating...' : 'Create'}
-          </Button>
+          <>
+            <Button
+              variant='ghost'
+              className='mr-auto'
+              onClick={() =>
+                stepIndex > 0 || name.trim()
+                  ? setConfirmingCancel(true)
+                  : showModal(null)
+              }
+            >
+              Cancel
+            </Button>
+            {stepIndex > 0 && (
+              <Button
+                variant='outline-light'
+                disabled={loading}
+                onClick={() => setStepIndex(stepIndex - 1)}
+              >
+                <ChevronLeftIcon className='size-4' />
+                Back
+              </Button>
+            )}
+            {stepIndex < WIZARD_STEPS.length - 1 ? (
+              <Button
+                variant='primary'
+                disabled={!stepReady(stepIndex)}
+                onClick={
+                  stepIndex === LOCATION_STEP && confirmLocation
+                    ? confirmLocation
+                    : goNext
+                }
+              >
+                Next
+                <ChevronRightIcon className='size-4' />
+              </Button>
+            ) : (
+              <Button
+                variant='primary'
+                onClick={handleSave}
+                disabled={!canSubmit}
+              >
+                {loading ? 'Creating...' : 'Create survey'}
+              </Button>
+            )}
+          </>
         )}
-        <Button variant='dark' onClick={() => showModal(null)}>
-          Cancel
-        </Button>
       </Footer>
     </Modal>
   );

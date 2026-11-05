@@ -1,9 +1,12 @@
+import { isMarkedOutside } from '../annotationBoundary';
 import type { ExtendedAnnotationType } from '../schemaTypes';
 import type { ImageMenuItem } from '../useImageMenuItems';
 
 interface AnnotationMenuOptions {
   annotation: ExtendedAnnotationType;
   readonly: boolean;
+  // Only offered on inside images, where marking changes anything.
+  canMarkOutside?: boolean;
   onDelete: (annotation: ExtendedAnnotationType) => void;
   onUpdate: (annotation: ExtendedAnnotationType) => void;
   onChangeCategory: (annotation: ExtendedAnnotationType) => void;
@@ -12,6 +15,7 @@ interface AnnotationMenuOptions {
 export function buildAnnotationMenuItems({
   annotation,
   readonly,
+  canMarkOutside = false,
   onDelete,
   onUpdate,
   onChangeCategory,
@@ -35,6 +39,17 @@ export function buildAnnotationMenuItems({
         obscured: !annotation.obscured,
       }),
   });
+  if (canMarkOutside) {
+    const outside = isMarkedOutside(annotation);
+    items.push({
+      text: outside ? 'Mark as inside boundary' : 'Mark as outside boundary',
+      callback: () =>
+        onUpdate({
+          ...annotation,
+          outsideBoundary: !outside,
+        } as ExtendedAnnotationType),
+    });
+  }
   if (annotation.objectId) {
     items.push({
       text: 'Remove assigned name',
@@ -54,7 +69,7 @@ export function buildAnnotationMenuItems({
 
 export function buildImageMenuItems(
   baseItems: ImageMenuItem[],
-  confidence?: number | null
+  confidence?: number | null,
 ): ImageMenuItem[] {
   if (confidence == null) return [...baseItems];
   return [

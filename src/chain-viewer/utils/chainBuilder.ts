@@ -24,8 +24,7 @@ export function buildChains(annotations: ChainAnnotation[]): Chain[] {
 
   const chains: Chain[] = [];
   for (const [primaryId, group] of byPrimary) {
-    const primary =
-      group.find((g) => g.id === primaryId) ?? group[0];
+    const primary = group.find((g) => g.id === primaryId) ?? group[0];
     // Within-chain order: image timestamp ascending; nulls sort last; tie
     // break on annotation id for determinism.
     const ordered = [...group].sort((a, b) => {

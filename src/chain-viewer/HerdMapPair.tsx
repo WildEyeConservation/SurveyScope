@@ -1,6 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useHotkeys } from 'react-hotkeys-hook';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,6 +6,15 @@ import {
   ChevronsRight,
 } from 'lucide-react';
 import * as maplibregl from 'maplibre-gl';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useHotkeys } from 'react-hotkeys-hook';
 import { GlobalContext } from '../Context';
 import {
   IndividualIdMap,
@@ -19,8 +26,8 @@ import type {
   LocationOverlayRow,
   LocationSourceConfig,
 } from '../individual-id/MapLocationOverlay';
-import { isOov } from '../individual-id/utils/identity';
 import type { PixelTransform } from '../individual-id/types';
+import { isOov } from '../individual-id/utils/identity';
 import type { ChainAnnotation, HerdDisplayPair } from './types';
 
 const DEFAULT_COLOR = '#3498db';
@@ -31,7 +38,11 @@ export const CHAIN_LOCATION_SOURCES: LocationSourceConfig[] = [
   { source: 'scoutbotv3', label: 'ScoutBot', color: '#2f80ed' },
   { source: 'heatmap', label: 'Elephant Nadir', color: '#e67e22' },
   { source: 'mad-v2', label: 'MAD', color: '#27ae60' },
-  { source: 'stormfly-testing', label: 'Stormfly (testing model)', color: '#9b59b6' },
+  {
+    source: 'stormfly-testing',
+    label: 'Stormfly (testing model)',
+    color: '#9b59b6',
+  },
   { source: 'owl-d', label: 'OWL-D', color: '#d45e43' },
 ];
 
@@ -50,7 +61,7 @@ interface Props {
   bearingForImage: (image: HerdDisplayPair['imageA']) => number;
   onImageBearingChange: (
     image: HerdDisplayPair['imageA'],
-    bearing: number
+    bearing: number,
   ) => void;
   /** Step one frame (pair) back / forward along the time-ordered sequence. */
   onRequestPrevPair?: () => void;
@@ -118,8 +129,8 @@ export function HerdMapPair({
   }, [annotationsA, annotationsB]);
   const handleHover = useCallback(
     (key: string | null) =>
-      setHoverIdentityKey(key ? identityByAnnId.get(key) ?? null : null),
-    [identityByAnnId]
+      setHoverIdentityKey(key ? (identityByAnnId.get(key) ?? null) : null),
+    [identityByAnnId],
   );
 
   const buildMarkers = useCallback(
@@ -142,16 +153,16 @@ export function HerdMapPair({
             infoTags: a.infoTags,
           };
         }),
-    [categoryColors, hoverIdentityKey]
+    [categoryColors, hoverIdentityKey],
   );
 
   const markersA = useMemo(
     () => buildMarkers(annotationsA, 'A'),
-    [annotationsA, buildMarkers]
+    [annotationsA, buildMarkers],
   );
   const markersB = useMemo(
     () => buildMarkers(annotationsB, 'B'),
-    [annotationsB, buildMarkers]
+    [annotationsB, buildMarkers],
   );
 
   // Seed synchronous keys in lazy state: `sourceKey` is in map-init deps, so
@@ -162,7 +173,7 @@ export function HerdMapPair({
   >(() =>
     sourceKeyFor
       ? [sourceKeyFor(imageA.id), sourceKeyFor(imageB.id)]
-      : [undefined, undefined]
+      : [undefined, undefined],
   );
   useEffect(() => {
     if (sourceKeyFor) return;
@@ -174,7 +185,7 @@ export function HerdMapPair({
         });
         const jpg = (resp.data ?? []).find((f) => f.type === 'image/jpeg');
         return jpg?.key ?? undefined;
-      })
+      }),
     ).then((keys) => {
       if (!cancelled)
         setSourceKeys(keys as [string | undefined, string | undefined]);
@@ -200,7 +211,7 @@ export function HerdMapPair({
       mapsRef.current[0] = map ? { map, px2lngLat, lngLat2px } : null;
       if (wasNull !== (map === null)) setMapsTick((t) => t + 1);
     },
-    []
+    [],
   );
   const onMapInstance1: MapInstanceCallback = useCallback(
     (map, px2lngLat, lngLat2px) => {
@@ -208,7 +219,7 @@ export function HerdMapPair({
       mapsRef.current[1] = map ? { map, px2lngLat, lngLat2px } : null;
       if (wasNull !== (map === null)) setMapsTick((t) => t + 1);
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -259,24 +270,30 @@ export function HerdMapPair({
     };
   }, [mapsTick, pair.forward, pair.backward]);
 
-  useHotkeys('ArrowLeft', () => onRequestPrevPair?.(), { enabled: !!onRequestPrevPair }, [
-    onRequestPrevPair,
-  ]);
-  useHotkeys('ArrowRight', () => onRequestNextPair?.(), { enabled: !!onRequestNextPair }, [
-    onRequestNextPair,
-  ]);
+  useHotkeys(
+    'ArrowLeft',
+    () => onRequestPrevPair?.(),
+    { enabled: !!onRequestPrevPair },
+    [onRequestPrevPair],
+  );
+  useHotkeys(
+    'ArrowRight',
+    () => onRequestNextPair?.(),
+    { enabled: !!onRequestNextPair },
+    [onRequestNextPair],
+  );
   // Shift+Arrow jumps between herd sightings (chain-sharing runs).
   useHotkeys(
     'shift+ArrowLeft',
     () => onRequestPrevHerd?.(),
     { enabled: !!onRequestPrevHerd },
-    [onRequestPrevHerd]
+    [onRequestPrevHerd],
   );
   useHotkeys(
     'shift+ArrowRight',
     () => onRequestNextHerd?.(),
     { enabled: !!onRequestNextHerd },
-    [onRequestNextHerd]
+    [onRequestNextHerd],
   );
 
   // Hold Tab to temporarily hide the annotation markers on both maps (so the
@@ -317,18 +334,16 @@ export function HerdMapPair({
   }, []);
 
   return (
-    <div className='w-100 h-100 d-flex flex-column gap-2'>
+    <div className='flex h-full w-full flex-col gap-2'>
       <div
-        className='d-flex flex-row gap-2 w-100'
+        className='flex w-full flex-row gap-2'
         style={{ flex: 1, minHeight: 0 }}
       >
         <div style={{ flex: 1, minHeight: 0 }}>
           <IndividualIdMap
             image={imageA}
             bearing={bearingForImage(imageA)}
-            onBearingChange={(bearing) =>
-              onImageBearingChange(imageA, bearing)
-            }
+            onBearingChange={(bearing) => onImageBearingChange(imageA, bearing)}
             sourceKey={sourceKeys[0]}
             markers={markersA}
             onMarkerDrag={NOOP}
@@ -352,9 +367,7 @@ export function HerdMapPair({
           <IndividualIdMap
             image={imageB}
             bearing={bearingForImage(imageB)}
-            onBearingChange={(bearing) =>
-              onImageBearingChange(imageB, bearing)
-            }
+            onBearingChange={(bearing) => onImageBearingChange(imageB, bearing)}
             sourceKey={sourceKeys[1]}
             markers={markersB}
             onMarkerDrag={NOOP}
@@ -376,8 +389,12 @@ export function HerdMapPair({
         </div>
       </div>
       <div
-        className='d-flex flex-row align-items-center justify-content-center gap-2 px-3 py-2'
-        style={{ background: '#4E5D6C', color: '#f8f9fa', position: 'relative' }}
+        className='flex flex-row items-center justify-center gap-2 px-4 py-2'
+        style={{
+          background: '#4E5D6C',
+          color: '#f8f9fa',
+          position: 'relative',
+        }}
       >
         <Button
           size='sm'
@@ -385,7 +402,7 @@ export function HerdMapPair({
           onClick={onRequestPrevHerd}
           disabled={!onRequestPrevHerd}
           title='Previous herd (Shift+←)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           <ChevronsLeft size={16} /> Prev herd
@@ -395,7 +412,7 @@ export function HerdMapPair({
           onClick={onRequestPrevPair}
           disabled={!onRequestPrevPair}
           title='Previous pair (←)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           <ChevronLeft size={16} /> Previous
@@ -405,7 +422,7 @@ export function HerdMapPair({
           onClick={onRequestNextPair}
           disabled={!onRequestNextPair}
           title='Next pair (→)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           Next <ChevronRight size={16} />
@@ -416,7 +433,7 @@ export function HerdMapPair({
           onClick={onRequestNextHerd}
           disabled={!onRequestNextHerd}
           title='Next herd (Shift+→)'
-          className='d-inline-flex align-items-center justify-content-center gap-1'
+          className='inline-flex items-center justify-center gap-1'
           style={{ minWidth: 120 }}
         >
           Next herd <ChevronsRight size={16} />

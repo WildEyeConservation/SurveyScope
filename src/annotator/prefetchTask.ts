@@ -3,11 +3,11 @@ import {
   imageTileContext,
   primeImageTiles,
 } from '../StorageLayer';
-import { makeLimiter } from '../storage/tilePackReader';
-import { tileLoadStats } from '../storage/tileLoadStats';
 import type { AnnotationTaskPayload } from '../annotationTypes';
-import { viewTiles } from './viewTiles';
+import { tileLoadStats } from '../storage/tileLoadStats';
+import { makeLimiter } from '../storage/tilePackReader';
 import { loadImageFiles, sourceKeyOf } from './useImageFileSource';
+import { viewTiles } from './viewTiles';
 
 let viewport = { width: 0, height: 0 };
 
@@ -27,7 +27,7 @@ const warming = makeLimiter(1);
 
 export function prefetchTask(
   client: Client,
-  task: Pick<AnnotationTaskPayload, 'location' | 'zoom'>
+  task: Pick<AnnotationTaskPayload, 'location' | 'zoom'>,
 ): Promise<void> {
   return warming
     .run(async () => {
@@ -44,8 +44,8 @@ export function prefetchTask(
       });
       await Promise.all(
         tiles.map(({ z, row, col }) =>
-          getTileBlob(`slippymaps/${key}/${z}/${row}/${col}.png`, context)
-        )
+          getTileBlob(`slippymaps/${key}/${z}/${row}/${col}.png`, context),
+        ),
       );
     })
     .catch((error: unknown) => {
@@ -56,7 +56,7 @@ export function prefetchTask(
 // Signing and headers are a few KB, so every received task gets them early.
 export function primeTask(
   client: Client,
-  location: AnnotationTaskPayload['location']
+  location: AnnotationTaskPayload['location'],
 ): Promise<void> {
   const { image, id: taskId } = location;
   return loadImageFiles(client, image.id, taskId)

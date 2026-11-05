@@ -1,68 +1,66 @@
-import { useParams } from 'react-router-dom';
+import { Combobox } from '@/components/ui/combobox';
+import { useQuery } from '@tanstack/react-query';
 import {
-  useEffect,
-  useState,
-  useContext,
-  useMemo,
-  useRef,
   useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
 } from 'react';
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useParams } from 'react-router-dom';
 import { AnnotationSetDropdown } from './AnnotationSetDropDown';
-import Select, { MultiValue, type CSSObjectWithLabel } from 'react-select';
-import { ProjectContext, ManagementContext, GlobalContext } from './Context';
-import { Form } from 'react-bootstrap';
+import { GlobalContext, ManagementContext, ProjectContext } from './Context';
+
 import './Review.css';
-import { Card } from 'react-bootstrap';
-import Button from 'react-bootstrap/Button';
-import { PanelBottom, ChevronRight } from 'lucide-react';
-import { Tab, Tabs } from './Tabs';
-import ReviewCarousel from './ReviewCarousel';
-import DensityMap, { type DensitySource } from './DensityMap';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
+import { ChevronRight, PanelBottom } from 'lucide-react';
 import { useUsers } from './apiInterface';
-import { fetchAllPaginatedResults } from './utils';
+import DensityMap, { type DensitySource } from './DensityMap';
+import ReviewImages from './ReviewImages';
+import { CollapsedSidebar, SidebarCollapseButton } from './SidebarCollapse';
+import { useSyncViewerEdits } from './sightingQueries';
+import { Tab, Tabs } from './Tabs';
 import { useInfoTagData } from './useInfoTags';
+import { useSidebarCollapsed } from './useSidebarCollapsed';
+import { fetchAllPaginatedResults } from './utils';
 
 type Option = { label: string; value: string };
-
-// Render react-select menus in a body portal with a high z-index so they are
-// not clipped by the scrollable Filters card. The portal escapes the
-// `text-black` container class, so option/value text colours are set here to
-// keep the dropdown readable.
-const menuPortalStyles = {
-  menuPortal: (base: CSSObjectWithLabel) => ({ ...base, zIndex: 9999 }),
-  option: (
-    base: CSSObjectWithLabel,
-    state: { isSelected: boolean; isFocused: boolean }
-  ) => ({
-    ...base,
-    color: '#000',
-    backgroundColor: state.isSelected
-      ? '#cfe2ff'
-      : state.isFocused
-        ? '#e9ecef'
-        : '#fff',
-  }),
-  input: (base: CSSObjectWithLabel) => ({ ...base, color: '#000' }),
-  singleValue: (base: CSSObjectWithLabel) => ({ ...base, color: '#000' }),
-};
 
 export function Review({ showAnnotationSetDropdown = true }) {
   const [selectedCategories, setSelectedCategories] = useState<Option[]>([]);
   const [selectedInfoTags, setSelectedInfoTags] = useState<Option[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<Option[]>([]);
-  const [tab, setTab] = useState<'carousel' | 'map'>('map');
+  const [tab, setTab] = useState<'images' | 'map'>('map');
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const openImage = useCallback((imageId: string) => {
+    setSelectedImageId(imageId);
+    setTab('images');
+  }, []);
   const [selectedAnnotationSet, setSelectedAnnotationSet] =
     useState<string>('');
-  const [imageBased] = useState(true);
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
+  const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
+  const primaryOnlyId = useId();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const { client } = useContext(GlobalContext)!;
   const {
     categoriesHook: { data: categories },
     project,
   } = useContext(ProjectContext)!;
+  useSyncViewerEdits(
+    useMemo(
+      () => new Map((categories ?? []).map((c) => [c.id, c.name])),
+      [categories],
+    ),
+  );
   const { annotationSetId } = useParams();
   const {
     annotationSetsHook: { data: annotationSets },
@@ -74,14 +72,8 @@ export function Review({ showAnnotationSetDropdown = true }) {
     { userId: string }[]
   >([]);
 
-  // --- Advanced multi-survey selection ------------------------------------
-  // Surveys (of the same organization) whose data is overlaid on the map, and
-  // the annotation set(s) selected within each. The current survey is selected
-  // by default and tracks the primary annotation set chosen below.
-  const [selectedSurveyIds, setSelectedSurveyIds] = useState<string[]>([]);
-  const [setsBySurvey, setSetsBySurvey] = useState<Record<string, string[]>>(
-    {}
-  );
+  // Extra annotation sets, from any survey in the organisation, overlaid on the map.
+  const [overlaySetIds, setOverlaySetIds] = useState<string[]>([]);
   // Transects reported by the map (consistent numbering) + the active filter.
   const [transectOptionsRaw, setTransectOptionsRaw] = useState<
     { id: string; surveyId: string; number: number }[]
@@ -104,7 +96,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
           projectId: project.id,
           selectionSet: ['userId'],
           limit: 1000,
-        }
+        },
       );
       if (!cancelled) {
         setProjectMemberships(memberships as { userId: string }[]);
@@ -151,150 +143,84 @@ export function Review({ showAnnotationSetDropdown = true }) {
     queryFn: () =>
       fetchAllPaginatedResults(client.models.Project.list, {
         filter: { organizationId: { eq: project.organizationId } },
-        selectionSet: ['id', 'name', 'status'],
+        selectionSet: [
+          'id',
+          'name',
+          'status',
+          'annotationSets.id',
+          'annotationSets.name',
+        ] as const,
       }),
   });
 
-  const surveyOptions = useMemo<Option[]>(() => {
-    const data = (orgSurveysQuery.data ?? []) as {
-      id: string;
-      name: string;
-      status?: string | null;
-    }[];
-    return data
-      .filter((p) => p.status !== 'deleted')
-      .map((p) => ({ label: p.name, value: p.id }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [orgSurveysQuery.data]);
+  const orgSurveys = useMemo(
+    () =>
+      (
+        (orgSurveysQuery.data ?? []) as {
+          id: string;
+          name: string;
+          status?: string | null;
+          annotationSets?: { id: string; name: string }[] | null;
+        }[]
+      ).filter((survey) => survey.status !== 'deleted'),
+    [orgSurveysQuery.data],
+  );
 
   const surveyLabel = (id: string) =>
-    surveyOptions.find((o) => o.value === id)?.label ??
+    orgSurveys.find((survey) => survey.id === id)?.name ??
     (id === project.id ? project.name : 'Survey');
 
-  // --- Annotation sets per selected survey (one cached query each) --------
-  // Keyed by surveyId, so adding/removing a survey only fetches the new one.
-  const setQueries = useQueries({
-    queries: selectedSurveyIds.map((sid) => ({
-      queryKey: ['review-survey-sets', sid],
-      staleTime: 5 * 60 * 1000,
-      queryFn: () =>
-        fetchAllPaginatedResults(
-          client.models.AnnotationSet.annotationSetsByProjectId,
-          { projectId: sid, selectionSet: ['id', 'name'] }
-        ),
-    })),
-  });
+  const overlayOptions = useMemo(
+    () =>
+      orgSurveys
+        .flatMap((survey) =>
+          (survey.annotationSets ?? []).map((set) => ({
+            label: `${survey.name} · ${set.name}`,
+            value: set.id,
+            surveyId: survey.id,
+          })),
+        )
+        .filter((option) => option.value !== selectedAnnotationSet)
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [orgSurveys, selectedAnnotationSet],
+  );
 
-  const surveyIdsKey = selectedSurveyIds.join(',');
-  const setQueryLenKey = setQueries
-    .map((q) => (q.data ? (q.data as Array<unknown>).length : 0))
-    .join(',');
-
-  const setOptionsBySurvey = useMemo<Record<string, Option[]>>(() => {
-    const out: Record<string, Option[]> = {};
-    selectedSurveyIds.forEach((sid, i) => {
-      const data = (setQueries[i]?.data ?? []) as {
-        id: string;
-        name: string;
-      }[];
-      out[sid] = data
-        .map((s) => ({ label: s.name, value: s.id }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-    });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surveyIdsKey, setQueryLenKey]);
-
-  // Default the survey selection to the current survey once it is known.
   useEffect(() => {
-    if (!project?.id) return;
-    setSelectedSurveyIds((prev) => (prev.length ? prev : [project.id]));
-  }, [project?.id]);
+    if (annotationSets?.length === 1) {
+      setSelectedAnnotationSet((prev) => prev || annotationSets[0].id);
+    }
+  }, [annotationSets]);
 
-  // Keep the current survey's set selection in sync with the primary set
-  // chosen below (replacing the previously-synced primary, keeping extras).
-  const prevPrimaryRef = useRef<string>('');
-  useEffect(() => {
-    if (!project?.id) return;
-    setSetsBySurvey((prev) => {
-      const current = prev[project.id] ?? [];
-      const withoutOld = current.filter((id) => id !== prevPrimaryRef.current);
-      const next = selectedAnnotationSet
-        ? Array.from(new Set([selectedAnnotationSet, ...withoutOld]))
-        : withoutOld;
-      prevPrimaryRef.current = selectedAnnotationSet;
-      const unchanged =
-        next.length === current.length &&
-        next.every((id, i) => id === current[i]);
-      return unchanged ? prev : { ...prev, [project.id]: next };
-    });
-  }, [selectedAnnotationSet, project?.id]);
-
-  // When a selected survey exposes exactly one annotation set, auto-select it.
-  // For the current survey this drives the primary set (which then syncs into
-  // the map + carousel via the effect above); for others it fills the row.
-  useEffect(() => {
-    selectedSurveyIds.forEach((sid) => {
-      const opts = setOptionsBySurvey[sid];
-      if (!opts || opts.length !== 1) return;
-      const only = opts[0].value;
-      if (sid === project.id) {
-        setSelectedAnnotationSet((prev) => prev || only);
-      } else {
-        setSetsBySurvey((prev) =>
-          prev[sid]?.length ? prev : { ...prev, [sid]: [only] }
-        );
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setOptionsBySurvey, surveyIdsKey, project.id]);
-
-  const handleSurveysChange = (newValue: MultiValue<Option>) => {
-    const ids = newValue.map((v) => v.value);
-    setSelectedSurveyIds(ids);
-    // Drop set selections for surveys no longer selected.
-    setSetsBySurvey((prev) => {
-      const next: Record<string, string[]> = {};
-      for (const id of ids) if (prev[id]) next[id] = prev[id];
-      return next;
-    });
-  };
-
-  const handleSetsChange = (surveyId: string, newValue: MultiValue<Option>) => {
-    setSetsBySurvey((prev) => ({
-      ...prev,
-      [surveyId]: newValue.map((v) => v.value),
-    }));
-  };
-
-  // Flatten the selection into the (survey, set) sources the map renders.
   const mapSources = useMemo<DensitySource[]>(() => {
-    const out: DensitySource[] = [];
-    for (const sid of selectedSurveyIds) {
-      for (const aid of setsBySurvey[sid] ?? []) {
-        out.push({ surveyId: sid, annotationSetId: aid });
+    const out: DensitySource[] = selectedAnnotationSet
+      ? [{ surveyId: project.id, annotationSetId: selectedAnnotationSet }]
+      : [];
+    for (const id of overlaySetIds) {
+      const option = overlayOptions.find((o) => o.value === id);
+      if (option) {
+        out.push({ surveyId: option.surveyId, annotationSetId: id });
       }
     }
     return out;
-  }, [selectedSurveyIds, setsBySurvey]);
+  }, [project.id, selectedAnnotationSet, overlaySetIds, overlayOptions]);
 
   const categoryNames = useMemo(
     () => selectedCategories.map((c) => c.label),
-    [selectedCategories]
+    [selectedCategories],
   );
 
   // Informational tags defined on the primary set. Tags are filtered by name so
   // the selection also applies to any other sets overlaid on the map.
   const { tagNames: infoTagOptionNames } = useInfoTagData(
-    selectedAnnotationSet ? [selectedAnnotationSet] : []
+    selectedAnnotationSet ? [selectedAnnotationSet] : [],
   );
   const infoTagOptions = useMemo<Option[]>(
     () => infoTagOptionNames.map((name) => ({ label: name, value: name })),
-    [infoTagOptionNames]
+    [infoTagOptionNames],
   );
   const infoTagNames = useMemo(
     () => selectedInfoTags.map((t) => t.value),
-    [selectedInfoTags]
+    [selectedInfoTags],
   );
 
   // Drop selections the newly-chosen set does not define (but not while its
@@ -321,7 +247,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
         return next.length === prev.length ? prev : next;
       });
     },
-    []
+    [],
   );
 
   const transectOptions = useMemo<Option[]>(() => {
@@ -331,7 +257,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
       .sort((a, b) =>
         a.surveyId === b.surveyId
           ? a.number - b.number
-          : surveyLabel(a.surveyId).localeCompare(surveyLabel(b.surveyId))
+          : surveyLabel(a.surveyId).localeCompare(surveyLabel(b.surveyId)),
       )
       .map((t) => ({
         value: t.id,
@@ -340,7 +266,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
           : `Transect ${t.number}`,
       }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transectOptionsRaw, surveyOptions]);
+  }, [transectOptionsRaw, orgSurveys]);
 
   // Free-text mode: take comma-separated transect ids verbatim (these are the
   // ids stored in the database, not the display numbers).
@@ -371,20 +297,25 @@ export function Review({ showAnnotationSetDropdown = true }) {
         marginBottom: '16px',
       }}
     >
-      <div className='w-100 h-100 d-flex flex-column flex-sm-row gap-2'>
+      <div className='flex h-full w-full flex-col gap-2 sm:flex-row'>
+        {sidebarCollapsed && <CollapsedSidebar onExpand={toggleSidebar} />}
         <div
-          className='d-flex flex-column gap-2 w-100'
+          className={cn(
+            'flex w-full flex-col gap-2',
+            sidebarCollapsed && 'sm:hidden',
+          )}
           style={{
             maxWidth: '300px',
             maxHeight: 'calc(100vh - 32px)',
             overflow: 'hidden',
           }}
         >
-          <Card className='d-sm-block d-none w-100'>
-            <Card.Header>
-              <Card.Title className='mb-0'>Information</Card.Title>
-            </Card.Header>
-            <Card.Body className='d-flex flex-column gap-2'>
+          <Card className='hidden w-full sm:block'>
+            <CardHeader className='flex flex-row items-center justify-between'>
+              <CardTitle className='mb-0'>Information</CardTitle>
+              <SidebarCollapseButton onClick={toggleSidebar} />
+            </CardHeader>
+            <CardContent className='flex flex-col gap-2'>
               <p className='mb-0'>
                 <strong>Survey:</strong> {project.name}
               </p>
@@ -393,21 +324,18 @@ export function Review({ showAnnotationSetDropdown = true }) {
                 {annotationSets?.find((set) => set.id === selectedAnnotationSet)
                   ?.name ?? 'Unknown'}
               </p>
-            </Card.Body>
+            </CardContent>
           </Card>
-          <Card
-            className='w-100 flex-grow-1 d-flex flex-column'
-            style={{ minHeight: 0 }}
-          >
-            <Card.Header>
-              <Card.Title className='mb-0 d-flex align-items-center'>
+          <Card className='flex w-full grow flex-col' style={{ minHeight: 0 }}>
+            <CardHeader>
+              <CardTitle className='mb-0 flex items-center'>
                 <Button
-                  className='p-0 mb-0'
-                  variant='outline'
+                  className='mb-0 p-0 hover:bg-transparent'
+                  variant='ghost'
                   onClick={() => setShowFilters(!showFilters)}
                 >
                   <PanelBottom
-                    className='d-sm-none'
+                    className='size-6 sm:hidden'
                     style={{
                       transform: showFilters
                         ? 'rotate(180deg)'
@@ -416,87 +344,64 @@ export function Review({ showAnnotationSetDropdown = true }) {
                   />
                 </Button>
                 Filters
-              </Card.Title>
-            </Card.Header>
+              </CardTitle>
+            </CardHeader>
             {showFilters && (
-              <Card.Body
-                className='d-flex flex-column gap-2'
+              <CardContent
+                className='flex flex-col gap-2'
                 style={{ overflowY: 'auto', minHeight: 0 }}
               >
-                <div className='w-100'>
-                  <Form.Label>Labels</Form.Label>
-                  <Select
-                    value={selectedCategories}
-                    onChange={(newValue: MultiValue<Option>) =>
-                      setSelectedCategories([...(newValue as Option[])])
-                    }
-                    isMulti
-                    name='Labels to review'
-                    options={categories
+                <Combobox
+                  value={selectedCategories}
+                  onChange={(options) => setSelectedCategories(options)}
+                  multiple
+                  name='Labels to review'
+                  options={
+                    categories
                       ?.filter(
-                        (c) => c.annotationSetId === selectedAnnotationSet
+                        (c) => c.annotationSetId === selectedAnnotationSet,
                       )
                       .map((q) => ({
                         label: q.name,
                         value: q.id,
-                      }))}
-                    className='text-black w-100'
-                    closeMenuOnSelect={false}
-                    menuPortalTarget={document.body}
-                    styles={menuPortalStyles}
-                  />
-                  {tab === 'map' && (
-                    <Form.Switch
-                      label='Primary sightings only'
-                      className='mt-3'
-                      checked={primaryOnly}
-                      onChange={(e) => setPrimaryOnly(e.target.checked)}
-                    />
-                  )}
-                </div>
+                      })) ?? []
+                  }
+                  placeholder='All labels'
+                />
 
-                {/* Only surveys that have been informationally tagged get the
-                    filter - everyone else would see an empty control. */}
+                {/* Only tagged surveys get the filter; others would see an empty control. */}
                 {infoTagOptions.length > 0 && (
-                  <div className='w-100'>
-                    <Form.Label>Info Tags</Form.Label>
-                    <Select
-                      value={selectedInfoTags}
-                      onChange={(newValue: MultiValue<Option>) =>
-                        setSelectedInfoTags([...(newValue as Option[])])
-                      }
-                      isMulti
-                      name='Info tags to review'
-                      options={infoTagOptions}
-                      className='text-black w-100'
-                      closeMenuOnSelect={false}
-                      placeholder='Any tags'
-                      menuPortalTarget={document.body}
-                      styles={menuPortalStyles}
-                    />
-                    <Form.Text muted>
-                      Keeps sightings carrying any of the selected tags.
-                    </Form.Text>
-                  </div>
+                  <Combobox
+                    value={selectedInfoTags}
+                    onChange={(options) => setSelectedInfoTags(options)}
+                    multiple
+                    name='Info tags to review'
+                    options={infoTagOptions}
+                    placeholder='Any info tags'
+                  />
                 )}
 
-                <div className='w-100'>
-                  <Form.Label>Users</Form.Label>
-                  <Select
-                    value={selectedUsers}
-                    onChange={(newValue: MultiValue<Option>) =>
-                      setSelectedUsers([...(newValue as Option[])])
-                    }
-                    isMulti
-                    name='Users to filter'
-                    options={userOptions}
-                    className='text-black w-100'
-                    closeMenuOnSelect={false}
-                    placeholder='All users'
-                    menuPortalTarget={document.body}
-                    styles={menuPortalStyles}
-                  />
-                </div>
+                <Combobox
+                  value={selectedUsers}
+                  onChange={(options) => setSelectedUsers(options)}
+                  multiple
+                  name='Users to filter'
+                  options={userOptions}
+                  placeholder='All users'
+                />
+
+                {tab === 'map' && (
+                  <div className='flex items-center gap-2 py-1'>
+                    <Switch
+                      id={primaryOnlyId}
+                      checked={primaryOnly}
+                      onCheckedChange={(c) => setPrimaryOnly(c)}
+                    />
+                    <Label htmlFor={primaryOnlyId} className='mb-0'>
+                      Primary sightings only
+                    </Label>
+                  </div>
+                )}
 
                 {showAnnotationSetDropdown && (
                   <AnnotationSetDropdown
@@ -506,153 +411,98 @@ export function Review({ showAnnotationSetDropdown = true }) {
                   />
                 )}
 
-                {/* Advanced: overlay data from other surveys on the map. */}
-                <div className='w-100 border-top pt-2 mt-1'>
-                  <Button
-                    variant='outline'
-                    className='p-0 d-flex align-items-center gap-1 w-100 text-start'
+                <div className='border-t border-white/10'>
+                  <button
+                    type='button'
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    style={{ boxShadow: 'none' }}
+                    className='flex w-full items-center gap-2 py-2 text-left text-sm text-muted-foreground hover:text-foreground'
                   >
                     <ChevronRight
-                      size={16}
-                      style={{
-                        transition: 'transform 0.15s',
-                        transform: showAdvanced
-                          ? 'rotate(90deg)'
-                          : 'rotate(0deg)',
-                      }}
+                      className={cn(
+                        'size-4 transition-transform',
+                        showAdvanced && 'rotate-90',
+                      )}
                     />
-                    <span className='fw-semibold'>Advanced</span>
-                  </Button>
+                    More filters
+                  </button>
 
                   {showAdvanced && (
-                    <div className='d-flex flex-column gap-2 mt-2'>
-                      <div className='w-100'>
-                        <Form.Label className='mb-1'>Surveys</Form.Label>
-                        <Select
-                          value={selectedSurveyIds.map((id) => ({
-                            label: surveyLabel(id),
+                    <div className='flex flex-col gap-2 pb-1'>
+                      {transectInputMode === 'input' ? (
+                        <Input
+                          type='text'
+                          aria-label='Transect ids'
+                          value={transectInputText}
+                          onChange={(e) =>
+                            handleTransectInputChange(e.target.value)
+                          }
+                          placeholder='Transect ids, comma-separated'
+                        />
+                      ) : (
+                        <Combobox
+                          value={selectedTransectIds.map((id) => ({
+                            label:
+                              transectOptions.find((o) => o.value === id)
+                                ?.label ?? id,
                             value: id,
                           }))}
-                          onChange={handleSurveysChange}
-                          isMulti
-                          name='Surveys to overlay'
-                          options={surveyOptions}
-                          isLoading={orgSurveysQuery.isLoading}
-                          className='text-black w-100'
-                          closeMenuOnSelect={false}
-                          placeholder='Add surveys…'
-                          menuPortalTarget={document.body}
-                          styles={menuPortalStyles}
+                          onChange={(options) =>
+                            setSelectedTransectIds(options.map((v) => v.value))
+                          }
+                          multiple
+                          name='Transects to filter'
+                          options={transectOptions}
+                          disabled={transectOptions.length === 0}
+                          placeholder={
+                            transectOptions.length === 0
+                              ? 'No transects'
+                              : 'All transects'
+                          }
                         />
-                        <Form.Text muted>
-                          Overlay sightings from other surveys in this
-                          organization.
-                        </Form.Text>
-                      </div>
+                      )}
+                      <button
+                        type='button'
+                        className='self-end text-xs text-muted-foreground hover:text-foreground'
+                        onClick={() =>
+                          handleTransectModeToggle(
+                            transectInputMode !== 'input',
+                          )
+                        }
+                      >
+                        {transectInputMode === 'input'
+                          ? 'Pick transects from a list'
+                          : 'Enter transect ids instead'}
+                      </button>
 
-                      {selectedSurveyIds.map((sid, i) => (
-                        <div className='w-100' key={sid}>
-                          <Form.Label className='mb-1'>
-                            {surveyLabel(sid)}
-                          </Form.Label>
-                          <Select
-                            value={(setsBySurvey[sid] ?? []).map((aid) => ({
-                              label:
-                                setOptionsBySurvey[sid]?.find(
-                                  (o) => o.value === aid
-                                )?.label ?? aid,
-                              value: aid,
-                            }))}
-                            onChange={(newValue: MultiValue<Option>) =>
-                              handleSetsChange(sid, newValue)
-                            }
-                            isMulti
-                            name={`Annotation sets for ${surveyLabel(sid)}`}
-                            options={setOptionsBySurvey[sid] ?? []}
-                            isLoading={setQueries[i]?.isLoading}
-                            className='text-black w-100'
-                            closeMenuOnSelect={false}
-                            placeholder='Select annotation sets…'
-                            menuPortalTarget={document.body}
-                            styles={menuPortalStyles}
-                          />
-                        </div>
-                      ))}
-
-                      <div className='w-100'>
-                        <div className='d-flex align-items-center justify-content-between mb-1'>
-                          <Form.Label className='mb-0'>Transects</Form.Label>
-                          <Form.Switch
-                            label='Enter id'
-                            checked={transectInputMode === 'input'}
-                            onChange={(e) =>
-                              handleTransectModeToggle(e.target.checked)
-                            }
-                          />
-                        </div>
-                        {transectInputMode === 'input' ? (
-                          <Form.Control
-                            type='text'
-                            value={transectInputText}
-                            onChange={(e) =>
-                              handleTransectInputChange(e.target.value)
-                            }
-                            placeholder='Transect id(s), comma-separated'
-                          />
-                        ) : (
-                          <Select
-                            value={selectedTransectIds.map((id) => ({
-                              label:
-                                transectOptions.find((o) => o.value === id)
-                                  ?.label ?? id,
-                              value: id,
-                            }))}
-                            onChange={(newValue: MultiValue<Option>) =>
-                              setSelectedTransectIds(
-                                newValue.map((v) => v.value)
-                              )
-                            }
-                            isMulti
-                            name='Transects to filter'
-                            options={transectOptions}
-                            isDisabled={transectOptions.length === 0}
-                            className='text-black w-100'
-                            closeMenuOnSelect={false}
-                            placeholder={
-                              transectOptions.length === 0
-                                ? 'No transects'
-                                : 'All transects'
-                            }
-                            menuPortalTarget={document.body}
-                            styles={menuPortalStyles}
-                          />
+                      <Combobox
+                        value={overlayOptions.filter((o) =>
+                          overlaySetIds.includes(o.value),
                         )}
-                      </div>
+                        onChange={(options) =>
+                          setOverlaySetIds(options.map((o) => o.value))
+                        }
+                        multiple
+                        name='Annotation sets to overlay'
+                        options={overlayOptions}
+                        loading={orgSurveysQuery.isLoading}
+                        placeholder='Overlay other annotation sets...'
+                      />
                     </div>
                   )}
                 </div>
-              </Card.Body>
+              </CardContent>
             )}
           </Card>
         </div>
-        <Card className='h-100 w-100'>
-          <Card.Body>
+        <Card className='h-full w-full'>
+          <CardContent>
             <Tabs
-              onTabChange={(tab) => {
-                switch (tab) {
-                  case 0:
-                    setTab('map');
-                    break;
-                  case 1:
-                    setTab('carousel');
-                    break;
-                }
-              }}
+              keepMounted
+              activeTab={tab === 'map' ? 0 : 1}
+              onTabChange={(index) => setTab(index === 0 ? 'map' : 'images')}
             >
               <Tab label='Map'>
-                <div className='h-100 w-100 pt-3'>
+                <div className='h-full w-full pt-4'>
                   <DensityMap
                     sources={mapSources}
                     primaryAnnotationSetId={selectedAnnotationSet}
@@ -663,20 +513,25 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     onTransectsLoaded={handleTransectsLoaded}
                     primaryOnly={primaryOnly}
                     editable
+                    onOpenImage={openImage}
                   />
                 </div>
               </Tab>
-              <Tab label='Carousel'>
-                <ReviewCarousel
-                  selectedAnnotationSet={selectedAnnotationSet}
-                  selectedCategories={selectedCategories}
-                  selectedUsers={selectedUsers}
+              <Tab label='Images'>
+                <ReviewImages
+                  surveyId={project.id}
+                  annotationSetId={selectedAnnotationSet}
+                  categoryIds={selectedCategories.map((c) => c.value)}
+                  userIds={selectedUsers.map((u) => u.value)}
                   infoTagNames={infoTagNames}
-                  imageBased={imageBased}
+                  transectIds={selectedTransectIds}
+                  selectedImageId={selectedImageId}
+                  onSelectImage={setSelectedImageId}
+                  visible={tab === 'images'}
                 />
               </Tab>
             </Tabs>
-          </Card.Body>
+          </CardContent>
         </Card>
       </div>
     </div>

@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { sampleSuccessfulScans } from './sampleScan';
 
 // Negative numbers stand in for corrupt files.
@@ -26,7 +26,7 @@ test('sampleSuccessfulScans stops after the first batch when it fills', async ()
   const { sample, consumed } = await sampleSuccessfulScans(
     [1, 2, 3, 4, 5, 6, 7],
     5,
-    scan
+    scan,
   );
   assert.deepEqual(sample, [1, 2, 3, 4, 5]);
   assert.equal(consumed, 5);
@@ -46,7 +46,7 @@ test('sampleSuccessfulScans handles fewer files than the sample size', async () 
   const { sample, consumed } = await sampleSuccessfulScans(
     [1, -1, 2],
     5,
-    scanner().scan
+    scanner().scan,
   );
   assert.deepEqual(sample, [1, 2]);
   assert.equal(consumed, 3);
@@ -65,7 +65,7 @@ test('sampleSuccessfulScans handles no files', async () => {
   const { sample, consumed } = await sampleSuccessfulScans(
     [],
     5,
-    scanner().scan
+    scanner().scan,
   );
   assert.deepEqual(sample, []);
   assert.equal(consumed, 0);

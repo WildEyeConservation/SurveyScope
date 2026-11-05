@@ -1,23 +1,25 @@
+import {
+  createBoundaryClassifier,
+  type BoundaryStatus,
+} from '../../../shared/boundaryStatus';
+import { loadProjectImages } from '../../projectImages';
 import type { ImageData } from '../../types/ImageData';
 import {
   orientationCorrectionFor,
   orientationGroupForDimensions,
 } from '../../types/Orientation';
 import { logAdminAction } from '../../utils/adminActionLogger';
+import { loadSurveyArea } from '../../utils/shapefileUtils';
 import { PhashIndex } from '../phashDedup';
 import { PhashService } from '../phashService';
 import { buildCameraResolver, type CameraResolver } from './cameras';
+import { removeDirectoryHandle } from './dirHandles';
 import { ElevationService } from './elevation';
 import { Finalizer } from './Finalizer';
 import { UploadStateStore } from './persistence';
 import { runPool, sleep } from './pool';
 import { getProjectKeyInfo, type ProjectKeyInfo } from './projectKeys';
 import { RecordWriter } from './RecordWriter';
-import { loadSurveyArea } from '../../utils/shapefileUtils';
-import {
-  createBoundaryClassifier,
-  type BoundaryStatus,
-} from '../../../shared/boundaryStatus';
 import {
   backoffDelayMs,
   classifyError,
@@ -26,7 +28,6 @@ import {
 } from './retry';
 import { listUploadedOriginalPaths } from './s3';
 import { TransferEngine, type TransferInput } from './TransferEngine';
-import { removeDirectoryHandle } from './dirHandles';
 import {
   ACTIVE_PHASES,
   type BlockedItem,
@@ -38,7 +39,6 @@ import {
   type UploadBackend,
   type UploadClient,
 } from './types';
-import { loadProjectImages } from '../../projectImages';
 
 const MAX_SESSION_ATTEMPTS = 20;
 const THROUGHPUT_WINDOW_MS = 30000;
@@ -91,7 +91,7 @@ interface InternalSession {
 
 type BoundaryClassifier = (
   lat: number | null | undefined,
-  lng: number | null | undefined
+  lng: number | null | undefined,
 ) => BoundaryStatus | null;
 
 interface PreparedPlan {
@@ -119,8 +119,10 @@ export class UploadOrchestrator {
         }
       });
       window.addEventListener('online', () => {
-        if (this.session?.phase === 'paused' &&
-            this.session.pauseReason === 'offline') {
+        if (
+          this.session?.phase === 'paused' &&
+          this.session.pauseReason === 'offline'
+        ) {
           this.resume(this.session.projectId);
         }
       });
@@ -156,7 +158,7 @@ export class UploadOrchestrator {
     if (this.session && ACTIVE_PHASES.includes(this.session.phase)) {
       if (this.session.projectId === input.projectId) return;
       console.warn(
-        `Upload for project ${this.session.projectId} is active; ignoring start for ${input.projectId}`
+        `Upload for project ${this.session.projectId} is active; ignoring start for ${input.projectId}`,
       );
       return;
     }
@@ -177,9 +179,7 @@ export class UploadOrchestrator {
       client: input.client,
       backend: input.backend,
       userId: input.userId,
-      fileByPath: new Map(
-        input.files.map((f) => [f.webkitRelativePath, f])
-      ),
+      fileByPath: new Map(input.files.map((f) => [f.webkitRelativePath, f])),
       store: new UploadStateStore(input.projectId),
       elevation: new ElevationService({
         bucketName: input.backend.custom.generalBucketName,
@@ -272,7 +272,7 @@ export class UploadOrchestrator {
 
   private async dropAndRun(
     session: InternalSession,
-    skipped: BlockedItem[]
+    skipped: BlockedItem[],
   ): Promise<void> {
     this.setPhase(session, 'preparing');
     try {
@@ -294,7 +294,7 @@ export class UploadOrchestrator {
    */
   private async dropSkippedImages(
     session: InternalSession,
-    skipped: BlockedItem[]
+    skipped: BlockedItem[],
   ): Promise<void> {
     const paths = new Set(skipped.map((item) => item.originalPath));
 
@@ -302,17 +302,17 @@ export class UploadOrchestrator {
     const dbImages = await loadProjectImages(
       session.client,
       session.projectId,
-      ['originalPath']
+      ['originalPath'],
     );
 
     const orphans = dbImages.filter(
-      (img) => img.originalPath !== null && paths.has(img.originalPath)
+      (img) => img.originalPath !== null && paths.has(img.originalPath),
     );
     if (orphans.length > 0) {
       await runPool(orphans, SKIP_DELETE_CONCURRENCY, async ({ id }) => {
         const result = await session.client.models.Image.get(
           { id },
-          { selectionSet: ['memberships.id', 'files.id'] }
+          { selectionSet: ['memberships.id', 'files.id'] },
         );
         assertMutationSucceeded(result, `load image ${id}`);
         const img = result.data;
@@ -320,31 +320,31 @@ export class UploadOrchestrator {
         for (const m of img.memberships ?? []) {
           assertMutationSucceeded(
             await session.client.models.ImageSetMembership.delete({ id: m.id }),
-            `delete image-set membership ${m.id}`
+            `delete image-set membership ${m.id}`,
           );
         }
         for (const f of img.files ?? []) {
           assertMutationSucceeded(
             await session.client.models.ImageFile.delete({ id: f.id }),
-            `delete image file ${f.id}`
+            `delete image file ${f.id}`,
           );
         }
         assertMutationSucceeded(
           await session.client.models.Image.delete({ id }),
-          `delete image ${id}`
+          `delete image ${id}`,
         );
       });
     }
 
     const manifest = await session.store.getImages();
     await session.store.setImages(
-      manifest.filter((img) => !paths.has(img.originalPath))
+      manifest.filter((img) => !paths.has(img.originalPath)),
     );
 
     const keyInfo = await getProjectKeyInfo(session.client, session.projectId);
     if (keyInfo.organizationId) {
       const lines = skipped.map(
-        (item) => `- ${item.originalPath} (${item.reason})`
+        (item) => `- ${item.originalPath} (${item.reason})`,
       );
       await logAdminAction(
         session.client,
@@ -353,10 +353,10 @@ export class UploadOrchestrator {
           `Continued upload without ${skipped.length} image${
             skipped.length === 1 ? '' : 's'
           } that could not be uploaded:`,
-          lines
+          lines,
         ),
         session.projectId,
-        keyInfo.organizationId
+        keyInfo.organizationId,
       ).catch(() => {
         /* noop: audit logging must not block the upload */
       });
@@ -427,7 +427,7 @@ export class UploadOrchestrator {
             onDuplicate: (dup) => {
               if (
                 !session.duplicates.some(
-                  (d) => d.originalPath === dup.originalPath
+                  (d) => d.originalPath === dup.originalPath,
                 )
               ) {
                 session.duplicates.push(dup);
@@ -439,7 +439,7 @@ export class UploadOrchestrator {
               this.emit(session);
             },
           },
-          session.controller.signal
+          session.controller.signal,
         );
         const { failures } = await engine.run(plan.input);
         session.failures = failures;
@@ -467,7 +467,7 @@ export class UploadOrchestrator {
           }
           session.lastRemainingCount = remainingCount;
           const unwinnable = remainingPaths.every(
-            (path) => !session.fileByPath.has(path)
+            (path) => !session.fileByPath.has(path),
           );
           if (
             remainingCount > 0 &&
@@ -476,12 +476,12 @@ export class UploadOrchestrator {
           ) {
             console.warn(
               `Upload blocked on ${remainingCount} file(s) for project ${session.projectId}:`,
-              remainingPaths
+              remainingPaths,
             );
             session.blockedItems = buildBlockedItems(
               session,
               remainingPaths,
-              failures
+              failures,
             );
             session.errorMessage = `${remainingCount} image${
               remainingCount === 1 ? '' : 's'
@@ -494,7 +494,7 @@ export class UploadOrchestrator {
               ? `; ${failures.length} failed (first: ${failures[0].message})`
               : '';
           throw new Error(
-            `${Math.max(remainingCount, failures.length)} file(s) not uploaded yet${failureNote}`
+            `${Math.max(remainingCount, failures.length)} file(s) not uploaded yet${failureNote}`,
           );
         }
         session.lastRemainingCount = null;
@@ -534,9 +534,10 @@ export class UploadOrchestrator {
         const attemptsExhausted = session.attempt >= MAX_SESSION_ATTEMPTS;
         if (isFatal || attemptsExhausted) {
           console.error('Upload session failed:', err);
-          session.errorMessage = attemptsExhausted && !isFatal
-            ? `Upload kept failing after ${MAX_SESSION_ATTEMPTS} attempts. Last error: ${errorMessage(err)}`
-            : errorMessage(err);
+          session.errorMessage =
+            attemptsExhausted && !isFatal
+              ? `Upload kept failing after ${MAX_SESSION_ATTEMPTS} attempts. Last error: ${errorMessage(err)}`
+              : errorMessage(err);
           session.pauseReason = 'fatal-error';
           this.setPhase(session, 'failed');
           return;
@@ -546,7 +547,7 @@ export class UploadOrchestrator {
         session.retryDelayMs = backoffDelayMs(session.attempt);
         console.warn(
           `Upload attempt ${session.attempt - 1} failed (${errorMessage(err)}); retrying in ${Math.round(session.retryDelayMs / 1000)}s`,
-          err
+          err,
         );
         this.setPhase(session, 'waiting-retry');
         await sleep(session.retryDelayMs, session.controller.signal);
@@ -562,7 +563,10 @@ export class UploadOrchestrator {
 
     // Best-effort start ping; the UI heartbeat keeps it fresh after this.
     try {
-      await client.models.Project.update({ id: projectId, status: 'uploading' });
+      await client.models.Project.update({
+        id: projectId,
+        status: 'uploading',
+      });
       try {
         await client.mutations.updateProjectMemberships({ projectId });
       } catch {
@@ -578,9 +582,7 @@ export class UploadOrchestrator {
       data: [imageSet],
     } = await client.models.ImageSet.imageSetsByProjectId({ projectId });
     if (!imageSet?.id) {
-      throw new FatalUploadError(
-        `No image set found for project ${projectId}`
-      );
+      throw new FatalUploadError(`No image set found for project ${projectId}`);
     }
 
     const storedImages = await store.getImages();
@@ -593,10 +595,10 @@ export class UploadOrchestrator {
     const cameras = await buildCameraResolver(
       client,
       projectId,
-      uploadMetadata?.folderCameraMapping ?? {}
+      uploadMetadata?.folderCameraMapping ?? {},
     );
     const storedImageByPath = new Map(
-      storedImages.map((image) => [image.originalPath, image])
+      storedImages.map((image) => [image.originalPath, image]),
     );
     const rotationForPath = (originalPath: string): number => {
       const cameraName = cameras.resolveCameraName(originalPath);
@@ -611,7 +613,7 @@ export class UploadOrchestrator {
       return orientationCorrectionFor(
         uploadMetadata?.rotations,
         cameraName,
-        orientationGroup
+        orientationGroup,
       );
     };
 
@@ -626,14 +628,14 @@ export class UploadOrchestrator {
         }
         return acc;
       },
-      { validImages: [], invalidPaths: [] }
+      { validImages: [], invalidPaths: [] },
     );
     if (invalidPaths.length > 0) {
       console.warn(
         `Skipping ${invalidPaths.length} image${
           invalidPaths.length === 1 ? '' : 's'
         } with missing GPS coordinates:`,
-        invalidPaths
+        invalidPaths,
       );
       await store.setImages(validImages);
     }
@@ -680,7 +682,7 @@ export class UploadOrchestrator {
         originalPath: img.originalPath,
         timestamp: img.timestamp,
         cameraId: img.cameraId ?? undefined,
-      }))
+      })),
     );
 
     // DB-seed tasks normally reuse files already on S3. If a correction is
@@ -688,13 +690,13 @@ export class UploadOrchestrator {
     // put the original bytes on S3 before the normalization metadata existed,
     // so no upload-trigger event would otherwise arrive to rotate it.
     const seedPaths = uploadedFiles.filter(
-      (path) => !knownDbPaths.has(path) && rotationForPath(path) === 0
+      (path) => !knownDbPaths.has(path) && rotationForPath(path) === 0,
     );
     const uploadImages = validImages.filter(
       (image) =>
         !s3Files.has(image.originalPath) ||
         (!knownDbPaths.has(image.originalPath) &&
-          rotationForPath(image.originalPath) !== 0)
+          rotationForPath(image.originalPath) !== 0),
     );
 
     session.total = seedPaths.length + uploadImages.length;
@@ -703,22 +705,19 @@ export class UploadOrchestrator {
     session.bytesUploaded = 0;
     session.bytesTotal = uploadImages.reduce(
       (acc, img) => acc + (session.fileByPath.get(img.originalPath)?.size ?? 0),
-      0
+      0,
     );
     session.byteSamples = [];
     session.throughputBps = null;
     session.etaSeconds = null;
     this.emit(session);
 
-    if (
-      keyInfo.organizationId &&
-      session.total > 0 &&
-      !session.startLogged
-    ) {
+    if (keyInfo.organizationId && session.total > 0 && !session.startLogged) {
       session.startLogged = true;
       const uploadBytes = uploadImages.reduce(
-        (acc, img) => acc + (session.fileByPath.get(img.originalPath)?.size ?? 0),
-        0
+        (acc, img) =>
+          acc + (session.fileByPath.get(img.originalPath)?.size ?? 0),
+        0,
       );
       const seedNote =
         seedPaths.length > 0
@@ -731,12 +730,12 @@ export class UploadOrchestrator {
           uploadImages.length === 1 ? '' : 's'
         } queued (${formatBytes(uploadBytes)})${seedNote}`,
         projectId,
-        keyInfo.organizationId
+        keyInfo.organizationId,
       );
     }
 
     const imageByPath = new Map(
-      validImages.map((img) => [img.originalPath, img])
+      validImages.map((img) => [img.originalPath, img]),
     );
 
     return {
@@ -771,7 +770,7 @@ export class UploadOrchestrator {
 
   private async verify(
     session: InternalSession,
-    keyInfo: ProjectKeyInfo
+    keyInfo: ProjectKeyInfo,
   ): Promise<{ remainingPaths: string[]; uploadedPaths: Set<string> }> {
     const manifest = await session.store.getImages();
     const localPaths = new Set(manifest.map((img) => img.originalPath));
@@ -782,9 +781,7 @@ export class UploadOrchestrator {
       signal: session.controller.signal,
     });
     const uploadedPaths = new Set(
-      manifest
-        .map((img) => img.originalPath)
-        .filter((path) => onS3.has(path))
+      manifest.map((img) => img.originalPath).filter((path) => onS3.has(path)),
     );
     await session.store.setUploadedPaths(Array.from(uploadedPaths));
     return {
@@ -849,10 +846,10 @@ function snapshotOf(session: InternalSession): SessionSnapshot {
 function buildBlockedItems(
   session: InternalSession,
   remainingPaths: string[],
-  failures: ItemFailure[]
+  failures: ItemFailure[],
 ): BlockedItem[] {
   const failureByPath = new Map(
-    failures.map((failure) => [failure.originalPath, failure.message])
+    failures.map((failure) => [failure.originalPath, failure.message]),
   );
   return remainingPaths.map((originalPath) => {
     const failure = failureByPath.get(originalPath);
@@ -880,13 +877,13 @@ function buildBlockedItems(
 
 function assertMutationSucceeded(
   result: { errors?: readonly { message: string }[] },
-  operation: string
+  operation: string,
 ): void {
   if (!result.errors?.length) return;
   throw new Error(
     `Could not ${operation}: ${result.errors
       .map((error) => error.message)
-      .join('; ')}`
+      .join('; ')}`,
   );
 }
 
@@ -953,7 +950,7 @@ function acquireProjectLock(session: InternalSession): Promise<boolean> {
           settled = true;
           resolve(true);
           await held;
-        }
+        },
       )
       .catch((err) => {
         if (!settled) {

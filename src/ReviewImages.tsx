@@ -1,0 +1,365 @@
+import { GridHead, GridTable } from '@/components/GridTable';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { BoundaryStatus } from '../shared/boundaryStatus';
+import AnnotationWorkspace from './AnnotationWorkspace';
+import { GlobalContext, ProjectContext } from './Context';
+import {
+  extractUserIdFromOwner,
+  setAnnotationsQuery,
+  surveyGeoQuery,
+} from './sightingQueries';
+import { useInfoTagData } from './useInfoTags';
+
+type SortMode = 'time' | 'count';
+
+type ImageRow = {
+  id: string;
+  name: string;
+  timestamp: number;
+  total: number;
+  counts: { categoryId: string; count: number }[];
+};
+
+const fileName = (path: string | null | undefined, id: string) =>
+  path?.split(/[\\/]/).pop() || id;
+
+const formatTime = (timestamp: number) =>
+  timestamp ? new Date(timestamp * 1000).toLocaleTimeString() : '';
+
+export default function ReviewImages({
+  surveyId,
+  annotationSetId,
+  categoryIds,
+  userIds,
+  infoTagNames,
+  transectIds,
+  selectedImageId,
+  onSelectImage,
+  visible,
+}: {
+  surveyId: string;
+  annotationSetId: string;
+  categoryIds: string[];
+  userIds: string[];
+  infoTagNames: string[];
+  transectIds: string[];
+  selectedImageId: string | null;
+  onSelectImage: (imageId: string) => void;
+  visible: boolean;
+}) {
+  const { client } = useContext(GlobalContext)!;
+  const {
+    categoriesHook: { data: categories },
+  } = useContext(ProjectContext)!;
+  const [sort, setSort] = useState<SortMode>('time');
+
+  const surveyQuery = useQuery(surveyGeoQuery(client, surveyId));
+  const annotationsQuery = useQuery({
+    ...setAnnotationsQuery(client, surveyId, annotationSetId),
+    enabled: !!annotationSetId,
+  });
+  const { namesFor, dataSig: infoTagSig } = useInfoTagData(
+    annotationSetId ? [annotationSetId] : [],
+  );
+
+  const imagesById = useMemo(
+    () => new Map((surveyQuery.data?.images ?? []).map((i) => [i.id, i])),
+    [surveyQuery.data],
+  );
+  const categoryById = useMemo(
+    () => new Map((categories ?? []).map((c) => [c.id, c])),
+    [categories],
+  );
+
+  const filterKey = [categoryIds, userIds, infoTagNames, transectIds]
+    .map((list) => list.join(','))
+    .join('|');
+  const rows = useMemo<ImageRow[]>(() => {
+    const categorySet = new Set(categoryIds);
+    const userSet = new Set(userIds);
+    const tagSet = new Set(infoTagNames);
+    const transectSet = new Set(transectIds);
+    const byImage = new Map<string, Map<string, number>>();
+    for (const a of annotationsQuery.data?.annotations ?? []) {
+      if (!a.imageId || !a.categoryId) continue;
+      if (categorySet.size && !categorySet.has(a.categoryId)) continue;
+      if (userSet.size && !userSet.has(extractUserIdFromOwner(a.owner) ?? ''))
+        continue;
+      if (
+        tagSet.size &&
+        !namesFor(annotationSetId, a.id).some((n) => tagSet.has(n))
+      )
+        continue;
+      if (transectSet.size) {
+        const transectId = imagesById.get(a.imageId)?.transectId;
+        if (!transectId || !transectSet.has(transectId)) continue;
+      }
+      const counts = byImage.get(a.imageId) ?? new Map<string, number>();
+      counts.set(a.categoryId, (counts.get(a.categoryId) ?? 0) + 1);
+      byImage.set(a.imageId, counts);
+    }
+    const out = [...byImage].map(([id, counts]) => {
+      const image = imagesById.get(id);
+      const list = [...counts]
+        .map(([categoryId, count]) => ({ categoryId, count }))
+        .sort((a, b) => b.count - a.count);
+      return {
+        id,
+        name: fileName(image?.originalPath, id),
+        timestamp: image?.timestamp ?? 0,
+        total: list.reduce((sum, c) => sum + c.count, 0),
+        counts: list,
+      };
+    });
+    return out.sort((a, b) =>
+      sort === 'count' ? b.total - a.total : a.timestamp - b.timestamp,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotationsQuery.data, imagesById, filterKey, infoTagSig, sort]);
+
+  const index = rows.findIndex((row) => row.id === selectedImageId);
+  const selected = selectedImageId ? imagesById.get(selectedImageId) : null;
+
+  useEffect(() => {
+    if (rows.length && (!selectedImageId || !imagesById.has(selectedImageId)))
+      onSelectImage(rows[0].id);
+  }, [rows, selectedImageId, imagesById, onSelectImage]);
+
+  const listRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 52,
+    getItemKey: (i) => rows[i].id,
+    overscan: 5,
+  });
+
+  useEffect(() => {
+    if (index >= 0) virtualizer.scrollToIndex(index);
+  }, [index, virtualizer]);
+
+  const step = (delta: number) => {
+    const next = rows[index + delta];
+    if (next) onSelectImage(next.id);
+  };
+
+  if (!annotationSetId) {
+    return (
+      <div className='flex grow items-center justify-center'>
+        Select an annotation set to begin.
+      </div>
+    );
+  }
+
+  const loading = surveyQuery.isLoading || annotationsQuery.isLoading;
+
+  return (
+    <div className='flex h-[calc(100vh-200px)] min-h-[480px] gap-3 pt-4'>
+      <GridTable className='flex w-64 flex-none flex-col'>
+        <GridHead className='flex items-center justify-between gap-2'>
+          <span>
+            {loading ? 'Loading...' : `${rows.length.toLocaleString()} images`}
+          </span>
+          <div className='flex border border-white/30 normal-case'>
+            {(
+              [
+                ['time', 'Time'],
+                ['count', 'Most'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type='button'
+                title={
+                  value === 'time'
+                    ? 'In capture order'
+                    : 'Images with the most sightings first'
+                }
+                onClick={() => setSort(value)}
+                className={cn(
+                  'px-2 py-0.5 tracking-normal',
+                  sort === value
+                    ? 'bg-primary text-white'
+                    : 'hover:bg-white/10',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </GridHead>
+        <div
+          ref={listRef}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              step(e.key === 'ArrowDown' ? 1 : -1);
+            }
+          }}
+          className='relative min-h-0 grow overflow-y-auto outline-none'
+        >
+          {loading ? (
+            <div className='flex items-center gap-2 p-3 text-sm text-muted-foreground'>
+              <Spinner size='sm' />
+              Loading sightings...
+            </div>
+          ) : rows.length === 0 ? (
+            <div className='p-3 text-sm text-muted-foreground'>
+              No images match the filters.
+            </div>
+          ) : (
+            <div
+              className='relative'
+              style={{ height: virtualizer.getTotalSize() }}
+            >
+              {virtualizer.getVirtualItems().map((item) => {
+                const row = rows[item.index];
+                return (
+                  <button
+                    key={item.key}
+                    ref={virtualizer.measureElement}
+                    data-index={item.index}
+                    type='button'
+                    onClick={() => onSelectImage(row.id)}
+                    className={cn(
+                      'absolute inset-x-0 top-0 flex flex-col gap-1 border-b border-white/[0.08] px-2.5 py-2 text-left',
+                      row.id === selectedImageId
+                        ? 'bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]'
+                        : cn(
+                            'hover:bg-white/[0.075]',
+                            item.index % 2 === 0 && 'bg-black/5',
+                          ),
+                    )}
+                    style={{ transform: `translateY(${item.start}px)` }}
+                  >
+                    <span className='flex w-full items-baseline justify-between gap-2'>
+                      <span className='truncate text-sm' title={row.name}>
+                        {row.name}
+                      </span>
+                      <span className='flex-none text-[11px] text-muted-foreground tabular-nums'>
+                        {formatTime(row.timestamp)}
+                      </span>
+                    </span>
+                    <span className='flex flex-wrap gap-1'>
+                      {row.counts.map(({ categoryId, count }) => {
+                        const category = categoryById.get(categoryId);
+                        return (
+                          <span
+                            key={categoryId}
+                            className='flex items-center gap-1 bg-black/25 px-1.5 text-[11px]'
+                          >
+                            <span
+                              className='size-2 flex-none'
+                              style={{
+                                backgroundColor: category?.color ?? '#adb5bd',
+                              }}
+                            />
+                            {count} {category?.name ?? 'Unknown'}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </GridTable>
+
+      <div className='relative min-w-0 grow overflow-hidden border border-white/15'>
+        {selected?.width && selected.height ? (
+          <AnnotationWorkspace
+            key={selected.id}
+            embedded
+            visible={visible}
+            next={index < rows.length - 1 ? () => step(1) : undefined}
+            prev={index > 0 ? () => step(-1) : undefined}
+            hideZoomSetting
+            hideNavButtons
+            allowOutside
+            location={{
+              image: {
+                id: selected.id,
+                width: selected.width,
+                height: selected.height,
+                boundaryStatus:
+                  selected.boundaryStatus as BoundaryStatus | null,
+              },
+              annotationSetId,
+              x: selected.width / 2,
+              y: selected.height / 2,
+              width: selected.width,
+              height: selected.height,
+            }}
+          />
+        ) : (
+          !loading && (
+            <div className='flex h-full items-center justify-center text-muted-foreground'>
+              No image selected.
+            </div>
+          )
+        )}
+
+        {selected && (
+          <div className='absolute top-2.5 left-1/2 z-10 flex max-w-[60%] -translate-x-1/2 items-center gap-2 bg-white px-1.5 py-1 text-sm text-[#212529] shadow-lg'>
+            <button
+              type='button'
+              aria-label='Previous image'
+              disabled={index <= 0}
+              onClick={() => step(-1)}
+              className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
+            >
+              <ChevronLeft className='size-4' />
+            </button>
+            <span className='min-w-0 truncate'>
+              <strong>{fileName(selected.originalPath, selected.id)}</strong>
+              <span className='text-[#6c757d]'>
+                {selected.timestamp
+                  ? ` · ${formatTime(selected.timestamp)}`
+                  : ''}
+                {index >= 0 &&
+                  ` · ${index + 1} of ${rows.length.toLocaleString()}`}
+              </span>
+            </span>
+            <button
+              type='button'
+              aria-label='Next image'
+              disabled={index < 0 || index >= rows.length - 1}
+              onClick={() => step(1)}
+              className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
+            >
+              <ChevronRight className='size-4' />
+            </button>
+          </div>
+        )}
+
+        {index >= 0 && (
+          <div className='absolute top-2.5 right-2.5 z-10 flex max-w-56 flex-col gap-1 bg-white px-3 py-2 text-sm text-[#212529] shadow-lg'>
+            <span className='text-[10px] font-semibold tracking-wider text-[#6c757d] uppercase'>
+              This image
+            </span>
+            {rows[index].counts.map(({ categoryId, count }) => {
+              const category = categoryById.get(categoryId);
+              return (
+                <span key={categoryId} className='flex items-baseline gap-2'>
+                  <span
+                    className='size-2.5 flex-none'
+                    style={{ backgroundColor: category?.color ?? '#adb5bd' }}
+                  />
+                  {count} {category?.name ?? 'Unknown'}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

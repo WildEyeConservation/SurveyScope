@@ -1,8 +1,13 @@
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Form } from 'react-bootstrap';
 import type { PairCompletionState } from '../types';
+import {
+  ATTENTION_COLOR,
+  completionColor,
+  DONE_COLOR,
+} from '../utils/completion';
 import type { Lane } from '../utils/lanes';
-import { completionColor } from '../utils/completion';
 
 interface Props {
   /** Completion state for each pair, in flat (global) display order. */
@@ -138,8 +143,7 @@ function LaneBar({
         ctx.fillRect(PADDING_X + col, top, 1, barH);
       }
       if (activeLocal >= 0 && activeLocal < states.length) {
-        const x =
-          PADDING_X + Math.floor((activeLocal / states.length) * cols);
+        const x = PADDING_X + Math.floor((activeLocal / states.length) * cols);
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1;
         ctx.strokeRect(x - 0.5, top - 1.5, 2, barH + 3);
@@ -158,7 +162,7 @@ function LaneBar({
   };
 
   return (
-    <div ref={wrapperRef} className='w-100'>
+    <div ref={wrapperRef} className='w-full'>
       <canvas
         ref={canvasRef}
         onMouseMove={(e) => onHover(xToIndex(e.clientX))}
@@ -191,16 +195,16 @@ export function ProgressBar({
   onSimpleViewChange,
 }: Props) {
   const [hover, setHover] = useState<{ lane: number; local: number } | null>(
-    null
+    null,
   );
 
   const acceptedCount = useMemo(
     () =>
       states.reduce(
         (n, s) => n + (s.status === 'complete' || s.status === 'empty' ? 1 : 0),
-        0
+        0,
       ),
-    [states]
+    [states],
   );
 
   const multi = lanes.length > 1;
@@ -208,10 +212,33 @@ export function ProgressBar({
   const headerLeft = (() => {
     if (hover) {
       const lane = lanes[hover.lane];
-      const within = `Pair ${hover.local + 1} / ${lane.entries.length}`;
+      const state = states[lane.entries[hover.local]];
+      const status =
+        state?.status === 'incomplete'
+          ? `${state.remaining} of ${state.total} left`
+          : 'done';
+      const within = `Pair ${hover.local + 1} / ${lane.entries.length} · ${status}`;
       return multi ? `${lane.label} · ${within}` : within;
     }
-    return `${acceptedCount} / ${states.length} done`;
+    return (
+      <span className='flex items-center gap-3'>
+        {acceptedCount} / {states.length} done
+        <span className='flex items-center gap-1'>
+          <i
+            className='inline-block size-2 rounded-full'
+            style={{ background: DONE_COLOR }}
+          />
+          done
+        </span>
+        <span className='flex items-center gap-1'>
+          <i
+            className='inline-block size-2 rounded-full'
+            style={{ background: ATTENTION_COLOR }}
+          />
+          needs attention
+        </span>
+      </span>
+    );
   })();
 
   return (
@@ -224,32 +251,35 @@ export function ProgressBar({
         color: '#f8f9fa',
         userSelect: 'none',
       }}
-      className='w-100 d-flex flex-column pt-2 pb-3'
+      className='flex w-full flex-col pt-2 pb-4'
     >
       <div
-        className='d-flex flex-row align-items-center px-3 pb-1'
+        className='flex flex-row items-center px-4 pb-1'
         style={{ fontSize: 11 }}
       >
         <span style={{ flex: 1, opacity: 0.85 }}>{headerLeft}</span>
         <span style={{ flex: 1, textAlign: 'center', opacity: 0.75 }}>
           click to jump
         </span>
-        <div
-          style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}
-        >
-          <Form.Check
-            type='switch'
-            id='ii-simple-view'
-            label='Simple view'
-            checked={simpleView}
-            onChange={(e) => onSimpleViewChange(e.target.checked)}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+          <div
+            className='flex items-center gap-2'
             title='Simple view: show only pairs that still need attention plus their 3 nearest neighbours on each side. Turn off to see every pair.'
             style={{ fontSize: 11 }}
-          />
+          >
+            <Switch
+              id='ii-simple-view'
+              checked={simpleView}
+              onCheckedChange={(c) => onSimpleViewChange(c === true)}
+            />
+            <Label htmlFor='ii-simple-view' className='mb-0'>
+              Simple view
+            </Label>
+          </div>
         </div>
       </div>
 
-      <div className='d-flex flex-column' style={{ gap: multi ? 6 : 0 }}>
+      <div className='flex flex-col' style={{ gap: multi ? 6 : 0 }}>
         {lanes.map((lane, laneIdx) => {
           const laneStates = lane.entries.map((i) => states[i]);
           // Simple view can filter a lane down to nothing — don't render an
@@ -260,29 +290,26 @@ export function ProgressBar({
           const laneDone = laneStates.reduce(
             (n, s) =>
               n + (s.status === 'complete' || s.status === 'empty' ? 1 : 0),
-            0
+            0,
           );
           return (
             <div
               key={lane.key}
               style={{
                 borderLeft: multi
-                  ? `3px solid ${
-                      isActiveLane ? '#f8f9fa' : 'transparent'
-                    }`
+                  ? `3px solid ${isActiveLane ? '#f8f9fa' : 'transparent'}`
                   : undefined,
               }}
             >
               {multi && (
                 <div
-                  className='d-flex flex-row align-items-center px-3'
+                  className='flex flex-row items-center px-4'
                   style={{ fontSize: 11, opacity: 0.85, gap: 6 }}
                 >
                   <span
                     style={{
                       fontWeight: isActiveLane ? 600 : 400,
-                      fontStyle:
-                        lane.kind === 'overlap' ? 'italic' : 'normal',
+                      fontStyle: lane.kind === 'overlap' ? 'italic' : 'normal',
                     }}
                   >
                     {lane.label}

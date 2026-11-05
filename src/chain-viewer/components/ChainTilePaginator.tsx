@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChainTile } from '../ChainTile';
-import { rotationKeyFor } from '../utils/rotationKey';
 import type { AnnotationImageMeta, Chain } from '../types';
+import { rotationKeyFor } from '../utils/rotationKey';
 
 interface Props {
   chain: Chain;
@@ -63,18 +63,22 @@ export function ChainTilePaginator({
 
   const annotation = chain.annotations[safeIndex];
   if (!annotation) {
-    return <div className='text-muted text-center p-4'>No tiles in chain.</div>;
+    return (
+      <div className='p-6 text-center text-muted-foreground'>
+        No tiles in chain.
+      </div>
+    );
   }
 
   const rotKey = rotationKeyFor(
     metaByAnnotationId.get(annotation.id),
-    annotation.imageId
+    annotation.imageId,
   );
 
   return (
-    <div className='d-flex flex-column align-items-center' style={{ gap: 12 }}>
+    <div className='flex flex-col items-center' style={{ gap: 12 }}>
       <div
-        className='d-flex align-items-center justify-content-center'
+        className='flex items-center justify-center'
         style={{ gap: 12, width: '100%' }}
       >
         <button
@@ -119,7 +123,7 @@ export function ChainTilePaginator({
           <ChevronRight size={28} strokeWidth={2.5} />
         </button>
       </div>
-      <div className='text-muted' style={{ fontSize: 13 }}>
+      <div className='text-muted-foreground' style={{ fontSize: 13 }}>
         {safeIndex + 1} of {total}
       </div>
     </div>

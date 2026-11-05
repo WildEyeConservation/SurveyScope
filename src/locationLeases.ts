@@ -1,7 +1,7 @@
 // Match SQS visibility so failed or abandoned tasks can be redelivered.
 export function createLocationLeases(
   leaseMs: number,
-  now: () => number = () => Date.now()
+  now: () => number = () => Date.now(),
 ) {
   const until = new Map<string, number>();
   return {

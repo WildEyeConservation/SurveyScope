@@ -5,7 +5,7 @@ export function insertBufferedTaskAfter<T extends object>(
   buffer: BufferedEntry<T>[],
   index: number,
   task: T,
-  id: string
+  id: string,
 ): BufferedEntry<T>[] {
   return [
     ...buffer.slice(0, index + 1),
@@ -19,14 +19,10 @@ export function promoteStandbyTaskAfter<T extends object>(
   buffer: BufferedEntry<T>[],
   index: number,
   standby: BufferedEntry<T>,
-  overrides?: Partial<T>
+  overrides?: Partial<T>,
 ): BufferedEntry<T>[] {
   const promoted = overrides
     ? { ...standby, ...overrides, id: standby.id }
     : standby;
-  return [
-    ...buffer.slice(0, index + 1),
-    promoted,
-    ...buffer.slice(index + 1),
-  ];
+  return [...buffer.slice(0, index + 1), promoted, ...buffer.slice(index + 1)];
 }

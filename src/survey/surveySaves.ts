@@ -7,12 +7,12 @@ const notify = () => listeners.forEach((listener) => listener());
 
 export async function runSurveySave<T>(
   projectId: string,
-  save: () => Promise<T>
+  save: () => Promise<T>,
 ): Promise<T> {
   const run = (pending.get(projectId) ?? Promise.resolve()).then(save);
   const settled = run.then(
     () => {},
-    () => {}
+    () => {},
   );
   pending.set(projectId, settled);
   notify();

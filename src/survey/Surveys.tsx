@@ -1,33 +1,46 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { UserContext, GlobalContext } from '../Context.tsx';
+import localforage from 'localforage';
+import {
+  Maximize2,
+  Minimize2,
+  Play,
+  SquareArrowOutUpRight,
+  Trash,
+  X,
+} from 'lucide-react';
+import { useContext, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import AnnotationCountModal from '../AnnotationCountModal.tsx';
+import AnnotationSetResults from '../AnnotationSetResults.tsx';
+import ConfirmationModal from '../ConfirmationModal.tsx';
+import { GlobalContext, UserContext } from '../Context.tsx';
+import EditAnnotationSetModal from '../EditAnnotationSet.tsx';
+import FilesUploadComponent from '../FilesUploadComponent.tsx';
+import PageHeader from '../PageHeader';
+import { Schema } from '../amplify/client-schema.ts';
+import IndividualIdProgress from '../individual-id/IndividualIdProgress.tsx';
+import { deleteInfoTagDataForSet } from '../infoTags.ts';
+import { touchQueue } from '../touchQueue.ts';
 import {
   requestDelete,
   requestResume,
   useActiveUploadProjectId,
   useUploadUi,
 } from '../upload/uploadUi.ts';
-import { Schema } from '../amplify/client-schema.ts';
-import { Card, Button, Form, Spinner } from 'react-bootstrap';
-import MyTable from '../Table.tsx';
-import NewSurveyModal from './NewSurveyModal.tsx';
-import { useNavigate } from 'react-router-dom';
-import FilesUploadComponent from '../FilesUploadComponent.tsx';
-import ConfirmationModal from '../ConfirmationModal.tsx';
-import AnnotationSetResults from '../AnnotationSetResults.tsx';
-import AnnotationCountModal from '../AnnotationCountModal.tsx';
-import EditAnnotationSetModal from '../EditAnnotationSet.tsx';
+import ProjectProgress from '../user/ProjectProgress.tsx';
+import { logAdminAction } from '../utils/adminActionLogger.ts';
 import AddAnnotationSetModal from './AddAnnotationSetModal.tsx';
 import LaunchAnnotationSetModal from './LaunchAnnotationSetModal.tsx';
+import NewSurveyModal from './NewSurveyModal.tsx';
 import EditSurveyModal from './editSurveyModal.tsx';
-import { SquareArrowOutUpRight, X, Play, Trash, Minimize2, Maximize2 } from 'lucide-react';
-import { Badge } from 'react-bootstrap';
-import localforage from 'localforage';
-import ProjectProgress from '../user/ProjectProgress.tsx';
-import IndividualIdProgress from '../individual-id/IndividualIdProgress.tsx';
-import { logAdminAction } from '../utils/adminActionLogger.ts';
-import { deleteInfoTagDataForSet } from '../infoTags.ts';
-import { touchQueue } from '../touchQueue.ts';
 
 const PROJECT_SELECTION_SET = [
   'id',
@@ -51,7 +64,8 @@ const PROJECT_SELECTION_SET = [
   'imageSets.imageCount',
 ] as const;
 
-const projectQueryKey = (id: string) => ['surveys-project-details', id] as const;
+const projectQueryKey = (id: string) =>
+  ['surveys-project-details', id] as const;
 
 const fileStoreUploaded = localforage.createInstance({
   name: 'fileStoreUploaded',
@@ -101,7 +115,9 @@ export default function Surveys() {
   const [hasUploadedFiles, setHasUploadedFiles] = useState<{
     [projectId: string]: boolean;
   }>({});
-  const [scanningProjects, setScanningProjects] = useState<Set<string>>(new Set());
+  const [scanningProjects, setScanningProjects] = useState<Set<string>>(
+    new Set(),
+  );
 
   // Initialize sortBy from localStorage or use default
   const getInitialSortBy = () => {
@@ -126,7 +142,9 @@ export default function Surveys() {
   };
 
   const [sortBy, setSortBy] = useState(getInitialSortBy);
-  const [organizationFilter, setOrganizationFilter] = useState(getInitialOrganizationFilter);
+  const [organizationFilter, setOrganizationFilter] = useState(
+    getInitialOrganizationFilter,
+  );
 
   // Initialize compactMode from localStorage or use default
   const getInitialCompactMode = () => {
@@ -170,7 +188,10 @@ export default function Surveys() {
   // Persist organizationFilter to localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.ORGANIZATION_FILTER, organizationFilter);
+      localStorage.setItem(
+        STORAGE_KEYS.ORGANIZATION_FILTER,
+        organizationFilter,
+      );
     }
   }, [organizationFilter]);
 
@@ -193,7 +214,7 @@ export default function Surveys() {
       myProjectsHook.data
         ?.filter((project) => project.isAdmin)
         .map((project) => project.projectId) ?? [],
-    [myProjectsHook.data]
+    [myProjectsHook.data],
   );
 
   // Membership records are updated by backend Lambdas (updateProjectMemberships)
@@ -206,7 +227,7 @@ export default function Surveys() {
         ?.map((m) => `${m.projectId}:${m.updatedAt}`)
         .sort()
         .join('|') ?? '',
-    [myProjectsHook.data]
+    [myProjectsHook.data],
   );
   useEffect(() => {
     if (!membershipSignature) return;
@@ -219,13 +240,14 @@ export default function Surveys() {
       queryFn: async () => {
         const { data } = await client.models.Project.get(
           { id },
-          { selectionSet: PROJECT_SELECTION_SET as unknown as string[] }
+          { selectionSet: PROJECT_SELECTION_SET as unknown as string[] },
         );
         return data;
       },
       // Poll every 60s while a project is uploading so other viewers see the uploader's heartbeat
-      refetchInterval: (query: { state: { data?: Schema['Project']['type'] | null } }) =>
-        query.state.data?.status === 'uploading' ? 60000 : false,
+      refetchInterval: (query: {
+        state: { data?: Schema['Project']['type'] | null };
+      }) => (query.state.data?.status === 'uploading' ? 60000 : false),
     })),
   });
 
@@ -234,7 +256,7 @@ export default function Surveys() {
       projectQueries
         .map((q) => q.data)
         .filter((p): p is Schema['Project']['type'] => p != null),
-    [projectQueries]
+    [projectQueries],
   );
 
   // Projects with an in-flight Individual ID job (status 'active' or
@@ -248,12 +270,12 @@ export default function Surveys() {
           .filter((p) =>
             ((p as any).individualIdJobs ?? []).some(
               (j: { status?: string | null }) =>
-                j.status === 'active' || j.status === 'launching'
-            )
+                j.status === 'active' || j.status === 'launching',
+            ),
           )
-          .map((p) => p.id)
+          .map((p) => p.id),
       ),
-    [projects]
+    [projects],
   );
 
   const organizationOptions = useMemo(
@@ -263,23 +285,26 @@ export default function Surveys() {
           projects.map((project) => [
             project.organizationId,
             project.organization.name,
-          ])
-        ).entries()
+          ]),
+        ).entries(),
       ).map(([id, name]) => ({ id, name })),
-    [projects]
+    [projects],
   );
 
   // Helper to optimistically update a single project in the React Query cache.
   const updateProjectInCache = (
     projectId: string,
     updater: (
-      prev: Schema['Project']['type'] | undefined
-    ) => Schema['Project']['type'] | undefined
+      prev: Schema['Project']['type'] | undefined,
+    ) => Schema['Project']['type'] | undefined,
   ) => {
     queryClient.setQueryData(projectQueryKey(projectId), updater);
   };
 
-  const projectIdsKey = projects.map((p) => p.id).sort().join(',');
+  const projectIdsKey = projects
+    .map((p) => p.id)
+    .sort()
+    .join(',');
   useEffect(() => {
     if (!projectIdsKey) return;
     let cancelled = false;
@@ -289,7 +314,7 @@ export default function Surveys() {
         ids.map(async (id) => {
           const uploaded = Boolean(await fileStoreUploaded.getItem(id));
           return [id, uploaded] as const;
-        })
+        }),
       );
       if (cancelled) return;
       setHasUploadedFiles(Object.fromEntries(entries));
@@ -299,13 +324,12 @@ export default function Surveys() {
     };
   }, [projectIdsKey]);
 
-
   async function deleteProject(projectId: string) {
     const project = projects.find((p) => p.id === projectId);
     const projectName = project?.name || 'Unknown';
 
     updateProjectInCache(projectId, (prev) =>
-      prev ? { ...prev, status: 'deleting' } : prev
+      prev ? { ...prev, status: 'deleting' } : prev,
     );
 
     await client.models.Project.update({
@@ -318,7 +342,7 @@ export default function Surveys() {
       user.userId,
       `Deleted project "${projectName}" (ID: ${projectId})`,
       projectId,
-      project?.organizationId || ''
+      project?.organizationId || '',
     );
 
     client.mutations
@@ -328,11 +352,11 @@ export default function Surveys() {
 
   async function deleteAnnotationSet(
     projectId: string,
-    annotationSetId: string
+    annotationSetId: string,
   ) {
     const project = projects.find((p) => p.id === projectId);
     const annotationSet = project?.annotationSets.find(
-      (set: { id: string }) => set.id === annotationSetId
+      (set: { id: string }) => set.id === annotationSetId,
     );
     const annotationSetName = annotationSet?.name || 'Unknown';
     const projectName = project?.name || 'Unknown';
@@ -345,7 +369,7 @@ export default function Surveys() {
     } catch (error) {
       console.error('Failed to delete info tags for annotation set', error);
       alert(
-        `Could not delete "${annotationSetName}": its informational tags could not be removed. Please try again.`
+        `Could not delete "${annotationSetName}": its informational tags could not be removed. Please try again.`,
       );
       return;
     }
@@ -357,7 +381,7 @@ export default function Surveys() {
       user.userId,
       `Deleted annotation set "${annotationSetName}" from project "${projectName}"`,
       projectId,
-      project?.organizationId || ''
+      project?.organizationId || '',
     );
 
     updateProjectInCache(projectId, (prev) =>
@@ -365,16 +389,16 @@ export default function Surveys() {
         ? {
             ...prev,
             annotationSets: prev.annotationSets.filter(
-              (set: { id: string }) => set.id !== annotationSetId
+              (set: { id: string }) => set.id !== annotationSetId,
             ),
           }
-        : prev
+        : prev,
     );
   }
 
   async function handleKeepJob(projectId: string, queueIds: string[]) {
     const kept = await Promise.all(
-      queueIds.map((id) => touchQueue(client, id, true))
+      queueIds.map((id) => touchQueue(client, id, true)),
     );
     if (kept.includes(false)) {
       alert('Failed to keep the job. Please try again.');
@@ -387,20 +411,20 @@ export default function Surveys() {
             queues: prev.queues.map((queue: { id: string }) =>
               queueIds.includes(queue.id)
                 ? { ...queue, cancelAfter: null }
-                : queue
+                : queue,
             ),
           }
-        : prev
+        : prev,
     );
   }
 
   function renderKeepJob(
     project: Schema['Project']['type'],
     disabled: boolean,
-    size?: 'sm'
+    size?: 'sm',
   ) {
     const warnedQueues = project.queues.filter(
-      (queue: { cancelAfter?: string | null }) => queue.cancelAfter
+      (queue: { cancelAfter?: string | null }) => queue.cancelAfter,
     );
     if (warnedQueues.length === 0) return null;
     const cancelAfter = warnedQueues
@@ -415,7 +439,7 @@ export default function Surveys() {
         onClick={() =>
           handleKeepJob(
             project.id,
-            warnedQueues.map((queue: { id: string }) => queue.id)
+            warnedQueues.map((queue: { id: string }) => queue.id),
           )
         }
         style={{ whiteSpace: 'nowrap' }}
@@ -428,7 +452,7 @@ export default function Surveys() {
   async function handleCancelJob() {
     const previousStatus = selectedProject!.status;
     updateProjectInCache(selectedProject!.id, (prev) =>
-      prev ? { ...prev, status: 'updating' } : prev
+      prev ? { ...prev, status: 'updating' } : prev,
     );
 
     try {
@@ -438,10 +462,10 @@ export default function Surveys() {
           client.models as any
         ).IndividualIdJob.individualIdJobsByProjectId(
           { projectId: selectedProject!.id },
-          { selectionSet: ['id', 'status'] }
+          { selectionSet: ['id', 'status'] },
         );
         const iidJob = (iidJobs || []).find(
-          (j: any) => j.status === 'active' || j.status === 'launching'
+          (j: any) => j.status === 'active' || j.status === 'launching',
         );
         if (iidJob) {
           // The mutation closes the job's workflow run as well. Generated
@@ -470,7 +494,7 @@ export default function Surveys() {
             user.userId,
             `Cancelled ChainLinker job for project "${selectedProject!.name}"`,
             selectedProject!.id,
-            selectedProject!.organizationId
+            selectedProject!.organizationId,
           );
           return;
         }
@@ -491,11 +515,11 @@ export default function Surveys() {
         user.userId,
         `Cancelled queue job "${job.tag || job.name || 'Unknown'}" for project "${selectedProject!.name}"`,
         selectedProject!.id,
-        selectedProject!.organizationId
+        selectedProject!.organizationId,
       );
     } catch (error) {
       updateProjectInCache(selectedProject!.id, (prev) =>
-        prev ? { ...prev, status: previousStatus } : prev
+        prev ? { ...prev, status: previousStatus } : prev,
       );
       alert('An unknown error occurred. Please try again later.');
       console.error(error);
@@ -512,8 +536,8 @@ export default function Surveys() {
       project.status !== 'deleted' && project.status !== 'hidden';
     const matchesOrganization =
       !organizationFilter || project.organizationId === organizationFilter;
-    const matchesAnnotationSet = project.annotationSets.some((set: { name: string }) =>
-      set.name.toLowerCase().includes(searchLower)
+    const matchesAnnotationSet = project.annotationSets.some(
+      (set: { name: string }) => set.name.toLowerCase().includes(searchLower),
     );
     const matchesSearch =
       searchLower === '' ||
@@ -526,10 +550,16 @@ export default function Surveys() {
 
   const sortedProjects = [...filteredProjects].sort((a, b) => {
     if (sortBy === 'createdAt') {
-      return new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime();
+      return (
+        new Date(b.createdAt ?? '').getTime() -
+        new Date(a.createdAt ?? '').getTime()
+      );
     }
     if (sortBy === 'createdAt-reverse') {
-      return new Date(a.createdAt ?? '').getTime() - new Date(b.createdAt ?? '').getTime();
+      return (
+        new Date(a.createdAt ?? '').getTime() -
+        new Date(b.createdAt ?? '').getTime()
+      );
     }
     if (sortBy === 'name') {
       return a.name.localeCompare(b.name);
@@ -538,10 +568,15 @@ export default function Surveys() {
       return b.name.localeCompare(a.name);
     }
     if (sortBy === 'activeJobs') {
-      const hasJobA = a.queues.length > 0 || projectsWithIndividualIdJob.has(a.id);
-      const hasJobB = b.queues.length > 0 || projectsWithIndividualIdJob.has(b.id);
+      const hasJobA =
+        a.queues.length > 0 || projectsWithIndividualIdJob.has(a.id);
+      const hasJobB =
+        b.queues.length > 0 || projectsWithIndividualIdJob.has(b.id);
       if (hasJobA !== hasJobB) return hasJobA ? -1 : 1;
-      return new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime();
+      return (
+        new Date(b.createdAt ?? '').getTime() -
+        new Date(a.createdAt ?? '').getTime()
+      );
     }
     return 0;
   });
@@ -551,15 +586,18 @@ export default function Surveys() {
     annotationSet: Schema['AnnotationSet']['type'],
     disabled: boolean,
     hasJobs: boolean,
-    options: { wrap?: boolean; size?: 'sm' } = {}
+    options: { wrap?: boolean; size?: 'sm' } = {},
   ) {
     // Mobile view should never be compact, so ignore compactMode when isMobile is true
     const effectiveCompactMode = isMobile ? false : compactMode;
-    const { wrap = false, size = effectiveCompactMode ? 'sm' : undefined } = options;
+    const { wrap = false, size = effectiveCompactMode ? 'sm' : undefined } =
+      options;
     const gapClass = effectiveCompactMode ? 'gap-1' : 'gap-2';
 
     return (
-      <div className={`d-flex ${wrap ? 'flex-wrap w-100' : 'flex-wrap'} ${gapClass}`}>
+      <div
+        className={`flex ${wrap ? 'w-full flex-wrap' : 'flex-wrap'} ${gapClass}`}
+      >
         <Button
           size={size}
           variant='primary'
@@ -601,7 +639,10 @@ export default function Surveys() {
           variant='primary'
           onClick={() => {
             setSelectedProject(project);
-            setSelectedAnnotationSet({ id: annotationSet.id, name: annotationSet.name } as Schema['AnnotationSet']['type']);
+            setSelectedAnnotationSet({
+              id: annotationSet.id,
+              name: annotationSet.name,
+            } as Schema['AnnotationSet']['type']);
             showModal('annotationSetResults');
           }}
           disabled={disabled || hasJobs}
@@ -628,22 +669,23 @@ export default function Surveys() {
     project: Schema['Project']['type'],
     disabled: boolean,
     hasJobs: boolean,
-    options: { wrap?: boolean; size?: 'sm' } = {}
+    options: { wrap?: boolean; size?: 'sm' } = {},
   ) {
     // Mobile view should never be compact, so ignore compactMode when isMobile is true
     const effectiveCompactMode = isMobile ? false : compactMode;
-    const { wrap = false, size = effectiveCompactMode ? 'sm' : undefined } = options;
+    const { wrap = false, size = effectiveCompactMode ? 'sm' : undefined } =
+      options;
     const sortedAnnotationSets = [...project.annotationSets].sort((a, b) =>
-      a.name.localeCompare(b.name)
+      a.name.localeCompare(b.name),
     );
     const gapClass = effectiveCompactMode ? 'gap-1' : 'gap-2';
     const borderClass = effectiveCompactMode ? 'pt-1' : 'pt-2';
 
     return (
-      <div className={`d-flex flex-column ${gapClass} flex-grow-1`}>
+      <div className={`flex flex-col ${gapClass} grow`}>
         {isMobile && sortedAnnotationSets.length === 0 && (
           <Badge
-            bg='secondary'
+            variant='secondary'
             style={{ width: 'fit-content', fontSize: '12px' }}
           >
             None
@@ -651,11 +693,14 @@ export default function Surveys() {
         )}
         {sortedAnnotationSets.map((annotationSet, i) => (
           <div
-            className={`d-flex flex-column ${gapClass} ${i === 0 ? '' : `border-top border-light ${borderClass}`
-              }`}
+            className={`flex flex-col ${gapClass} ${
+              i === 0 ? '' : `border-t border-light ${borderClass}`
+            }`}
             key={annotationSet.id}
           >
-            <div className={`d-flex justify-content-between align-items-center ${gapClass} flex-wrap`}>
+            <div
+              className={`flex items-center justify-between ${gapClass} flex-wrap`}
+            >
               <div style={{ fontSize: '16px' }}>{annotationSet.name}</div>
               {!hasJobs &&
                 renderAnnotationSetActions(
@@ -663,7 +708,7 @@ export default function Surveys() {
                   annotationSet,
                   disabled,
                   hasJobs,
-                  { wrap, size }
+                  { wrap, size },
                 )}
             </div>
           </div>
@@ -679,15 +724,16 @@ export default function Surveys() {
     showResumeButton: boolean,
     showPauseButton: boolean,
     isStale: boolean,
-    options: { wrap?: boolean; size?: 'sm' } = {}
+    options: { wrap?: boolean; size?: 'sm' } = {},
   ) {
     // Mobile view should never be compact, so ignore compactMode when isMobile is true
     const effectiveCompactMode = isMobile ? false : compactMode;
-    const { wrap = false, size = effectiveCompactMode ? 'sm' : undefined } = options;
+    const { wrap = false, size = effectiveCompactMode ? 'sm' : undefined } =
+      options;
     const gapClass = effectiveCompactMode ? 'gap-1' : 'gap-2';
     const containerClass = wrap
-      ? `d-flex flex-wrap ${gapClass} w-100`
-      : `d-flex ${gapClass} flex-wrap`;
+      ? `flex flex-wrap ${gapClass} w-full`
+      : `flex ${gapClass} flex-wrap`;
 
     return (
       <div className={containerClass}>
@@ -816,25 +862,27 @@ export default function Surveys() {
       new Date(project.updatedAt ?? '').getTime() < Date.now() - 1000 * 60 * 5;
 
     const gapClass = compactMode ? 'gap-1' : 'gap-2';
-    const columnGapClass = compactMode ? 'gap-1' : 'gap-3';
+    const columnGapClass = compactMode ? 'gap-1' : 'gap-4';
     const badgeFontSize = compactMode ? '11px' : '14px';
 
     return {
       id: project.id,
       rowData: [
-        <div className={`d-flex justify-content-between align-items-start align-items-lg-center ${gapClass} flex-wrap`}>
-          <div className={`d-flex flex-column ${compactMode ? 'gap-0' : 'gap-1'}`}>
+        <div
+          className={`flex items-start justify-between lg:items-center ${gapClass} flex-wrap`}
+        >
+          <div className={`flex flex-col ${compactMode ? 'gap-0' : 'gap-1'}`}>
             {compactMode ? (
-              <h6 className={`mb-0 ${isMobile ? 'fw-semibold' : ''}`}>
+              <h6 className={`mb-0 ${isMobile ? 'font-semibold' : ''}`}>
                 {project.name}
               </h6>
             ) : (
-              <h5 className={`mb-0 ${isMobile ? 'fw-semibold' : ''}`}>
+              <h5 className={`mb-0 ${isMobile ? 'font-semibold' : ''}`}>
                 {project.name}
               </h5>
             )}
             {!compactMode && (
-              <div className='d-flex flex-column'>
+              <div className='flex flex-col'>
                 <i style={{ fontSize: '14px' }}>{project.organization.name}</i>
                 {project.status !== 'uploading' && (
                   <i style={{ fontSize: '14px' }}>
@@ -846,15 +894,15 @@ export default function Surveys() {
             {project.status !== 'active' && (
               <Badge
                 style={{ fontSize: badgeFontSize, width: 'fit-content' }}
-                bg={'info'}
+                variant='info'
               >
                 {project.status === 'launching'
                   ? 'Launching - please wait'
                   : project.status?.includes('processing')
                     ? 'Processing'
                     : project.status?.replace(/\b\w/g, (char) =>
-                      char.toUpperCase()
-                    )}
+                        char.toUpperCase(),
+                      )}
               </Badge>
             )}
           </div>
@@ -864,33 +912,39 @@ export default function Surveys() {
             hasJobs,
             showResumeButton,
             showPauseButton,
-            isStale
+            isStale,
           )}
         </div>,
-        <div className={`d-flex flex-column flex-md-row ${columnGapClass}`}>
+        <div className={`flex flex-col md:flex-row ${columnGapClass}`}>
           {renderAnnotationSets(project, disabled, hasJobs)}
           {hasQueueOrRegisterJob && (
             <div
-              className={`d-flex flex-row align-items-center ${gapClass} w-100`}
+              className={`flex flex-row items-center ${gapClass} w-full`}
               style={{ maxWidth: '500px' }}
             >
-              <div className='flex-grow-1'>
+              <div className='grow'>
                 <ProjectProgress
                   projectId={project.id}
                   onScanningChange={(isScanning) => {
-                    setScanningProjects(prev => {
+                    setScanningProjects((prev) => {
                       const next = new Set(prev);
-                      isScanning ? next.add(project.id) : next.delete(project.id);
+                      isScanning
+                        ? next.add(project.id)
+                        : next.delete(project.id);
                       return next;
                     });
                   }}
                 />
               </div>
-              {renderKeepJob(project, disabled, compactMode ? 'sm' : undefined) ?? (
-                <div className={`d-flex ${gapClass} flex-wrap justify-content-end`}>
+              {renderKeepJob(
+                project,
+                disabled,
+                compactMode ? 'sm' : undefined,
+              ) ?? (
+                <div className={`flex ${gapClass} flex-wrap justify-end`}>
                   <Button
                     size={compactMode ? 'sm' : undefined}
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     disabled={disabled || scanningProjects.has(project.id)}
                     variant='primary'
                     onClick={() => navigate(`/jobs`)}
@@ -899,7 +953,7 @@ export default function Surveys() {
                   </Button>
                   <Button
                     size={compactMode ? 'sm' : undefined}
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     disabled={disabled || scanningProjects.has(project.id)}
                     variant='danger'
                     onClick={() => {
@@ -915,16 +969,16 @@ export default function Surveys() {
           )}
           {project.status === 'active' && hasIndividualIdJob && (
             <div
-              className={`d-flex flex-row align-items-center ${gapClass} w-100`}
+              className={`flex flex-row items-center ${gapClass} w-full`}
               style={{ maxWidth: '500px' }}
             >
-              <div className='flex-grow-1'>
+              <div className='grow'>
                 <IndividualIdProgress projectId={project.id} />
               </div>
-              <div className={`d-flex ${gapClass} flex-wrap justify-content-end`}>
+              <div className={`flex ${gapClass} flex-wrap justify-end`}>
                 <Button
                   size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
+                  className='flex items-center justify-center'
                   variant='primary'
                   onClick={() => navigate(`/jobs`)}
                 >
@@ -932,7 +986,7 @@ export default function Surveys() {
                 </Button>
                 <Button
                   size={compactMode ? 'sm' : undefined}
-                  className='flex align-items-center justify-content-center'
+                  className='flex items-center justify-center'
                   variant='danger'
                   onClick={() => {
                     setSelectedProject(project);
@@ -982,33 +1036,39 @@ export default function Surveys() {
         className='shadow-sm'
         style={{ backgroundColor: '#6F7B89', color: '#fff', border: 'none' }}
       >
-        <Card.Body className='d-flex flex-column gap-3'>
-          <div className='d-flex flex-column gap-2'>
-            <div className='d-flex justify-content-between align-items-start align-items-lg-center gap-2 flex-wrap'>
-              <div className='d-flex flex-column gap-1'>
-                <h5 className={`mb-0 ${isMobile ? 'fw-semibold' : ''}`}>
+        <CardContent className='flex flex-col gap-4'>
+          <div className='flex flex-col gap-2'>
+            <div className='flex flex-wrap items-start justify-between gap-2 lg:items-center'>
+              <div className='flex flex-col gap-1'>
+                <h5 className={`mb-0 ${isMobile ? 'font-semibold' : ''}`}>
                   {project.name}
                 </h5>
-                <div className='text-muted' style={{ fontSize: '14px' }}>
+                <div
+                  className='text-muted-foreground'
+                  style={{ fontSize: '14px' }}
+                >
                   {project.organization.name}
                 </div>
                 {project.status !== 'uploading' && (
-                  <div className='text-muted' style={{ fontSize: '14px' }}>
+                  <div
+                    className='text-muted-foreground'
+                    style={{ fontSize: '14px' }}
+                  >
                     Images: {project.imageSets?.[0]?.imageCount || 0}
                   </div>
                 )}
                 {project.status !== 'active' && (
                   <Badge
                     style={{ fontSize: '14px', width: 'fit-content' }}
-                    bg={'info'}
+                    variant='info'
                   >
                     {project.status === 'launching'
                       ? 'Launching - please wait'
                       : project.status?.includes('processing')
                         ? 'Processing'
                         : project.status?.replace(/\b\w/g, (char) =>
-                          char.toUpperCase()
-                        )}
+                            char.toUpperCase(),
+                          )}
                   </Badge>
                 )}
               </div>
@@ -1019,31 +1079,34 @@ export default function Surveys() {
                 showResumeButton,
                 showPauseButton,
                 isStale,
-                { wrap: true, size: 'sm' }
+                { wrap: true, size: 'sm' },
               )}
             </div>
             {hasQueueOrRegisterJob && (
               <div
-                className={`d-flex flex-row align-items-center gap-2 ${isMobile ? 'pt-3 border-top border-light' : ''
-                  }`}
+                className={`flex flex-row items-center gap-2 ${
+                  isMobile ? 'border-t border-light pt-4' : ''
+                }`}
               >
-                <div className='flex-grow-1'>
+                <div className='grow'>
                   <ProjectProgress
                     projectId={project.id}
                     onScanningChange={(isScanning) => {
-                      setScanningProjects(prev => {
+                      setScanningProjects((prev) => {
                         const next = new Set(prev);
-                        isScanning ? next.add(project.id) : next.delete(project.id);
+                        isScanning
+                          ? next.add(project.id)
+                          : next.delete(project.id);
                         return next;
                       });
                     }}
                   />
                 </div>
                 {renderKeepJob(project, disabled, 'sm') ?? (
-                  <div className='d-flex gap-2 flex-wrap justify-content-end'>
+                  <div className='flex flex-wrap justify-end gap-2'>
                     <Button
                       size='sm'
-                      className='flex align-items-center justify-content-center'
+                      className='flex items-center justify-center'
                       disabled={disabled || scanningProjects.has(project.id)}
                       variant='primary'
                       onClick={() => navigate(`/jobs`)}
@@ -1052,7 +1115,7 @@ export default function Surveys() {
                     </Button>
                     <Button
                       size='sm'
-                      className='flex align-items-center justify-content-center'
+                      className='flex items-center justify-center'
                       disabled={disabled || scanningProjects.has(project.id)}
                       variant='danger'
                       onClick={() => {
@@ -1068,16 +1131,17 @@ export default function Surveys() {
             )}
             {project.status === 'active' && hasIndividualIdJob && (
               <div
-                className={`d-flex flex-row align-items-center gap-2 ${isMobile ? 'pt-3 border-top border-light' : ''
-                  }`}
+                className={`flex flex-row items-center gap-2 ${
+                  isMobile ? 'border-t border-light pt-4' : ''
+                }`}
               >
-                <div className='flex-grow-1'>
+                <div className='grow'>
                   <IndividualIdProgress projectId={project.id} />
                 </div>
-                <div className='d-flex gap-2 flex-wrap justify-content-end'>
+                <div className='flex flex-wrap justify-end gap-2'>
                   <Button
                     size='sm'
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     variant='primary'
                     onClick={() => navigate(`/jobs`)}
                   >
@@ -1085,7 +1149,7 @@ export default function Surveys() {
                   </Button>
                   <Button
                     size='sm'
-                    className='flex align-items-center justify-content-center'
+                    className='flex items-center justify-center'
                     variant='danger'
                     onClick={() => {
                       setSelectedProject(project);
@@ -1099,16 +1163,17 @@ export default function Surveys() {
             )}
           </div>
           <div
-            className={`d-flex flex-column gap-2 ${isMobile ? 'pt-3 border-top border-light' : ''
-              }`}
+            className={`flex flex-col gap-2 ${
+              isMobile ? 'border-t border-light pt-4' : ''
+            }`}
           >
-            <div className='fw-semibold'>Annotation Sets</div>
+            <div className='font-semibold'>Annotation Sets</div>
             {renderAnnotationSets(project, disabled, hasJobs, {
               wrap: true,
               size: 'sm',
             })}
           </div>
-        </Card.Body>
+        </CardContent>
       </Card>
     );
   };
@@ -1126,120 +1191,114 @@ export default function Surveys() {
           width: '100%',
           maxWidth: '1555px',
           marginTop: '16px',
-          marginBottom: '16px',
+          paddingBottom: '16px',
+          alignSelf: 'flex-start',
         }}
       >
         <Card>
-          <Card.Header className='d-flex flex-column flex-lg-row align-items-lg-center gap-3'>
-            <Card.Title
-              className='mb-0 flex-shrink-0'
-              style={{ whiteSpace: 'nowrap' }}
+          <PageHeader title='Your Surveys'>
+            <Input
+              className='w-full'
+              type='text'
+              style={{
+                minWidth: 0,
+                width: '100%',
+                maxWidth: isMobile ? '100%' : '250px',
+              }}
+              placeholder='Search'
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <NativeSelect
+              className='w-full'
+              value={organizationFilter}
+              onChange={(e) => setOrganizationFilter(e.target.value)}
+              style={{
+                minWidth: 0,
+                width: '100%',
+                maxWidth: isMobile ? '100%' : '250px',
+              }}
             >
-              <h4 className='mb-0'>Your Surveys</h4>
-            </Card.Title>
-            <div className='d-flex flex-column flex-lg-row gap-2 w-100 w-lg-auto ms-lg-auto justify-content-lg-end align-items-lg-center'>
-              <Form.Control
-                className='w-100'
-                type='text'
-                style={{
-                  minWidth: 0,
-                  width: '100%',
-                  maxWidth: isMobile ? '100%' : '250px',
-                }}
-                placeholder='Search'
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <Form.Select
-                className='w-100 w-lg-auto'
-                value={organizationFilter}
-                onChange={(e) => setOrganizationFilter(e.target.value)}
-                style={{
-                  minWidth: 0,
-                  width: '100%',
-                  maxWidth: isMobile ? '100%' : '250px',
-                }}
-              >
-                <option value=''>All organisations</option>
-                {organizationOptions.map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.name}
-                  </option>
-                ))}
-              </Form.Select>
-              <Form.Select
-                className='w-100 w-lg-auto'
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                style={{
-                  minWidth: 0,
-                  width: '100%',
-                  maxWidth: isMobile ? '100%' : '250px',
-                }}
-              >
-                <option value='createdAt'>Created (newest first)</option>
-                <option value='createdAt-reverse'>
-                  Created (oldest first)
+              <option value=''>All organisations</option>
+              {organizationOptions.map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
                 </option>
-                <option value='name'>Name (A-Z)</option>
-                <option value='name-reverse'>Name (Z-A)</option>
-                <option value='activeJobs'>Active jobs first</option>
-              </Form.Select>
-              {!isMobile && (
-                <Button
-                  variant='info'
-                  // size='sm'
-                  onClick={() => setCompactMode(!compactMode)}
-                  title={compactMode ? 'Expand view' : 'Compact view'}
-                  style={{
-                    minWidth: 'fit-content',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-                </Button>
-              )}
-            </div>
-          </Card.Header>
-          <Card.Body
+              ))}
+            </NativeSelect>
+            <NativeSelect
+              className='w-full'
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              style={{
+                minWidth: 0,
+                width: '100%',
+                maxWidth: isMobile ? '100%' : '250px',
+              }}
+            >
+              <option value='createdAt'>Created (newest first)</option>
+              <option value='createdAt-reverse'>Created (oldest first)</option>
+              <option value='name'>Name (A-Z)</option>
+              <option value='name-reverse'>Name (Z-A)</option>
+              <option value='activeJobs'>Active jobs first</option>
+            </NativeSelect>
+            {!isMobile && (
+              <Button
+                variant='info'
+                size='icon'
+                onClick={() => setCompactMode(!compactMode)}
+                title={compactMode ? 'Expand view' : 'Compact view'}
+              >
+                {compactMode ? (
+                  <Maximize2 size={16} />
+                ) : (
+                  <Minimize2 size={16} />
+                )}
+              </Button>
+            )}
+          </PageHeader>
+          <CardContent
             className={
               isMobile
-                ? 'd-flex flex-column gap-3 p-3'
+                ? 'flex flex-col gap-4 p-4'
                 : 'overflow-x-auto overflow-y-visible'
             }
           >
             {isMobile ? (
               sortedProjects.length > 0 ? (
-                <div className='d-flex flex-column gap-3'>
+                <div className='flex flex-col gap-4'>
                   {sortedProjects.map((project) => renderProjectCard(project))}
                 </div>
               ) : (
-                <div className='text-center py-3'>
+                <div className='py-4 text-center'>
                   <h5 className='mb-0'>{emptyMessage}</h5>
                 </div>
               )
             ) : (
-              <MyTable
-                tableHeadings={[
+              <DataTable
+                storageKey='surveys'
+                columns={columnsFromHeadings([
                   { content: 'Survey', style: { width: '50%' } },
                   { content: 'Annotation Sets', style: { width: '50%' } },
-                ]}
-                tableData={tableData}
-                pagination={true}
-                itemsPerPage={5}
+                ])}
+                data={cellRows(tableData)}
+                getRowId={(row) => row.id}
+                pageSize={5}
                 emptyMessage={emptyMessage}
               />
             )}
-          </Card.Body>
+          </CardContent>
           {isOrganizationAdmin && (
-            <Card.Footer className='d-flex justify-content-center'>
-              <div className='d-inline-block'>
-                <Button variant='primary' onClick={() => showModal('newSurvey')}
+            <CardFooter className='flex justify-center'>
+              <div className='inline-block'>
+                <Button
+                  variant='primary'
+                  onClick={() => showModal('newSurvey')}
                 >
                   New Survey
                 </Button>
               </div>
-            </Card.Footer>
+            </CardFooter>
           )}
         </Card>
         {/* {process.env.NODE_ENV === 'development' && <UploadIntegrityChecker />} */}
@@ -1352,11 +1411,12 @@ export default function Surveys() {
               prev
                 ? {
                     ...prev,
-                    annotationSets: prev.annotationSets.map((set: { id: string }) =>
-                      set.id === annotationSet.id ? annotationSet : set
+                    annotationSets: prev.annotationSets.map(
+                      (set: { id: string }) =>
+                        set.id === annotationSet.id ? annotationSet : set,
                     ),
                   }
-                : prev
+                : prev,
             );
           }}
           setEditSurveyTab={setTab}
@@ -1385,7 +1445,7 @@ export default function Surveys() {
                       } as (typeof prev.annotationSets)[number],
                     ],
                   }
-                : prev
+                : prev,
             );
             // Log asynchronously without blocking
             logAdminAction(
@@ -1393,7 +1453,7 @@ export default function Surveys() {
               user.userId,
               `Added annotation set "${annotationSet.name}" to project "${selectedProject?.name}"`,
               selectedProject?.id || '',
-              selectedProject?.organizationId || ''
+              selectedProject?.organizationId || '',
             ).catch(console.error);
           }}
         />
@@ -1405,10 +1465,10 @@ export default function Surveys() {
           project={selectedProject}
           onOptimisticStatus={(projectId, status) => {
             updateProjectInCache(projectId, (prev) =>
-              prev ? { ...prev, status } : prev
+              prev ? { ...prev, status } : prev,
             );
             setSelectedProject((prev) =>
-              prev && prev.id === projectId ? { ...prev, status } : prev
+              prev && prev.id === projectId ? { ...prev, status } : prev,
             );
           }}
         />

@@ -2,10 +2,10 @@ import { isAbortError, uploadOriginal } from '../../storage/upload';
 import type { ImageData } from '../../types/ImageData';
 import { PhashIndex } from '../phashDedup';
 import { PhashService } from '../phashService';
+import type { UploadStateStore } from './persistence';
 import { runPool } from './pool';
 import type { RecordWriter } from './RecordWriter';
 import { classifyError, errorMessage } from './retry';
-import type { UploadStateStore } from './persistence';
 import type { DuplicateRecord, ItemFailure } from './types';
 
 const SEED_CONCURRENCY = 5;
@@ -65,7 +65,7 @@ export class TransferEngine {
     private phashService: PhashService,
     private store: UploadStateStore,
     private callbacks: TransferCallbacks,
-    private signal: AbortSignal
+    private signal: AbortSignal,
   ) {}
 
   async run(input: TransferInput): Promise<{ failures: ItemFailure[] }> {
@@ -86,13 +86,13 @@ export class TransferEngine {
         input.seedPaths,
         SEED_CONCURRENCY,
         (path) => this.seedItem(path, input),
-        this.signal
+        this.signal,
       );
       await runPool(
         input.uploadImages,
         UPLOAD_CONCURRENCY,
         (image) => this.uploadItem(image, input),
-        this.signal
+        this.signal,
       );
     } finally {
       this.signal.removeEventListener('abort', onAbort);
@@ -106,7 +106,7 @@ export class TransferEngine {
   private async checkPhashDup(
     file: File,
     originalPath: string,
-    input: TransferInput
+    input: TransferInput,
   ): Promise<PhashCheck> {
     const phash = await this.phashService.hash(file);
     if (!phash) return { phash: null, duplicateOf: null, scope: null };
@@ -115,7 +115,7 @@ export class TransferEngine {
       // Anything seeded from DB at session start is "db"; anything added
       // during the run is "batch".
       const scope: 'batch' | 'db' = input.dbSeededPaths.has(
-        existing.payload.originalPath
+        existing.payload.originalPath,
       )
         ? 'db'
         : 'batch';
@@ -149,7 +149,7 @@ export class TransferEngine {
   /** Creates DB records for a file that is already on S3. */
   private async seedItem(
     originalPath: string,
-    input: TransferInput
+    input: TransferInput,
   ): Promise<void> {
     try {
       const imageData = input.imageByPath.get(originalPath);
@@ -168,7 +168,7 @@ export class TransferEngine {
         const { phash, duplicateOf, scope } = await this.checkPhashDup(
           fileObj,
           originalPath,
-          input
+          input,
         );
         if (duplicateOf) {
           this.callbacks.onDuplicate({
@@ -184,7 +184,7 @@ export class TransferEngine {
       const created = await this.recordWriter.createImageRecords(
         imageData,
         fileType,
-        phashForRecord
+        phashForRecord,
       );
       this.store.addCreatedImage(created);
     } catch (err) {
@@ -197,7 +197,7 @@ export class TransferEngine {
   /** Uploads a file to S3, then creates its DB records. */
   private async uploadItem(
     image: ImageData,
-    input: TransferInput
+    input: TransferInput,
   ): Promise<void> {
     let cancelled = false;
     try {
@@ -215,7 +215,7 @@ export class TransferEngine {
       const { phash, duplicateOf, scope } = await this.checkPhashDup(
         file,
         image.originalPath,
-        input
+        input,
       );
       if (duplicateOf) {
         this.callbacks.onDuplicate({
@@ -260,7 +260,7 @@ export class TransferEngine {
       const created = await this.recordWriter.createImageRecords(
         image,
         file.type,
-        phash ?? undefined
+        phash ?? undefined,
       );
       this.store.addCreatedImage(created);
     } catch (err) {

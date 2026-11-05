@@ -302,7 +302,10 @@ async function handleLaunch(
   }
 
   const joinedNames = (payload.categoryNames ?? []).join(', ').trim();
-  const displayName = truncate(joinedNames || 'Info Tags', 120);
+  const displayName = truncate(
+    payload.queueName || joinedNames || 'Info Tags',
+    120
+  );
   const queue = await createQueue(
     { name: displayName, hidden },
     projectId,

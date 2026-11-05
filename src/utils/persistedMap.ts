@@ -18,7 +18,7 @@ render.
 // from `emptyValue`, and Array.isArray is the runtime trust boundary.
 export function mapFromEntries<K, V>(
   entries: unknown,
-  emptyValue: Map<K, V>
+  emptyValue: Map<K, V>,
 ): Map<K, V> {
   if (!Array.isArray(entries)) return emptyValue;
   return new Map(entries as readonly (readonly [K, V])[]);

@@ -1,3 +1,4 @@
+import * as maplibregl from 'maplibre-gl';
 import {
   useCallback,
   useContext,
@@ -7,9 +8,13 @@ import {
   useState,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import * as maplibregl from 'maplibre-gl';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Alert, Badge, Button, Card } from 'react-bootstrap';
+
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,8 +22,10 @@ import {
   SearchCheck,
   Undo2,
 } from 'lucide-react';
-import { GlobalContext } from './Context';
-import type { InfoTagSession } from './infoTagWork';
+import {
+  isAnnotationOnEffort,
+  OUTSIDE_SURVEY_AREA,
+} from '../shared/boundaryStatus';
 import {
   MAX_INFO_TAGS_PER_ANNOTATION,
   type InfoTagResponse,
@@ -29,22 +36,24 @@ import {
   applyTagBadgeContainerStyle,
   applyTagBadgeStyle,
 } from './activeMarkerStyle';
-import { getTileBlob, imageTileContext } from './StorageLayer';
 import type { Schema } from './amplify/client-schema';
+import { GlobalContext } from './Context';
 import {
   fetchImageAnnotationsWithTags,
   formatInfoTagsForDisplay,
   type ImageAnnotationRow,
 } from './infoTags';
-import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
+import type { InfoTagSession } from './infoTagWork';
+import { infoTagWorkflowMetrics } from './infoTagWorkflowStats';
 import {
   recordWorkflowTask,
   type RecordWorkflowTaskInput,
 } from './recordWorkflowTask';
-import { infoTagWorkflowMetrics } from './infoTagWorkflowStats';
-import { useActiveTimeTracker } from './useActiveTimeTracker';
+import { createSerialQueue } from './serialQueue';
+import { getTileBlob, imageTileContext } from './StorageLayer';
 import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
-import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../shared/boundaryStatus';
+import { useActiveTimeTracker } from './useActiveTimeTracker';
+import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 
 const TILE_SIZE = 256;
 const SOURCE_CURRENT = 'info-tag-current';
@@ -101,7 +110,7 @@ type Props = {
 function buildTargetTour(
   targets: AnnotationRow[],
   width: number,
-  height: number
+  height: number,
 ): AnnotationRow[] {
   if (targets.length > 2000) {
     return targets.slice().sort((a, b) => a.y - b.y || a.x - b.x);
@@ -167,12 +176,14 @@ export default function InfoTagAnnotation({
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const persistedTagIdsRef = useRef(new Map<string, Set<string>>());
   const persistedPositionsRef = useRef(
-    new Map<string, { x: number; y: number }>()
+    new Map<string, { x: number; y: number }>(),
   );
   const revisionsRef = useRef(new Map<string, number>());
-  const retryRef = useRef<(() => Promise<void>) | null>(null);
-  const savingRef = useRef(false);
+  const saveQueueRef = useRef(createSerialQueue());
+  const finishRequestedRef = useRef(false);
   const [saving, setSaving] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [exiting, setExiting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [markerPosition, setMarkerPosition] = useState({ x: 0, y: 0 });
@@ -188,7 +199,7 @@ export default function InfoTagAnnotation({
     enabled:
       visible &&
       !disabled &&
-      !saving &&
+      !finishing &&
       !loading &&
       imageReadyAt !== null &&
       !imageComplete,
@@ -213,10 +224,10 @@ export default function InfoTagAnnotation({
   const baseZoomRef = useRef<number | null>(null);
   const [zoomOffset, setZoomOffset] = useState(() => {
     const stored = localStorage.getItem(`infoTagsDefaultZoom-${queueId}`);
-    return stored == null ? queueZoom ?? DEFAULT_ZOOM_OFFSET : Number(stored);
+    return stored == null ? (queueZoom ?? DEFAULT_ZOOM_OFFSET) : Number(stored);
   });
   const [hasLocalZoom, setHasLocalZoom] = useState(
-    () => localStorage.getItem(`infoTagsDefaultZoom-${queueId}`) != null
+    () => localStorage.getItem(`infoTagsDefaultZoom-${queueId}`) != null,
   );
 
   const clearWaitingTimers = useCallback(() => {
@@ -239,7 +250,7 @@ export default function InfoTagAnnotation({
     Promise.all([
       client.models.Image.get(
         { id: imageId },
-        { selectionSet: ['id', 'width', 'height', 'boundaryStatus'] as const }
+        { selectionSet: ['id', 'width', 'height', 'boundaryStatus'] as const },
       ),
       client.models.ImageFile.imagesByimageId({ imageId }),
       fetchImageAnnotationsWithTags(client, imageId, annotationSetId),
@@ -247,7 +258,7 @@ export default function InfoTagAnnotation({
       .then(([imageResponse, filesResponse, rows]) => {
         if (!mounted || !imageResponse.data) return;
         const jpeg = filesResponse.data?.find(
-          (file) => file.type === 'image/jpeg'
+          (file) => file.type === 'image/jpeg',
         );
         if (!jpeg) throw new Error(`No JPEG source found for image ${imageId}`);
         setImage(imageResponse.data);
@@ -258,7 +269,7 @@ export default function InfoTagAnnotation({
         console.error('Failed to load informational tagging image', error);
         if (mounted) {
           setLoadError(
-            error?.message ?? 'Failed to load the annotations for this image'
+            error?.message ?? 'Failed to load the annotations for this image',
           );
         }
       })
@@ -269,6 +280,17 @@ export default function InfoTagAnnotation({
       mounted = false;
     };
   }, [annotationSetId, client, imageId]);
+
+  // Claim snapshots don't carry the flag.
+  const markedOutsideIds = useMemo(
+    () =>
+      new Set(
+        preloadedAnnotations
+          .filter((row) => row.outsideBoundary)
+          .map((row) => row.id),
+      ),
+    [preloadedAnnotations],
+  );
 
   useEffect(() => {
     if (!image) return;
@@ -281,16 +303,16 @@ export default function InfoTagAnnotation({
     const work = snapshot
       ? rows.filter((row) => targetIds.has(row.id))
       : rows.filter(
-          (row) => categoryIds.includes(row.categoryId) && !row.infoTaggedBy
+          (row) => categoryIds.includes(row.categoryId) && !row.infoTaggedBy,
         );
     revisionsRef.current = new Map(
-      (snapshot?.annotations ?? []).map((row) => [row.id, row.infoTagRevision])
+      (snapshot?.annotations ?? []).map((row) => [row.id, row.infoTagRevision]),
     );
     const persisted = new Map(rows.map((row) => [row.id, new Set(row.tagIds)]));
     const ordered = buildTargetTour(work, image.width, image.height);
     persistedTagIdsRef.current = persisted;
     persistedPositionsRef.current = new Map(
-      ordered.map((row) => [row.id, { x: row.x, y: row.y }])
+      ordered.map((row) => [row.id, { x: row.x, y: row.y }]),
     );
     setAnnotations(rows);
     setTargets(ordered);
@@ -315,12 +337,12 @@ export default function InfoTagAnnotation({
     activeTime.reset();
   }, [currentTarget?.id, activeTime]);
   const currentCategory = categories.find(
-    (category) => category.id === currentTarget?.categoryId
+    (category) => category.id === currentTarget?.categoryId,
   );
 
   const tagNameById = useMemo(
     () => new Map(infoTags.map((tag) => [tag.id, tag.name])),
-    [infoTags]
+    [infoTags],
   );
   const namesForAnnotation = useCallback(
     (annotationId: string) =>
@@ -328,7 +350,7 @@ export default function InfoTagAnnotation({
         .map((tagId) => tagNameById.get(tagId))
         .filter((name): name is string => Boolean(name))
         .sort((a, b) => a.localeCompare(b)),
-    [tagNameById]
+    [tagNameById],
   );
 
   useEffect(() => {
@@ -339,7 +361,7 @@ export default function InfoTagAnnotation({
     };
     setMarkerPosition(position);
     setSelectedTagIds(
-      new Set(persistedTagIdsRef.current.get(currentTarget.id) ?? [])
+      new Set(persistedTagIdsRef.current.get(currentTarget.id) ?? []),
     );
     if (map) {
       map.easeTo({
@@ -347,7 +369,7 @@ export default function InfoTagAnnotation({
           position.x,
           position.y,
           image?.width ?? 1,
-          image?.height ?? 1
+          image?.height ?? 1,
         ),
         duration: 350,
       });
@@ -356,19 +378,18 @@ export default function InfoTagAnnotation({
 
   const scale = useMemo(
     () => (image ? 0.1 / Math.max(image.width, image.height) : undefined),
-    [image]
+    [image],
   );
   const toLngLat = useCallback(
     (x: number, y: number): [number, number] =>
       scale ? [x * scale, -y * scale] : [0, 0],
-    [scale]
+    [scale],
   );
 
   useEffect(() => {
     if (!map || !currentTarget) return;
     const source = map.getSource(SOURCE_CURRENT) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     source?.setData({
       type: 'FeatureCollection',
       features: [
@@ -383,10 +404,10 @@ export default function InfoTagAnnotation({
       ],
     });
     dragMarkerRef.current?.setLngLat(
-      toLngLat(markerPosition.x, markerPosition.y)
+      toLngLat(markerPosition.x, markerPosition.y),
     );
     tagBadgeMarkerRef.current?.setLngLat(
-      toLngLat(markerPosition.x, markerPosition.y)
+      toLngLat(markerPosition.x, markerPosition.y),
     );
   }, [currentCategory?.name, currentTarget, map, markerPosition, toLngLat]);
 
@@ -394,8 +415,7 @@ export default function InfoTagAnnotation({
     if (!map) return;
     const targetIds = new Set(targets.map((annotation) => annotation.id));
     const source = map.getSource(SOURCE_ANNOTATIONS) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     source?.setData({
       type: 'FeatureCollection',
       features: annotations.map((annotation) => ({
@@ -408,10 +428,13 @@ export default function InfoTagAnnotation({
           state: completedIds.has(annotation.id)
             ? 'completed'
             : targetIds.has(annotation.id)
-            ? 'pending'
-            : 'context',
+              ? 'pending'
+              : 'context',
           infoTags: JSON.stringify(namesForAnnotation(annotation.id)),
-          outside: !isOnEffort(image?.boundaryStatus),
+          outside: !isAnnotationOnEffort(
+            image?.boundaryStatus,
+            markedOutsideIds.has(annotation.id),
+          ),
         },
         geometry: {
           type: 'Point',
@@ -425,6 +448,7 @@ export default function InfoTagAnnotation({
     completedIds,
     image,
     map,
+    markedOutsideIds,
     namesForAnnotation,
     targets,
     toLngLat,
@@ -444,7 +468,7 @@ export default function InfoTagAnnotation({
         (targetTilePixelsPerDegree * pyramidSize * scale) / TILE_SIZE;
       const zoom = Math.max(
         0,
-        Math.min(maxZoom, Math.round(Math.log2(target)))
+        Math.min(maxZoom, Math.round(Math.log2(target))),
       );
       const coverage = pyramidSize / 2 ** zoom;
       const columns = Math.ceil(image.width / coverage);
@@ -465,7 +489,7 @@ export default function InfoTagAnnotation({
           const second = toLngLat(x1, y1);
           const tileBounds = new maplibregl.LngLatBounds(
             [Math.min(first[0], second[0]), Math.min(first[1], second[1])],
-            [Math.max(first[0], second[0]), Math.max(first[1], second[1])]
+            [Math.max(first[0], second[0]), Math.max(first[1], second[1])],
           );
           const isVisible =
             bounds.getWest() <= tileBounds.getEast() &&
@@ -477,7 +501,7 @@ export default function InfoTagAnnotation({
           pendingTiles.push(
             getTileBlob(
               `slippymaps/${sourceKey}/${zoom}/${row}/${column}.png`,
-              imageTileContext(image)
+              imageTileContext(image),
             )
               .then((blob) => {
                 if (cancelledRef.current || instance.getSource(sourceId))
@@ -494,6 +518,14 @@ export default function InfoTagAnnotation({
                     toLngLat(x0, y1),
                   ],
                 });
+                // Sharper levels stay on top, whichever download lands last.
+                const above = instance
+                  .getStyle()
+                  .layers.find(
+                    (layer) =>
+                      layer.id === LAYER_ANNOTATIONS ||
+                      Number(layer.id.split('-')[3]) > zoom,
+                  );
                 instance.addLayer(
                   {
                     id: `info-tag-layer-${zoom}-${row}-${column}`,
@@ -501,13 +533,13 @@ export default function InfoTagAnnotation({
                     source: sourceId,
                     paint: { 'raster-fade-duration': 0 },
                   },
-                  LAYER_ANNOTATIONS
+                  above?.id ?? LAYER_ANNOTATIONS,
                 );
                 addedTiles += 1;
               })
               .catch(() => {
                 loadedTilesRef.current.delete(sourceId);
-              })
+              }),
           );
         }
       }
@@ -521,7 +553,7 @@ export default function InfoTagAnnotation({
         }
       });
     },
-    [image, scale, sourceKey, toLngLat]
+    [image, scale, sourceKey, toLngLat],
   );
 
   useEffect(() => {
@@ -541,7 +573,7 @@ export default function InfoTagAnnotation({
       },
       center: toLngLat(
         firstTarget?.x ?? image.width / 2,
-        firstTarget?.y ?? image.height / 2
+        firstTarget?.y ?? image.height / 2,
       ),
       zoom: 3,
       minZoom: -20,
@@ -553,7 +585,7 @@ export default function InfoTagAnnotation({
     });
     instance.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
-      'top-left'
+      'top-left',
     );
     instance.touchZoomRotate.disableRotation();
     statsMapRef.current = instance;
@@ -616,7 +648,7 @@ export default function InfoTagAnnotation({
         const feature = event.features?.[0];
         if (!feature || feature.geometry.type !== 'Point') return;
         const label = escapeHtml(
-          String(feature.properties?.label ?? 'Unknown')
+          String(feature.properties?.label ?? 'Unknown'),
         );
         const state = String(feature.properties?.state ?? 'context');
         let names: string[] = [];
@@ -634,10 +666,10 @@ export default function InfoTagAnnotation({
           .setHTML(
             `<div style="color:#000"><div>${label}</div>` +
               `<div style="font-size:11px;font-weight:600">${escapeHtml(
-                state
+                state,
               )}</div>` +
               outside +
-              `<div style="font-size:11px">Tags: ${tags}</div></div>`
+              `<div style="font-size:11px">Tags: ${tags}</div></div>`,
           )
           .addTo(instance);
       });
@@ -658,8 +690,8 @@ export default function InfoTagAnnotation({
         .setLngLat(
           toLngLat(
             firstTarget?.x ?? image.width / 2,
-            firstTarget?.y ?? image.height / 2
-          )
+            firstTarget?.y ?? image.height / 2,
+          ),
         )
         .addTo(instance);
       dragMarkerRef.current = dragMarker;
@@ -676,8 +708,8 @@ export default function InfoTagAnnotation({
         .setLngLat(
           toLngLat(
             firstTarget?.x ?? image.width / 2,
-            firstTarget?.y ?? image.height / 2
-          )
+            firstTarget?.y ?? image.height / 2,
+          ),
         )
         .addTo(instance);
 
@@ -691,16 +723,19 @@ export default function InfoTagAnnotation({
 
       const imageBounds = new maplibregl.LngLatBounds(
         toLngLat(0, image.height),
-        toLngLat(image.width, 0)
+        toLngLat(image.width, 0),
       );
-      instance.fitBounds(imageBounds, { padding: 20, animate: false });
-      baseZoomRef.current = instance.getZoom();
+      // One move straight to the annotation, so no whole-image tiles load.
+      const fitZoom =
+        instance.cameraForBounds(imageBounds, { padding: 20 })?.zoom ??
+        instance.getZoom();
+      baseZoomRef.current = fitZoom;
       instance.jumpTo({
         center: toLngLat(
           firstTarget?.x ?? image.width / 2,
-          firstTarget?.y ?? image.height / 2
+          firstTarget?.y ?? image.height / 2,
         ),
-        zoom: instance.getZoom() + zoomOffset,
+        zoom: fitZoom + zoomOffset,
       });
       setMap(instance);
       updateVisibleTiles(instance);
@@ -736,7 +771,7 @@ export default function InfoTagAnnotation({
     if (!map || !map.getLayer(LAYER_ANNOTATIONS)) return;
     map.setFilter(
       LAYER_ANNOTATIONS,
-      currentTarget ? ['!=', ['get', 'id'], currentTarget.id] : null
+      currentTarget ? ['!=', ['get', 'id'], currentTarget.id] : null,
     );
   }, [currentTarget, map]);
 
@@ -752,7 +787,7 @@ export default function InfoTagAnnotation({
           badge.textContent = tag.name;
           applyTagBadgeStyle(badge);
           return badge;
-        })
+        }),
     );
   }, [infoTags, map, selectedTagIds]);
 
@@ -788,7 +823,7 @@ export default function InfoTagAnnotation({
       map.setLayoutProperty(
         LAYER_CURRENT_LABEL,
         'visibility',
-        hidden ? 'none' : 'visible'
+        hidden ? 'none' : 'visible',
       );
     }
   }, [currentTarget, map, markerHidden]);
@@ -808,11 +843,11 @@ export default function InfoTagAnnotation({
     const newOffset = Math.round(map.getZoom() - baseZoomRef.current);
     if (!hasLocalZoom) {
       const isAdmin = adminMemberships?.some(
-        (membership) => membership.projectId === projectId
+        (membership) => membership.projectId === projectId,
       );
       if (isAdmin) {
         const answer = window.prompt(
-          'Set as default zoom for all users on this job? (y/n)'
+          'Set as default zoom for all users on this job? (y/n)',
         );
         if (answer === null) return;
         if (answer.toLowerCase() === 'y') {
@@ -840,17 +875,29 @@ export default function InfoTagAnnotation({
     setQueueZoom,
   ]);
 
+  const drain = useCallback(async (): Promise<void> => {
+    setSaving(true);
+    try {
+      await saveQueueRef.current.drain();
+      setSaveError(null);
+    } catch (error) {
+      setSaveError((error as Error).message);
+      throw error;
+    } finally {
+      setSaving(saveQueueRef.current.busy);
+    }
+  }, []);
+
   const finishImage = useCallback(async (): Promise<void> => {
     if (finishedRef.current || disabled || !visible || !session) return;
+    finishRequestedRef.current = true;
     finishedRef.current = true;
-    savingRef.current = true;
-    setSaving(true);
+    setFinishing(true);
     setImageComplete(true);
-    retryRef.current = finishImage;
     try {
+      await drain();
       await session.complete();
       await ack?.();
-      retryRef.current = null;
       setSaveError(null);
       setReadyToAdvance(true);
     } catch (error) {
@@ -858,10 +905,9 @@ export default function InfoTagAnnotation({
       setImageComplete(false);
       setSaveError((error as Error).message);
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      setFinishing(false);
     }
-  }, [ack, disabled, session, visible]);
+  }, [ack, disabled, drain, session, visible]);
 
   useEffect(() => {
     if (!loading && !loadError && image && targets.length === 0 && !saveError) {
@@ -891,7 +937,7 @@ export default function InfoTagAnnotation({
       clearWaitingTimers();
       setWaiting(false);
       alert(
-        'No new work was loaded. The job appears to be complete. Thank you for your contribution!'
+        'No new work was loaded. The job appears to be complete. Thank you for your contribution!',
       );
       navigate('/jobs');
     }, 60000);
@@ -902,10 +948,10 @@ export default function InfoTagAnnotation({
       !currentTarget ||
       !session ||
       finishedRef.current ||
-      savingRef.current ||
+      finishing ||
       disabled ||
       !visible ||
-      retryRef.current
+      saveError
     )
       return;
     const target = currentTarget;
@@ -928,7 +974,10 @@ export default function InfoTagAnnotation({
           ? 0
           : Math.min(
               600_000,
-              Math.max(0, (imageReadyAt ?? now) - (visibleAtRef.current ?? now))
+              Math.max(
+                0,
+                (imageReadyAt ?? now) - (visibleAtRef.current ?? now),
+              ),
             ),
         metrics: infoTagWorkflowMetrics([
           { beforeTags: before, afterTags: after },
@@ -938,54 +987,46 @@ export default function InfoTagAnnotation({
       waitingAssignedRef.current = true;
     }
     // Retries reuse this exact operation. Undo creates a new operation/revision.
-    const input = {
-      annotationId: target.id,
-      expectedRevision: revisionsRef.current.get(target.id) ?? 0,
-      operationId: crypto.randomUUID(),
-      tagIds: [...after],
-      x: position.x,
-      y: position.y,
-    };
-    const run = async () => {
-      if (savingRef.current || disabled) return;
-      savingRef.current = true;
-      setSaving(true);
-      retryRef.current = run;
-      try {
-        const revision = await session.save(input);
-        revisionsRef.current.set(target.id, revision);
-        persistedTagIdsRef.current.set(target.id, after);
-        persistedPositionsRef.current.set(target.id, position);
-        setAnnotations((rows) =>
-          rows.map((row) =>
-            row.id === target.id ? { ...row, ...position } : row
-          )
-        );
-        setCompletedIds((ids) => new Set(ids).add(target.id));
-        await recordWorkflowTask(client, task!);
-        retryRef.current = null;
-        setSaveError(null);
-        if (currentIndex + 1 < targets.length)
-          setCurrentIndex((index) => index + 1);
-        else await finishImage();
-      } catch (error) {
-        setSaveError((error as Error).message);
-      } finally {
-        savingRef.current = false;
-        setSaving(false);
-      }
-    };
-    void run();
+    const operationId = crypto.randomUUID();
+    persistedTagIdsRef.current.set(target.id, after);
+    persistedPositionsRef.current.set(target.id, position);
+    setAnnotations((rows) =>
+      rows.map((row) => (row.id === target.id ? { ...row, ...position } : row)),
+    );
+    setCompletedIds((ids) => new Set(ids).add(target.id));
+    const statsTask = task;
+    saveQueueRef.current.push(async () => {
+      // Read when it runs: an earlier save of this annotation sets it.
+      const revision = await session.save({
+        annotationId: target.id,
+        expectedRevision: revisionsRef.current.get(target.id) ?? 0,
+        operationId,
+        tagIds: [...after],
+        x: position.x,
+        y: position.y,
+      });
+      revisionsRef.current.set(target.id, revision);
+      await recordWorkflowTask(client, statsTask);
+    });
+    if (currentIndex + 1 < targets.length) {
+      setCurrentIndex((index) => index + 1);
+      void drain().catch(() => {});
+    } else {
+      void finishImage();
+    }
   }, [
     activeTime,
     client,
     currentIndex,
     currentTarget,
     disabled,
+    drain,
     finishImage,
+    finishing,
     imageReadyAt,
     markerPosition,
     queueId,
+    saveError,
     selectedTagIds,
     session,
     targets.length,
@@ -993,20 +1034,24 @@ export default function InfoTagAnnotation({
   ]);
 
   const retrySave = useCallback(() => {
-    if (!disabled && !savingRef.current) void retryRef.current?.();
-  }, [disabled]);
+    if (disabled || saveQueueRef.current.busy || finishing) return;
+    if (finishRequestedRef.current) void finishImage();
+    else void drain().catch(() => {});
+  }, [disabled, drain, finishImage, finishing]);
 
   const undo = useCallback(() => {
-    if (disabled || savingRef.current || retryRef.current) return;
+    if (disabled || finishing || saveError) return;
     if (currentIndex > 0) {
       setCurrentIndex((index) => index - 1);
       return;
     }
-    prev?.();
-  }, [currentIndex, disabled, prev]);
+    void drain()
+      .then(() => prev?.())
+      .catch(() => {});
+  }, [currentIndex, disabled, drain, finishing, prev, saveError]);
 
   useEffect(() => {
-    if (!visible || disabled || saving || saveError) return;
+    if (!visible || disabled || finishing || saveError) return;
     const keyDown = (event: KeyboardEvent) => {
       if (
         event.repeat ||
@@ -1030,7 +1075,7 @@ export default function InfoTagAnnotation({
       const tag = findShortcutMatch(
         event,
         infoTags,
-        (candidate) => candidate.shortcutKey
+        (candidate) => candidate.shortcutKey,
       );
       if (tag) {
         event.preventDefault();
@@ -1044,7 +1089,7 @@ export default function InfoTagAnnotation({
     disabled,
     infoTags,
     saveError,
-    saving,
+    finishing,
     toggleTag,
     undo,
     visible,
@@ -1052,14 +1097,16 @@ export default function InfoTagAnnotation({
 
   if (loading || !image || !sourceKey) {
     return (
-      <div className='d-flex justify-content-center align-items-center w-100 h-100'>
+      <div className='flex h-full w-full items-center justify-center'>
         {loadError ? (
           <Alert variant='danger' className='mb-0'>
             {loadError}. This image has not been taken off the queue - reload to
             try again.
           </Alert>
         ) : (
-          <div className='text-muted'>Loading image annotations...</div>
+          <div className='text-muted-foreground'>
+            Loading image annotations...
+          </div>
         )}
       </div>
     );
@@ -1067,34 +1114,37 @@ export default function InfoTagAnnotation({
 
   return (
     <div
-      className='d-flex flex-column w-100 h-100'
+      className='flex h-full w-full flex-col'
       style={{
-        pointerEvents: disabled || saving ? 'none' : undefined,
+        pointerEvents: disabled || finishing ? 'none' : undefined,
         opacity: disabled ? 0.65 : 1,
       }}
     >
       <div
-        className='d-flex align-items-center justify-content-between py-2'
+        className='flex items-center justify-between py-2'
         style={{ backgroundColor: '#2b3e50', flexShrink: 0 }}
       >
-        <div className='d-flex align-items-center gap-3'>
-          <Badge bg='info'>{currentCategory?.name ?? 'Info Tags'}</Badge>
+        <div className='flex items-center gap-4'>
+          <span className='flex items-center gap-2 text-sm'>
+            Tagging:
+            <Badge variant='info'>{currentCategory?.name ?? 'Info Tags'}</Badge>
+          </span>
           {currentTarget && (
-            <Badge bg='secondary'>
+            <Badge variant='secondary'>
               Annotation {currentIndex + 1} of {targets.length} on this image
             </Badge>
           )}
-          <span className='text-muted' style={{ fontSize: 12 }}>
+          <span className='text-xs text-muted-foreground opacity-70'>
             Press shortcut keys to toggle tags · Space to continue · Tip: Hold
             Tab to hide the marker
           </span>
         </div>
         <button
-          className='p-0 m-0 border-0 bg-transparent d-flex align-items-center text-white'
+          className='m-0 flex items-center border-0 bg-transparent p-0 text-white'
           onClick={saveDefaultZoom}
         >
           {hasLocalZoom ? <RotateCcw size={20} /> : <SearchCheck size={20} />}
-          <span className='ms-2 d-none d-md-block' style={{ fontSize: 13 }}>
+          <span className='ms-2 hidden md:block' style={{ fontSize: 13 }}>
             {hasLocalZoom ? 'Reset zoom' : 'Set as default zoom'}
           </span>
         </button>
@@ -1103,7 +1153,7 @@ export default function InfoTagAnnotation({
       {saveError && (
         <Alert
           variant='danger'
-          className='mb-0 d-flex align-items-center justify-content-between gap-3'
+          className='mb-0 flex items-center justify-between gap-4'
           style={{ flexShrink: 0 }}
         >
           <span>
@@ -1114,14 +1164,14 @@ export default function InfoTagAnnotation({
             variant='light'
             size='sm'
             onClick={retrySave}
-            disabled={saving || disabled}
+            disabled={saving || finishing || disabled}
           >
             Retry save
           </Button>
         </Alert>
       )}
 
-      <div className='d-flex' style={{ flex: 1, overflow: 'hidden' }}>
+      <div className='flex' style={{ flex: 1, overflow: 'hidden' }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <div
             ref={containerRef}
@@ -1172,7 +1222,7 @@ export default function InfoTagAnnotation({
 
         {legendCollapsed ? (
           <div
-            className='d-flex align-items-center'
+            className='flex items-center'
             style={{ padding: '0 4px', flexShrink: 0, marginLeft: 12 }}
           >
             <Button
@@ -1187,7 +1237,7 @@ export default function InfoTagAnnotation({
           </div>
         ) : (
           <div
-            className='d-flex flex-column'
+            className='flex flex-col'
             style={{
               position: 'relative',
               height: '100%',
@@ -1215,17 +1265,20 @@ export default function InfoTagAnnotation({
               <ChevronRight size={18} />
             </Button>
             <Card
-              className='d-flex flex-column h-100 overflow-hidden'
+              className='flex h-full flex-col overflow-hidden'
               style={{ width: 280 }}
             >
-              <Card.Header>
-                <Card.Title className='mb-1'>Info Tags</Card.Title>
-                <span className='text-muted' style={{ fontSize: 13 }}>
+              <CardHeader>
+                <CardTitle className='mb-1'>Info Tags</CardTitle>
+                <span
+                  className='text-muted-foreground'
+                  style={{ fontSize: 13 }}
+                >
                   Toggle up to {MAX_INFO_TAGS_PER_ANNOTATION} tags, then press
                   Space
                 </span>
-              </Card.Header>
-              <Card.Body className='d-flex flex-column gap-2 overflow-auto'>
+              </CardHeader>
+              <CardContent className='flex flex-col gap-2 overflow-auto'>
                 {infoTags
                   .slice()
                   .sort((a, b) => a.name.localeCompare(b.name))
@@ -1233,8 +1286,8 @@ export default function InfoTagAnnotation({
                     <Button
                       key={tag.id}
                       variant={selectedTagIds.has(tag.id) ? 'info' : 'primary'}
-                      className='d-flex align-items-center justify-content-between gap-2'
-                      disabled={saving || disabled || Boolean(saveError)}
+                      className='flex items-center justify-between gap-2'
+                      disabled={finishing || disabled || Boolean(saveError)}
                       onClick={() => toggleTag(tag.id)}
                     >
                       <span>{tag.name}</span>
@@ -1243,24 +1296,24 @@ export default function InfoTagAnnotation({
                       )}
                     </Button>
                   ))}
-              </Card.Body>
+              </CardContent>
             </Card>
           </div>
         )}
       </div>
 
       <div
-        className='d-flex align-items-center justify-content-between py-2 mt-2'
+        className='mt-2 flex items-center justify-between py-2'
         style={{ backgroundColor: '#2b3e50', flexShrink: 0 }}
       >
         <Button
-          className='d-flex align-items-center justify-content-center gap-1'
-          variant='primary'
+          className='flex items-center justify-center gap-1'
+          variant='outline-primary'
           style={{ width: 160 }}
           onClick={undo}
           disabled={
             disabled ||
-            saving ||
+            finishing ||
             Boolean(saveError) ||
             (!prev && currentIndex === 0)
           }
@@ -1274,21 +1327,26 @@ export default function InfoTagAnnotation({
           onClick={commitAndAdvance}
           disabled={
             disabled ||
-            saving ||
+            finishing ||
             Boolean(saveError) ||
             !currentTarget ||
             imageComplete
           }
         >
-          {saving ? 'Saving…' : 'Continue (Space)'}
+          {finishing ? 'Saving…' : 'Continue (Space)'}
         </Button>
         <Button
-          variant='primary'
+          variant='outline-primary'
           style={{ width: 160 }}
-          disabled={saving}
-          onClick={() => navigate('/jobs')}
+          disabled={exiting || finishing}
+          onClick={() => {
+            setExiting(true);
+            drain()
+              .then(() => navigate('/jobs'))
+              .catch(() => setExiting(false));
+          }}
         >
-          Save &amp; Exit
+          {exiting ? 'Saving…' : 'Save & Exit'}
         </Button>
       </div>
     </div>
@@ -1299,7 +1357,7 @@ function px2lngLat(
   x: number,
   y: number,
   width: number,
-  height: number
+  height: number,
 ): [number, number] {
   const scale = 0.1 / Math.max(width, height);
   return [x * scale, -y * scale];
@@ -1315,6 +1373,6 @@ function escapeHtml(value: string) {
         '>': '&gt;',
         '"': '&quot;',
         "'": '&#39;',
-      }[character]!)
+      })[character]!,
   );
 }

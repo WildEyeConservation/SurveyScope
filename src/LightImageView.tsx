@@ -1,19 +1,20 @@
+import { Spinner } from '@/components/ui/spinner';
 import { useContext, useEffect, useMemo, useState } from 'react';
-import { GlobalContext } from './Context';
-import { fetchAllPaginatedResults } from './utils';
-import { Spinner } from 'react-bootstrap';
-import MapLibreLightViewer, {
-  LightAnnotation,
-} from './annotator/MapLibreLightViewer';
-import { useImageInfoTags } from './useInfoTags';
-import { formatInfoTagsForDisplay } from './infoTags';
-import { buildAnnotationFeatureProperties } from './annotator/annotationFeatures';
-import type { ExtendedAnnotationType } from './schemaTypes';
 import {
   isOnEffort,
   OUTSIDE_SURVEY_AREA,
   type BoundaryStatus,
 } from '../shared/boundaryStatus';
+import { outsideBoundaryFields } from './annotationBoundary';
+import { buildAnnotationFeatureProperties } from './annotator/annotationFeatures';
+import MapLibreLightViewer, {
+  LightAnnotation,
+} from './annotator/MapLibreLightViewer';
+import { GlobalContext } from './Context';
+import { formatInfoTagsForDisplay } from './infoTags';
+import type { ExtendedAnnotationType } from './schemaTypes';
+import { useImageInfoTags } from './useInfoTags';
+import { fetchAllPaginatedResults } from './utils';
 
 type AnnotationItem = {
   id: string;
@@ -24,6 +25,7 @@ type AnnotationItem = {
   categoryId: string;
   source?: string | null;
   obscured?: boolean | null;
+  outsideBoundary?: boolean | null;
   category: { id: string; name: string } | null;
 };
 
@@ -91,11 +93,12 @@ export default function LightImageView({
             'categoryId',
             'source',
             'obscured',
+            ...outsideBoundaryFields(),
             'category.id',
             'category.name',
-          ] as const,
+          ],
           limit: 10000,
-        }
+        },
       )) as AnnotationItem[];
       if (cancelled) return;
       setAnnotations(anns || []);
@@ -110,7 +113,7 @@ export default function LightImageView({
   const filteredAnnotations = useMemo(() => {
     if (categoryIds.length === 0) return annotations;
     return annotations.filter((annotation) =>
-      categoryIds.includes(annotation.category?.id || '')
+      categoryIds.includes(annotation.category?.id || ''),
     );
   }, [annotations, categoryIds]);
 
@@ -158,13 +161,13 @@ export default function LightImageView({
         return {
           ...buildAnnotationFeatureProperties(
             a as ExtendedAnnotationType,
-            () => categoryColors.get(categoryId) || '#999999'
+            () => categoryColors.get(categoryId) || '#999999',
           ),
           x: a.x,
           y: a.y,
           popupLines: [
             `Label: ${a.category?.name || 'Unknown'}`,
-            ...(outside ? [OUTSIDE_SURVEY_AREA] : []),
+            ...(outside || a.outsideBoundary ? [OUTSIDE_SURVEY_AREA] : []),
             `Sighting: ${isPrimary ? 'Primary' : 'Secondary'}`,
             ...(infoTags?.length
               ? [`Info tags: ${formatInfoTagsForDisplay(infoTags)}`]
@@ -172,12 +175,12 @@ export default function LightImageView({
           ],
         };
       }),
-    [filteredAnnotations, categoryColors, infoTagsByAnnotation, outside]
+    [filteredAnnotations, categoryColors, infoTagsByAnnotation, outside],
   );
 
   if (!imageMeta || !sourceKey || !annotationsLoaded)
     return (
-      <div className='w-100 h-100 d-flex align-items-center justify-content-center'>
+      <div className='flex h-full w-full items-center justify-center'>
         <Spinner size='sm' />
         <span className='ms-2'>Loading...</span>
       </div>

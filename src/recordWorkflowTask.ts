@@ -25,7 +25,7 @@ export interface RecordWorkflowTaskInput {
  */
 export async function recordWorkflowTask(
   client: unknown,
-  input: RecordWorkflowTaskInput
+  input: RecordWorkflowTaskInput,
 ): Promise<void> {
   try {
     const mutations = (client as { mutations?: Record<string, unknown> })
@@ -33,32 +33,33 @@ export async function recordWorkflowTask(
     const mutate = mutations?.recordWorkflowTask;
     if (typeof mutate !== 'function') return;
 
-    const response = (await (
-      mutate as (
-        args: Record<string, unknown>,
-        options?: Record<string, unknown>
-      ) => Promise<{ errors?: { message?: string }[] }>
-    )(
-      {
-        workflowRunId: input.workflowRunId,
-        workItemType: input.workItemType,
-        workItemId: input.workItemId,
-        outcome: input.outcome,
-        ...(input.idempotencyKey
-          ? { idempotencyKey: input.idempotencyKey }
-          : {}),
-        activeTimeMs: input.activeTimeMs ?? 0,
-        waitingTimeMs: input.waitingTimeMs ?? 0,
-        skipped: input.skipped ?? false,
-        metrics: JSON.stringify(input.metrics ?? {}),
-      },
-      { retry: false }
-    )) ?? {};
+    const response =
+      (await (
+        mutate as (
+          args: Record<string, unknown>,
+          options?: Record<string, unknown>,
+        ) => Promise<{ errors?: { message?: string }[] }>
+      )(
+        {
+          workflowRunId: input.workflowRunId,
+          workItemType: input.workItemType,
+          workItemId: input.workItemId,
+          outcome: input.outcome,
+          ...(input.idempotencyKey
+            ? { idempotencyKey: input.idempotencyKey }
+            : {}),
+          activeTimeMs: input.activeTimeMs ?? 0,
+          waitingTimeMs: input.waitingTimeMs ?? 0,
+          skipped: input.skipped ?? false,
+          metrics: JSON.stringify(input.metrics ?? {}),
+        },
+        { retry: false },
+      )) ?? {};
 
     if (response.errors?.length) {
       console.error(
         'Failed to record workflow task',
-        response.errors.map((error) => error.message).join('; ')
+        response.errors.map((error) => error.message).join('; '),
       );
     }
   } catch (error) {

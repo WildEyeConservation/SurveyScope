@@ -1,9 +1,9 @@
 import * as turf from '@turf/turf';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
-import { fetchAllPaginatedResults } from '../utils';
 import { isOnEffort } from '../../shared/boundaryStatus';
-import { ringToPolygon } from './new-survey/surveyArea';
 import { loadProjectImages } from '../projectImages';
+import { fetchAllPaginatedResults } from '../utils';
+import { ringToPolygon } from './new-survey/surveyArea';
 
 export type LatLng = [number, number];
 
@@ -20,16 +20,107 @@ export type SavedStratum = { id: string; name: string; coords: LatLng[] };
 
 export type SegmentedImage = SurveyImage & { transectId: number };
 
+// Dark enough to read on the light basemap.
 export const transectColors = [
-  'red',
-  'blue',
-  'green',
-  'orange',
-  'purple',
-  'brown',
-  'pink',
-  'cyan',
+  '#e6194b',
+  '#4363d8',
+  '#3cb44b',
+  '#f58231',
+  '#911eb4',
+  '#0097b8',
+  '#f032e6',
+  '#9a6324',
+  '#469990',
+  '#000075',
+  '#808000',
+  '#d4a000',
 ];
+
+// Neighbours extend to 2.5 times the nearest transect's distance.
+export function assignTransectColours(
+  images: { transectId: number; latitude: number; longitude: number }[],
+  palette: string[] = transectColors,
+): Map<number, string> {
+  const colours = new Map<number, string>();
+  if (!images.length) return colours;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLng = Infinity;
+  let maxLng = -Infinity;
+  for (const { latitude, longitude } of images) {
+    minLat = Math.min(minLat, latitude);
+    maxLat = Math.max(maxLat, latitude);
+    minLng = Math.min(minLng, longitude);
+    maxLng = Math.max(maxLng, longitude);
+  }
+  const cellsAcross = 100;
+  const cell = Math.max(maxLat - minLat, maxLng - minLng, 1e-9) / cellsAcross;
+  const cells = new Map<number, Set<number>>();
+  const cellsOf = new Map<number, Set<number>>();
+  const keyOf = (row: number, col: number) => row * 1000 + col;
+  for (const { transectId, latitude, longitude } of images) {
+    const key = keyOf(
+      Math.floor((latitude - minLat) / cell),
+      Math.floor((longitude - minLng) / cell),
+    );
+    if (!cells.has(key)) cells.set(key, new Set());
+    cells.get(key)!.add(transectId);
+    if (!cellsOf.has(transectId)) cellsOf.set(transectId, new Set());
+    cellsOf.get(transectId)!.add(key);
+  }
+
+  const neighbours = (tid: number) => {
+    const own = [...cellsOf.get(tid)!].map((key) => [
+      Math.floor(key / 1000),
+      key % 1000,
+    ]);
+    const found = new Set<number>();
+    const visit = (row: number, col: number) => {
+      for (const other of cells.get(keyOf(row, col)) ?? []) {
+        if (other !== tid) found.add(other);
+      }
+    };
+    for (const [row, col] of own) visit(row, col);
+    let limit = found.size ? 2 : cellsAcross;
+    for (let r = 1; r <= limit; r++) {
+      for (const [row, col] of own) {
+        for (let d = -r; d <= r; d++) {
+          visit(row - r, col + d);
+          visit(row + r, col + d);
+          if (Math.abs(d) < r) {
+            visit(row + d, col - r);
+            visit(row + d, col + r);
+          }
+        }
+      }
+      if (found.size && limit === cellsAcross) limit = Math.ceil(r * 2.5);
+    }
+    return found;
+  };
+
+  const ids = [...cellsOf.keys()].sort((a, b) => a - b);
+  const uses = new Map(palette.map((colour) => [colour, 0]));
+  const leastUsed = (candidates: string[]) =>
+    candidates.reduce((best, colour) =>
+      uses.get(colour)! < uses.get(best)! ? colour : best,
+    );
+  for (const tid of ids) {
+    const used = new Map<string, number>();
+    for (const other of neighbours(tid)) {
+      const colour = colours.get(other);
+      if (colour) used.set(colour, (used.get(colour) ?? 0) + 1);
+    }
+    const free = palette.filter((colour) => !used.has(colour));
+    const colour = free.length
+      ? leastUsed(free)
+      : palette.reduce((best, c) =>
+          used.get(c)! < used.get(best)! ? c : best,
+        );
+    colours.set(tid, colour);
+    uses.set(colour, uses.get(colour)! + 1);
+  }
+  return colours;
+}
 
 export const strataColors = [
   '#e6b800',
@@ -58,7 +149,7 @@ export function isValidLatLng(lat: any, lng: any): boolean {
 }
 
 export function toLatLngPairs(
-  values: Array<number | null | undefined>
+  values: Array<number | null | undefined>,
 ): LatLng[] {
   const flat = values.filter((n): n is number => n != null);
   const pairs: LatLng[] = [];
@@ -70,18 +161,18 @@ export function toLatLngPairs(
 
 // Mixed second/millisecond timestamps -> milliseconds; missing stays NaN.
 function normalizeToMillis(ts: any): number {
-  const n = typeof ts === 'string' ? Number(ts) : ts ?? NaN;
+  const n = typeof ts === 'string' ? Number(ts) : (ts ?? NaN);
   return n > 0 && n < 1e12 ? n * 1000 : n;
 }
 
 // Requires images sorted by timestamp.
 function imputeLatLng<
-  T extends { timestamp: number; latitude: any; longitude: any }
+  T extends { timestamp: number; latitude: any; longitude: any },
 >(imgs: T[]): { filled: T[]; imputedIds: Set<number> } {
   const filled = imgs.map((img) => ({ ...img }));
   const n = filled.length;
   const isValid = filled.map((img) =>
-    isValidLatLng(img.latitude, img.longitude)
+    isValidLatLng(img.latitude, img.longitude),
   );
   const prev: number[] = Array(n).fill(-1);
   const next: number[] = Array(n).fill(-1);
@@ -106,7 +197,7 @@ function imputeLatLng<
       const t1 = filled[q].timestamp;
       const r = Math.min(
         Math.max((filled[i].timestamp - t0) / Math.max(t1 - t0, 1), 0),
-        1
+        1,
       );
       filled[i].latitude =
         filled[p].latitude + r * (filled[q].latitude - filled[p].latitude);
@@ -125,7 +216,8 @@ function imputeLatLng<
 export async function loadOnEffortImages(
   client: DataClient,
   projectId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (count: number) => void,
 ): Promise<{
   images: SurveyImage[];
   imputedIds: Set<string>;
@@ -142,10 +234,10 @@ export async function loadOnEffortImages(
       'transectId',
       'boundaryStatus',
     ],
-    { signal }
+    { signal, onProgress },
   )) as any[];
   const dbTransectIds = new Map<string, string | null>(
-    rawImgs.map((img) => [img.id, img.transectId ?? null])
+    rawImgs.map((img) => [img.id, img.transectId ?? null]),
   );
   const onEffort = rawImgs
     .filter((img) => isOnEffort(img.boundaryStatus))
@@ -169,7 +261,7 @@ export async function loadOnEffortImages(
 export async function loadStrata(
   client: DataClient,
   projectId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<SavedStratum[]> {
   const strata = (await fetchAllPaginatedResults(
     client.models.Stratum.strataByProjectId as any,
@@ -178,7 +270,7 @@ export async function loadStrata(
       limit: 10000,
       selectionSet: ['id', 'name', 'coordinates', 'offEffort'],
       signal,
-    } as any
+    } as any,
   )) as any[];
   return strata
     .filter((st) => !st.offEffort)
@@ -224,7 +316,7 @@ export async function clearJollyResults(client: DataClient, projectId: string) {
       surveyId: projectId,
       limit: 10000,
       selectionSet: ['surveyId', 'stratumId', 'annotationSetId', 'categoryId'],
-    } as any
+    } as any,
   )) as any[];
   await Promise.all(
     jollyResults.map((jr) =>
@@ -233,8 +325,8 @@ export async function clearJollyResults(client: DataClient, projectId: string) {
         stratumId: jr.stratumId,
         annotationSetId: jr.annotationSetId,
         categoryId: jr.categoryId,
-      })
-    )
+      }),
+    ),
   );
 }
 
@@ -268,7 +360,7 @@ export type NamedStratum = { id?: string; name: string; coords: LatLng[] };
 // New sections keep the id of the previous stratum they mostly cover.
 export function carryStrata(
   sections: LatLng[][],
-  previous: NamedStratum[]
+  previous: NamedStratum[],
 ): NamedStratum[] {
   const polys = sections.map(ringToPolygon);
   const prevPolys = previous.map((st) => ringToPolygon(st.coords));
@@ -280,7 +372,7 @@ export function carryStrata(
       if (overlap > 0.5 * Math.min(turf.area(a), turf.area(b))) {
         pairs.push({ i, j, overlap });
       }
-    })
+    }),
   );
   pairs.sort((p, q) => q.overlap - p.overlap);
   const matched = new Map<number, number>();
@@ -295,7 +387,7 @@ export function carryStrata(
   const used = new Set(
     [...matched.values()]
       .map((j) => previous[j].name)
-      .filter((name) => !isDefault(name))
+      .filter((name) => !isDefault(name)),
   );
   let next = 1;
   return sections.map((coords, i) => {

@@ -7,7 +7,7 @@ import {
 } from './annotationFeatures';
 
 const annotation = (
-  overrides: Partial<ExtendedAnnotationType> = {}
+  overrides: Partial<ExtendedAnnotationType> = {},
 ): ExtendedAnnotationType =>
   ({
     id: 'annotation-1',
@@ -16,14 +16,14 @@ const annotation = (
     y: 200,
     source: 'manual',
     ...overrides,
-  } as unknown as ExtendedAnnotationType);
+  }) as unknown as ExtendedAnnotationType;
 
 const colorForCategory = () => '#bc7cff';
 
 test('builds the canonical primary marker properties', () => {
   const properties = buildAnnotationFeatureProperties(
     annotation(),
-    colorForCategory
+    colorForCategory,
   );
 
   assert.equal(properties.markerKind, 'primary');
@@ -37,7 +37,7 @@ test('builds the canonical primary marker properties', () => {
 test('secondary markers omit the primary identity icon', () => {
   const properties = buildAnnotationFeatureProperties(
     annotation({ objectId: 'primary-annotation' }),
-    colorForCategory
+    colorForCategory,
   );
 
   assert.equal(properties.markerKind, 'secondary');
@@ -47,11 +47,11 @@ test('secondary markers omit the primary identity icon', () => {
 test('marker status and transient styles stay consistent across viewers', () => {
   const falseNegative = buildAnnotationFeatureProperties(
     annotation({ source: 'manual-false-negative', obscured: true }),
-    colorForCategory
+    colorForCategory,
   );
   const shadow = buildAnnotationFeatureProperties(
     annotation({ shadow: true, selected: true }),
-    colorForCategory
+    colorForCategory,
   );
 
   assert.equal(falseNegative.icon, 'fn-marker');

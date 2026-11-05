@@ -1,29 +1,56 @@
-import { useState, useEffect, useContext, useRef, useMemo } from 'react';
+import type { ExpressionSpecification } from 'maplibre-gl';
 import * as maplibregl from 'maplibre-gl';
-import type { ExpressionSpecification, StyleSpecification } from 'maplibre-gl';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+import './survey/surveyMap.css';
+
+import { buttonVariants } from '@/components/ui/button-variants';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import { useQueries } from '@tanstack/react-query';
 import { pointOnFeature } from '@turf/turf';
-import { fetchAllPaginatedResults } from './utils';
-import { GlobalContext } from './Context';
-import ImageViewerModal from './ImageViewerModal';
-import AnnotationViewerModal from './AnnotationViewerModal';
 import {
-  uniqueNamesGenerator,
+  Maximize2Icon,
+  Minimize2Icon,
+  MinusIcon,
+  PlusIcon,
+  ScanIcon,
+} from 'lucide-react';
+import {
   adjectives,
   names,
+  uniqueNamesGenerator,
 } from 'unique-names-generator';
-import { Spinner, Form } from 'react-bootstrap';
-import { useInfoTagData } from './useInfoTags';
-import { formatInfoTagsForDisplay } from './infoTags';
-import { loadProjectImages } from './projectImages';
-import { loadRows } from './rowChunks';
+import AnnotationViewerModal from './AnnotationViewerModal';
+import { GlobalContext } from './Context';
 import {
   DEFAULT_HEAT_RADIUS_KM,
   HEAT_COLOR_RAMP,
   heatIntensity,
   heatRadiusExpression,
 } from './densityHeat';
+import ImageViewerModal from './ImageViewerModal';
+import { formatInfoTagsForDisplay } from './infoTags';
+import {
+  extractUserIdFromOwner,
+  setAnnotationsQuery,
+  surveyGeoQuery,
+} from './sightingQueries';
+import { MapButton } from './survey/mapControls';
+import { LIGHT_THEME, MAP_CONTROLS } from './survey/mapTheme';
+import { BASE_STYLE } from './survey/surveyMapStyle';
+import { strataColors } from './survey/transectStrata';
+import { useInfoTagData } from './useInfoTags';
 
 /**
  * A single (survey, annotation set) pair whose annotations should be plotted.
@@ -64,10 +91,12 @@ interface DensityMapProps {
    * transect filter that stays consistent with the map's labels/colours.
    */
   onTransectsLoaded?: (
-    transects: { id: string; surveyId: string; number: number }[]
+    transects: { id: string; surveyId: string; number: number }[],
   ) => void;
   highlightedStratumId?: string | null;
   onStratumHover?: (stratumId: string | null) => void;
+  /** Opens images elsewhere instead of in the viewer pop-up. */
+  onOpenImage?: (imageId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,46 +123,21 @@ const LYR_EXCLUSIONS_FILL = 'exclusions-fill';
 const LYR_EXCLUSIONS_LINE = 'exclusions-line';
 
 const TRANSECT_COLORS = [
-  '#FF5733', '#33FF57', '#3357FF', '#F333FF', '#33FFF8',
-  '#FFA833', '#8B33FF', '#FF3380', '#33FF8B', '#FFD133',
+  '#FF5733',
+  '#33FF57',
+  '#3357FF',
+  '#F333FF',
+  '#33FFF8',
+  '#FFA833',
+  '#8B33FF',
+  '#FF3380',
+  '#33FF8B',
+  '#FFD133',
 ];
 
-// OpenStreetMap raster basemap. Glyphs are needed for the cluster-count labels
-// and reuse the same endpoint as the rest of the app's MapLibre views.
-const BASE_STYLE: StyleSpecification = {
-  version: 8,
-  glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: [
-        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      ],
-      tileSize: 256,
-      // OSM only serves tiles up to z19; beyond that MapLibre overzooms
-      // (upscales the z19 tile) instead of requesting non-existent tiles,
-      // which would 400 and surface as a (header-less) CORS error.
-      maxzoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
-    },
-  },
-  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-};
-
 type FeatureCollection = GeoJSON.FeatureCollection;
-type Outline = { id: string; coordinates: number[] | null };
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
-
-// If contains "::", the userId is the part before it; otherwise the whole field.
-function extractUserIdFromOwner(
-  owner: string | null | undefined
-): string | null {
-  if (!owner) return null;
-  return owner.includes('::') ? owner.split('::')[0] : owner;
-}
 
 // Cheap deterministic hash so co-located annotations spread out slightly.
 function hashString(s: string): number {
@@ -155,14 +159,18 @@ function escapeHtml(value: string): string {
         '>': '&gt;',
         '"': '&quot;',
         "'": '&#39;',
-      })[character]!
+      })[character]!,
   );
 }
 
 function isValidLatLng(lat: number, lng: number): boolean {
   return (
-    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 &&
-    !isNaN(lat) && !isNaN(lng)
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !isNaN(lat) &&
+    !isNaN(lng)
   );
 }
 
@@ -196,6 +204,7 @@ export default function DensityMap({
   onTransectsLoaded,
   highlightedStratumId = null,
   onStratumHover,
+  onOpenImage,
 }: DensityMapProps) {
   const { client } = useContext(GlobalContext)!;
 
@@ -216,13 +225,13 @@ export default function DensityMap({
   // key (and therefore the query order) stable regardless of selection order.
   const uniqueSurveyIds = useMemo(
     () => Array.from(new Set(effectiveSources.map((s) => s.surveyId))).sort(),
-    [effectiveSources]
+    [effectiveSources],
   );
   const uniqueSetSources = useMemo(() => {
     const seen = new Map<string, DensitySource>();
     for (const s of effectiveSources) seen.set(s.annotationSetId, s);
     return Array.from(seen.values()).sort((a, b) =>
-      a.annotationSetId.localeCompare(b.annotationSetId)
+      a.annotationSetId.localeCompare(b.annotationSetId),
     );
   }, [effectiveSources]);
 
@@ -249,65 +258,13 @@ export default function DensityMap({
   // cache, which is exactly what we want when the user tweaks the selection.
   // -----------------------------------------------------------------------
   const surveyQueries = useQueries({
-    queries: uniqueSurveyIds.map((sid) => ({
-      queryKey: ['densitymap', 'survey-geo', sid],
-      staleTime: 30 * 60 * 1000,
-      queryFn: async () => {
-        const [images, strata, exclusions] = await Promise.all([
-          loadProjectImages(client, sid, [
-            'latitude',
-            'longitude',
-            'transectId',
-            'timestamp',
-          ]),
-          fetchAllPaginatedResults<Outline & { name: string | null }>(
-            client.models.Stratum.strataByProjectId,
-            {
-              projectId: sid,
-              limit: 10000,
-              selectionSet: ['id', 'name', 'coordinates'],
-            }
-          ),
-          fetchAllPaginatedResults<Outline>(
-            client.models.ShapefileExclusions.shapefileExclusionsByProjectId,
-            {
-              projectId: sid,
-              limit: 10000,
-              selectionSet: ['id', 'coordinates'],
-            }
-          ),
-        ]);
-        return { surveyId: sid, images, strata, exclusions };
-      },
-    })),
+    queries: uniqueSurveyIds.map((sid) => surveyGeoQuery(client, sid)),
   });
 
   const annotationQueries = useQueries({
-    queries: uniqueSetSources.map(({ surveyId: sid, annotationSetId: setId }) => ({
-      queryKey: ['densitymap', 'annotations', setId],
-      staleTime: 30 * 60 * 1000,
-      queryFn: async () => {
-        const [rows, surveyCategories] = await Promise.all([
-          loadRows(client, 'annotationsByAnnotationSetId', setId, [
-            'imageId',
-            'categoryId',
-            'objectId',
-            'source',
-            'owner',
-          ]),
-          loadRows(client, 'categoriesByProjectId', sid, ['name']),
-        ]);
-        const categories = new Map(
-          surveyCategories.map((c) => [c.id, { id: c.id, name: c.name ?? '' }])
-        );
-        const annotations = rows.map((a) => ({
-          ...a,
-          setId,
-          category: (a.categoryId && categories.get(a.categoryId)) || null,
-        }));
-        return { surveyId: sid, annotationSetId: setId, annotations };
-      },
-    })),
+    queries: uniqueSetSources.map(({ surveyId: sid, annotationSetId: setId }) =>
+      setAnnotationsQuery(client, sid, setId),
+    ),
   });
 
   // Informational tags for every set on the map: used both to filter and to
@@ -333,7 +290,9 @@ export default function DensityMap({
     .join('|');
   const annotationDataSig = annotationQueries
     .map((q) =>
-      q.data ? `${q.data.annotationSetId}:${q.data.annotations.length}` : ''
+      q.data
+        ? `${q.data.annotationSetId}:${q.data.annotations.length}:${q.dataUpdatedAt}`
+        : '',
     )
     .join('|');
 
@@ -385,8 +344,10 @@ export default function DensityMap({
         const radius = group.length > 1 ? 0.00005 : 0;
         positions.set(id, {
           lat: img.lat + radius * Math.sin(angle),
-          lng: img.lng + (radius * Math.cos(angle)) /
-            Math.max(Math.cos((img.lat * Math.PI) / 180), 1e-6),
+          lng:
+            img.lng +
+            (radius * Math.cos(angle)) /
+              Math.max(Math.cos((img.lat * Math.PI) / 180), 1e-6),
         });
       });
     }
@@ -399,7 +360,7 @@ export default function DensityMap({
       Array.from(imageById.entries())
         .sort((a, b) => a[1].timestamp - b[1].timestamp)
         .map(([id]) => id),
-    [imageById]
+    [imageById],
   );
 
   // Transects discovered in the images, numbered per survey in image-appearance
@@ -422,7 +383,12 @@ export default function DensityMap({
         if (!t || lookup.has(t)) continue;
         const color = TRANSECT_COLORS[next % TRANSECT_COLORS.length];
         lookup.set(t, { number: next + 1, color });
-        flat.push({ id: t, surveyId: q.data.surveyId, number: next + 1, color });
+        flat.push({
+          id: t,
+          surveyId: q.data.surveyId,
+          number: next + 1,
+          color,
+        });
         next++;
       }
     }
@@ -437,7 +403,7 @@ export default function DensityMap({
         id,
         surveyId: sid,
         number,
-      }))
+      })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transectInfo]);
@@ -466,7 +432,8 @@ export default function DensityMap({
           primaryOnly &&
           !(
             a.id === a.objectId &&
-            (!dropFalseNegatives || !(a.source ?? '').includes('false-negative'))
+            (!dropFalseNegatives ||
+              !(a.source ?? '').includes('false-negative'))
           )
         ) {
           continue;
@@ -580,7 +547,11 @@ export default function DensityMap({
         features.push({
           type: 'Feature',
           geometry: { type: 'Polygon', coordinates: [ring] },
-          properties: { id: s.id, name: s.name ?? 'Stratum' },
+          properties: {
+            id: s.id,
+            name: s.name ?? 'Stratum',
+            color: strataColors[features.length % strataColors.length],
+          },
         });
       }
     }
@@ -597,7 +568,7 @@ export default function DensityMap({
         properties: f.properties,
       })),
     }),
-    [strataFC]
+    [strataFC],
   );
 
   const exclusionsFC = useMemo<FeatureCollection>(() => {
@@ -623,6 +594,18 @@ export default function DensityMap({
   // -----------------------------------------------------------------------
   const openViewer = (imageId: string, setId?: string) => {
     if (document.fullscreenElement) document.exitFullscreen?.();
+    // The Images tab only shows the primary set; overlays keep the pop-up.
+    const primarySurveyId = effectiveSources.find(
+      (source) => source.annotationSetId === primarySetId,
+    )?.surveyId;
+    if (
+      onOpenImage &&
+      (!setId || setId === primarySetId) &&
+      imageById.get(imageId)?.surveyId === primarySurveyId
+    ) {
+      onOpenImage(imageId);
+      return;
+    }
     setViewerImageId(imageId);
     setViewerSetId(setId || primarySetId);
     setViewerOpen(true);
@@ -630,7 +613,9 @@ export default function DensityMap({
   const openViewerRef = useRef(openViewer);
   openViewerRef.current = openViewer;
 
-  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(null);
+  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(
+    null,
+  );
   const onStratumHoverRef = useRef(onStratumHover);
   onStratumHoverRef.current = onStratumHover;
 
@@ -652,12 +637,16 @@ export default function DensityMap({
 
     // MapLibre does not automatically detect every flex/grid size change.
     // Keep its canvas in sync with the responsive container.
-    const resizeObserver = new ResizeObserver(() => map.resize());
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+      if (container.clientWidth) fitPendingRef.current();
+    });
     resizeObserver.observe(container);
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-    map.addControl(new maplibregl.FullscreenControl(), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+    map.addControl(
+      new maplibregl.ScaleControl({ unit: 'metric' }),
+      'bottom-left',
+    );
 
     map.on('load', () => {
       // Sources (start empty; data is pushed via setData below).
@@ -683,13 +672,13 @@ export default function DensityMap({
         id: LYR_EXCLUSIONS_FILL,
         type: 'fill',
         source: SRC_EXCLUSIONS,
-        paint: { 'fill-color': '#FF0000', 'fill-opacity': 0.3 },
+        paint: { 'fill-color': '#ff0000', 'fill-opacity': 0.15 },
       });
       map.addLayer({
         id: LYR_EXCLUSIONS_LINE,
         type: 'line',
         source: SRC_EXCLUSIONS,
-        paint: { 'line-color': '#FF0000', 'line-width': 2 },
+        paint: { 'line-color': '#ff0000', 'line-width': 2 },
       });
       const strataHovered: ExpressionSpecification = [
         'boolean',
@@ -701,8 +690,8 @@ export default function DensityMap({
         type: 'fill',
         source: SRC_STRATA,
         paint: {
-          'fill-color': '#3357FF',
-          'fill-opacity': ['case', strataHovered, 0.25, 0],
+          'fill-color': ['get', 'color'],
+          'fill-opacity': ['case', strataHovered, 0.25, 0.1],
         },
       });
       map.addLayer({
@@ -710,8 +699,8 @@ export default function DensityMap({
         type: 'line',
         source: SRC_STRATA,
         paint: {
-          'line-color': '#3357FF',
-          'line-width': ['case', strataHovered, 4, 2],
+          'line-color': ['get', 'color'],
+          'line-width': ['case', strataHovered, 3, 1.5],
         },
       });
 
@@ -748,15 +737,19 @@ export default function DensityMap({
         source: SRC_ANNOTATIONS,
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': [
-            'step', ['get', 'point_count'],
-            '#51bbd6', 100, '#f1f075', 750, '#f28cb1',
-          ],
+          'circle-color': '#ff8c00',
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
           'circle-radius': [
-            'step', ['get', 'point_count'],
-            15, 100, 20, 750, 25,
+            'step',
+            ['get', 'point_count'],
+            15,
+            100,
+            20,
+            750,
+            25,
           ],
-          'circle-opacity': 0.85,
+          'circle-opacity': 0.9,
         },
       });
       map.addLayer({
@@ -767,8 +760,9 @@ export default function DensityMap({
         layout: {
           'text-field': ['get', 'point_count_abbreviated'],
           'text-size': 12,
+          'text-font': ['Open Sans Semibold'],
         },
-        paint: { 'text-color': '#000000' },
+        paint: { 'text-color': '#ffffff' },
       });
       // Individual sightings
       map.addLayer({
@@ -795,7 +789,7 @@ export default function DensityMap({
           'text-font': ['Open Sans Regular'],
         },
         paint: {
-          'text-color': '#1a2b8c',
+          'text-color': '#212529',
           'text-halo-color': '#ffffff',
           'text-halo-width': 1.5,
         },
@@ -824,16 +818,25 @@ export default function DensityMap({
         title: string,
         rows: string,
         imageId: string,
-        setId: string
+        setId: string,
       ) => {
         const node = document.createElement('div');
         node.innerHTML = `<div style="min-width:160px;color:#000">
             <div style="font-weight:600;margin-bottom:4px">${title}</div>
             ${rows}
-            <button class="btn btn-sm btn-primary mt-2" type="button">View Image</button>
+            <button type="button">View Image</button>
           </div>`;
         const btn = node.querySelector('button');
-        btn?.addEventListener('click', () => openViewerRef.current(imageId, setId));
+        if (btn) {
+          btn.className = buttonVariants({
+            variant: 'primary',
+            size: 'sm',
+            className: 'mt-2',
+          });
+          btn.addEventListener('click', () =>
+            openViewerRef.current(imageId, setId),
+          );
+        }
         new maplibregl.Popup({ closeButton: true })
           .setLngLat(coordinates)
           .setDOMContent(node)
@@ -858,7 +861,7 @@ export default function DensityMap({
               ? `<div><strong>Info tags:</strong> ${escapeHtml(p.infoTags)}</div>`
               : ''),
           p.imageId,
-          p.setId
+          p.setId,
         );
       });
 
@@ -872,7 +875,7 @@ export default function DensityMap({
           `Transect ${p.transect}`,
           `<div><strong>Coordinates:</strong> ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</div>`,
           p.imageId,
-          ''
+          '',
         );
       });
 
@@ -884,7 +887,7 @@ export default function DensityMap({
           .setHTML(
             `<div style="color:#000"><strong>Stratum:</strong> ${
               f.properties?.name ?? ''
-            }</div>`
+            }</div>`,
           )
           .addTo(map);
       });
@@ -898,7 +901,12 @@ export default function DensityMap({
       });
       map.on('mouseleave', LYR_STRATA_FILL, () => hoverStratum(null));
 
-      for (const lyr of [LYR_CLUSTERS, LYR_POINTS, LYR_IMAGES, LYR_STRATA_LINE]) {
+      for (const lyr of [
+        LYR_CLUSTERS,
+        LYR_POINTS,
+        LYR_IMAGES,
+        LYR_STRATA_LINE,
+      ]) {
         map.on('mouseenter', lyr, () => {
           map.getCanvas().style.cursor = 'pointer';
         });
@@ -923,17 +931,19 @@ export default function DensityMap({
   // -----------------------------------------------------------------------
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource)?.setData(
-      annotationsFC
-    );
+    (
+      mapRef.current?.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource
+    )?.setData(annotationsFC);
   }, [mapLoaded, annotationsFC]);
 
   const heatPoints = useMemo(
     () =>
       annotationsFC.features
-        .map((f) => (f.geometry as GeoJSON.Point).coordinates as [number, number])
+        .map(
+          (f) => (f.geometry as GeoJSON.Point).coordinates as [number, number],
+        )
         .filter((c) => isValidLatLng(c[1], c[0])),
-    [annotationsFC]
+    [annotationsFC],
   );
   const heatScale = useMemo(() => {
     if (!showHeatmap || heatPoints.length === 0) return null;
@@ -948,7 +958,7 @@ export default function DensityMap({
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_HEAT) as maplibregl.GeoJSONSource)?.setData(
-      annotationsFC
+      annotationsFC,
     );
   }, [mapLoaded, annotationsFC]);
 
@@ -961,19 +971,19 @@ export default function DensityMap({
 
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_IMAGES) as maplibregl.GeoJSONSource)?.setData(
-      imagesFC
-    );
+    (
+      mapRef.current?.getSource(SRC_IMAGES) as maplibregl.GeoJSONSource
+    )?.setData(imagesFC);
   }, [mapLoaded, imagesFC]);
 
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_STRATA) as maplibregl.GeoJSONSource)?.setData(
-      strataFC
-    );
-    (mapRef.current?.getSource(SRC_STRATA_LABELS) as maplibregl.GeoJSONSource)?.setData(
-      strataLabelsFC
-    );
+    (
+      mapRef.current?.getSource(SRC_STRATA) as maplibregl.GeoJSONSource
+    )?.setData(strataFC);
+    (
+      mapRef.current?.getSource(SRC_STRATA_LABELS) as maplibregl.GeoJSONSource
+    )?.setData(strataLabelsFC);
   }, [mapLoaded, strataFC, strataLabelsFC]);
 
   const activeStratumId = mapHoveredStratumId ?? highlightedStratumId;
@@ -989,9 +999,9 @@ export default function DensityMap({
 
   useEffect(() => {
     if (!mapLoaded) return;
-    (mapRef.current?.getSource(SRC_EXCLUSIONS) as maplibregl.GeoJSONSource)?.setData(
-      exclusionsFC
-    );
+    (
+      mapRef.current?.getSource(SRC_EXCLUSIONS) as maplibregl.GeoJSONSource
+    )?.setData(exclusionsFC);
   }, [mapLoaded, exclusionsFC]);
 
   // -----------------------------------------------------------------------
@@ -1019,7 +1029,10 @@ export default function DensityMap({
   // Fit bounds to the data whenever the displayed extent changes.
   // -----------------------------------------------------------------------
   const boundsKey = useMemo(() => {
-    let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+    let minLng = Infinity,
+      minLat = Infinity,
+      maxLng = -Infinity,
+      maxLat = -Infinity;
     const consume = (fc: FeatureCollection) => {
       for (const f of fc.features) {
         if (f.geometry.type !== 'Point') continue;
@@ -1036,58 +1049,119 @@ export default function DensityMap({
     return [minLng, minLat, maxLng, maxLat] as [number, number, number, number];
   }, [imagesFC, annotationsFC]);
 
+  const fitAll = useCallback(
+    (duration = 300) => {
+      if (!boundsKey) return;
+      mapRef.current?.fitBounds(
+        [
+          [boundsKey[0], boundsKey[1]],
+          [boundsKey[2], boundsKey[3]],
+        ],
+        { padding: 40, maxZoom: 16, duration },
+      );
+    },
+    [boundsKey],
+  );
+
   const lastFitRef = useRef<string>('');
   useEffect(() => {
     if (!mapLoaded || !boundsKey) return;
     const key = boundsKey.join(',');
     if (key === lastFitRef.current) return;
+    // A hidden tab has no size to fit to; the resize observer fits once shown.
+    if (!mapContainerRef.current?.clientWidth) return;
     lastFitRef.current = key;
-    mapRef.current!.fitBounds(
-      [
-        [boundsKey[0], boundsKey[1]],
-        [boundsKey[2], boundsKey[3]],
-      ],
-      { padding: 40, maxZoom: 16, duration: 0 }
-    );
-  }, [mapLoaded, boundsKey]);
+    fitAll(0);
+  }, [mapLoaded, boundsKey, fitAll]);
+  const fitPendingRef = useRef(() => {});
+  fitPendingRef.current = () => {
+    if (!boundsKey || boundsKey.join(',') === lastFitRef.current) return;
+    lastFitRef.current = boundsKey.join(',');
+    fitAll(0);
+  };
+
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () =>
+      setFullscreen(document.fullscreenElement === frameRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void frameRef.current?.requestFullscreen?.();
+  };
 
   return (
-    <div className='w-100 h-100' style={{ position: 'relative', minHeight: 0 }}>
-      <div
-        ref={mapContainerRef}
-        style={{ height: '100%', width: '100%', position: 'absolute', inset: 0 }}
-      />
+    <div
+      ref={frameRef}
+      className={cn('survey-map h-full', fullscreen && 'rounded-none border-0')}
+      style={{ minHeight: 0 }}
+    >
+      {/* Inline: maplibre's unlayered CSS overrides layered utilities here. */}
+      <div ref={mapContainerRef} style={{ position: 'absolute', inset: 0 }} />
 
-      {/* Layer toggles */}
       <div
-        className='position-absolute bg-white rounded shadow-sm p-2'
-        style={{ top: 10, left: 10, zIndex: 1, minWidth: 140, color: '#000' }}
+        className={cn('absolute top-3 left-3 z-10 flex flex-col', MAP_CONTROLS)}
       >
-        <div className='fw-bold mb-1' style={{ fontSize: 12 }}>
+        <MapButton
+          label={fullscreen ? 'Exit full screen' : 'Full screen'}
+          shortcut={fullscreen ? 'Esc' : undefined}
+          onClick={toggleFullscreen}
+        >
+          {fullscreen ? (
+            <Minimize2Icon className='size-4' />
+          ) : (
+            <Maximize2Icon className='size-4' />
+          )}
+        </MapButton>
+        <div className='mx-2 h-px bg-black/15' />
+        <MapButton label='Zoom in' onClick={() => mapRef.current?.zoomIn()}>
+          <PlusIcon className='size-4' />
+        </MapButton>
+        <MapButton label='Zoom out' onClick={() => mapRef.current?.zoomOut()}>
+          <MinusIcon className='size-4' />
+        </MapButton>
+        <MapButton
+          label='Fit to sightings'
+          disabled={!boundsKey}
+          onClick={() => fitAll()}
+        >
+          <ScanIcon className='size-4' />
+        </MapButton>
+      </div>
+
+      <div
+        className={cn(
+          'absolute top-3 right-3 z-10 flex min-w-36 flex-col gap-1 px-3 py-2 text-sm text-[#212529]',
+          MAP_CONTROLS,
+        )}
+        style={LIGHT_THEME}
+      >
+        <span className='text-[11px] font-semibold tracking-wider text-[#6c757d] uppercase'>
           Layers
-        </div>
-        <Form.Check
-          type='checkbox'
+        </span>
+        <LayerCheck
           id='dm-clusters'
           label='Sightings'
           checked={showClusters}
-          onChange={(e) => setShowClusters(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowClusters}
         />
-        <Form.Check
-          type='checkbox'
+        <LayerCheck
           id='dm-heatmap'
           label='Heatmap'
           checked={showHeatmap}
-          onChange={(e) => setShowHeatmap(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowHeatmap}
         />
         {showHeatmap && (
-          <div className='ms-4 mb-1' style={{ fontSize: 12 }}>
-            <label htmlFor='dm-heat-radius' className='d-block'>
+          <div className='mb-1 ml-6 text-xs'>
+            <label htmlFor='dm-heat-radius' className='block text-[#6c757d]'>
               Radius: {heatRadiusKm} km
             </label>
-            <Form.Range
+            <input
+              type='range'
+              className='w-full accent-primary'
               id='dm-heat-radius'
               min={1}
               max={15}
@@ -1097,54 +1171,51 @@ export default function DensityMap({
             />
           </div>
         )}
-        <Form.Check
-          type='checkbox'
+        <LayerCheck
           id='dm-images'
           label='Images'
           checked={showImages}
-          onChange={(e) => setShowImages(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowImages}
         />
-        <Form.Check
-          type='checkbox'
+        <LayerCheck
           id='dm-strata'
           label='Strata'
           checked={showStrata}
-          onChange={(e) => setShowStrata(e.target.checked)}
-          style={{ fontSize: 13 }}
+          onChange={setShowStrata}
         />
       </div>
 
       {/* Partial data would give a misleading map. */}
       {(loading || !mapLoaded) && (
-        <div
-          className='position-absolute d-flex flex-column align-items-center justify-content-center'
-          style={{ inset: 0, zIndex: 2, background: 'rgba(255,255,255,0.85)', color: '#000' }}
-        >
-          <Spinner />
-          <span className='mt-2' style={{ fontSize: 14 }}>
-            Loading map data…
-          </span>
+        <div className='absolute inset-0 z-30 flex items-center justify-center bg-black/20'>
+          <div
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm text-[#212529]',
+              MAP_CONTROLS,
+            )}
+          >
+            <Spinner size='sm' />
+            Loading map data...
+          </div>
         </div>
       )}
       {!loading && mapLoaded && fetching && (
         <div
-          className='position-absolute bg-white rounded shadow-sm px-2 py-1 d-flex align-items-center'
-          style={{ top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 1 }}
+          className={cn(
+            'absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 px-3 py-1.5 text-xs text-[#212529]',
+            MAP_CONTROLS,
+          )}
         >
           <Spinner size='sm' />
-          <span className='ms-2' style={{ fontSize: 13, color: '#000' }}>
-            Updating…
-          </span>
+          Updating...
         </div>
       )}
 
       {!loading && effectiveSources.length === 0 && (
-        <div
-          className='position-absolute bg-white rounded shadow-sm px-3 py-2'
-          style={{ top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1, color: '#000' }}
-        >
-          Select an annotation set to begin.
+        <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
+          <div className={cn('px-4 py-3 text-sm text-[#212529]', MAP_CONTROLS)}>
+            Select an annotation set to begin.
+          </div>
         </div>
       )}
 
@@ -1168,6 +1239,31 @@ export default function DensityMap({
           categoryIds={categoryIds}
         />
       )}
+    </div>
+  );
+}
+
+function LayerCheck({
+  id,
+  label,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className='flex items-center gap-2'>
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(c) => onChange(c === true)}
+      />
+      <Label htmlFor={id} className='mb-0'>
+        {label}
+      </Label>
     </div>
   );
 }

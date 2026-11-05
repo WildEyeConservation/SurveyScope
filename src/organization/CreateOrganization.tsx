@@ -1,8 +1,10 @@
-import Form from 'react-bootstrap/Form';
-import Button from 'react-bootstrap/Button';
-import { useState, useContext, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
-import { Modal, Body, Header, Title } from '../Modal';
+import { Body, Header, Modal, Title } from '../Modal';
 import { Schema } from '../amplify/client-schema';
 
 export default function CreateOrganization({
@@ -94,60 +96,53 @@ export default function CreateOrganization({
         <Title>{request ? 'Add' : 'Create'} Organisation</Title>
       </Header>
       <Body>
-        <Form onSubmit={handleSubmit} className='p-3'>
-          <Form.Group className='mb-3'>
-            <Form.Label>Name</Form.Label>
-            <Form.Control
+        <form onSubmit={handleSubmit} className='p-4'>
+          <div className='mb-4'>
+            <Label>Name</Label>
+            <Input
               type='text'
               placeholder='Enter organisation name'
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group className='mb-3'>
-            <Form.Label>Description</Form.Label>
-            <Form.Control
-              as='textarea'
+          </div>
+          <div className='mb-4'>
+            <Label>Description</Label>
+            <Textarea
               rows={3}
               placeholder='Enter organisation description'
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
-          </Form.Group>
-          <Form.Group className='mb-3'>
-            <Form.Label>Admin Email</Form.Label>
-            <Form.Control
+          </div>
+          <div className='mb-4'>
+            <Label>Admin Email</Label>
+            <Input
               type='email'
               placeholder='Enter admin email'
               value={adminEmail}
               onChange={(e) => setAdminEmail(e.target.value)}
             />
-          </Form.Group>
-          <div
-            className={`d-flex gap-2 justify-content-${
-              request ? 'between' : 'end'
-            }`}
-          >
+          </div>
+          <div className='flex gap-2'>
+            <Button
+              variant='ghost'
+              type='button'
+              className='mr-auto'
+              onClick={onHide}
+            >
+              Cancel
+            </Button>
             {request && (
               <Button variant='danger' onClick={handleDeny}>
                 Deny
               </Button>
             )}
-            <div>
-              <Button
-                variant='primary'
-                className='me-2'
-                type='submit'
-                disabled={isSubmitting}
-              >
-                {request ? 'Approve' : 'Create'}
-              </Button>
-              <Button variant='dark' type='button' onClick={onHide}>
-                Cancel
-              </Button>
-            </div>
+            <Button variant='primary' type='submit' disabled={isSubmitting}>
+              {request ? 'Approve' : 'Create'}
+            </Button>
           </div>
-        </Form>
+        </form>
       </Body>
     </Modal>
   );

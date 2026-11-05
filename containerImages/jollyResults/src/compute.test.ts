@@ -301,6 +301,53 @@ test('invalid images are excluded without aborting a computable stratum', () => 
   assert.equal(output.results.length, 2);
 });
 
+test('chains with a marked annotation are left out', () => {
+  const accumulator = createAccumulator();
+  for (const [id, latitude] of [
+    ['image-1', -33],
+    ['image-2', -33.001],
+  ] as const) {
+    accumulator.addImage({
+      id,
+      transectId: 'transect-1',
+      cameraId: 'camera-1',
+      latitude,
+      longitude: 18,
+      altitude_agl: 100,
+      timestamp: id === 'image-1' ? 1 : 2,
+    });
+  }
+  for (const id of ['kept', 'fenced', 'fenced-alone']) {
+    accumulator.addAnnotation({
+      id,
+      objectId: id,
+      imageId: 'image-1',
+      categoryId: 'seen',
+      outsideBoundary: id === 'fenced-alone',
+    });
+  }
+  // Marked on a later image after its primary was read.
+  accumulator.addAnnotation({
+    id: 'fenced-secondary',
+    objectId: 'fenced',
+    imageId: 'image-2',
+    categoryId: 'seen',
+    outsideBoundary: true,
+  });
+
+  const output = accumulator.calculate();
+  assert.equal(
+    output.results.find((result) => result.categoryId === 'seen')?.animals,
+    1
+  );
+  assert.equal(output.validation.annotationsMarkedOutside, 2);
+  assert.ok(
+    output.warnings.some((warning) =>
+      warning.startsWith('2 selected annotations marked outside')
+    )
+  );
+});
+
 test('images outside the survey area and off-effort strata are left out', () => {
   const accumulator = new SurveyAccumulator({
     surveyId: 'survey-1',

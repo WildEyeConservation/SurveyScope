@@ -1,9 +1,9 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useContext } from 'react';
 import { GlobalContext } from '../../Context';
-import { fetchAllPaginatedResults } from '../../utils';
-import type { ImageNeighbourType, ImageType } from '../../schemaTypes';
 import type { LocationOverlayRow } from '../../individual-id/MapLocationOverlay';
+import type { ImageNeighbourType, ImageType } from '../../schemaTypes';
+import { fetchAllPaginatedResults } from '../../utils';
 import type { AnnotationImageMeta, ChainAnnotation } from '../types';
 
 export interface SharedCategory {
@@ -117,7 +117,7 @@ export function useSharedChainData(shareId: string | undefined) {
               'infoTags',
             ] as const,
             limit: 10000,
-          }
+          },
         ) as Promise<SharedAnnotationRow[]>,
         fetchAllPaginatedResults(
           client.models.SharedChainImage.sharedChainImagesByShareId,
@@ -136,7 +136,7 @@ export function useSharedChainData(shareId: string | undefined) {
               'sourceKey',
             ] as const,
             limit: 10000,
-          }
+          },
         ) as Promise<SharedImageRow[]>,
         fetchAllPaginatedResults(
           client.models.SharedChainLocation.sharedChainLocationsByShareId,
@@ -152,7 +152,7 @@ export function useSharedChainData(shareId: string | undefined) {
               'source',
             ] as const,
             limit: 10000,
-          }
+          },
         ) as Promise<SharedLocationRow[]>,
         fetchAllPaginatedResults(
           client.models.SharedChainNeighbour.sharedChainNeighboursByShareId,
@@ -166,7 +166,7 @@ export function useSharedChainData(shareId: string | undefined) {
               'skipped',
             ] as const,
             limit: 10000,
-          }
+          },
         ) as Promise<SharedNeighbourRow[]>,
         fetchAllPaginatedResults(
           client.models.SharedChainCategory.sharedChainCategoriesByShareId,
@@ -179,7 +179,7 @@ export function useSharedChainData(shareId: string | undefined) {
               'shortcutKey',
             ] as const,
             limit: 10000,
-          }
+          },
         ) as Promise<SharedCategoryRow[]>,
       ]);
 
@@ -236,7 +236,7 @@ export function useSharedChainData(shareId: string | undefined) {
               homography: n.homography ?? null,
               homographySource: n.homographySource ?? null,
               skipped: false,
-            }) as unknown as ImageNeighbourType
+            }) as unknown as ImageNeighbourType,
         );
 
       const categories: SharedCategory[] = catRows.map((c) => ({

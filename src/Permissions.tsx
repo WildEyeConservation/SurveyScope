@@ -1,10 +1,11 @@
-import { Card, Button } from 'react-bootstrap';
-import { Tabs, Tab } from './Tabs';
+import { Card, CardContent } from '@/components/ui/card';
+import { useContext, useState } from 'react';
+import { UserContext } from './Context';
+import Info from './organization/Info';
 import Users from './organization/Users';
 import OrganizationSelector from './OrganizationSelector';
-import { useState, useContext } from 'react';
-import Info from './organization/Info';
-import { UserContext } from './Context';
+import PageHeader from './PageHeader';
+import { Tab, Tabs } from './Tabs';
 
 export default function Permissions() {
   const { isOrganizationAdmin } = useContext(UserContext)!;
@@ -12,10 +13,6 @@ export default function Permissions() {
     id: string;
     name: string;
   }>({ id: '', name: '' });
-  const [onClick, setOnClick] = useState<{
-    name: string;
-    function: () => void;
-  } | null>(null);
 
   if (!isOrganizationAdmin) {
     return <div>You are not authorized to access this page.</div>;
@@ -27,38 +24,25 @@ export default function Permissions() {
         width: '100%',
         maxWidth: '1555px',
         marginTop: '16px',
-        marginBottom: '16px',
+        paddingBottom: '16px',
+        alignSelf: 'flex-start',
       }}
     >
       <Card>
-        <Card.Header className='d-flex justify-content-between mb-0'>
-          <Card.Title className='mb-0'>
-            <h4 className='mb-0'>Permissions</h4>
-          </Card.Title>
+        <PageHeader title='Permissions'>
           <OrganizationSelector
             organization={organization}
             setOrganization={setOrganization}
           />
-        </Card.Header>
-        <Card.Body>
+        </PageHeader>
+        <CardContent>
           {organization.id && (
             <PermissionsBody
               key={organization.id}
               organization={organization}
-              setOnClick={setOnClick}
             />
           )}
-        </Card.Body>
-        {onClick && (
-          <Card.Footer className='d-flex justify-content-center'>
-            <Button
-              variant='primary'
-              onClick={onClick.function}
-            >
-              {onClick.name}
-            </Button>
-          </Card.Footer>
-        )}
+        </CardContent>
       </Card>
     </div>
   );
@@ -66,19 +50,13 @@ export default function Permissions() {
 
 function PermissionsBody({
   organization,
-  setOnClick,
 }: {
   organization: { id: string; name: string };
-  setOnClick: (onClick: { name: string; function: () => void } | null) => void;
 }) {
   return (
-    <Tabs defaultTab={0} onTabChange={() => setOnClick(null)}>
+    <Tabs defaultTab={0}>
       <Tab label='Users'>
-        <Users
-          key={organization.id}
-          organization={organization}
-          setOnClick={setOnClick}
-        />
+        <Users key={organization.id} organization={organization} />
       </Tab>
       <Tab label='Organisation Info'>
         <Info organizationId={organization.id} />

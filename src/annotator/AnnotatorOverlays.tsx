@@ -53,13 +53,13 @@ export function AnnotationLegendOverlay({
   const [expanded, setExpanded] = useState(false);
   const sortedCategories = useMemo(
     () => [...categories].sort((a, b) => a.name.localeCompare(b.name)),
-    [categories]
+    [categories],
   );
   if (sortedCategories.length === 0) return null;
 
   return (
     <div
-      className={forceVisible ? 'd-block' : 'd-block d-md-none'}
+      className={forceVisible ? 'block' : 'block md:hidden'}
       style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 5 }}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}

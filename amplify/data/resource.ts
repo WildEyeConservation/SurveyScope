@@ -297,6 +297,8 @@ const schema = a
         y: a.integer().required(),
         obscured: a.boolean(),
         oov: a.boolean(),
+        // Outside the survey area even when its image is inside.
+        outsideBoundary: a.boolean(),
         objectId: a.id(),
         object: a.belongsTo('Object', 'objectId'),
         reviewCatId: a.string(),
@@ -679,6 +681,8 @@ const schema = a
         testAnimals: a.integer().required(),
         totalMissedAnimals: a.integer().required(),
         passedOnTotal: a.boolean().required(),
+        // Set when per-label counts were recorded for every linked label.
+        labelsLinked: a.boolean(),
         categoryCounts: a.hasMany('TestResultCategoryCount', 'testResultId'),
         group: a.string(),
       })
@@ -1430,6 +1434,7 @@ const schema = a
         endAt: a.string(),
         nextToken: a.string(),
         limit: a.integer(),
+        summary: a.boolean(),
       })
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
@@ -1836,6 +1841,7 @@ const schema = a
     allow.resource(removeUserFromOrganization),
     allow.resource(updateOrganizationMemberAdmin),
     allow.resource(deleteQueue),
+    allow.resource(queryWorkflowEvents),
     allow.resource(cancelIndividualIdJob),
     allow.resource(syncOrganizationGroups),
     allow.resource(launchIndividualId),

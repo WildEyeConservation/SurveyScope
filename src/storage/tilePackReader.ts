@@ -108,7 +108,7 @@ export interface TilePack {
     row: number,
     column: number,
     signal?: AbortSignal,
-    onRequest?: (timing: TileRequestTiming) => void
+    onRequest?: (timing: TileRequestTiming) => void,
   ) => Promise<ArrayBuffer>;
 }
 
@@ -141,7 +141,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
     last: number,
     signal?: AbortSignal,
     reload = false,
-    report = options.onRequest
+    report = options.onRequest,
   ): Promise<{ bytes: Uint8Array; etag: string | null }> => {
     for (let attempt = 0; ; attempt++) {
       if (access.expiresAt - now() < EXPIRY_MARGIN_MS) await renew(access);
@@ -220,13 +220,13 @@ export function openTilePack(options: TilePackOptions): TilePack {
     entries.every(
       (entry, i) =>
         i === 0 ||
-        entries[i - 1].offset + entries[i - 1].length === entry.offset
+        entries[i - 1].offset + entries[i - 1].length === entry.offset,
     );
 
   const download = async (
     indices: number[],
     signal?: AbortSignal,
-    report?: (timing: TileRequestTiming) => void
+    report?: (timing: TileRequestTiming) => void,
   ): Promise<ArrayBuffer[]> => {
     let short = 0;
     for (let attempt = 0; ; attempt++) {
@@ -237,7 +237,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
         throw new Error('Tile is empty');
       if (!contiguous(entries)) {
         const parts = await Promise.all(
-          indices.map((index) => download([index], signal, report))
+          indices.map((index) => download([index], signal, report)),
         );
         return parts.flat();
       }
@@ -250,7 +250,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
         first + expected - 1,
         signal,
         short > 0,
-        report
+        report,
       ).catch((error: unknown) => {
         if (
           error instanceof TilePackRequestFailed &&
@@ -276,7 +276,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
             const start = bytes.byteOffset + entry.offset - first;
             return bytes.buffer.slice(
               start,
-              start + entry.length
+              start + entry.length,
             ) as ArrayBuffer;
           });
         }
@@ -300,7 +300,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
     const batch = waiting.filter((waiter) => !waiter.aborted);
     waiting = [];
     const indices = [...new Set(batch.map((waiter) => waiter.index))].sort(
-      (a, b) => a - b
+      (a, b) => a - b,
     );
     const runs: number[][] = [];
     for (const index of indices) {
@@ -337,9 +337,11 @@ export function openTilePack(options: TilePackOptions): TilePack {
         (buffers) =>
           live().forEach((waiter) => {
             const bytes = buffers[run.indexOf(waiter.index)];
-            waiter.resolve(members.length > run.length ? bytes.slice(0) : bytes);
+            waiter.resolve(
+              members.length > run.length ? bytes.slice(0) : bytes,
+            );
           }),
-        (error: unknown) => live().forEach((waiter) => waiter.reject(error))
+        (error: unknown) => live().forEach((waiter) => waiter.reject(error)),
       );
     }
   };
@@ -372,7 +374,7 @@ export function openTilePack(options: TilePackOptions): TilePack {
             reject(aborted());
             waiter.onAbort?.();
           },
-          { once: true }
+          { once: true },
         );
         if (waiting.length === 0) setTimeout(() => flush(head), 0);
         waiting.push(waiter);

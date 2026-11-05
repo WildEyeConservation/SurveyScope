@@ -1,4 +1,4 @@
-import { useEffect, useContext } from 'react';
+import { useContext, useEffect } from 'react';
 import { GlobalContext } from './Context';
 
 const ClientLogger = ({ userId }: { userId: string }) => {
@@ -16,8 +16,8 @@ const ClientLogger = ({ userId }: { userId: string }) => {
         const deviceType = /mobile/i.test(ua)
           ? 'Mobile'
           : /tablet/i.test(ua)
-          ? 'Tablet'
-          : 'Desktop';
+            ? 'Tablet'
+            : 'Desktop';
 
         // Get connection info
         const connection =

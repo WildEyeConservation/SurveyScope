@@ -1,5 +1,5 @@
+import { Label } from '@/components/ui/label';
 import { useState } from 'react';
-import { Button, Form } from 'react-bootstrap';
 import ZoomPreviewModal from './ZoomPreviewModal';
 import {
   DEFAULT_ZOOM_OFFSET,
@@ -25,28 +25,26 @@ export default function ZoomSetting({
     zoom !== undefined
       ? `Level ${zoom}`
       : mode === 'level'
-      ? 'Auto'
-      : `Level ${DEFAULT_ZOOM_OFFSET} (default)`;
+        ? 'Auto'
+        : `Level ${DEFAULT_ZOOM_OFFSET} (default)`;
 
   return (
-    <Form.Group>
-      <Form.Label className='mb-0'>Zoom Level</Form.Label>
-      <span className='text-muted d-block mb-1' style={{ fontSize: '12px' }}>
-        {mode === 'level'
-          ? 'The zoom level images open at in the job. Auto fits each location to the screen.'
-          : 'How far the job zooms in on each annotation when it opens.'}
-      </span>
-      <div className='d-flex align-items-center gap-2'>
-        <Form.Control type='text' value={label} disabled readOnly />
-        <Button
-          variant='info'
-          className='text-nowrap'
-          disabled={disabled}
-          onClick={() => setShowPreview(true)}
-        >
-          Change zoom
-        </Button>
-      </div>
+    <div>
+      <Label className='mb-1'>Zoom</Label>
+      <button
+        type='button'
+        disabled={disabled}
+        onClick={() => setShowPreview(true)}
+        title={
+          mode === 'level'
+            ? 'The zoom level images open at. Auto fits each location to the screen.'
+            : 'How far the job zooms in on each annotation when it opens.'
+        }
+        className='flex w-full items-center justify-between border border-input bg-field px-3 py-1.5 text-left text-base text-field-foreground disabled:opacity-65'
+      >
+        <span>{label}</span>
+        <span className='text-sm text-[#6c757d]'>Change</span>
+      </button>
       <ZoomPreviewModal
         show={showPreview}
         mode={mode}
@@ -58,6 +56,6 @@ export default function ZoomSetting({
         }}
         onClose={() => setShowPreview(false)}
       />
-    </Form.Group>
+    </div>
   );
 }

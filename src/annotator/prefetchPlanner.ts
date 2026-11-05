@@ -55,7 +55,7 @@ function nextLoad(previous: number, sample: number) {
 export function planPrefetch(
   state: PlannerState,
   sample: TaskSample,
-  mountedAhead: number
+  mountedAhead: number,
 ): PlannerState {
   const first = state.samples === 0;
   const timeTakenMs = first
@@ -92,7 +92,8 @@ function restore(storage: PlannerStorage | undefined): PlannerState {
     const saved = JSON.parse(storage?.getItem(STORAGE_KEY) ?? 'null');
     const state = { ...initialPlannerState(), ...saved };
     const valid = Object.values(state).every(
-      (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0
+      (value) =>
+        typeof value === 'number' && Number.isFinite(value) && value >= 0,
     );
     if (valid) {
       state.depth = Math.min(MAX_PREFETCH, Math.round(state.depth));
@@ -108,7 +109,7 @@ export function createPrefetchPlanner(
   mountedAhead: number,
   storage: PlannerStorage | undefined = typeof localStorage === 'undefined'
     ? undefined
-    : localStorage
+    : localStorage,
 ) {
   let state = restore(storage);
   let skip = false;

@@ -1,21 +1,23 @@
-import { Alert, Button, Form } from 'react-bootstrap';
-import { Modal, Body, Header, Footer, Title } from '../Modal';
-import { useState, useContext } from 'react';
-import { Tabs, Tab } from '../Tabs';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { useContext, useState } from 'react';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext } from '../Context';
-import SpeciesLabelling from './SpeciesLabelling';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
+import { Tab, Tabs } from '../Tabs';
+import type { WorkflowType } from '../workflowRegistry';
 import FalseNegatives from './FalseNegatives';
-import QCReview from './QCReview';
-import InfoTagsLaunch from './InfoTagsLaunch';
 import HomographyLaunch from './HomographyLaunch';
 import IndividualId from './IndividualId';
-import type { WorkflowType } from '../workflowRegistry';
+import InfoTagsLaunch from './InfoTagsLaunch';
+import { LaunchLabelContext, type LaunchLabel } from './launchLabel';
+import QCReview from './QCReview';
+import SpeciesLabelling from './SpeciesLabelling';
 
 type LaunchHandlerType = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 } | null;
 
@@ -30,7 +32,7 @@ export default function LaunchAnnotationSetModal({
   annotationSet: Schema['AnnotationSet']['type'];
   onOptimisticStatus?: (
     projectId: string,
-    status: Schema['Project']['type']['status']
+    status: Schema['Project']['type']['status'],
   ) => void;
 }) {
   const [taskType, setTaskType] = useState<WorkflowType>('species-labelling');
@@ -38,12 +40,19 @@ export default function LaunchAnnotationSetModal({
   const [progressMessage, setProgressMessage] = useState<string>('');
   const [launchError, setLaunchError] = useState<string>('');
   const [launchDisabled, setLaunchDisabled] = useState<boolean>(false);
-  const [speciesLaunchHandler, setSpeciesLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [falseNegativesLaunchHandler, setFalseNegativesLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [qcLaunchHandler, setQCLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [infoTagsLaunchHandler, setInfoTagsLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [homographyLaunchHandler, setHomographyLaunchHandler] = useState<LaunchHandlerType>(null);
-  const [individualIdLaunchHandler, setIndividualIdLaunchHandler] = useState<LaunchHandlerType>(null);
+  const [launchLabel, setLaunchLabel] = useState<LaunchLabel>(null);
+  const [speciesLaunchHandler, setSpeciesLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [falseNegativesLaunchHandler, setFalseNegativesLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [qcLaunchHandler, setQCLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [infoTagsLaunchHandler, setInfoTagsLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [homographyLaunchHandler, setHomographyLaunchHandler] =
+    useState<LaunchHandlerType>(null);
+  const [individualIdLaunchHandler, setIndividualIdLaunchHandler] =
+    useState<LaunchHandlerType>(null);
 
   const { showModal } = useContext(GlobalContext)! as any;
 
@@ -84,7 +93,10 @@ export default function LaunchAnnotationSetModal({
         case 'false-negatives':
           if (falseNegativesLaunchHandler) {
             setProgressMessage('Initializing launch...');
-            await falseNegativesLaunchHandler.execute(setProgressMessage, () => {});
+            await falseNegativesLaunchHandler.execute(
+              setProgressMessage,
+              () => {},
+            );
           }
           break;
         case 'qc-review':
@@ -108,7 +120,10 @@ export default function LaunchAnnotationSetModal({
         case 'individual-id':
           if (individualIdLaunchHandler) {
             setProgressMessage('Initializing launch...');
-            await individualIdLaunchHandler.execute(setProgressMessage, () => {});
+            await individualIdLaunchHandler.execute(
+              setProgressMessage,
+              () => {},
+            );
           }
           break;
       }
@@ -119,7 +134,7 @@ export default function LaunchAnnotationSetModal({
       onOptimisticStatus?.(project.id, originalStatus);
       setProgressMessage('');
       setLaunchError(
-        error instanceof Error ? error.message : 'Failed to launch the task'
+        error instanceof Error ? error.message : 'Failed to launch the task',
       );
       setLaunching(false);
       return;
@@ -134,94 +149,110 @@ export default function LaunchAnnotationSetModal({
         <Title>Launch for Manual Annotation</Title>
       </Header>
       <Body>
-        <Form>
-          <Tabs
-            onTabChange={(tab) => {
-              if (launching) return;
-              const next = tabTaskTypes[tab];
-              if (next) setTaskType(next);
-            }}
-            disableSwitching={launching}
-          >
-            <Tab label='Species Labelling'>
-              <SpeciesLabelling
-                project={project}
-                annotationSet={annotationSet}
-                launching={launching}
-                setLaunchDisabled={setLaunchDisabled}
-                setSpeciesLaunchHandler={setSpeciesLaunchHandler as any}
-              />
-            </Tab>
-            <Tab label='False Negatives'>
-              <FalseNegatives
-                project={project}
-                annotationSet={annotationSet}
-                launching={launching}
-                setLaunchDisabled={setLaunchDisabled}
-                setFalseNegativesLaunchHandler={setFalseNegativesLaunchHandler as any}
-              />
-            </Tab>
-            <Tab label='Review'>
-              <QCReview
-                project={project}
-                annotationSet={annotationSet}
-                launching={launching}
-                setLaunchDisabled={setLaunchDisabled}
-                setQCLaunchHandler={setQCLaunchHandler as any}
-              />
-            </Tab>
-            <Tab label='Info Tags'>
-              <InfoTagsLaunch
-                project={project}
-                annotationSet={annotationSet}
-                launching={launching}
-                setLaunchDisabled={setLaunchDisabled}
-                setInfoTagsLaunchHandler={setInfoTagsLaunchHandler as any}
-              />
-            </Tab>
-            <Tab label='Homographies'>
-              <HomographyLaunch
-                project={project}
-                annotationSet={annotationSet}
-                launching={launching}
-                setLaunchDisabled={setLaunchDisabled}
-                setHomographyLaunchHandler={setHomographyLaunchHandler as any}
-              />
-            </Tab>
-            <Tab label='ChainLinker'>
-              <IndividualId
-                project={project}
-                annotationSet={annotationSet}
-                launching={launching}
-                setLaunchDisabled={setLaunchDisabled}
-                setIndividualIdLaunchHandler={
-                  setIndividualIdLaunchHandler as any
-                }
-              />
-            </Tab>
-          </Tabs>
-        </Form>
-        {launchError && (
-          <Alert variant='danger' className='mt-3 mb-0'>
-            {launchError}
-          </Alert>
-        )}
-        {progressMessage && (
-          <div className='mt-3 text-center text-muted d-flex justify-content-center align-items-center gap-2'>
-            <span role='status' aria-live='polite'>
-              <span className='spinner-border spinner-border-sm me-2' />
-              {progressMessage}
-            </span>
-          </div>
-        )}
+        <form>
+          <LaunchLabelContext.Provider value={setLaunchLabel}>
+            <Tabs
+              onTabChange={(tab) => {
+                if (launching) return;
+                const next = tabTaskTypes[tab];
+                if (next) setTaskType(next);
+              }}
+              disableSwitching={launching}
+            >
+              <Tab label='Species Labelling'>
+                <SpeciesLabelling
+                  project={project}
+                  annotationSet={annotationSet}
+                  launching={launching}
+                  setLaunchDisabled={setLaunchDisabled}
+                  setSpeciesLaunchHandler={setSpeciesLaunchHandler as any}
+                />
+              </Tab>
+              <Tab label='False Negatives'>
+                <FalseNegatives
+                  project={project}
+                  annotationSet={annotationSet}
+                  launching={launching}
+                  setLaunchDisabled={setLaunchDisabled}
+                  setFalseNegativesLaunchHandler={
+                    setFalseNegativesLaunchHandler as any
+                  }
+                />
+              </Tab>
+              <Tab label='Review'>
+                <QCReview
+                  project={project}
+                  annotationSet={annotationSet}
+                  launching={launching}
+                  setLaunchDisabled={setLaunchDisabled}
+                  setQCLaunchHandler={setQCLaunchHandler as any}
+                />
+              </Tab>
+              <Tab label='Info Tags'>
+                <InfoTagsLaunch
+                  project={project}
+                  annotationSet={annotationSet}
+                  launching={launching}
+                  setLaunchDisabled={setLaunchDisabled}
+                  setInfoTagsLaunchHandler={setInfoTagsLaunchHandler as any}
+                />
+              </Tab>
+              <Tab label='Homographies'>
+                <HomographyLaunch
+                  project={project}
+                  annotationSet={annotationSet}
+                  launching={launching}
+                  setLaunchDisabled={setLaunchDisabled}
+                  setHomographyLaunchHandler={setHomographyLaunchHandler as any}
+                />
+              </Tab>
+              <Tab label='ChainLinker'>
+                <IndividualId
+                  project={project}
+                  annotationSet={annotationSet}
+                  launching={launching}
+                  setLaunchDisabled={setLaunchDisabled}
+                  setIndividualIdLaunchHandler={
+                    setIndividualIdLaunchHandler as any
+                  }
+                />
+              </Tab>
+            </Tabs>
+          </LaunchLabelContext.Provider>
+        </form>
         <Footer>
           <Button
+            variant='ghost'
+            className='mr-auto'
+            disabled={launching}
+            onClick={onClose}
+          >
+            Close
+          </Button>
+          {launchError ? (
+            <span className='max-w-md text-xs text-danger'>{launchError}</span>
+          ) : (
+            progressMessage && (
+              <span
+                role='status'
+                aria-live='polite'
+                className='flex items-center gap-2 text-xs text-muted-foreground'
+              >
+                <Spinner size='sm' />
+                {progressMessage}
+              </span>
+            )
+          )}
+          <Button
             variant='primary'
+            title={launchLabel?.disabledReason}
             disabled={
               launchDisabled ||
               launching ||
+              !!launchLabel?.disabledReason ||
               (taskType === 'species-labelling' && !speciesLaunchHandler) ||
-              (taskType === 'false-negatives' && !falseNegativesLaunchHandler) ||
+              (taskType === 'false-negatives' &&
+                !falseNegativesLaunchHandler) ||
               (taskType === 'qc-review' && !qcLaunchHandler) ||
               (taskType === 'info-tags' && !infoTagsLaunchHandler) ||
               (taskType === 'homographies' && !homographyLaunchHandler) ||
@@ -229,10 +260,7 @@ export default function LaunchAnnotationSetModal({
             }
             onClick={handleSubmit}
           >
-            Launch
-          </Button>
-          <Button variant='dark' disabled={launching} onClick={onClose}>
-            Close
+            {launching ? 'Launching...' : (launchLabel?.text ?? 'Launch')}
           </Button>
         </Footer>
       </Body>

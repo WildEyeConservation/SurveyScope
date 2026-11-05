@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   show: boolean;
@@ -26,26 +34,28 @@ export function DeleteAnnotationDialog({
 }: Props) {
   const others = Math.max(0, chainSize - 1);
   return (
-    <Modal show={show} onHide={onCancel} centered>
-      <Modal.Header closeButton>
-        <Modal.Title>Delete linked annotation</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        This annotation is linked to {others} other{others === 1 ? '' : 's'} of
-        the same individual. Delete just this sighting, or the entire chain of{' '}
-        <strong>{chainSize}</strong>?
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant='secondary' onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button variant='outline-danger' onClick={onDeleteOne}>
-          Delete this one
-        </Button>
-        <Button variant='danger' onClick={onDeleteChain}>
-          Delete entire chain
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent centered>
+        <DialogHeader closeButton>
+          <DialogTitle>Delete linked annotation</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          This annotation is linked to {others} other{others === 1 ? '' : 's'}{' '}
+          of the same individual. Delete just this sighting, or the entire chain
+          of <strong>{chainSize}</strong>?
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='ghost' className='mr-auto' onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant='outline-danger' onClick={onDeleteOne}>
+            Delete this one
+          </Button>
+          <Button variant='danger' onClick={onDeleteChain}>
+            Delete entire chain
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -35,7 +35,7 @@ export function getCropZoomRange(width: number, height: number): CropZoomRange {
   const minDim = Math.min(width, height);
   const maxSteps = Math.max(
     0,
-    Math.min(maxZ, Math.floor(Math.log2(minDim / CROP_SIZE)))
+    Math.min(maxZ, Math.floor(Math.log2(minDim / CROP_SIZE))),
   );
   return { maxZ, maxSteps };
 }
@@ -70,7 +70,9 @@ interface CropResult {
  * fully inside the image bounds — the marker shifts off-centre rather than
  * leaving us with a transparent border.
  */
-export async function fetchCenteredCrop(params: CropParams): Promise<CropResult> {
+export async function fetchCenteredCrop(
+  params: CropParams,
+): Promise<CropResult> {
   const { sourceKey, imageWidth, imageHeight, x, y } = params;
   const maxZ = getMaxZ(imageWidth, imageHeight);
   const z = Math.max(0, Math.min(params.zoom ?? maxZ, maxZ));
@@ -145,8 +147,8 @@ export async function fetchCenteredCrop(params: CropParams): Promise<CropResult>
                 reject(new Error(`Failed to decode tile ${path}`));
               };
               img.src = url;
-            })
-        )
+            }),
+        ),
       );
     }
   }

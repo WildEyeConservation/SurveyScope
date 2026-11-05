@@ -53,7 +53,7 @@ export class PhashIndex<T> {
   constructor(threshold = 4, hashLength = 64, bandCount = 4) {
     if (hashLength % bandCount !== 0) {
       throw new Error(
-        `hashLength (${hashLength}) must be divisible by bandCount (${bandCount})`
+        `hashLength (${hashLength}) must be divisible by bandCount (${bandCount})`,
       );
     }
     this.threshold = threshold;

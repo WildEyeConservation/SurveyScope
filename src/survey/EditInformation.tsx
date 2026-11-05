@@ -1,30 +1,36 @@
-import { Button, Form } from 'react-bootstrap';
-import { Footer } from '../Modal';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useQueryClient } from '@tanstack/react-query';
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
-import { useQueryClient } from '@tanstack/react-query';
+import { Footer } from '../Modal';
 import { loadProjectImages } from '../projectImages';
-import SurveyStructure, { Camera } from './SurveyStructure';
+import SurveyStructure, { Camera, SectionTitle } from './SurveyStructure';
 
 export default function EditInformation({ projectId }: { projectId: string }) {
   const { client, showModal } = useContext(GlobalContext)!;
   const [newProjectName, setNewProjectName] = useState('');
+  const [savedName, setSavedName] = useState('');
+  const [justSaved, setJustSaved] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [structureFetching, setStructureFetching] = useState(false);
   const [structure, setStructure] = useState<Camera[]>([]);
+  const [loadedCount, setLoadedCount] = useState(0);
   const [disabled, setDisabled] = useState(false);
 
   const queryClient = useQueryClient();
 
   const handleSubmit = async () => {
+    const name = newProjectName.trim();
     setDisabled(true);
 
     const { data: project } = await client.models.Project.update({
       id: projectId,
-      name: newProjectName,
+      name,
     });
 
-    if (project?.name === newProjectName) {
+    if (project?.name === name) {
       const {
         data: [testPreset],
       } = await client.models.TestPreset.testPresetsByOwnerProjectId({
@@ -34,7 +40,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
       if (testPreset) {
         await client.models.TestPreset.update({
           id: testPreset.id,
-          name: newProjectName,
+          name,
         });
       }
     }
@@ -44,6 +50,11 @@ export default function EditInformation({ projectId }: { projectId: string }) {
     });
 
     setDisabled(false);
+    if (project) {
+      setNewProjectName(project.name);
+      setSavedName(project.name);
+      setJustSaved(true);
+    }
 
     queryClient.invalidateQueries({ queryKey: ['Project'] });
     queryClient.invalidateQueries({ queryKey: ['TestPreset'] });
@@ -58,11 +69,12 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
       const { data: project } = await client.models.Project.get(
         { id: projectId },
-        { signal }
+        { signal },
       );
 
       if (project) {
         setNewProjectName(project.name);
+        setSavedName(project.name);
       }
 
       setFetching(false);
@@ -70,13 +82,13 @@ export default function EditInformation({ projectId }: { projectId: string }) {
 
     async function buildSurveyStructure() {
       setStructureFetching(true);
+      setLoadedCount(0);
 
       try {
-        const { data: cameras } =
-          await client.models.Camera.camerasByProjectId(
-            { projectId },
-            { signal }
-          );
+        const { data: cameras } = await client.models.Camera.camerasByProjectId(
+          { projectId },
+          { signal },
+        );
 
         const images = await loadProjectImages(
           client,
@@ -90,7 +102,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
             'altitude_wgs84',
             'timestamp',
           ],
-          { signal }
+          { signal, onProgress: setLoadedCount },
         );
 
         const surveyCameras =
@@ -159,51 +171,68 @@ export default function EditInformation({ projectId }: { projectId: string }) {
     }
 
     const reportError = (error: unknown) => {
-      if (!signal.aborted) console.error('Failed to load survey information', error);
+      if (!signal.aborted)
+        console.error('Failed to load survey information', error);
     };
     getProject().catch(reportError);
     buildSurveyStructure().catch(reportError);
     return () => controller.abort();
   }, [client, projectId]);
 
+  const trimmedName = newProjectName.trim();
+  const unsaved = !fetching && trimmedName !== savedName;
+
   return (
     <>
-      <Form className='d-flex flex-column gap-3 p-3'>
-        <div className='d-flex flex-column'>
-          <label
-            className='text-uppercase fw-semibold text-muted mb-1'
-            style={{ letterSpacing: 0.5, fontSize: 12 }}
-          >
-            Survey Name
-          </label>
-          <Form.Control
+      <form
+        className='flex flex-col gap-2 p-4'
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (unsaved && trimmedName) handleSubmit();
+        }}
+      >
+        <SectionTitle>Details</SectionTitle>
+        <div>
+          <Label htmlFor='survey-name'>Survey name</Label>
+          <Input
+            id='survey-name'
             type='text'
             value={newProjectName}
-            disabled={fetching}
-            placeholder='Enter survey name'
-            onChange={(event) => setNewProjectName(event.target.value)}
+            disabled={fetching || disabled}
+            placeholder='A unique name for the survey'
+            onChange={(event) => {
+              setNewProjectName(event.target.value);
+              setJustSaved(false);
+            }}
           />
         </div>
-        <hr
-          className='m-0'
-          style={{ borderTop: '1px solid rgba(255, 255, 255, 0.12)', opacity: 1 }}
-        />
         <SurveyStructure
           cameras={structure}
           projectName={newProjectName}
           loading={structureFetching}
+          loadedCount={loadedCount}
         />
-      </Form>
+      </form>
       <Footer>
-        <Button variant='primary' onClick={handleSubmit} disabled={disabled}>
-          Save
-        </Button>
         <Button
-          variant='dark'
+          variant='ghost'
+          className='mr-auto'
           onClick={() => showModal(null)}
           disabled={disabled}
         >
           Close
+        </Button>
+        {unsaved ? (
+          <span className='text-xs text-warning'>● Unsaved name change</span>
+        ) : (
+          justSaved && <span className='text-xs text-success'>Saved</span>
+        )}
+        <Button
+          variant='primary'
+          onClick={handleSubmit}
+          disabled={disabled || !unsaved || !trimmedName}
+        >
+          {disabled ? 'Saving...' : 'Save changes'}
         </Button>
       </Footer>
     </>

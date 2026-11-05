@@ -29,7 +29,7 @@ export function useActivityHeartbeat(params: {
           client as any
         ).mutations.pingIndividualIdTransect(
           { id: transectRowId },
-          { retry: false }
+          { retry: false },
         );
         if (res?.errors && res.errors.length > 0 && !cancelled) {
           onLostRef.current();

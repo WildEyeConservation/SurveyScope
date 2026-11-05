@@ -10,9 +10,13 @@
  * (set by the Jobs page after claimIndividualIdTransect) and passes them as
  * props to the harness.
  */
-export { IndividualIdTaskPage } from './IndividualIdTaskPage';
 export { IndividualIdHarness } from './IndividualIdHarness';
 export { IndividualIdMapPair } from './IndividualIdMapPair';
-export { IndividualIdPairTaskPage } from './IndividualIdPairTaskPage';
 export { IndividualIdPairHarness } from './IndividualIdPairHarness';
-export type { MatchCandidate, NeighbourPair, PairCompletionState } from './types';
+export { IndividualIdPairTaskPage } from './IndividualIdPairTaskPage';
+export { IndividualIdTaskPage } from './IndividualIdTaskPage';
+export type {
+  MatchCandidate,
+  NeighbourPair,
+  PairCompletionState,
+} from './types';

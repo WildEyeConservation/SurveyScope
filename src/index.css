@@ -1,170 +1,515 @@
-body {
-  margin: 0;
-  font-family: Roboto, Helvetica, Arial, sans-serif;
-  /* font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif; */
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer theme, base, amplify, components, utilities;
+
+@import 'tailwindcss';
+@import '@aws-amplify/ui-react/styles.css' layer(amplify);
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Superhero palette lives in .dark; <html class="dark"> is fixed. Light mode is defined but unused. */
+:root {
+  --radius: 0rem;
+  --background: #ffffff;
+  --foreground: #212529;
+  --card: #ffffff;
+  --card-foreground: #212529;
+  --popover: #ffffff;
+  --popover-foreground: #212529;
+  --primary: #df6919;
+  --primary-hover: #b25414;
+  --primary-foreground: #ffffff;
+  --secondary: #4e5d6c;
+  --secondary-foreground: #ffffff;
+  --muted: #e9ecef;
+  --muted-foreground: #6c757d;
+  --accent: rgba(0, 0, 0, 0.075);
+  --accent-foreground: #212529;
+  --destructive: #d9534f;
+  --success: #5cb85c;
+  --info: #5bc0de;
+  --warning: #ffc107;
+  --danger: #d9534f;
+  --light: #abb6c2;
+  --dark: #20374c;
+  /* Dark with a 5% white overlay. */
+  --table-head: #2b4155;
+  --border: #dee2e6;
+  --border-subtle: rgba(0, 0, 0, 0.175);
+  --input: #dee2e6;
+  --field: #ffffff;
+  --field-foreground: #212529;
+  --ring: #df6919;
+  --chart-1: #df6919;
+  --chart-2: #5bc0de;
+  --chart-3: #5cb85c;
+  --chart-4: #ffc107;
+  --chart-5: #d9534f;
 }
 
-.icon {
-  max-width: 70%;
-  max-height: 70%;
-  margin: 4px;
+.dark {
+  --background: #2b3e50;
+  --foreground: #ebebeb;
+  --card: #4e5d6c;
+  --card-foreground: #ebebeb;
+  --popover: #4e5d6c;
+  --popover-foreground: #ebebeb;
+  --primary: #df6919;
+  --primary-hover: #b25414;
+  --primary-foreground: #ffffff;
+  --secondary: #4e5d6c;
+  --secondary-foreground: #ffffff;
+  --muted: #20374c;
+  --muted-foreground: rgba(235, 235, 235, 0.75);
+  --accent: rgba(255, 255, 255, 0.075);
+  --accent-foreground: #ebebeb;
+  --destructive: #d9534f;
+  --success: #5cb85c;
+  --info: #5bc0de;
+  --warning: #ffc107;
+  --danger: #d9534f;
+  --light: #abb6c2;
+  --dark: #20374c;
+  /* Dark with a 5% white overlay. */
+  --table-head: #2b4155;
+  --border: #ced4da;
+  --border-subtle: rgba(0, 0, 0, 0.175);
+  --input: transparent;
+  --field: #ffffff;
+  --field-foreground: #212529;
+  --ring: #df6919;
 }
 
-.transectWarning{
+@theme inline {
+  --font-sans: Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:
+    source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+
+  --breakpoint-sm: 576px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 992px;
+  --breakpoint-xl: 1200px;
+  --breakpoint-2xl: 1400px;
+
+  --radius-xs: var(--radius);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: var(--radius);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-light: var(--light);
+  --color-dark: var(--dark);
+  --color-table-head: var(--table-head);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-input: var(--input);
+  --color-field: var(--field);
+  --color-field-foreground: var(--field-foreground);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+}
+
+@utility select-chevron {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-size: 16px 12px;
+}
+
+/* Superhero table cells; in a lower layer so bg utilities on cells and rows still win. */
+@layer components {
+  [data-slot='table'] {
+    --table-bg: #0f2537;
+    --table-accent: rgba(255, 255, 255, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+  [data-slot='table'] :where(thead, tbody, tfoot, tr, td, th) {
+    border-color: inherit;
+  }
+  [data-slot='table'][data-variant='dark'] {
+    --table-bg: var(--dark);
+  }
+  [data-slot='table'] :where(td, th) {
+    padding: 0.5rem;
+    background-color: var(--table-bg);
+    box-shadow: inset 0 0 0 9999px var(--table-accent);
+    border-bottom-width: 1px;
+  }
+  [data-slot='table'][data-size='sm'] :where(td, th) {
+    padding: 0.25rem;
+  }
+  [data-slot='table'][data-striped] > tbody > tr:nth-of-type(odd) {
+    --table-accent: rgba(0, 0, 0, 0.05);
+  }
+  [data-slot='table'][data-hover] > tbody > tr:hover {
+    --table-accent: rgba(255, 255, 255, 0.075);
+  }
+  [data-slot='grid-table']
+    [data-slot='grid-row']:nth-child(odd of [data-slot='grid-row']) {
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+  [data-slot='grid-table'] [data-slot='grid-row']:hover {
+    background-color: rgba(255, 255, 255, 0.075);
+  }
+  [data-slot='table'][data-bordered] :where(td, th) {
+    border-width: 1px;
+  }
+  [data-slot='table'][data-borderless] :where(td, th) {
+    border: 0;
+  }
+}
+
+/* Bootstrap reboot typography, so headings, paragraphs and lists keep their old spacing. */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background font-sans text-foreground;
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  h1 {
+    font-size: calc(1.375rem + 1.5vw);
+  }
+  h2 {
+    font-size: calc(1.325rem + 0.9vw);
+  }
+  h3 {
+    font-size: calc(1.3rem + 0.6vw);
+  }
+  h4 {
+    font-size: calc(1.275rem + 0.3vw);
+  }
+  h5 {
+    font-size: 1.25rem;
+  }
+  h6 {
+    font-size: 1rem;
+  }
+  @media (min-width: 1200px) {
+    h1 {
+      font-size: 2.5rem;
+    }
+    h2 {
+      font-size: 2rem;
+    }
+    h3 {
+      font-size: 1.75rem;
+    }
+    h4 {
+      font-size: 1.5rem;
+    }
+  }
+  p {
+    margin-top: 0;
+    margin-bottom: 1rem;
+  }
+  ul,
+  ol {
+    padding-left: 2rem;
+    margin-top: 0;
+    margin-bottom: 1rem;
+  }
+  ul {
+    list-style: disc;
+  }
+  ol {
+    list-style: decimal;
+  }
+  ul ul,
+  ul ol,
+  ol ul,
+  ol ol {
+    margin-bottom: 0;
+  }
+  dl {
+    margin-top: 0;
+    margin-bottom: 1rem;
+  }
+  dt {
+    font-weight: 700;
+  }
+  dd {
+    margin-bottom: 0.5rem;
+    margin-left: 0;
+  }
+  b,
+  strong {
+    font-weight: bolder;
+  }
+  small {
+    font-size: 0.875em;
+  }
+  a {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+  a:hover {
+    color: var(--primary-hover);
+  }
+  hr {
+    margin: 1rem 0;
+    color: inherit;
+    border-top: 1px solid;
+    opacity: 0.25;
+  }
+  label {
+    display: inline-block;
+    font-size: 0.875rem;
+  }
+  legend {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+  }
+  th {
+    text-align: inherit;
+  }
+  img,
+  svg {
+    vertical-align: middle;
+  }
+  img,
+  svg,
+  video,
+  canvas {
+    display: inline;
+  }
+  img,
+  video {
+    max-width: none;
+  }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.875em;
+  }
+}
+
+/* App styles sit below utilities, as Bootstrap utilities used !important. */
+@layer components {
+  .icon {
+    max-width: 70%;
+    max-height: 70%;
+    margin: 4px;
+  }
+
+  .transectWarning {
     color: red;
-}
+  }
 
-.transectSlider {
-  width: 100%;
-}
+  .transectSlider {
+    width: 100%;
+  }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}
+  code {
+    font-family:
+      source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  }
 
-.marker>div {
-  width: 1.5rem;
-  height: 1.5rem;
-  display: block;
-  left: -0.75rem;
-  top: -0.75rem;
-  opacity: 1;
-  position: relative;
-  border-radius: 0.75rem;
-  border: 2px solid;
-  transform-origin: center;
-  perspective: 1000px;
-  transform-style: preserve-3d;
-}
+  .marker > div {
+    width: 1.5rem;
+    height: 1.5rem;
+    display: block;
+    left: -0.75rem;
+    top: -0.75rem;
+    opacity: 1;
+    position: relative;
+    border-radius: 0.75rem;
+    border: 2px solid;
+    transform-origin: center;
+    perspective: 1000px;
+    transform-style: preserve-3d;
+  }
 
-.marker[selected]>div,.marker[candidate]>div {
-      opacity: 1;
-}
+  .marker[selected] > div,
+  .marker[candidate] > div {
+    opacity: 1;
+  }
 
-.markerLabel { position: absolute;
-                top: 0.2rem;
-                left: -0rem;
-                font-weight: bolder;
-                font-size: 0.5rem;
-                color: #FFFFFF;
-                text-align: center;
-                width: 3rem;} 
-
-@keyframes spin {
-  from   {transform: translateX(-50%) rotateY(0deg) translateX(50%)}
-  to {transform: translateX(-50%) rotateY(180deg) translateX(50%)}
-}
-
-@keyframes spinSmall {
-  from   {transform: translateX(-50%) scale(0.7) rotateY(0deg) translateX(50%)}
-  to {transform: translateX(-50%) scale(0.7) rotateY(180deg) translateX(50%)}
-}
-
-@keyframes throb {
-  from {transform: scale(1,1)}
-  to {transform: scale(1.1,1.1)}
-}
-
-@keyframes dim {
-  from {opacity: 0.8}
-  to {opacity: 0.2}
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-.spinning {
-  animation: rotate 1s linear infinite;
-}
-
-/* ChainLinker toolbar: on wide screens the pairing radius is pinned to the
-   centre of the single row; below Bootstrap's lg breakpoint it becomes a
-   second, full-width row with the slider stretched. */
-@media (min-width: 992px) {
-  .ii-toolbar-centre {
+  .markerLabel {
     position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    top: 0.2rem;
+    left: -0rem;
+    font-weight: bolder;
+    font-size: 0.5rem;
+    color: #ffffff;
+    text-align: center;
+    width: 3rem;
   }
-  .ii-toolbar-slider {
-    width: 140px;
+
+  @keyframes spin {
+    from {
+      transform: translateX(-50%) rotateY(0deg) translateX(50%);
+    }
+    to {
+      transform: translateX(-50%) rotateY(180deg) translateX(50%);
+    }
   }
-}
-@media (max-width: 991.98px) {
-  .ii-toolbar-slider {
-    flex: 1 1 auto;
-    min-width: 0;
+
+  @keyframes spinSmall {
+    from {
+      transform: translateX(-50%) scale(0.7) rotateY(0deg) translateX(50%);
+    }
+    to {
+      transform: translateX(-50%) scale(0.7) rotateY(180deg) translateX(50%);
+    }
   }
-}
 
-.marker[withnote] {animation-name: throb;
-           animation-duration: 1s;
-           animation-iteration-count: infinite;
-           animation-direction: alternate;} 
+  @keyframes throb {
+    from {
+      transform: scale(1, 1);
+    }
+    to {
+      transform: scale(1.1, 1.1);
+    }
+  }
 
-.marker[obscured] {animation-name: dim;
-                   animation-duration: 1s;
-                   animation-iteration-count: infinite;
-                   animation-direction: alternate;}
+  @keyframes dim {
+    from {
+      opacity: 0.8;
+    }
+    to {
+      opacity: 0.2;
+    }
+  }
 
-                   
-.marker[shadow] {transform: scale(0.7);}
- 
+  @keyframes rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
-.marker[selected]
-            {animation-name: spin;
-           animation-duration: 1.5s;
-           animation-timing-function: ease-in-out;
-           animation-iteration-count: infinite;
-           animation-direction: alternate;
-           transform-origin: 50% 50%;
-           transform-style: preserve-3d;}
+  .spinning {
+    animation: rotate 1s linear infinite;
+  }
 
- .marker[shadow][selected] {
-          animation-name: spinSmall;
-          animation-duration: 1.5s;
-          animation-timing-function: ease-in-out;
-          animation-iteration-count: infinite;
-          animation-direction: alternate;
-          transform-origin: 50% 50%;
-          transform-style: preserve-3d;
-}
+  .marker[withnote] {
+    animation-name: throb;
+    animation-duration: 1s;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
 
-.legend {
+  .marker[obscured] {
+    animation-name: dim;
+    animation-duration: 1s;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+
+  .marker[shadow] {
+    transform: scale(0.7);
+  }
+
+  .marker[selected] {
+    animation-name: spin;
+    animation-duration: 1.5s;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+    transform-origin: 50% 50%;
+    transform-style: preserve-3d;
+  }
+
+  .marker[shadow][selected] {
+    animation-name: spinSmall;
+    animation-duration: 1.5s;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+    transform-origin: 50% 50%;
+    transform-style: preserve-3d;
+  }
+
+  .legend {
     line-height: 18px;
     color: #555;
-}
+  }
 
-.legend i {
+  .legend i {
     width: 15px;
     height: 15px;
     float: left;
     margin-right: 8px;
     opacity: 0.7;
-}
+  }
 
-.info {
+  .info {
     padding: 6px 8px;
-    font: 14px/16px Arial, Helvetica, sans-serif;
+    font:
+      14px/16px Arial,
+      Helvetica,
+      sans-serif;
     background: white;
     background: rgba(255, 255, 255, 0.8);
     box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
     border-radius: 5px;
-}
+  }
 
-.info h4 {
+  .info h4 {
     margin: 0 0 5px;
     color: #777;
+  }
 }
 
-.sr-only {
-  display: none;
-} 
+@keyframes progress-stripes {
+  0% {
+    background-position-x: 1rem;
+  }
+}
+
+@keyframes spinner-grow {
+  0% {
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: none;
+  }
+}

@@ -1,3 +1,10 @@
+import { Badge } from '@/components/ui/badge';
+import {
+  ChangeMessageVisibilityCommand,
+  DeleteMessageCommand,
+  GetQueueAttributesCommand,
+  ReceiveMessageCommand,
+} from '@aws-sdk/client-sqs';
 import {
   useCallback,
   useContext,
@@ -7,20 +14,14 @@ import {
   useState,
 } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  ChangeMessageVisibilityCommand,
-  DeleteMessageCommand,
-  GetQueueAttributesCommand,
-  ReceiveMessageCommand,
-} from '@aws-sdk/client-sqs';
-import { Badge } from 'react-bootstrap';
-import { GlobalContext, UserContext } from './Context';
-import { TaskBuffer } from './TaskBuffer';
 import ClaimedInfoTagImage from './ClaimedInfoTagImage';
+import { GlobalContext, UserContext } from './Context';
 import { createInfoTagDelivery } from './infoTagDelivery';
-import { fetchAllPaginatedResults } from './utils';
-import useUnsavedWorkGuard from './useUnsavedWorkGuard';
+import { plural } from './survey/launchLabel';
+import { TaskBuffer } from './TaskBuffer';
 import { touchQueue } from './touchQueue';
+import useUnsavedWorkGuard from './useUnsavedWorkGuard';
+import { fetchAllPaginatedResults } from './utils';
 
 const VISIBILITY_TIMEOUT_SECONDS = 3600;
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
@@ -85,7 +86,7 @@ export default function InfoTagTask() {
           annotationSetId,
           selectionSet: ['id', 'name', 'shortcutKey'] as const,
           limit: 1000,
-        }
+        },
       ),
       fetchAllPaginatedResults(
         client.models.InfoTag.infoTagsByAnnotationSetId,
@@ -93,7 +94,7 @@ export default function InfoTagTask() {
           annotationSetId,
           selectionSet: ['id', 'name', 'shortcutKey', 'color'] as const,
           limit: 1000,
-        }
+        },
       ),
     ]).then(([categoryRows, infoTagRows]) => {
       if (!mounted) return;
@@ -102,7 +103,7 @@ export default function InfoTagTask() {
           id: category.id,
           name: category.name,
           shortcutKey: category.shortcutKey ?? null,
-        }))
+        })),
       );
       setInfoTags(
         infoTagRows.map((tag) => ({
@@ -110,7 +111,7 @@ export default function InfoTagTask() {
           name: tag.name,
           shortcutKey: tag.shortcutKey ?? null,
           color: tag.color ?? null,
-        }))
+        })),
       );
     });
     return () => {
@@ -127,7 +128,7 @@ export default function InfoTagTask() {
       mountedRef.current = false;
       for (const release of releases) {
         void release().catch((error) =>
-          console.warn('Info Tags message release failed', error)
+          console.warn('Info Tags message release failed', error),
         );
       }
       for (const timer of heartbeats) {
@@ -152,7 +153,7 @@ export default function InfoTagTask() {
             QueueUrl: queueUrl,
             MaxNumberOfMessages: 1,
             VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
-          })
+          }),
         );
         const entity = response.Messages?.[0];
         if (!entity) {
@@ -166,7 +167,7 @@ export default function InfoTagTask() {
               QueueUrl: queueUrl,
               ReceiptHandle: entity.ReceiptHandle,
               VisibilityTimeout: seconds,
-            })
+            }),
           );
         };
         if (!mountedRef.current) {
@@ -189,7 +190,7 @@ export default function InfoTagTask() {
             console.warn('Info Tags visibility heartbeat failed', {
               imageId,
               error,
-            })
+            }),
           );
         }, HEARTBEAT_INTERVAL_MS);
         heartbeatTimersRef.current.add(heartbeat);
@@ -204,7 +205,7 @@ export default function InfoTagTask() {
               new DeleteMessageCommand({
                 QueueUrl: queueUrl,
                 ReceiptHandle: entity.ReceiptHandle,
-              })
+              }),
             );
           },
           visibility: changeVisibility,
@@ -235,10 +236,10 @@ export default function InfoTagTask() {
           new GetQueueAttributesCommand({
             QueueUrl: queueUrl,
             AttributeNames: ['ApproximateNumberOfMessages'],
-          })
+          }),
         );
         setImagesRemaining(
-          result.Attributes?.ApproximateNumberOfMessages ?? 'Unknown'
+          result.Attributes?.ApproximateNumberOfMessages ?? 'Unknown',
         );
       } catch {
         // Status is best effort.
@@ -257,15 +258,15 @@ export default function InfoTagTask() {
           projectId: membership.projectId,
           queueId: membership.queueId!,
         })),
-    [myMembershipHook.data]
+    [myMembershipHook.data],
   );
 
   return (
     <div
-      className='d-flex flex-column align-items-center gap-3 w-100 h-100'
+      className='flex h-full w-full flex-col items-center gap-4'
       style={{ paddingTop: 12, paddingBottom: 12 }}
     >
-      <div className='w-100 h-100'>
+      <div className='h-full w-full'>
         {queueUrl && categories.length > 0 && infoTags.length > 0 ? (
           <TaskBuffer
             index={index}
@@ -291,17 +292,22 @@ export default function InfoTagTask() {
             )}
           />
         ) : (
-          <div className='d-flex justify-content-center align-items-center h-100'>
-            <div className='text-muted'>
+          <div className='flex h-full items-center justify-center'>
+            <div className='text-muted-foreground'>
               Loading informational tagging queue...
             </div>
           </div>
         )}
       </div>
-      <Badge className='d-flex flex-row align-items-center justify-content-center gap-3 p-2 w-100 bg-secondary flex-wrap'>
-        <p className='mb-0'>{imagesRemaining} images remaining</p>
-        <span className='d-none d-sm-block'>|</span>
-        <p className='mb-0'>{index} images completed in this session</p>
+      <Badge className='flex w-full flex-row flex-wrap items-center justify-center gap-4 bg-secondary p-2'>
+        <p className='mb-0'>
+          {imagesRemaining === '1' ? '1 image' : `${imagesRemaining} images`}{' '}
+          remaining
+        </p>
+        <span className='hidden sm:block'>|</span>
+        <p className='mb-0'>
+          {plural(index, 'image')} completed in this session
+        </p>
       </Badge>
     </div>
   );

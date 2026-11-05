@@ -1,5 +1,7 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import {
@@ -23,17 +25,17 @@ import {
   type StrataClient,
 } from './strataStore';
 import {
+  runSurveySave,
+  surveySaveSettled,
+  useSurveySaving,
+} from './surveySaves';
+import {
   carryStrata,
   clearJollyResults,
   loadStrata,
   type NamedStratum,
   type SavedStratum,
 } from './transectStrata';
-import {
-  runSurveySave,
-  surveySaveSettled,
-  useSurveySaving,
-} from './surveySaves';
 
 type DefineStrataProps = { projectId: string; organizationId: string };
 
@@ -83,7 +85,7 @@ export default function DefineStrata({
         if (signal.aborted) return;
         const network = initialNetwork(
           parseNetwork(project.strataNetwork),
-          strata
+          strata,
         );
         const next = { ...loadedArea, network };
         const carried = carryStrata(layoutOf(next, strata).sections, strata);
@@ -115,7 +117,7 @@ export default function DefineStrata({
         const project = await loadProjectStrata(
           strataClient,
           projectId,
-          controller.signal
+          controller.signal,
         );
         if (!controller.signal.aborted && !boundaryRecomputePending(project))
           setPending(false);
@@ -148,7 +150,7 @@ export default function DefineStrata({
 
   const trimmed = named.map((st) => st.name.trim());
   const invalid = trimmed.map(
-    (name, i) => !name || trimmed.indexOf(name) !== i
+    (name, i) => !name || trimmed.indexOf(name) !== i,
   );
 
   const areaChanged =
@@ -181,7 +183,7 @@ export default function DefineStrata({
           projectId,
           organizationId,
           named,
-          saved.strata
+          saved.strata,
         );
         if (networkChanged && area.network) {
           await saveNetwork(strataClient, projectId, area.network);
@@ -206,7 +208,7 @@ export default function DefineStrata({
       const strata = await loadStrata(client, projectId).catch(() => null);
       if (strata) setSaved((prev) => prev && { ...prev, strata });
       setSaveError(
-        'The survey area and strata could not be saved. Please try again.'
+        'The survey area and strata could not be saved. Please try again.',
       );
     } finally {
       setSaving(false);
@@ -217,7 +219,7 @@ export default function DefineStrata({
     <>
       {pending && (
         <span
-          className='text-muted d-flex align-items-center gap-2'
+          className='flex items-center gap-2 text-muted-foreground'
           style={{ fontSize: 12 }}
         >
           <Spinner animation='border' size='sm' />
@@ -225,30 +227,30 @@ export default function DefineStrata({
         </span>
       )}
       {saved && !saved.strata.length && named.length > 0 && (
-        <div className='alert alert-warning mb-0 p-2' style={{ fontSize: 12 }}>
+        <Alert variant='warning' className='mb-0 p-2' style={{ fontSize: 12 }}>
           These strata are not saved yet. Save to use them in results.
-        </div>
+        </Alert>
       )}
       {legacyReset && (
-        <div className='alert alert-warning mb-0 p-2' style={{ fontSize: 12 }}>
+        <Alert variant='warning' className='mb-0 p-2' style={{ fontSize: 12 }}>
           These strata were saved before strata lines were kept, so they cannot
           follow the new boundary. The area is one stratum again; redraw the
           lines to divide it.
-        </div>
+        </Alert>
       )}
     </>
   );
 
   return (
     <>
-      <div className='d-flex flex-column gap-3 p-3'>
-        <span className='text-muted' style={{ fontSize: '14px' }}>
+      <div className='flex flex-col gap-4 p-4'>
+        <span className='text-muted-foreground' style={{ fontSize: '14px' }}>
           Upload or draw the survey boundary and any exclusion zones, then
           divide the area into strata. Exclusion zones are deducted from the
           stratum areas when computing results.
         </span>
         {loading ? (
-          <div className='d-flex justify-content-center align-items-center'>
+          <div className='flex items-center justify-center'>
             <Spinner animation='border' />
             <span className='ms-2'>
               {surveySaving
@@ -257,10 +259,10 @@ export default function DefineStrata({
             </span>
           </div>
         ) : loadError ? (
-          <div className='alert alert-danger mb-0'>
+          <Alert variant='danger' className='mb-0'>
             The survey area could not be loaded. Close and reopen this window to
             try again.
-          </div>
+          </Alert>
         ) : (
           <SurveyAreaEditor
             value={area}
@@ -271,7 +273,7 @@ export default function DefineStrata({
               names: named.map((st) => st.name),
               onNameChange: (index, name) =>
                 setNamed((prev) =>
-                  prev.map((st, i) => (i === index ? { ...st, name } : st))
+                  prev.map((st, i) => (i === index ? { ...st, name } : st)),
                 ),
               invalid,
               dangling: layout.dangling,
@@ -280,10 +282,12 @@ export default function DefineStrata({
           />
         )}
         {saveError && (
-          <div className='alert alert-danger mb-0 p-2'>{saveError}</div>
+          <Alert variant='danger' className='mb-0 p-2'>
+            {saveError}
+          </Alert>
         )}
         {saving && (
-          <div className='d-flex justify-content-center align-items-center'>
+          <div className='flex items-center justify-center'>
             <Spinner animation='border' size='sm' />
             <span className='ms-2'>
               Saving, please do not close this window

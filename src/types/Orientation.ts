@@ -7,13 +7,12 @@ export type CameraOrientationRotations = Record<
 
 /** Read compatibility for uploads paused before shape groups were introduced. */
 export type PersistedCameraOrientationRotations =
-  | CameraOrientationRotations
-  | Record<string, number>;
+  CameraOrientationRotations | Record<string, number>;
 
 /** Groups by the source image's displayed dimensions, not EXIF tag values. */
 export function orientationGroupForDimensions(
   width: number,
-  height: number
+  height: number,
 ): ImageOrientationGroup {
   return height > width ? 'portrait' : 'landscape';
 }
@@ -28,7 +27,7 @@ export function normalizeQuarterTurn(rotation: number | undefined): number {
 export function orientationCorrectionFor(
   rotations: PersistedCameraOrientationRotations | undefined,
   cameraName: string,
-  orientationGroup: ImageOrientationGroup
+  orientationGroup: ImageOrientationGroup,
 ): number {
   const cameraRotation = rotations?.[cameraName];
   if (typeof cameraRotation === 'number') {

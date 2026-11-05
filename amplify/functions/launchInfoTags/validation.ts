@@ -6,6 +6,7 @@ export type LaunchInfoTagsPayload = {
   annotationSetId: string;
   categoryIds: string[];
   categoryNames?: string[];
+  queueName?: string;
   batchSize: number;
   hidden: boolean;
   zoom?: number;
@@ -50,6 +51,10 @@ export function parsePayload(request: unknown): LaunchInfoTagsPayload {
     projectId: parsed.projectId,
     annotationSetId: parsed.annotationSetId,
     categoryIds,
+    queueName:
+      typeof parsed.queueName === 'string'
+        ? parsed.queueName.trim() || undefined
+        : undefined,
     categoryNames: Array.isArray(parsed.categoryNames)
       ? parsed.categoryNames.filter(
           (name: unknown): name is string => typeof name === 'string'

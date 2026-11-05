@@ -1,56 +1,52 @@
-import './maplibreWorker';
-import ReactDOM from 'react-dom/client';
-import AppWithAuthenticator from './App.tsx';
 import './index.css';
+
+import './maplibreWorker';
+
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { Progress } from './UserContext';
-import { GlobalContextProvider } from './Context';
+import { persistQueryClient } from '@tanstack/react-query-persist-client';
+import ReactDOM from 'react-dom/client';
+import {
+  createBrowserRouter,
+  Navigate,
+  RouterProvider,
+} from 'react-router-dom';
+import Admin from './Admin';
 import AnnotationQueuePage from './AnnotationQueuePage';
-import UserStats from './UserStats';
-import WorkflowStatistics from './WorkflowStatistics';
-import { LocationLoader } from './LocationLoader';
-import { ImageLoader } from './ImageLoader';
-import { Review } from './Review';
-import RegisterOrganization from './RegisterOrganization';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
-import ErrorPage from './error-page';
-import ProjectView from './ProjectView';
-import Jobs from './user/Jobs.tsx';
-import Surveys from './survey/Surveys.tsx';
-import Permissions from './Permissions.tsx';
-import Testing from './Testing/Testing';
-import { IndividualIdPairTaskPage, IndividualIdTaskPage } from './individual-id';
+import AppWithAuthenticator from './App.tsx';
 import {
   ChainReviewTaskPage,
   ChainViewerPage,
   SharedChainViewerPage,
 } from './chain-viewer';
+import { GlobalContextProvider } from './Context';
+import ErrorPage from './error-page';
+import HomographyEditPage from './homography/HomographyEditPage';
 import HomographyTask from './homography/HomographyTask';
 import HomographyViewer from './homography/HomographyViewer';
-import HomographyEditPage from './homography/HomographyEditPage';
-import { persistQueryClient } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
-import Admin from './Admin';
-import JollyResults from './JollyResults';
-import SharedResults from './SharedResults.tsx';
-import SharedChains from './SharedChains.tsx';
-import ChainShareAdminLayout from './chain-viewer/admin/ChainShareAdminLayout.tsx';
-import ManageShares from './chain-viewer/admin/ManageShares.tsx';
-import ChainShareResults from './chain-viewer/admin/ChainShareResults.tsx';
-import DisagreementExplorer from './chain-viewer/admin/DisagreementExplorer.tsx';
+import { ImageLoader } from './ImageLoader';
 import ImageNeighbourViewer from './ImageNeighbourViewer';
-import QCReviewTask from './QCReviewTask';
+import {
+  IndividualIdPairTaskPage,
+  IndividualIdTaskPage,
+} from './individual-id';
 import InfoTagTask from './InfoTagTask';
-import { lazy, Suspense } from 'react';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const devModules = (import.meta as any).glob('./DevActions.tsx') as Record<string, () => Promise<{ DevActions: React.FC }>>;
-const DevActions = devModules['./DevActions.tsx']
-  ? lazy(() =>
-      devModules['./DevActions.tsx']().then((m) => ({ default: m.DevActions }))
-    )
-  : null;
+import JollyResults from './JollyResults';
+import { LocationLoader } from './LocationLoader';
+import Permissions from './Permissions.tsx';
+import ProjectView from './ProjectView';
+import QCReviewTask from './QCReviewTask';
+import RegisterOrganization from './RegisterOrganization';
+import { Review } from './Review';
+import SharedChains from './SharedChains.tsx';
+import SharedResults from './SharedResults.tsx';
+import Surveys from './survey/Surveys.tsx';
+import Testing from './Testing/Testing';
+import Jobs from './user/Jobs.tsx';
+import { Progress } from './UserContext';
+import UserStats from './UserStats';
+import WorkflowStatistics from './WorkflowStatistics';
 
 const persister = createSyncStoragePersister({
   storage: window.localStorage,
@@ -68,6 +64,10 @@ persistQueryClient({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   queryClient: queryClient as any,
   persister,
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query) =>
+      query.state.status === 'success' && query.meta?.persist !== false,
+  },
 });
 
 // Define global for browser environment
@@ -109,14 +109,8 @@ const router = createBrowserRouter([
         element: <SharedChainViewerPage />,
       },
       {
-        path: 'chain-share-admin',
-        element: <ChainShareAdminLayout />,
-        children: [
-          { index: true, element: <Navigate to='shares' replace /> },
-          { path: 'shares', element: <ManageShares /> },
-          { path: 'results', element: <ChainShareResults /> },
-          { path: 'disagreements', element: <DisagreementExplorer /> },
-        ],
+        path: 'chain-share-admin/*',
+        element: <Navigate to='/shared-chains?tab=manage' replace />,
       },
       {
         path: 'image-neighbour-viewer',
@@ -227,18 +221,6 @@ const router = createBrowserRouter([
         path: 'testing',
         element: <Testing />,
       },
-      ...(DevActions
-        ? [
-            {
-              path: 'dev-actions',
-              element: (
-                <Suspense fallback={null}>
-                  <DevActions />
-                </Suspense>
-              ),
-            },
-          ]
-        : []),
     ],
   },
 ]);

@@ -1,6 +1,6 @@
-import { useRouteError, useNavigate } from 'react-router-dom';
-import { Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
 import { useEffect, useState } from 'react';
+import { useNavigate, useRouteError } from 'react-router-dom';
 import { reportClientError } from './reportClientError';
 
 interface ErrorWithDetails {
@@ -77,16 +77,16 @@ ${errorDetails.stack}
   return (
     <div
       id='error-page'
-      className='d-flex flex-column align-items-center justify-content-center min-vh-100 text-center'
+      className='flex min-h-screen flex-col items-center justify-center text-center'
     >
       <h1>Oops!</h1>
       {isWebGLError ? (
-        <div style={{ maxWidth: 560 }}>
+        <div className='max-w-[560px]'>
           <p>
             Your browser can&apos;t show the images and maps SurveyScope needs.
           </p>
           <p className='mb-1 text-start'>Try these solutions:</p>
-          <ul className='text-start small'>
+          <ul className='list-disc pl-5 text-start text-sm'>
             <li>
               Turn on hardware acceleration. In Edge, go to Settings &gt; System
               and performance and switch on &quot;Use graphics acceleration when
@@ -104,7 +104,7 @@ ${errorDetails.stack}
       ) : (
         <p>Sorry, an unexpected error has occurred.</p>
       )}
-      <div className='d-flex gap-2'>
+      <div className='flex gap-2'>
         <Button variant='primary' onClick={handleGoHome}>
           Back to Surveys
         </Button>
@@ -113,7 +113,7 @@ ${errorDetails.stack}
         </Button>
       </div>
       {copySuccess && (
-        <p className='text-success mt-2 small'>
+        <p className='mt-2 text-sm text-success'>
           Error details copied to clipboard! Please send this information to our
           support team.
         </p>

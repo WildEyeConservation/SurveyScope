@@ -1,6 +1,6 @@
 import { generateClient } from 'aws-amplify/api';
-import { runWithClientLimit } from '../limitedClient';
 import { startCancellable } from '../clientCancellation';
+import { runWithClientLimit } from '../limitedClient';
 
 export * from './operations';
 
@@ -10,14 +10,14 @@ export async function storageOperation<T>(
   query: string,
   variables: Record<string, unknown>,
   field: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<T> {
   const result = (await runWithClientLimit(() =>
     startCancellable(
       () => client.graphql({ query, variables }) as Promise<unknown>,
       signal,
-      (request) => client.cancel(request)
-    )
+      (request) => client.cancel(request),
+    ),
   )) as { data?: Record<string, unknown>; errors?: { message: string }[] };
   if (result.errors?.length) {
     throw new Error(result.errors.map((e) => e.message).join('; '));
@@ -33,20 +33,20 @@ export async function imageDownloadUrl(imageId: string, sourceKey: string) {
     imageDownloadUrl(imageId: $imageId, sourceKey: $sourceKey)
   }`,
     { imageId, sourceKey },
-    'imageDownloadUrl'
+    'imageDownloadUrl',
   );
 }
 
 export async function registerImageFile(
   projectId: string,
   imageId: string,
-  originalPath: string
+  originalPath: string,
 ) {
   return storageOperation<{ id: string }>(
     `mutation RegisterImageFile($projectId: ID!, $imageId: ID!, $originalPath: String!) {
     registerImageFile(projectId: $projectId, imageId: $imageId, originalPath: $originalPath)
   }`,
     { projectId, imageId, originalPath },
-    'registerImageFile'
+    'registerImageFile',
   );
 }

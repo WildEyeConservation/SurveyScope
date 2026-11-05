@@ -1,10 +1,12 @@
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import {
+  GetQueueAttributesCommand,
+  type GetQueueAttributesCommandInput,
+} from '@aws-sdk/client-sqs';
 import { useContext, useEffect, useState } from 'react';
-import { ProjectContext, UserContext, GlobalContext } from './Context';
-import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
-import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
-import ProgressBar from 'react-bootstrap/ProgressBar';
-import { Badge } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
+import { GlobalContext, ProjectContext, UserContext } from './Context';
 
 export function JobsRemaining() {
   const { client } = useContext(GlobalContext)!;
@@ -23,20 +25,18 @@ export function JobsRemaining() {
 
   useEffect(() => {
     if (currentPM.queueId) {
-      client.models.Queue.get({ id: currentPM.queueId }).then(
-        ({ data }) => {
-          if (!data) return;
-          setUrl(data.url ?? undefined);
-          if (data.batchSize) {
-            setBatchSize(data.batchSize);
-          }
+      client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
+        if (!data) return;
+        setUrl(data.url ?? undefined);
+        if (data.batchSize) {
+          setBatchSize(data.batchSize);
         }
-      );
+      });
       if (currentPM.backupQueueId) {
         client.models.Queue.get({ id: currentPM.backupQueueId }).then(
           ({ data }) => {
             setBackupUrl(data?.url ?? undefined);
-          }
+          },
         );
       }
     }
@@ -51,7 +51,7 @@ export function JobsRemaining() {
         };
         const sqsClient = await getSqsClient();
         const result = await sqsClient.send(
-          new GetQueueAttributesCommand(params)
+          new GetQueueAttributesCommand(params),
         );
         return result.Attributes?.ApproximateNumberOfMessages || 'Unknown';
       };
@@ -93,23 +93,26 @@ export function JobsRemaining() {
   return jobsRemaining === '0' ||
     batchSize === 0 ||
     parseInt(jobsRemaining) < batchSize ? (
-    <Badge className='d-flex flex-row align-items-center justify-content-center gap-3 p-2 w-100 bg-secondary flex-wrap'>
+    <Badge
+      variant='secondary'
+      className='flex w-full flex-row flex-wrap items-center justify-center gap-4 p-2'
+    >
       <p className='mb-0'>
         {jobsRemaining} jobs remaining
         {usingBackupQueue ? ' on backup queue ' : ' '}(globally)
       </p>
-      <span className='d-none d-sm-block'>|</span>
+      <span className='hidden sm:block'>|</span>
       <p className='mb-0'>
         {sessionJobsCompleted} jobs completed in this session
       </p>
     </Badge>
   ) : (
-    <div className='d-flex flex-column align-items-center gap-2 w-100'>
-      <ProgressBar
-        className='w-100'
+    <div className='flex w-full flex-col items-center gap-2'>
+      <Progress
+        className='w-full'
         variant='primary'
         max={batchSize}
-        now={sessionJobsCompleted % batchSize}
+        value={sessionJobsCompleted % batchSize}
         label={`${
           sessionJobsCompleted % batchSize
         } of ${batchSize} jobs completed`}

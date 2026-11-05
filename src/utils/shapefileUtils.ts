@@ -7,7 +7,7 @@ export type LatLngTuple = [number, number];
 export function simplifyPolygonToRange(
   rawLonLat: [number, number][],
   minPoints = 1000,
-  maxPoints = 1500
+  maxPoints = 1500,
 ): [number, number][] {
   if (rawLonLat.length <= minPoints) return rawLonLat;
   let tolerance = 1e-6;
@@ -16,7 +16,7 @@ export function simplifyPolygonToRange(
     const simplified = turf.simplify(turf.polygon([coords]), { tolerance });
     const simplifiedCoords = simplified.geometry.coordinates[0] as [
       number,
-      number
+      number,
     ][];
     coords = simplifiedCoords;
     if (coords.length <= maxPoints || tolerance > 1) {
@@ -29,7 +29,7 @@ export function simplifyPolygonToRange(
 
 // Ensure the linear ring is closed (first equals last)
 export function ensureClosedRing(
-  coords: [number, number][]
+  coords: [number, number][],
 ): [number, number][] {
   if (
     coords.length &&
@@ -47,7 +47,7 @@ export async function saveShapefileForProject(
   projectId: string,
   latLngs: LatLngTuple[],
   group: string | undefined,
-  marginM?: number
+  marginM?: number,
 ): Promise<void> {
   if (!latLngs || latLngs.length === 0) return;
 
@@ -64,7 +64,7 @@ export async function saveShapefileForProject(
 
   // create vs update
   const existing = unwrap<Array<{ id: string }>>(
-    await client.models.Shapefile.shapefilesByProjectId({ projectId })
+    await client.models.Shapefile.shapefilesByProjectId({ projectId }),
   );
   if (existing && existing.length > 0) {
     unwrap(
@@ -72,7 +72,7 @@ export async function saveShapefileForProject(
         id: existing[0].id,
         coordinates: flattened,
         ...(marginM === undefined ? {} : { marginM }),
-      })
+      }),
     );
   } else {
     unwrap(
@@ -81,7 +81,7 @@ export async function saveShapefileForProject(
         coordinates: flattened,
         marginM: marginM ?? 0,
         group,
-      })
+      }),
     );
   }
 }
@@ -90,7 +90,7 @@ export async function saveShapefileForProject(
 function unwrap<T>(result: { data?: T | null; errors?: unknown[] | null }) {
   if (result?.errors?.length) {
     throw new Error(
-      `Survey area request failed: ${JSON.stringify(result.errors)}`
+      `Survey area request failed: ${JSON.stringify(result.errors)}`,
     );
   }
   return result?.data ?? null;
@@ -114,13 +114,13 @@ type StoredRing = {
 export async function loadSurveyArea(
   client: any,
   projectId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<SurveyArea & { marginM: number | null }> {
   const [boundaryResult, exclusionResult] = await Promise.all([
     client.models.Shapefile.shapefilesByProjectId({ projectId }, { signal }),
     client.models.ShapefileExclusions.shapefileExclusionsByProjectId(
       { projectId },
-      { signal }
+      { signal },
     ),
   ]);
   const stored = unwrap<StoredRing[]>(boundaryResult)?.[0];
@@ -141,18 +141,18 @@ export async function saveExclusionsForProject(
   client: any,
   projectId: string,
   exclusions: LatLngTuple[][],
-  group: string | undefined
+  group: string | undefined,
 ): Promise<void> {
   const existing =
     unwrap<StoredRing[]>(
       await client.models.ShapefileExclusions.shapefileExclusionsByProjectId({
         projectId,
-      })
+      }),
     ) ?? [];
   for (const result of await Promise.all(
     existing.map((exclusion) =>
-      client.models.ShapefileExclusions.delete({ id: exclusion.id })
-    )
+      client.models.ShapefileExclusions.delete({ id: exclusion.id }),
+    ),
   )) {
     unwrap(result);
   }
@@ -162,8 +162,8 @@ export async function saveExclusionsForProject(
         projectId,
         coordinates: ring.flat(),
         group,
-      })
-    )
+      }),
+    ),
   )) {
     unwrap(result);
   }
@@ -174,7 +174,7 @@ export async function saveSurveyArea(
   projectId: string,
   area: SurveyArea,
   group: string | undefined,
-  marginM?: number
+  marginM?: number,
 ): Promise<void> {
   if (area.boundary && area.boundary.length >= 3) {
     await saveShapefileForProject(
@@ -182,17 +182,17 @@ export async function saveSurveyArea(
       projectId,
       area.boundary,
       group,
-      marginM
+      marginM,
     );
   } else {
     const existing =
       unwrap<StoredRing[]>(
-        await client.models.Shapefile.shapefilesByProjectId({ projectId })
+        await client.models.Shapefile.shapefilesByProjectId({ projectId }),
       ) ?? [];
     for (const result of await Promise.all(
       existing.map((shapefile) =>
-        client.models.Shapefile.delete({ id: shapefile.id })
-      )
+        client.models.Shapefile.delete({ id: shapefile.id }),
+      ),
     )) {
       unwrap(result);
     }
@@ -217,13 +217,13 @@ type RecomputeClient = {
 
 export async function recomputeBoundaryStatus(
   client: RecomputeClient,
-  projectId: string
+  projectId: string,
 ): Promise<void> {
   unwrap(
     await client.models.Project.update({
       id: projectId,
       boundaryRecomputeRequested: true,
-    })
+    }),
   );
   try {
     unwrap(await client.mutations.recomputeBoundaryStatus({ projectId }));

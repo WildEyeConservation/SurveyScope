@@ -1,6 +1,8 @@
 import { generateClient } from 'aws-amplify/api';
 // Configures Amplify.
+
 import './limitedClient';
+
 import {
   createReportBudget,
   describeError,
@@ -47,7 +49,7 @@ export async function reportClientError(error: unknown): Promise<void> {
   } catch (reportingError) {
     console.error(
       'Failed to report the error automatically:',
-      graphqlErrorMessage(reportingError)
+      graphqlErrorMessage(reportingError),
     );
   }
 }

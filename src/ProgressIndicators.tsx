@@ -1,52 +1,61 @@
-import { CircularProgress, CircularProgressProps } from '@mui/material';
-import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
-import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
-import Tooltip from 'react-bootstrap/Tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useContext } from 'react';
 import { ProgressContext } from './Context';
 
-interface CircularProgressWithLabelProps extends CircularProgressProps {
+const SIZE = 50;
+const THICKNESS = 8;
+
+function CircularProgressWithLabel({
+  value,
+  detail,
+}: {
   value?: number;
   detail: JSX.Element;
-}
-
-function CircularProgressWithLabel(props: CircularProgressWithLabelProps) {
+}) {
+  const radius = (44 - THICKNESS) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const determinate = !!value;
   return (
-    <OverlayTrigger
-      placement='bottom'
-      delay={{ show: 250, hide: 400 }}
-      overlay={<Tooltip id='button-tooltip-2'>{props.detail}</Tooltip>}
-    >
-      <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-        <CircularProgress
-          variant={props.value ? 'determinate' : 'indeterminate'}
-          {...props}
-        />
-        {props.value !== undefined && (
-          <Box
-            sx={{
-              top: 0,
-              left: 0,
-              bottom: 0,
-              right: 0,
-              position: 'absolute',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+    <Tooltip delayDuration={250}>
+      <TooltipTrigger asChild>
+        <div className='relative inline-flex'>
+          <svg
+            width={SIZE}
+            height={SIZE}
+            viewBox='22 22 44 44'
+            className={determinate ? '-rotate-90' : 'animate-spin'}
+            role='progressbar'
+            aria-valuenow={value}
           >
-            <Typography
-              variant='caption'
-              component='div'
-              color='text.secondary'
-            >
-              {`${Math.round(props.value)}%`}
-            </Typography>
-          </Box>
-        )}
-      </Box>
-    </OverlayTrigger>
+            <circle
+              cx={44}
+              cy={44}
+              r={radius}
+              fill='none'
+              stroke='currentColor'
+              strokeWidth={THICKNESS}
+              strokeDasharray={circumference}
+              strokeDashoffset={
+                determinate
+                  ? circumference * (1 - Math.min(100, value!) / 100)
+                  : circumference * 0.7
+              }
+              className='transition-[stroke-dashoffset] duration-300'
+            />
+          </svg>
+          {value !== undefined && (
+            <div className='absolute inset-0 flex items-center justify-center text-xs text-black/60'>
+              {`${Math.round(value)}%`}
+            </div>
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side='bottom'>{detail}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -60,9 +69,6 @@ export function ProgressIndicators() {
           key={key}
           value={progress[key].value}
           detail={progress[key].detail}
-          color='inherit'
-          size={50}
-          thickness={8}
         />
       ))}
     </>

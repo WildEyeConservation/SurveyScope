@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface ConfirmationModalProps {
   show: boolean;
@@ -16,25 +24,27 @@ export default function ConfirmationModal({
   body,
 }: ConfirmationModalProps) {
   return (
-    <Modal show={show} onHide={onClose}>
-      <Modal.Header>
-        <Modal.Title>{title}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>{body}</Modal.Body>
-      <Modal.Footer>
-        <Button
-          variant='primary'
-          onClick={() => {
-            onConfirm();
-            onClose();
-          }}
-        >
-          Confirm
-        </Button>
-        <Button variant='dark' onClick={onClose}>
-          Cancel
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>{body}</DialogBody>
+        <DialogFooter>
+          <Button variant='ghost' className='mr-auto' onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant='primary'
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+          >
+            Confirm
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

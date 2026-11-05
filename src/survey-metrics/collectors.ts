@@ -1,7 +1,7 @@
-import { isInOverlap } from '../individual-id/utils/transforms';
-import { isOlder } from '../individual-id/utils/imageAge';
-import { isWithinLocationBounds } from '../utils';
 import type { PixelTransform } from '../individual-id/types';
+import { isOlder } from '../individual-id/utils/imageAge';
+import { isInOverlap } from '../individual-id/utils/transforms';
+import { isWithinLocationBounds } from '../utils';
 import type {
   AnnotationRow,
   CategoryRow,
@@ -92,7 +92,7 @@ function invert(m: number[]): number[] | null {
 }
 
 export function neighbourTransforms(
-  neighbour: NeighbourRow
+  neighbour: NeighbourRow,
 ): Transforms | null {
   const h = neighbour.homography;
   if (!h || h.length !== 9 || !h.every((v) => Number.isFinite(v))) return null;
@@ -117,7 +117,7 @@ function componentSizes(
   neighbours: NeighbourRow[],
   buckets: HomographyBucket[],
   imageIds: Set<string>,
-  usableOnly: boolean
+  usableOnly: boolean,
 ): number[] {
   const parent = new Map<string, string>();
   for (const id of imageIds) parent.set(id, id);
@@ -184,7 +184,7 @@ export type HomographySummary = {
 export function summariseHomographies(
   neighbours: NeighbourRow[],
   images: ImageRow[],
-  registration: RegistrationRows | null
+  registration: RegistrationRows | null,
 ): HomographySummary {
   const imageIds = new Set(images.map((image) => image.id));
   const counts = emptyHomographyCounts();
@@ -246,7 +246,7 @@ export function summariseHomographies(
       bucketStats: registration.buckets.length,
       bucketSuccessTotal: registration.buckets.reduce(
         (sum, bucket) => sum + (bucket.successCount ?? 0),
-        0
+        0,
       ),
     },
   };
@@ -261,10 +261,10 @@ export type SetHomographySummary = {
 
 export function summariseSetHomographies(
   neighbours: NeighbourRow[],
-  annotations: AnnotationRow[]
+  annotations: AnnotationRow[],
 ): SetHomographySummary {
   const annotated = new Set(
-    annotations.map((annotation) => annotation.imageId)
+    annotations.map((annotation) => annotation.imageId),
   );
   const counts = emptyHomographyCounts();
   let relevant = 0;
@@ -293,7 +293,7 @@ export type ProcessedBySummary = {
 
 export function summariseProcessedBy(
   rows: ProcessedByRow[],
-  totalImages: number | null
+  totalImages: number | null,
 ): ProcessedBySummary {
   const bySource = new Map<string, Set<string>>();
   for (const row of rows) {
@@ -313,28 +313,33 @@ export function summariseProcessedBy(
   };
 }
 
-export const CONFIDENCE_BUCKET_WIDTH = 0.05;
-export const CONFIDENCE_BUCKET_COUNT = 20;
+export const DEFAULT_BAND_WIDTH = 0.05;
 export const UNSCORED = 'unscored';
 
-export function confidenceBucketLabels(): string[] {
+export type BandWidthFor = (source: string) => number;
+const defaultBandWidth: BandWidthFor = () => DEFAULT_BAND_WIDTH;
+
+const bandCount = (width: number) => Math.round(1 / width);
+
+export function confidenceBucketLabels(width = DEFAULT_BAND_WIDTH): string[] {
   const labels: string[] = [];
-  for (let i = 0; i < CONFIDENCE_BUCKET_COUNT; i++) {
-    labels.push((i * CONFIDENCE_BUCKET_WIDTH).toFixed(2));
+  for (let i = 0; i < bandCount(width); i++) {
+    labels.push((i * width).toFixed(2));
   }
   labels.push(UNSCORED);
   return labels;
 }
 
 export function confidenceBucket(
-  confidence: number | null | undefined
+  confidence: number | null | undefined,
+  width = DEFAULT_BAND_WIDTH,
 ): string {
   if (confidence === null || confidence === undefined) return UNSCORED;
   if (!Number.isFinite(confidence)) return UNSCORED;
   // Epsilon keeps band edges such as 0.15 out of the band below.
-  const index = Math.floor(confidence / CONFIDENCE_BUCKET_WIDTH + 1e-9);
-  const clamped = Math.max(0, Math.min(CONFIDENCE_BUCKET_COUNT - 1, index));
-  return (clamped * CONFIDENCE_BUCKET_WIDTH).toFixed(2);
+  const index = Math.floor(confidence / width + 1e-9);
+  const clamped = Math.max(0, Math.min(bandCount(width) - 1, index));
+  return (clamped * width).toFixed(2);
 }
 
 // The detector writes a zero-area row for an image it found nothing in.
@@ -351,6 +356,7 @@ export type DetectionSourceSummary = {
   imagesNotProcessed: number;
   imagesWithBothMarkerAndDetection: number;
   rowsWithoutImage: number;
+  bandWidth: number;
   confidence: Counts;
 };
 
@@ -365,12 +371,17 @@ type DetectionTally = {
   rowsWithoutImage: number;
   detected: Set<string>;
   marked: Set<string>;
+  bandWidth: number;
   confidence: Counts;
 };
 
 export type DetectionScan = Map<string, DetectionTally>;
 
-export function addDetection(scan: DetectionScan, location: LocationRow) {
+export function addDetection(
+  scan: DetectionScan,
+  location: LocationRow,
+  bandWidthFor: BandWidthFor = defaultBandWidth,
+) {
   let tally = scan.get(location.source);
   if (!tally) {
     tally = {
@@ -379,6 +390,7 @@ export function addDetection(scan: DetectionScan, location: LocationRow) {
       rowsWithoutImage: 0,
       detected: new Set(),
       marked: new Set(),
+      bandWidth: bandWidthFor(location.source),
       confidence: {},
     };
     scan.set(location.source, tally);
@@ -390,13 +402,16 @@ export function addDetection(scan: DetectionScan, location: LocationRow) {
   } else {
     tally.detectionRows += 1;
     if (location.imageId) tally.detected.add(location.imageId);
-    bump(tally.confidence, confidenceBucket(location.confidence));
+    bump(
+      tally.confidence,
+      confidenceBucket(location.confidence, tally.bandWidth),
+    );
   }
 }
 
 export function finishDetections(
   scan: DetectionScan,
-  images: ImageRow[]
+  images: ImageRow[],
 ): DetectionSummary {
   const imageIds = new Set(images.map((image) => image.id));
   const sources = [...scan.entries()].map(([source, tally]) => {
@@ -415,6 +430,7 @@ export function finishDetections(
       imagesNotProcessed: imageIds.size - accounted,
       imagesWithBothMarkerAndDetection: both,
       rowsWithoutImage: tally.rowsWithoutImage,
+      bandWidth: tally.bandWidth,
       confidence: tally.confidence,
     };
   });
@@ -424,7 +440,7 @@ export function finishDetections(
 
 export function summariseDetections(
   locations: LocationRow[],
-  images: ImageRow[]
+  images: ImageRow[],
 ): DetectionSummary {
   const scan: DetectionScan = new Map();
   for (const location of locations) addDetection(scan, location);
@@ -465,10 +481,10 @@ export type AnnotationSummary = {
 
 export function summariseAnnotations(
   annotations: AnnotationRow[],
-  categories: CategoryRow[]
+  categories: CategoryRow[],
 ): AnnotationSummary {
   const names = new Map(
-    categories.map((category) => [category.id, category.name])
+    categories.map((category) => [category.id, category.name]),
   );
   const images = new Set<string>();
   const bySource: Counts = {};
@@ -490,7 +506,7 @@ export function summariseAnnotations(
     if (!category) {
       byCategory.set(
         annotation.categoryId,
-        (category = { count: 0, primary: 0 })
+        (category = { count: 0, primary: 0 }),
       );
     }
     category.count += 1;
@@ -534,7 +550,7 @@ export type ObservationSummary = {
 };
 
 export function summariseObservations(
-  observations: ObservationRow[]
+  observations: ObservationRow[],
 ): ObservationSummary {
   const locations = new Set<string>();
   const bySource: Counts = {};
@@ -545,7 +561,7 @@ export function summariseObservations(
     bump(byOwner, observation.owner || 'unknown');
   }
   const created = range(
-    observations.map((observation) => observation.createdAt)
+    observations.map((observation) => observation.createdAt),
   );
   return {
     total: observations.length,
@@ -566,13 +582,14 @@ export type ConfidenceBand = {
 
 export type ConfidenceCoverageSource = {
   source: string;
+  bandWidth: number;
+  labels: string[];
   bands: Record<string, ConfidenceBand>;
   totals: ConfidenceBand;
   lowestObservedBand: string | null;
 };
 
 export type ConfidenceCoverage = {
-  labels: string[];
   sources: ConfidenceCoverageSource[];
   observedOutsideDetections: number;
 };
@@ -598,31 +615,41 @@ export type ConfidenceCoverageScan = {
 
 export function scanConfidenceCoverage(
   observations: ObservationRow[],
-  annotations: AnnotationRow[]
+  annotations: AnnotationRow[],
+  bandWidthFor: BandWidthFor = defaultBandWidth,
 ): ConfidenceCoverageScan {
-  const labels = confidenceBucketLabels();
   const observed = new Set(
-    observations.map((observation) => observation.locationId)
+    observations.map((observation) => observation.locationId),
   );
   const byImage = groupAnnotationsByImage(annotations);
-  const bySource = new Map<string, Record<string, ConfidenceBand>>();
+  const bySource = new Map<
+    string,
+    { width: number; bands: Record<string, ConfidenceBand> }
+  >();
   let matchedObserved = 0;
 
   const add = (location: LocationRow) => {
     if (isEmptyMarker(location)) return;
-    let bands = bySource.get(location.source);
-    if (!bands) {
-      bands = Object.fromEntries(labels.map((label) => [label, emptyBand()]));
-      bySource.set(location.source, bands);
+    let entry = bySource.get(location.source);
+    if (!entry) {
+      const width = bandWidthFor(location.source);
+      entry = {
+        width,
+        bands: Object.fromEntries(
+          confidenceBucketLabels(width).map((label) => [label, emptyBand()]),
+        ),
+      };
+      bySource.set(location.source, entry);
     }
-    const band = bands[confidenceBucket(location.confidence)];
+    const band =
+      entry.bands[confidenceBucket(location.confidence, entry.width)];
     const isObserved = observed.has(location.id);
     const imageAnnotations = location.imageId
       ? byImage.get(location.imageId)
       : undefined;
     const isAnnotated =
       imageAnnotations?.some((annotation) =>
-        isWithinLocationBounds(annotation, location)
+        isWithinLocationBounds(annotation, location),
       ) ?? false;
     band.locations += 1;
     if (isObserved) {
@@ -634,28 +661,37 @@ export function scanConfidenceCoverage(
   };
 
   const finish = (): ConfidenceCoverage => {
-    const sources = [...bySource.entries()].map(([source, bands]) => {
-      const totals = emptyBand();
-      let lowestObservedBand: string | null = null;
-      for (const label of labels) {
-        const band = bands[label];
-        totals.locations += band.locations;
-        totals.observed += band.observed;
-        totals.annotated += band.annotated;
-        totals.observedAndAnnotated += band.observedAndAnnotated;
-        if (
-          lowestObservedBand === null &&
-          label !== UNSCORED &&
-          band.observed > 0
-        ) {
-          lowestObservedBand = label;
+    const sources = [...bySource.entries()].map(
+      ([source, { width, bands }]) => {
+        const labels = confidenceBucketLabels(width);
+        const totals = emptyBand();
+        let lowestObservedBand: string | null = null;
+        for (const label of labels) {
+          const band = bands[label];
+          totals.locations += band.locations;
+          totals.observed += band.observed;
+          totals.annotated += band.annotated;
+          totals.observedAndAnnotated += band.observedAndAnnotated;
+          if (
+            lowestObservedBand === null &&
+            label !== UNSCORED &&
+            band.observed > 0
+          ) {
+            lowestObservedBand = label;
+          }
         }
-      }
-      return { source, bands, totals, lowestObservedBand };
-    });
+        return {
+          source,
+          bandWidth: width,
+          labels,
+          bands,
+          totals,
+          lowestObservedBand,
+        };
+      },
+    );
     sources.sort((a, b) => b.totals.locations - a.totals.locations);
     return {
-      labels,
       sources,
       observedOutsideDetections: observed.size - matchedObserved,
     };
@@ -667,9 +703,10 @@ export function scanConfidenceCoverage(
 export function summariseConfidenceCoverage(
   locations: LocationRow[],
   observations: ObservationRow[],
-  annotations: AnnotationRow[]
+  annotations: AnnotationRow[],
+  bandWidthFor: BandWidthFor = defaultBandWidth,
 ): ConfidenceCoverage {
-  const scan = scanConfidenceCoverage(observations, annotations);
+  const scan = scanConfidenceCoverage(observations, annotations, bandWidthFor);
   for (const location of locations) scan.add(location);
   return scan.finish();
 }
@@ -681,7 +718,7 @@ type MatchPoint = { id: string; x: number; y: number; categoryId: string };
 export function greedyMatch(
   sources: MatchPoint[],
   targets: MatchPoint[],
-  radius: number
+  radius: number,
 ): Map<string, string> {
   const radiusSquared = radius * radius;
   const candidates: { distance: number; source: string; target: string }[] = [];
@@ -701,7 +738,7 @@ export function greedyMatch(
     (a, b) =>
       a.distance - b.distance ||
       (a.source < b.source ? -1 : a.source > b.source ? 1 : 0) ||
-      (a.target < b.target ? -1 : a.target > b.target ? 1 : 0)
+      (a.target < b.target ? -1 : a.target > b.target ? 1 : 0),
   );
   const matched = new Map<string, string>();
   const usedTargets = new Set<string>();
@@ -722,10 +759,7 @@ function sameChain(later: AnnotationRow, earlier: AnnotationRow): boolean {
 }
 
 export type ChainLinkRecommendation =
-  | 'unknown'
-  | 'investigate-coverage'
-  | 'run-chain-linker'
-  | 'skip';
+  'unknown' | 'investigate-coverage' | 'run-chain-linker' | 'skip';
 
 export type ChainLinkSummary = {
   matchRadius: number;
@@ -754,7 +788,7 @@ function percent(value: number, digits = 0): string {
 }
 
 function chainLinkVerdict(
-  summary: Omit<ChainLinkSummary, 'verdict'>
+  summary: Omit<ChainLinkSummary, 'verdict'>,
 ): ChainLinkSummary['verdict'] {
   const matches = summary.linked + summary.duplicated;
   if (summary.pairsAssessed === 0) {
@@ -775,7 +809,7 @@ function chainLinkVerdict(
     return {
       recommendation: 'investigate-coverage',
       reason: `${percent(
-        absent
+        absent,
       )} of overlap annotations have nothing annotated near them in the earlier image, so the duplicate counts describe only a small slice of the survey.`,
     };
   }
@@ -791,14 +825,14 @@ function chainLinkVerdict(
       recommendation: 'skip',
       reason: `${percent(
         rate,
-        1
+        1,
       )} of matched overlap annotations are unlinked duplicates; linking already worked during annotation.`,
     };
   }
   return {
     recommendation: 'run-chain-linker',
     reason: `${percent(
-      rate
+      rate,
     )} of matched overlap annotations are counted twice (~${summary.duplicated.toLocaleString()} duplicate sightings).`,
   };
 }
@@ -814,11 +848,11 @@ export function summariseChainLinking(
   neighbours: NeighbourRow[],
   images: ImageRow[],
   annotations: AnnotationRow[],
-  matchRadius = DEFAULT_MATCH_RADIUS
+  matchRadius = DEFAULT_MATCH_RADIUS,
 ): ChainLinkSummary {
   const imageById = new Map(images.map((image) => [image.id, image]));
   const byImage = groupAnnotationsByImage(
-    annotations.filter((annotation) => !annotation.oov)
+    annotations.filter((annotation) => !annotation.oov),
   );
   const outcomes = new Map<string, Outcome>();
   const summary = {
@@ -886,8 +920,8 @@ export function summariseChainLinking(
         annotation.y,
         earlierToLater,
         earlier.width!,
-        earlier.height!
-      )
+        earlier.height!,
+      ),
     );
     if (overlap.length === 0) {
       summary.pairsNoOverlapAnnotations += 1;
@@ -900,7 +934,7 @@ export function summariseChainLinking(
     for (const annotation of overlap) {
       const counterpart = earlierAnnotations.find(
         (candidate) =>
-          !linkedTargets.has(candidate.id) && sameChain(annotation, candidate)
+          !linkedTargets.has(candidate.id) && sameChain(annotation, candidate),
       );
       if (counterpart) {
         linkedTargets.add(counterpart.id);
@@ -915,9 +949,9 @@ export function summariseChainLinking(
         return { id: annotation.id, x, y, categoryId: annotation.categoryId };
       }),
       earlierAnnotations.filter(
-        (candidate) => !linkedTargets.has(candidate.id)
+        (candidate) => !linkedTargets.has(candidate.id),
       ),
-      matchRadius
+      matchRadius,
     );
 
     summary.pairsAssessed += 1;
@@ -962,7 +996,7 @@ export function summariseChainLinking(
       : null;
   summary.absentRate = ratio(
     summary.absentFromEarlier,
-    summary.overlapAnnotations
+    summary.overlapAnnotations,
   );
 
   return { ...summary, verdict: chainLinkVerdict(summary) };

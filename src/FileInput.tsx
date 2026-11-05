@@ -1,5 +1,7 @@
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
 import {
   collectFilesFromHandle,
   pickDirectory,
@@ -20,6 +22,9 @@ export default function FileInput({
   onFileChange,
   onDirectoryHandle,
   onReadingChange,
+  variant,
+  buttonSize,
+  showSelection = true,
   children,
   ...fileProps
 }: {
@@ -29,6 +34,9 @@ export default function FileInput({
   /** Directory handle used to resume Chromium folder uploads. */
   onDirectoryHandle?: (handle: unknown) => void;
   onReadingChange?: (reading: boolean) => void;
+  variant?: React.ComponentProps<typeof Button>['variant'];
+  buttonSize?: React.ComponentProps<typeof Button>['size'];
+  showSelection?: boolean;
   children: React.ReactNode;
 } & React.InputHTMLAttributes<HTMLInputElement>) {
   const [fileNames, setFileNames] = useState<string[]>([]);
@@ -75,8 +83,10 @@ export default function FileInput({
     };
     const reading = readCount !== null;
     return (
-      <div className='d-flex flex-row align-items-center gap-2'>
+      <div className='flex flex-row items-center gap-2'>
         <Button
+          variant={variant}
+          size={buttonSize}
           style={{ width: 'fit-content' }}
           onClick={handlePick}
           disabled={disabled || reading}
@@ -84,11 +94,12 @@ export default function FileInput({
           {children}
         </Button>
         {reading ? (
-          <span className='d-flex align-items-center gap-2'>
+          <span className='flex items-center gap-2'>
             <Spinner animation='border' size='sm' />
             Reading folder... {readCount} files found
           </span>
         ) : (
+          showSelection &&
           fileNames.length > 0 && <i className='mb-0'>{fileNames.join(', ')}</i>
         )}
       </div>
@@ -96,27 +107,32 @@ export default function FileInput({
   }
 
   return (
-    <div className='d-flex flex-row align-items-center gap-2'>
+    <div className='flex flex-row items-center gap-2'>
       <Button
+        asChild
+        variant={variant}
+        size={buttonSize}
         style={{ width: 'fit-content' }}
-        as='label'
-        htmlFor={id}
-        disabled={disabled}
-        className={disabled ? 'disabled' : undefined}
+        className={cn(
+          'cursor-pointer',
+          disabled && 'pointer-events-none opacity-65',
+        )}
       >
-        {children}
-        <input
-          id={id}
-          type='file'
-          accept={fileType || '*'}
-          multiple={true}
-          onChange={handleChange}
-          disabled={disabled}
-          style={{ display: 'none', ...additionalStyle }}
-          {...otherProps}
-        />
+        <label htmlFor={id} className='mb-0' aria-disabled={disabled}>
+          {children}
+          <input
+            id={id}
+            type='file'
+            accept={fileType || '*'}
+            multiple={true}
+            onChange={handleChange}
+            disabled={disabled}
+            style={{ display: 'none', ...additionalStyle }}
+            {...otherProps}
+          />
+        </label>
       </Button>
-      {fileNames.length > 0 && (
+      {showSelection && fileNames.length > 0 && (
         <i className='mb-0'>
           {fileNames.join(', ').slice(0, 50)}
           {fileNames.join(', ').length > 50 ? '...' : ''}

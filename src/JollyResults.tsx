@@ -1,22 +1,36 @@
-import { useState, useEffect, useContext, useMemo } from 'react';
-import Select from 'react-select';
-import { useParams } from 'react-router-dom';
-import { GlobalContext, UserContext } from './Context.tsx';
-import { fetchAllPaginatedResults } from './utils.tsx';
-import MyTable from './Table.tsx';
-import { Button, Card, Form, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import DensityMap from './DensityMap.tsx';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import DataTable, { type DataColumn } from '@/components/DataTable';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Combobox } from '@/components/ui/combobox';
+import { cn } from '@/lib/utils';
 import exportFromJSON from 'export-from-json';
-import { neutraliseCsvRows } from '../shared/csv';
-import { useUsers } from './apiInterface';
 import { X } from 'lucide-react';
-import { createToken, verifyToken } from './utils/jwt';
 import { DateTime } from 'luxon';
-import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { neutraliseCsvRows } from '../shared/csv';
 import { Schema } from './amplify/client-schema';
+import { useUsers } from './apiInterface';
+import { GlobalContext, UserContext } from './Context.tsx';
+import DensityMap from './DensityMap.tsx';
+import { CollapsedSidebar, SidebarCollapseButton } from './SidebarCollapse';
+import { Tab, Tabs } from './Tabs';
+import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
+import { useSidebarCollapsed } from './useSidebarCollapsed';
+import { fetchAllPaginatedResults } from './utils.tsx';
+import { createToken, verifyToken } from './utils/jwt';
 // @ts-ignore
 import * as jStat from 'jstat';
 import { useNavigate } from 'react-router-dom';
+
+// New links are off until link creation moves to the backend.
+const SHARING_AVAILABLE = false;
+const LINK_DURATIONS = [
+  { label: '1 day', days: 1 },
+  { label: '1 week', days: 7 },
+  { label: '4 weeks', days: 28 },
+];
 
 export default function JollyResults() {
   const { surveyId, annotationSetId } = useParams() as {
@@ -27,6 +41,8 @@ export default function JollyResults() {
   const { myMembershipHook: myProjectsHook, user: authUser } =
     useContext(UserContext)!;
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState<'map' | 'estimates'>('map');
+  const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
   const [results, setResults] = useState<
     (Schema['JollyResult']['type'] & { stratumName?: string })[]
   >([]);
@@ -44,17 +60,17 @@ export default function JollyResults() {
   const [currentToken, setCurrentToken] = useState<string | null>(null);
   const [tokenExpiry, setTokenExpiry] = useState<Date | null>(null);
   const [expiration, setExpiration] = useState(
-    DateTime.now().plus({ days: 1 }).toMillis()
+    DateTime.now().plus({ days: 1 }).toMillis(),
   );
   const [isCopying, setIsCopying] = useState(false);
-  const [moreInfo, setMoreInfo] = useState(false);
+  const [linkDays, setLinkDays] = useState(1);
   const [exporting, setExporting] = useState(false);
   const [tableHoveredStratumId, setTableHoveredStratumId] = useState<
     string | null
   >(null);
-  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<
-    string | null
-  >(null);
+  const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(
+    null,
+  );
   const { users } = useUsers();
   const adminProjects = myProjectsHook.data?.filter((p) => p.isAdmin);
   const isProjectAdmin = adminProjects?.some((p) => p.projectId === surveyId);
@@ -67,7 +83,7 @@ export default function JollyResults() {
         annotationSetId: { eq: annotationSetId },
       },
     }),
-    [surveyId, annotationSetId]
+    [surveyId, annotationSetId],
   );
 
   const sharedResultsHook = useOptimisticUpdates<
@@ -84,7 +100,7 @@ export default function JollyResults() {
       });
       return { data: result.data, nextToken: result.nextToken ?? undefined };
     },
-    subscriptionFilter
+    subscriptionFilter,
   );
 
   useEffect(() => {
@@ -135,10 +151,12 @@ export default function JollyResults() {
     const token = await createToken(
       payload,
       DateTime.fromMillis(expiration).toJSDate(),
-      secret
+      secret,
     );
 
-    const { data: surveyProject } = await client.models.Project.get({ id: surveyId });
+    const { data: surveyProject } = await client.models.Project.get({
+      id: surveyId,
+    });
     await client.models.ResultSharingToken.create({
       surveyId,
       annotationSetId,
@@ -175,16 +193,55 @@ export default function JollyResults() {
     }
   }
 
-  async function removeResultsMembership(userId: string) {
-    await client.models.JollyResultsMembership.delete({
-      surveyId,
-      annotationSetId,
-      userId,
-    });
-    setResultsMemberships(
-      resultsMemberships.filter((m) => m.userId !== userId)
-    );
-  }
+  const removeResultsMembership = useCallback(
+    async (userId: string) => {
+      await client.models.JollyResultsMembership.delete({
+        surveyId,
+        annotationSetId,
+        userId,
+      });
+      setResultsMemberships((prev) => prev.filter((m) => m.userId !== userId));
+    },
+    [client, surveyId, annotationSetId],
+  );
+
+  // Names live in the rows so they refresh once users have loaded.
+  const sharedRows = useMemo(
+    () =>
+      resultsMemberships.map((m) => ({
+        ...m,
+        name: users?.find((u) => u.id === m.userId)?.name || 'New user',
+      })),
+    [resultsMemberships, users],
+  );
+
+  const sharedColumns = useMemo<DataColumn<(typeof sharedRows)[number]>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: 'Shared with',
+        meta: { className: 'max-w-64 truncate' },
+      },
+      {
+        id: 'remove',
+        header: () => resultsMemberships.length,
+        enableSorting: false,
+        meta: { className: 'w-12 text-center' },
+        cell: ({ row }) => (
+          <button
+            type='button'
+            aria-label='Remove access'
+            title='Remove access'
+            onClick={() => removeResultsMembership(row.original.userId)}
+            className='mx-auto flex size-7 flex-none items-center justify-center text-muted-foreground hover:text-danger'
+          >
+            <X className='size-4' />
+          </button>
+        ),
+      },
+    ],
+    [resultsMemberships.length, removeResultsMembership],
+  );
 
   async function exportResultsAsCSV() {
     setExporting(true);
@@ -198,23 +255,26 @@ export default function JollyResults() {
           categoryId,
           selectionSet: ['source'],
           limit: 10000,
-        }
+        },
       );
 
       annotations.push(...annotationsForCategory);
     }
 
     //count false negatives per category by reducing annotations into a map of categoryId to count
-    const falseNegatives = annotations.reduce((acc, annotation) => {
-      const categoryId = annotation.categoryId;
-      if (annotation.source.includes('false-negative')) {
-        if (!acc[categoryId]) {
-          acc[categoryId] = 0;
+    const falseNegatives = annotations.reduce(
+      (acc, annotation) => {
+        const categoryId = annotation.categoryId;
+        if (annotation.source.includes('false-negative')) {
+          if (!acc[categoryId]) {
+            acc[categoryId] = 0;
+          }
+          acc[categoryId]++;
         }
-        acc[categoryId]++;
-      }
-      return acc;
-    }, {} as { [categoryId: string]: number });
+        return acc;
+      },
+      {} as { [categoryId: string]: number },
+    );
 
     //add false negatives to results
     const resultsWithFalseNegatives = results.map((r) => ({
@@ -224,25 +284,27 @@ export default function JollyResults() {
 
     const filteredResults = categoryIds.length
       ? resultsWithFalseNegatives.filter((r) =>
-        categoryIds.includes(r.categoryId)
-      )
+          categoryIds.includes(r.categoryId),
+        )
       : resultsWithFalseNegatives;
 
     exportFromJSON({
-      data: neutraliseCsvRows(filteredResults.map((r) => ({
-        stratumName: r.stratumName,
-        label: categoryOptions.find((c) => c.value === r.categoryId)?.label,
-        animals: r.animals,
-        areaSurveyed: r.areaSurveyed,
-        estimate: r.estimate,
-        density: r.density,
-        variance: r.variance,
-        standardError: r.standardError,
-        numSamples: r.numSamples,
-        lowerBound95: r.lowerBound95,
-        upperBound95: r.upperBound95,
-        falseNegatives: r.falseNegatives,
-      }))),
+      data: neutraliseCsvRows(
+        filteredResults.map((r) => ({
+          stratumName: r.stratumName,
+          label: categoryOptions.find((c) => c.value === r.categoryId)?.label,
+          animals: r.animals,
+          areaSurveyed: r.areaSurveyed,
+          estimate: r.estimate,
+          density: r.density,
+          variance: r.variance,
+          standardError: r.standardError,
+          numSamples: r.numSamples,
+          lowerBound95: r.lowerBound95,
+          upperBound95: r.upperBound95,
+          falseNegatives: r.falseNegatives,
+        })),
+      ),
       fileName: `${surveyName} - ${annotationSetName} - Jolly Results`,
       exportType: exportFromJSON.types.csv,
     });
@@ -276,11 +338,11 @@ export default function JollyResults() {
               'lowerBound95',
               'upperBound95',
             ],
-          }
+          },
         );
         if (mounted) {
           const filtered = data.filter(
-            (r) => r.annotationSetId === annotationSetId
+            (r) => r.annotationSetId === annotationSetId,
           );
 
           if (filtered.length === 0) {
@@ -294,7 +356,7 @@ export default function JollyResults() {
             {
               projectId: surveyId,
               selectionSet: ['id', 'name'],
-            }
+            },
           );
           const resultsWithStratumName = filtered.map((r) => {
             const stratum = stratumNames.find((s) => s.id === r.stratumId);
@@ -309,7 +371,7 @@ export default function JollyResults() {
           const { data: annotationSet } = await client.models.AnnotationSet.get(
             {
               id: annotationSetId,
-            }
+            },
           );
           setAnnotationSetName(annotationSet?.name ?? '');
 
@@ -324,11 +386,11 @@ export default function JollyResults() {
           }));
 
           const resultCategories = resultsWithStratumName.map(
-            (r) => r.categoryId
+            (r) => r.categoryId,
           );
 
           const filterOptions = catOptions.filter((c) =>
-            resultCategories.includes(c.value)
+            resultCategories.includes(c.value),
           );
 
           setCategoryOptions(filterOptions);
@@ -349,7 +411,8 @@ export default function JollyResults() {
             }
             setCurrentToken(sharingLink.jwt);
             const { exp } = await verifyToken(sharingLink.jwt, secret);
-            if (exp != null) setTokenExpiry(DateTime.fromMillis(exp * 1000).toJSDate());
+            if (exp != null)
+              setTokenExpiry(DateTime.fromMillis(exp * 1000).toJSDate());
           }
         }
       } catch (error) {
@@ -400,15 +463,15 @@ export default function JollyResults() {
   // Add totals calculation for multiple strata
   const totalEstimate = filteredResults.reduce(
     (sum, r) => sum + Number(r.estimate),
-    0
+    0,
   );
   const totalVariance = filteredResults.reduce(
     (sum, r) => sum + Number(r.variance),
-    0
+    0,
   );
   const totalSamples = filteredResults.reduce(
     (sum, r) => sum + Number(r.numSamples),
-    0
+    0,
   );
   const totalStdError = Math.sqrt(totalVariance);
   const tValue = getTValue(totalSamples);
@@ -418,12 +481,12 @@ export default function JollyResults() {
   const rowId = (r: { stratumId: string; categoryId: string }) =>
     `${r.stratumId}-${r.categoryId}`;
   const rowStratumIds = new Map(
-    filteredResults.map((r) => [rowId(r), r.stratumId])
+    filteredResults.map((r) => [rowId(r), r.stratumId]),
   );
   const highlightedRowIds = new Set(
     filteredResults
       .filter((r) => r.stratumId === mapHoveredStratumId)
-      .map(rowId)
+      .map(rowId),
   );
 
   const tableData = filteredResults.map((r) => ({
@@ -452,234 +515,191 @@ export default function JollyResults() {
         marginBottom: '16px',
       }}
     >
-      <div className='d-flex flex-row gap-2 w-100 h-100'>
-        <div className='d-flex flex-column gap-2' style={{ width: '300px' }}>
+      <div className='flex h-full w-full flex-row gap-2'>
+        {sidebarCollapsed && <CollapsedSidebar onExpand={toggleSidebar} />}
+        <div
+          className={cn(
+            'flex w-[300px] flex-none flex-col gap-2',
+            sidebarCollapsed && 'sm:hidden',
+          )}
+        >
           <Card>
-            <Card.Header>
-              <Card.Title>
-                <h4 className='mb-0'>Information</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body>
+            <CardHeader className='flex flex-row items-center justify-between'>
+              <CardTitle className='mb-0'>Information</CardTitle>
+              <SidebarCollapseButton onClick={toggleSidebar} />
+            </CardHeader>
+            <CardContent>
               <p className='mb-0'>
                 <strong>Survey:</strong> {surveyName}
               </p>
               <p className='mb-0'>
                 <strong>Annotation Set:</strong> {annotationSetName}
               </p>
-            </Card.Body>
+            </CardContent>
           </Card>
           <Card>
-            <Card.Header>
-              <Card.Title>
-                <h4 className='mb-0'>Filter</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body>
-              <Select
-                isMulti
-                placeholder='Select labels'
+            <CardHeader>
+              <CardTitle className='mb-0'>Filters</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Combobox
+                multiple
+                placeholder='All labels'
                 options={categoryOptions}
-                onChange={(e) => setSelectedCategories([...e])}
-                className='text-black'
+                value={selectedCategories}
+                onChange={(value) => setSelectedCategories(value)}
+                name='Labels'
               />
-            </Card.Body>
+            </CardContent>
           </Card>
-          <Card className='flex-grow-1 overflow-auto'>
-            <Card.Header>
-              <Card.Title>
-                <h4 className='mb-0'>Sharing</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body className='d-flex flex-column justify-content-between'>
-              {isProjectAdmin && (
-                <div className='d-flex flex-column gap-3'>
-                  <Form.Group>
-                    <Button
-                      variant='link'
-                      className='p-0 mb-1'
-                      onClick={() => setMoreInfo(!moreInfo)}
-                    >
-                      {moreInfo ? 'Less Info' : 'Click for more info...'}
-                    </Button>
-                    {moreInfo && (
-                      <span
-                        className='text-muted d-block mb-2 mt-0'
-                        style={{ fontSize: '14px' }}
+          {isProjectAdmin && (
+            <Card className='min-h-0 grow overflow-auto'>
+              <CardHeader>
+                <CardTitle className='mb-0'>Sharing</CardTitle>
+              </CardHeader>
+              <CardContent className='flex flex-col gap-4'>
+                <span className='text-sm text-muted-foreground'>
+                  The link works for the chosen time. People who sign in with it
+                  keep access until you remove them.
+                </span>
+                {tokenExpiry && tokenExpiry > new Date() && (
+                  <span className='text-sm'>
+                    Current link valid until {tokenExpiry.toLocaleDateString()}
+                  </span>
+                )}
+                <div className='flex flex-col gap-2'>
+                  <div
+                    role='radiogroup'
+                    aria-label='Link valid for'
+                    className='flex border border-white/30'
+                  >
+                    {LINK_DURATIONS.map(({ label, days }) => {
+                      const selected = linkDays === days;
+                      return (
+                        <button
+                          key={label}
+                          type='button'
+                          role='radio'
+                          aria-checked={selected}
+                          disabled={!SHARING_AVAILABLE}
+                          onClick={() => {
+                            setLinkDays(days);
+                            setExpiration(
+                              DateTime.now().plus({ days }).toMillis(),
+                            );
+                          }}
+                          className={cn(
+                            'flex-1 px-3 py-1.5 text-base leading-normal transition-colors disabled:opacity-60',
+                            selected
+                              ? 'bg-primary text-white'
+                              : 'enabled:hover:bg-white/10',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    variant='primary'
+                    onClick={handleShare}
+                    disabled={!SHARING_AVAILABLE || isCopying}
+                  >
+                    {isCopying ? 'Copying...' : 'Copy link'}
+                  </Button>
+                  {!SHARING_AVAILABLE && (
+                    <span className='text-xs text-muted-foreground'>
+                      New links are temporarily unavailable.
+                    </span>
+                  )}
+                </div>
+                {resultsMemberships.length > 0 && (
+                  <DataTable
+                    storageKey='jolly-shared-with'
+                    columns={sharedColumns}
+                    data={sharedRows}
+                    getRowId={(m) => m.userId}
+                    pageSize={false}
+                  />
+                )}
+              </CardContent>
+            </Card>
+          )}
+          <Button
+            variant='primary'
+            className='mt-auto'
+            onClick={exportResultsAsCSV}
+            disabled={exporting}
+          >
+            {exporting ? 'Exporting...' : 'Export results as CSV'}
+          </Button>
+        </div>
+        <Card className='min-w-0 grow'>
+          <CardContent>
+            <Tabs
+              keepMounted
+              activeTab={tab === 'map' ? 0 : 1}
+              onTabChange={(index) => setTab(index === 0 ? 'map' : 'estimates')}
+            >
+              <Tab label='Density Map'>
+                <div className='h-[calc(100vh-170px)] min-h-[420px] pt-4'>
+                  <DensityMap
+                    surveyId={surveyId}
+                    annotationSetId={annotationSetId}
+                    categoryIds={
+                      selectedCategories.length > 0
+                        ? categoryIds
+                        : categoryOptions.map((c) => c.value)
+                    }
+                    primaryOnly
+                    dropFalseNegatives
+                    highlightedStratumId={tableHoveredStratumId}
+                    onStratumHover={setMapHoveredStratumId}
+                  />
+                </div>
+              </Tab>
+              <Tab label='Population Estimates'>
+                <div className='flex h-[calc(100vh-170px)] min-h-[420px] flex-col gap-3 pt-4'>
+                  <div className='flex flex-wrap items-stretch gap-2'>
+                    {[
+                      ['Estimate', Math.round(totalEstimate).toLocaleString()],
+                      ['Lower 95', Math.round(totalLower95).toLocaleString()],
+                      ['Upper 95', Math.round(totalUpper95).toLocaleString()],
+                      ['Std error', totalStdError.toFixed(2)],
+                      ['Variance', totalVariance.toFixed(2)],
+                      [`t value (n=${totalSamples})`, tValue.toFixed(3)],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className='flex flex-col justify-center border border-white/15 bg-white/[0.07] px-4 py-2'
                       >
-                        After copying the link, it will remain valid until the
-                        expiration date. Any user who clicks the link will be
-                        required to sign in. These users will be granted access
-                        to this results page. You can revoke access by removing
-                        them from the list below. You must wait for the link to
-                        expire before creating a new one. As a safety measure,
-                        choose the shortest expiration date possible.
-                      </span>
-                    )}
-                    <Form.Label className='mb-0 d-block'>
-                      Expiration Date:
-                    </Form.Label>
-                    {tokenExpiry && (
-                      <span
-                        className='text-muted d-block mb-2 mt-0'
-                        style={{ fontSize: '14px' }}
-                      >
-                        Link still valid until{' '}
-                        {new Date(tokenExpiry).toLocaleDateString()}
-                      </span>
-                    )}
-                    <Form.Control
-                      type='date'
-                      disabled={true}
-                      placeholder='Expiration'
-                      value={DateTime.fromMillis(expiration).toFormat(
-                        'yyyy-MM-dd'
-                      )}
-                      onChange={(e) =>
-                        setExpiration(
-                          DateTime.fromFormat(
-                            e.target.value,
-                            'yyyy-MM-dd'
-                          ).toMillis()
+                        <span className='text-[11px] tracking-wider text-muted-foreground uppercase'>
+                          {label}
+                        </span>
+                        <span className='tabular-nums'>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className='min-h-0 grow overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10'>
+                    <DataTable
+                      storageKey='jolly-results'
+                      columns={columnsFromHeadings(tableHeadings)}
+                      data={cellRows(tableData)}
+                      getRowId={(row) => row.id}
+                      emptyMessage='No Jolly results found.'
+                      onRowHover={(id) =>
+                        setTableHoveredStratumId(
+                          id ? (rowStratumIds.get(id) ?? null) : null,
                         )
                       }
-                      min={DateTime.now().toFormat('yyyy-MM-dd')}
+                      highlightedRowIds={highlightedRowIds}
                     />
-                    <OverlayTrigger
-                      placement='top'
-                      overlay={<Tooltip id='copy-link-tooltip'>Under maintenance</Tooltip>}
-                    >
-                      <div className='d-inline-block w-100'>
-                        <Button
-                          variant='outline-primary'
-                          className='mt-2 w-100'
-                          onClick={handleShare}
-                          disabled={true}
-                          style={{ pointerEvents: 'none' }}
-                        >
-                          {isCopying ? 'Copying...' : 'Copy Link'}
-                        </Button>
-                      </div>
-                    </OverlayTrigger>
-                  </Form.Group>
-                  <Form.Group>
-                    <Form.Label className='m-0'>Shared with:</Form.Label>
-                    {resultsMemberships.length > 0 ? (
-                      resultsMemberships.map((m) => (
-                        <div
-                          className='mb-2 w-100 d-flex justify-content-between align-items-center'
-                          style={{
-                            border: '1px solid #ccc',
-                            borderRadius: '4px',
-                            padding: '0px 0px 0px 8px',
-                            fontSize: '14px',
-                            overflow: 'hidden',
-                          }}
-                          key={m.userId}
-                        >
-                          <span className='m-0'>
-                            {users?.find((u) => u.id === m.userId)?.name ||
-                              'New User'}
-                          </span>
-                          <Button
-                            variant='danger'
-                            size='sm'
-                            onClick={() => removeResultsMembership(m.userId)}
-                          >
-                            <X />
-                          </Button>
-                        </div>
-                      ))
-                    ) : (
-                      <p
-                        className='mb-0 text-muted'
-                        style={{ fontSize: '14px' }}
-                      >
-                        No one has been shared with yet.
-                      </p>
-                    )}
-                  </Form.Group>
-                </div>
-              )}
-              <Button onClick={exportResultsAsCSV} disabled={exporting}>
-                {exporting
-                  ? 'Exporting, Please wait...'
-                  : 'Export Results as CSV'}
-              </Button>
-            </Card.Body>
-          </Card>
-        </div>
-        <div className='d-flex flex-column gap-2 flex-grow-1'>
-          <Card className='flex-grow-1'>
-            <Card.Header>
-              <Card.Title>
-                <h4 className='mb-0'>Density Map</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body className='p-0 overflow-hidden'>
-              <div style={{ height: 'clamp(400px, 55vh, 650px)' }}>
-                <DensityMap
-                  surveyId={surveyId}
-                  annotationSetId={annotationSetId}
-                  categoryIds={
-                    selectedCategories.length > 0
-                      ? categoryIds
-                      : categoryOptions.map((c) => c.value)
-                  }
-                  primaryOnly
-                  dropFalseNegatives
-                  highlightedStratumId={tableHoveredStratumId}
-                  onStratumHover={setMapHoveredStratumId}
-                />
-              </div>
-            </Card.Body>
-          </Card>
-          <Card>
-            <Card.Header className='d-flex justify-content-between align-items-center gap-2'>
-              <Card.Title className='mb-0 w-100' style={{ maxWidth: '300px' }}>
-                <h4 className='mb-0'>Jolly Results</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body>
-              <MyTable
-                tableHeadings={tableHeadings}
-                tableData={tableData}
-                pagination={false}
-                emptyMessage='No Jolly results found.'
-                onRowHover={(id) =>
-                  setTableHoveredStratumId(
-                    id ? rowStratumIds.get(id) ?? null : null
-                  )
-                }
-                highlightedRowIds={highlightedRowIds}
-              />
-              <div className='mt-3 p-2 border-top'>
-                <h5>Totals</h5>
-                <div className='d-flex flex-wrap gap-4'>
-                  <div>
-                    <strong>Estimate:</strong> {Math.round(totalEstimate)}
-                  </div>
-                  <div>
-                    <strong>Variance:</strong> {totalVariance.toFixed(2)}
-                  </div>
-                  <div>
-                    <strong>Std Error:</strong> {totalStdError.toFixed(2)}
-                  </div>
-                  <div>
-                    <strong>t Value (n={totalSamples}):</strong>{' '}
-                    {tValue.toFixed(3)}
-                  </div>
-                  <div>
-                    <strong>Lower 95:</strong> {Math.round(totalLower95)}
-                  </div>
-                  <div>
-                    <strong>Upper 95:</strong> {Math.round(totalUpper95)}
                   </div>
                 </div>
-              </div>
-            </Card.Body>
-          </Card>
-        </div>
+              </Tab>
+            </Tabs>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

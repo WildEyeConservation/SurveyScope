@@ -1,8 +1,8 @@
 import computeMunkres from 'munkres-js';
 import type { AnnotationType, ImageType } from '../../schemaTypes';
 import type { MatchCandidate, PixelTransform } from '../types';
-import { isInOverlap, projectsInside } from './transforms';
 import { isOov } from './identity';
+import { isInOverlap, projectsInside } from './transforms';
 
 export interface BuildCandidatesInput {
   annotationsA: AnnotationType[];
@@ -20,7 +20,7 @@ const HARD_FORBID = 1_000_000;
 
 function dist2(
   a: { x: number; y: number },
-  b: { x: number; y: number }
+  b: { x: number; y: number },
 ): number {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
@@ -29,7 +29,7 @@ function dist2(
 
 function passesCategory(
   anno: AnnotationType,
-  filter?: string | string[]
+  filter?: string | string[],
 ): boolean {
   if (!filter) return true;
   if (typeof filter === 'string') return anno.categoryId === filter;
@@ -93,10 +93,8 @@ export function buildMatchCandidates({
   };
   const oovChainOnA = chainSet(oovA);
   const oovChainOnB = chainSet(oovB);
-  const linkedToOtherOov = (
-    ann: AnnotationType,
-    otherChain: Set<string>
-  ) => !!ann.objectId && otherChain.has(ann.objectId);
+  const linkedToOtherOov = (ann: AnnotationType, otherChain: Set<string>) =>
+    !!ann.objectId && otherChain.has(ann.objectId);
 
   const A = posAllA.filter((a) => !linkedToOtherOov(a, oovChainOnB));
   const B = posAllB.filter((b) => !linkedToOtherOov(b, oovChainOnA));
@@ -149,7 +147,7 @@ export function buildMatchCandidates({
     // Pad to a square matrix; pad rows/cols represent "leave unmatched" at cost = leniency.
     const N = assignA.length + assignB.length;
     const cost: number[][] = Array.from({ length: N }, () =>
-      Array<number>(N).fill(leniency)
+      Array<number>(N).fill(leniency),
     );
 
     for (let i = 0; i < assignA.length; i++) {
@@ -168,7 +166,7 @@ export function buildMatchCandidates({
         }
         cost[i][j] = dist2(
           { x: projected[0], y: projected[1] },
-          { x: b.x, y: b.y }
+          { x: b.x, y: b.y },
         );
       }
     }

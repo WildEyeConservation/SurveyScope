@@ -19,11 +19,13 @@ export function onUploadUiRequest(listener: RequestListener): () => void {
 }
 
 export function requestResume(project: { id: string; name: string }): void {
-  for (const listener of requestListeners) listener({ type: 'resume', project });
+  for (const listener of requestListeners)
+    listener({ type: 'resume', project });
 }
 
 export function requestDelete(project: { id: string; name: string }): void {
-  for (const listener of requestListeners) listener({ type: 'delete', project });
+  for (const listener of requestListeners)
+    listener({ type: 'delete', project });
 }
 
 export interface UploadUiState {
@@ -52,7 +54,7 @@ function subscribeUi(listener: () => void): () => void {
 }
 
 export const withResuming = createExclusive((projectId) =>
-  setUploadUiState({ resumingProjectId: projectId })
+  setUploadUiState({ resumingProjectId: projectId }),
 );
 
 export function useUploadUi(): UploadUiState {
@@ -65,7 +67,7 @@ function subscribeStatus(listener: () => void): () => void {
 
 export function useUploadStatus(): SessionSnapshot | null {
   return useSyncExternalStore(subscribeStatus, () =>
-    uploadOrchestrator.getSnapshot()
+    uploadOrchestrator.getSnapshot(),
   );
 }
 

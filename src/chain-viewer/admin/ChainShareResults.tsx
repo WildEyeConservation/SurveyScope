@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Spinner, Table } from 'react-bootstrap';
-import Select, { type MultiValue, type SingleValue } from 'react-select';
-import './admin.css';
+import DataTable, { type DataColumn } from '@/components/DataTable';
+import { Alert } from '@/components/ui/alert';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Combobox } from '@/components/ui/combobox';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { BarChart3 } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+
+import { cn } from '@/lib/utils';
 import { useUsers } from '../../apiInterface';
 import { useSharedChainData } from '../shared/useSharedChainData';
-import { useActiveShares, ownerToUserId } from './useActiveShares';
-import {
-  foldFeedbackRows,
-  useAllChainReviewFeedback,
-} from './useAllChainReviewFeedback';
 import {
   computeCombinedOverlay,
   computeDistribution,
@@ -16,6 +17,11 @@ import {
   emptyOverlay,
   type Overlay,
 } from './shareStats';
+import { ownerToUserId, useActiveShares } from './useActiveShares';
+import {
+  foldFeedbackRows,
+  useAllChainReviewFeedback,
+} from './useAllChainReviewFeedback';
 
 type Option = { label: string; value: string };
 
@@ -30,7 +36,7 @@ interface Column {
 function Delta({ value }: { value: number }) {
   if (value === 0) return null;
   return (
-    <span className={value > 0 ? 'text-success' : 'text-danger'} style={{ marginLeft: 6 }}>
+    <span className={cn('ml-1.5', value > 0 ? 'text-success' : 'text-danger')}>
       ({value > 0 ? '+' : ''}
       {value})
     </span>
@@ -43,19 +49,69 @@ function Delta({ value }: { value: number }) {
  * opinions (and a combined consensus). Reviewers only record divergences, so a
  * reviewer with no feedback for an annotation is counted as agreeing.
  */
-export default function ChainShareResults() {
+export function SelectSharePrompt({ busy }: { busy: boolean }) {
+  return (
+    <div className='flex flex-col items-center gap-2 border border-dark bg-[#6F7B89] py-10 text-muted-foreground'>
+      {busy ? (
+        <Spinner animation='border' />
+      ) : (
+        <>
+          <BarChart3 size={28} className='opacity-70' />
+          Select a share above
+        </>
+      )}
+    </div>
+  );
+}
+
+type TableRow = { id: string; cells: ReactNode[] };
+
+function MetricTable(props: {
+  head: string[];
+  rows: TableRow[];
+  footer?: ReactNode[];
+}) {
+  const columns: DataColumn<TableRow>[] = props.head.map((title, index) => ({
+    id: String(index),
+    header: title,
+    enableSorting: false,
+    cell: ({ row }) => row.original.cells[index],
+    meta: {
+      className:
+        index === 0 ? undefined : 'text-right tabular-nums whitespace-nowrap',
+    },
+  }));
+  return (
+    <DataTable
+      storageKey='chain-share-results'
+      columns={columns}
+      data={props.rows}
+      getRowId={(row) => row.id}
+      pageSize={false}
+      footer={props.footer}
+    />
+  );
+}
+
+export default function ChainShareResults({
+  shareId,
+  onShareChange,
+}: {
+  shareId: string | undefined;
+  onShareChange: (shareId: string | undefined) => void;
+}) {
   const { users } = useUsers();
   const { data: shares, isLoading: sharesLoading } = useActiveShares();
 
-  const [shareId, setShareId] = useState<string | undefined>(undefined);
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
 
-  const { data: chainData, isLoading: chainLoading } = useSharedChainData(shareId);
+  const { data: chainData, isLoading: chainLoading } =
+    useSharedChainData(shareId);
   const { data: feedbackRows, isLoading: feedbackLoading } =
     useAllChainReviewFeedback(shareId);
   const feedback = useMemo(
     () => foldFeedbackRows(feedbackRows ?? []),
-    [feedbackRows]
+    [feedbackRows],
   );
 
   const userNameById = useMemo(() => {
@@ -67,7 +123,7 @@ export default function ChainShareResults() {
   const ownerLabel = useMemo(
     () => (owner: string) =>
       userNameById.get(ownerToUserId(owner)) ?? ownerToUserId(owner),
-    [userNameById]
+    [userNameById],
   );
 
   const shareOptions: Option[] = (shares ?? []).map((s) => ({
@@ -96,13 +152,23 @@ export default function ChainShareResults() {
   // Build columns: baseline, one per selected reviewer, plus combined (>1).
   const columns: Column[] = useMemo(() => {
     const cols: Column[] = [
-      { key: 'baseline', label: 'Baseline', overlay: emptyOverlay(), isBaseline: true },
+      {
+        key: 'baseline',
+        label: 'Baseline',
+        overlay: emptyOverlay(),
+        isBaseline: true,
+      },
     ];
     const overlays: Overlay[] = [];
     for (const owner of selectedOwners) {
       const overlay = feedback?.overlayByOwner.get(owner) ?? emptyOverlay();
       overlays.push(overlay);
-      cols.push({ key: owner, label: ownerLabel(owner), overlay, isBaseline: false });
+      cols.push({
+        key: owner,
+        label: ownerLabel(owner),
+        overlay,
+        isBaseline: false,
+      });
     }
     if (overlays.length > 1) {
       cols.push({
@@ -122,7 +188,7 @@ export default function ChainShareResults() {
         dist: computeDistribution(annotations, col.overlay),
         obscured: computeObscuredDiff(annotations, col.overlay),
       })),
-    [columns, annotations]
+    [columns, annotations],
   );
 
   const baselineDist = perColumn[0]?.dist;
@@ -135,188 +201,155 @@ export default function ChainShareResults() {
     }
     return [...ids].sort(
       (a, b) =>
-        (baselineDist?.byCategory.get(b) ?? 0) - (baselineDist?.byCategory.get(a) ?? 0)
+        (baselineDist?.byCategory.get(b) ?? 0) -
+        (baselineDist?.byCategory.get(a) ?? 0),
     );
   }, [perColumn, baselineDist]);
 
   const busy = chainLoading || feedbackLoading;
+  const head = ['', ...perColumn.map(({ col }) => col.label)];
+
+  const distributionRows: TableRow[] = visibleCategoryIds.map((id) => {
+    const cat = catById.get(id);
+    const baseCount = baselineDist?.byCategory.get(id) ?? 0;
+    return {
+      id,
+      cells: [
+        <span className='flex items-center gap-2'>
+          <span
+            className='inline-block size-2.5 shrink-0 rounded-sm'
+            style={{ background: cat?.color ?? '#888' }}
+          />
+          {cat?.name ?? id}
+        </span>,
+        ...perColumn.map(({ col, dist }) => {
+          const count = dist.byCategory.get(id) ?? 0;
+          return (
+            <>
+              {count.toLocaleString()}
+              {!col.isBaseline && <Delta value={count - baseCount} />}
+            </>
+          );
+        }),
+      ],
+    };
+  });
+
+  const statusRows: TableRow[] = [
+    {
+      id: 'oov',
+      cells: [
+        'Out of view',
+        ...perColumn.map(({ dist }) => dist.oov.toLocaleString()),
+      ],
+    },
+    {
+      id: 'obscured',
+      cells: [
+        'Obscured',
+        ...perColumn.map(({ col, dist }) => (
+          <>
+            {dist.obscuredCount.toLocaleString()}
+            {!col.isBaseline && (
+              <Delta
+                value={dist.obscuredCount - (baselineDist?.obscuredCount ?? 0)}
+              />
+            )}
+          </>
+        )),
+      ],
+    },
+    {
+      id: 'added',
+      cells: [
+        'Marked obscured (was visible)',
+        ...perColumn.map(({ col, obscured }) =>
+          col.isBaseline ? '—' : obscured.added.toLocaleString(),
+        ),
+      ],
+    },
+    {
+      id: 'removed',
+      cells: [
+        'Marked visible (was obscured)',
+        ...perColumn.map(({ col, obscured }) =>
+          col.isBaseline ? '—' : obscured.removed.toLocaleString(),
+        ),
+      ],
+    },
+  ];
 
   return (
-    <div style={{ width: '100%' }}>
-      <Card className='mb-3'>
-        <Card.Header>
-          <h4 className='mb-0'>Results</h4>
-        </Card.Header>
-        <Card.Body>
-          <div className='d-flex flex-row flex-wrap gap-3 align-items-end'>
-            <Form.Group style={{ minWidth: 320, flex: 1 }}>
-              <Form.Label>Share</Form.Label>
-              <Select
-                value={shareOptions.find((o) => o.value === shareId) ?? null}
-                onChange={(v: SingleValue<Option>) => setShareId(v?.value)}
-                options={shareOptions}
-                className='text-black'
-                placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
-                isLoading={sharesLoading}
-                isClearable
-              />
-            </Form.Group>
-            <Form.Group style={{ minWidth: 320, flex: 2 }}>
-              <Form.Label>Reviewers</Form.Label>
-              <Select
-                isMulti
-                value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
-                onChange={(v: MultiValue<Option>) =>
-                  setSelectedOwners(v.map((o) => o.value))
-                }
-                options={ownerOptions}
-                className='text-black'
-                placeholder='All reviewers'
-                isDisabled={!shareId || ownerOptions.length === 0}
-              />
-            </Form.Group>
-          </div>
-          {shareId && !busy && (feedback?.owners.length ?? 0) === 0 && (
-            <p className='mt-3 mb-0 text-warning'>
-              No reviewer feedback recorded for this share yet — showing baseline only.
-            </p>
-          )}
-        </Card.Body>
-      </Card>
+    <div className='flex flex-col gap-4'>
+      <div className='flex flex-wrap items-end gap-2'>
+        <div className='min-w-72 flex-1'>
+          <Label className='mb-1'>Share</Label>
+          <Combobox
+            value={shareOptions.find((o) => o.value === shareId) ?? null}
+            onChange={(option) => onShareChange(option?.value)}
+            options={shareOptions}
+            placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
+            loading={sharesLoading}
+            clearable
+            name='Share'
+          />
+        </div>
+        <div className='min-w-72 flex-[2]'>
+          <Label className='mb-1'>Reviewers</Label>
+          <Combobox
+            multiple
+            value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
+            onChange={(options) =>
+              setSelectedOwners(options.map((o) => o.value))
+            }
+            options={ownerOptions}
+            placeholder='All reviewers'
+            disabled={!shareId || ownerOptions.length === 0}
+            name='Reviewers'
+          />
+        </div>
+      </div>
 
-      {!shareId ? (
-        <p className='text-muted'>Select a share to see results.</p>
-      ) : busy ? (
-        <Spinner animation='border' />
+      {!shareId || busy ? (
+        <SelectSharePrompt busy={!!shareId && busy} />
       ) : (
         <>
-          <Card className='mb-3'>
-            <Card.Header>
-              <h5 className='mb-0'>Label distribution</h5>
-              <small className='text-muted'>
-                Effective count per reviewer with delta vs baseline. Combined =
-                plurality consensus (ties fall back to baseline).
-              </small>
-            </Card.Header>
-            <Card.Body className='p-0'>
-              <Table
-                responsive
-                hover
-                size='sm'
-                className='align-middle mb-0 chain-share-table'
-              >
-                <thead>
-                  <tr>
-                    <th>Label</th>
-                    {perColumn.map(({ col }) => (
-                      <th key={col.key}>{col.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleCategoryIds.map((id) => {
-                    const cat = catById.get(id);
-                    const baseCount = baselineDist?.byCategory.get(id) ?? 0;
-                    return (
-                      <tr key={id}>
-                        <td>
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              width: 10,
-                              height: 10,
-                              borderRadius: 2,
-                              marginRight: 6,
-                              background: cat?.color ?? '#888',
-                            }}
-                          />
-                          {cat?.name ?? id}
-                        </td>
-                        {perColumn.map(({ col, dist }) => {
-                          const count = dist.byCategory.get(id) ?? 0;
-                          return (
-                            <td key={col.key}>
-                              {count}
-                              {!col.isBaseline && <Delta value={count - baseCount} />}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                  <tr>
-                    <td>
-                      <strong>Total annotations</strong>
-                    </td>
-                    {perColumn.map(({ col, dist }) => (
-                      <td key={col.key}>{dist.total}</td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td>Out of view</td>
-                    {perColumn.map(({ col, dist }) => (
-                      <td key={col.key}>{dist.oov}</td>
-                    ))}
-                  </tr>
-                </tbody>
-              </Table>
-            </Card.Body>
-          </Card>
-
+          {(feedback?.owners.length ?? 0) === 0 && (
+            <Alert variant='warning' className='mb-0'>
+              No reviewer feedback recorded for this share yet, so only the
+              baseline is shown.
+            </Alert>
+          )}
           <Card>
-            <Card.Header>
-              <h5 className='mb-0'>Obscured status</h5>
-              <small className='text-muted'>
-                Out-of-view rows excluded (their obscured flag is not editable).
-              </small>
-            </Card.Header>
-            <Card.Body className='p-0'>
-              <Table
-                responsive
-                hover
-                size='sm'
-                className='align-middle mb-0 chain-share-table'
-              >
-                <thead>
-                  <tr>
-                    <th>Metric</th>
-                    {perColumn.map(({ col }) => (
-                      <th key={col.key}>{col.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Obscured count</td>
-                    {perColumn.map(({ col, dist }) => (
-                      <td key={col.key}>
-                        {dist.obscuredCount}
-                        {!col.isBaseline && (
-                          <Delta
-                            value={
-                              dist.obscuredCount -
-                              (baselineDist?.obscuredCount ?? 0)
-                            }
-                          />
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td>Marked obscured (was visible)</td>
-                    {perColumn.map(({ col, obscured }) => (
-                      <td key={col.key}>{col.isBaseline ? '—' : obscured.added}</td>
-                    ))}
-                  </tr>
-                  <tr>
-                    <td>Marked visible (was obscured)</td>
-                    {perColumn.map(({ col, obscured }) => (
-                      <td key={col.key}>{col.isBaseline ? '—' : obscured.removed}</td>
-                    ))}
-                  </tr>
-                </tbody>
-              </Table>
-            </Card.Body>
+            <CardHeader className='py-3'>
+              <div className='font-semibold'>Label distribution</div>
+              <div className='text-sm text-muted-foreground'>
+                Count per reviewer with the change from the baseline. Combined
+                is the plurality consensus; ties fall back to the baseline.
+              </div>
+            </CardHeader>
+            <CardContent>
+              <MetricTable
+                head={['Label', ...head.slice(1)]}
+                rows={distributionRows}
+                footer={[
+                  'Total annotations',
+                  ...perColumn.map(({ dist }) => dist.total.toLocaleString()),
+                ]}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className='py-3'>
+              <div className='font-semibold'>Visibility</div>
+              <div className='text-sm text-muted-foreground'>
+                Obscured counts leave out out-of-view annotations, whose
+                obscured flag can't be edited.
+              </div>
+            </CardHeader>
+            <CardContent>
+              <MetricTable head={head} rows={statusRows} />
+            </CardContent>
           </Card>
         </>
       )}

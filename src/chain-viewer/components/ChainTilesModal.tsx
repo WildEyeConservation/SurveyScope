@@ -1,12 +1,18 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Modal } from 'react-bootstrap';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Check, Copy, LayoutGrid, Share2, Square } from 'lucide-react';
-import { ChainGrid } from '../ChainGrid';
-import { ChainTilePaginator } from './ChainTilePaginator';
-import { buildChains } from '../utils/chainBuilder';
-import { useChainTileMeta } from '../hooks/useChainTileMeta';
+import { useCallback, useMemo, useState } from 'react';
 import { nameFor } from '../../individual-id/utils/identity';
+import { ChainGrid } from '../ChainGrid';
+import { useChainTileMeta } from '../hooks/useChainTileMeta';
 import type { AnnotationImageMeta, ChainAnnotation } from '../types';
+import { buildChains } from '../utils/chainBuilder';
+import { ChainTilePaginator } from './ChainTilePaginator';
 
 const DEFAULT_COLOR = '#ff8c1a';
 
@@ -45,9 +51,7 @@ export function ChainTilesModal({
 }: Props) {
   const chain = useMemo(() => {
     if (!show || !chainId) return null;
-    const members = annotations.filter(
-      (a) => (a.objectId ?? a.id) === chainId
-    );
+    const members = annotations.filter((a) => (a.objectId ?? a.id) === chainId);
     return buildChains(members)[0] ?? null;
   }, [show, chainId, annotations]);
 
@@ -57,7 +61,7 @@ export function ChainTilesModal({
   const loading = metaOverride ? !!metaLoadingOverride : live.loading;
 
   const [cameraRotations, setCameraRotations] = useState<Map<string, number>>(
-    () => new Map()
+    () => new Map(),
   );
   const rotateByKey = useCallback((key: string) => {
     setCameraRotations((prev) => {
@@ -71,7 +75,7 @@ export function ChainTilesModal({
   // held inside ChainTile) so a tile's zoom survives paginator navigation and
   // grid/paginator view switches, which remount the tile.
   const [tileZoom, setTileZoom] = useState<Map<string, number>>(
-    () => new Map()
+    () => new Map(),
   );
   const setZoomFor = useCallback((annotationId: string, next: number) => {
     setTileZoom((prev) => {
@@ -105,131 +109,137 @@ export function ChainTilesModal({
   }, [chain]);
 
   return (
-    <Modal show={show} onHide={onHide} size='lg' centered scrollable>
-      <Modal.Header closeButton>
-        <Modal.Title className='flex-grow-1 d-flex flex-column'>
-          <span style={{ fontSize: 16 }}>Chain tiles</span>
+    <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
+      <DialogContent size='lg' centered scrollable>
+        <DialogHeader closeButton>
+          <DialogTitle className='flex grow flex-col'>
+            <span style={{ fontSize: 16 }}>Chain tiles</span>
+            {chain && (
+              <span
+                className='flex items-center gap-2'
+                style={{ fontSize: 13 }}
+              >
+                <span style={{ fontWeight: 600 }}>
+                  {nameFor(chain.primaryId)}
+                </span>
+                <button
+                  type='button'
+                  onClick={copyId}
+                  title={copied ? 'Copied!' : 'Copy chain id'}
+                  className='inline-flex items-center'
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: copied ? '#2e7d32' : '#ff8c1a',
+                  }}
+                >
+                  {copied ? (
+                    <Check size={14} strokeWidth={2.5} />
+                  ) : (
+                    <Copy size={14} strokeWidth={2.5} />
+                  )}
+                </button>
+                <span className='text-muted-foreground'>
+                  · {chain.annotations.length} sighting
+                  {chain.annotations.length === 1 ? '' : 's'}
+                </span>
+              </span>
+            )}
+          </DialogTitle>
           {chain && (
-            <span
-              className='d-flex align-items-center gap-2'
-              style={{ fontSize: 13 }}
-            >
-              <span style={{ fontWeight: 600 }}>{nameFor(chain.primaryId)}</span>
+            <div className='flex items-center gap-2 self-center'>
               <button
                 type='button'
-                onClick={copyId}
-                title={copied ? 'Copied!' : 'Copy chain id'}
-                className='d-inline-flex align-items-center'
+                onClick={shareChain}
+                title={shareCopied ? 'Copied!' : 'Copy share link'}
+                className='inline-flex items-center gap-1'
                 style={{
                   border: 'none',
                   background: 'transparent',
                   padding: 0,
+                  whiteSpace: 'nowrap',
+                  color: shareCopied ? '#2e7d32' : '#ff8c1a',
                   cursor: 'pointer',
-                  color: copied ? '#2e7d32' : '#ff8c1a',
+                  fontSize: 13,
+                  textDecoration: shareCopied ? 'none' : 'underline',
                 }}
               >
-                {copied ? (
+                {shareCopied ? (
                   <Check size={14} strokeWidth={2.5} />
                 ) : (
-                  <Copy size={14} strokeWidth={2.5} />
+                  <Share2 size={14} strokeWidth={2.5} />
                 )}
+                <span>{shareCopied ? 'Copied' : 'Share'}</span>
               </button>
-              <span className='text-muted'>
-                · {chain.annotations.length} sighting
-                {chain.annotations.length === 1 ? '' : 's'}
-              </span>
-            </span>
-          )}
-        </Modal.Title>
-        {chain && (
-          <div className='d-flex align-items-center gap-2 align-self-center'>
-            <button
-              type='button'
-              onClick={shareChain}
-              title={shareCopied ? 'Copied!' : 'Copy share link'}
-              className='d-inline-flex align-items-center gap-1'
-              style={{
-                border: 'none',
-                background: 'transparent',
-                padding: 0,
-                whiteSpace: 'nowrap',
-                color: shareCopied ? '#2e7d32' : '#ff8c1a',
-                cursor: 'pointer',
-                fontSize: 13,
-                textDecoration: shareCopied ? 'none' : 'underline',
-              }}
-            >
-              {shareCopied ? (
-                <Check size={14} strokeWidth={2.5} />
-              ) : (
-                <Share2 size={14} strokeWidth={2.5} />
-              )}
-              <span>{shareCopied ? 'Copied' : 'Share'}</span>
-            </button>
-            <div
-              className='chain-viewer-view-toggle'
-              role='group'
-              aria-label='Tile view'
-            >
-            <button
-              type='button'
-              className={view === 'grid' ? 'active' : ''}
-              onClick={() => setView('grid')}
-              aria-pressed={view === 'grid'}
-              title='Grid view — all tiles at once'
-            >
-              <LayoutGrid size={14} strokeWidth={2.5} />
-              <span>Grid</span>
-            </button>
-            <button
-              type='button'
-              className={view === 'paginator' ? 'active' : ''}
-              onClick={() => setView('paginator')}
-              aria-pressed={view === 'paginator'}
-              title='Paginator view — one tile at a time'
-            >
-              <Square size={14} strokeWidth={2.5} />
-              <span>Paginator</span>
-            </button>
+              <div
+                className='chain-viewer-view-toggle'
+                role='group'
+                aria-label='Tile view'
+              >
+                <button
+                  type='button'
+                  className={view === 'grid' ? 'active' : ''}
+                  onClick={() => setView('grid')}
+                  aria-pressed={view === 'grid'}
+                  title='Grid view — all tiles at once'
+                >
+                  <LayoutGrid size={14} strokeWidth={2.5} />
+                  <span>Grid</span>
+                </button>
+                <button
+                  type='button'
+                  className={view === 'paginator' ? 'active' : ''}
+                  onClick={() => setView('paginator')}
+                  aria-pressed={view === 'paginator'}
+                  title='Paginator view — one tile at a time'
+                >
+                  <Square size={14} strokeWidth={2.5} />
+                  <span>Paginator</span>
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      </Modal.Header>
-      <Modal.Body style={{ maxHeight: '70vh' }}>
-        {chain ? (
-          view === 'grid' ? (
-            <ChainGrid
-              chain={chain}
-              metaByAnnotationId={metaByAnnotationId}
-              metaLoading={loading}
-              categoryColor={categoryColor}
-              columns={null}
-              cameraRotations={cameraRotations}
-              onRotateKey={rotateByKey}
-              tileZoom={tileZoom}
-              onZoomChange={setZoomFor}
-              onToggleObscured={onToggleObscured}
-              openImageHrefFor={openImageHrefFor}
-            />
+          )}
+        </DialogHeader>
+        <DialogBody style={{ maxHeight: '70vh' }}>
+          {chain ? (
+            view === 'grid' ? (
+              <ChainGrid
+                chain={chain}
+                metaByAnnotationId={metaByAnnotationId}
+                metaLoading={loading}
+                categoryColor={categoryColor}
+                columns={null}
+                cameraRotations={cameraRotations}
+                onRotateKey={rotateByKey}
+                tileZoom={tileZoom}
+                onZoomChange={setZoomFor}
+                onToggleObscured={onToggleObscured}
+                openImageHrefFor={openImageHrefFor}
+              />
+            ) : (
+              <ChainTilePaginator
+                key={chain.primaryId}
+                chain={chain}
+                metaByAnnotationId={metaByAnnotationId}
+                metaLoading={loading}
+                categoryColor={categoryColor}
+                cameraRotations={cameraRotations}
+                onRotateKey={rotateByKey}
+                tileZoom={tileZoom}
+                onZoomChange={setZoomFor}
+                onToggleObscured={onToggleObscured}
+                openImageHrefFor={openImageHrefFor}
+              />
+            )
           ) : (
-            <ChainTilePaginator
-              key={chain.primaryId}
-              chain={chain}
-              metaByAnnotationId={metaByAnnotationId}
-              metaLoading={loading}
-              categoryColor={categoryColor}
-              cameraRotations={cameraRotations}
-              onRotateKey={rotateByKey}
-              tileZoom={tileZoom}
-              onZoomChange={setZoomFor}
-              onToggleObscured={onToggleObscured}
-              openImageHrefFor={openImageHrefFor}
-            />
-          )
-        ) : (
-          <div className='text-muted text-center p-4'>No chain selected.</div>
-        )}
-      </Modal.Body>
-    </Modal>
+            <div className='p-6 text-center text-muted-foreground'>
+              No chain selected.
+            </div>
+          )}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
   );
 }

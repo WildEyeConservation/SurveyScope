@@ -1,18 +1,18 @@
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { inv, type Matrix } from 'mathjs';
 import {
   useCallback,
-  useState,
   useContext,
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react';
-import { ImageContext, UserContext, GlobalContext } from './Context';
+import type { Schema } from './amplify/client-schema';
 import type { AnnotationImage } from './annotationTypes';
 import type { AnnotationsHook } from './Context';
-import { inv, type Matrix } from 'mathjs';
-import type { Schema } from './amplify/client-schema';
+import { GlobalContext, ImageContext, UserContext } from './Context';
 import { array2Matrix, makeTransform } from './utils';
-import { useQueries, useQuery } from '@tanstack/react-query';
 
 export function ImageContextFromHook({
   hook,
@@ -37,7 +37,7 @@ export function ImageContextFromHook({
   const { client } = useContext(GlobalContext);
   const [startLoadingTimestamp, _] = useState<number>(Date.now());
   const [visibleTimestamp, setVisibleTimestamp] = useState<number | undefined>(
-    undefined
+    undefined,
   );
   const [fullyLoadedTimestamp, setFullyLoadedTimestamp] = useState<
     number | undefined
@@ -60,18 +60,27 @@ export function ImageContextFromHook({
 
   const prevNeighbours = useMemo(() => {
     //return a dictionary using the image1Id as the key and the transform as the value
-    return prevNeighboursQuery.data?.data?.reduce((acc, n) => {
-      if (n.homography) {
-        const m = array2Matrix(n.homography) as unknown as Matrix;
-        acc[n.image1Id] = {
-          fwd: makeTransform(inv(m) as Matrix),
-          bwd: makeTransform(m),
-        };
-      } else {
-        acc[n.image1Id] = { fwd: undefined, bwd: undefined };
-      }
-      return acc;
-    }, {} as Record<string, { fwd: ((c1: [number, number]) => [number, number]) | undefined; bwd: ((c1: [number, number]) => [number, number]) | undefined }>);
+    return prevNeighboursQuery.data?.data?.reduce(
+      (acc, n) => {
+        if (n.homography) {
+          const m = array2Matrix(n.homography) as unknown as Matrix;
+          acc[n.image1Id] = {
+            fwd: makeTransform(inv(m) as Matrix),
+            bwd: makeTransform(m),
+          };
+        } else {
+          acc[n.image1Id] = { fwd: undefined, bwd: undefined };
+        }
+        return acc;
+      },
+      {} as Record<
+        string,
+        {
+          fwd: ((c1: [number, number]) => [number, number]) | undefined;
+          bwd: ((c1: [number, number]) => [number, number]) | undefined;
+        }
+      >,
+    );
   }, [prevNeighboursQuery.data]);
 
   const nextNeighboursQuery = useQuery({
@@ -87,18 +96,27 @@ export function ImageContextFromHook({
 
   const nextNeighbours = useMemo(() => {
     //return a dictionary using the image2Id as the key and the transform as the value
-    return nextNeighboursQuery.data?.data?.reduce((acc, n) => {
-      if (n.homography) {
-        const m = array2Matrix(n.homography) as unknown as Matrix;
-        acc[n.image2Id] = {
-          fwd: makeTransform(m),
-          bwd: makeTransform(inv(m) as Matrix),
-        };
-      } else {
-        acc[n.image2Id] = { fwd: undefined, bwd: undefined };
-      }
-      return acc;
-    }, {} as Record<string, { fwd: ((c1: [number, number]) => [number, number]) | undefined; bwd: ((c1: [number, number]) => [number, number]) | undefined }>);
+    return nextNeighboursQuery.data?.data?.reduce(
+      (acc, n) => {
+        if (n.homography) {
+          const m = array2Matrix(n.homography) as unknown as Matrix;
+          acc[n.image2Id] = {
+            fwd: makeTransform(m),
+            bwd: makeTransform(inv(m) as Matrix),
+          };
+        } else {
+          acc[n.image2Id] = { fwd: undefined, bwd: undefined };
+        }
+        return acc;
+      },
+      {} as Record<
+        string,
+        {
+          fwd: ((c1: [number, number]) => [number, number]) | undefined;
+          bwd: ((c1: [number, number]) => [number, number]) | undefined;
+        }
+      >,
+    );
   }, [nextNeighboursQuery.data]);
 
   const imageMetaDataQueries = useQueries({
@@ -197,7 +215,7 @@ export function ImageContextFromHook({
       });
       return hook.create(annotation);
     },
-    [hook.create, hook.data, onAnnotationCreate, setAnnoCount, zoom, taskTag]
+    [hook.create, hook.data, onAnnotationCreate, setAnnoCount, zoom, taskTag],
   );
 
   const update = useCallback(
@@ -267,7 +285,7 @@ export function ImageContextFromHook({
         });
       }
     },
-    [hook.create, setAnnoCount, zoom, taskTag]
+    [hook.create, setAnnoCount, zoom, taskTag],
   );
 
   const _delete = useCallback(
@@ -282,7 +300,7 @@ export function ImageContextFromHook({
       });
       return hook.delete(annotation);
     },
-    [hook.delete, setAnnoCount, setCurrentAnnoCount]
+    [hook.delete, setAnnoCount, setCurrentAnnoCount],
   );
 
   return (

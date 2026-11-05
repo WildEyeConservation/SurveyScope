@@ -1,9 +1,9 @@
-import useAckOnTimeout from './useAckOnTimeout';
-import useCreateObservation from './useCreateObservation';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
 } from './annotationTypes';
+import useAckOnTimeout from './useAckOnTimeout';
+import useCreateObservation from './useCreateObservation';
 
 interface UseTaskCompletionProps {
   location: AnnotationLocation;
@@ -13,6 +13,8 @@ interface UseTaskCompletionProps {
   isTest?: boolean;
   testPresetId?: string;
   testSetId?: string;
+  /** The job's label names, which test scoring links to the test's labels. */
+  labelNames?: string[];
   queueId?: string;
   observationId?: string;
   observationSource?: string;
@@ -31,6 +33,7 @@ export default function useTaskCompletion({
   isTest,
   testPresetId,
   testSetId,
+  labelNames,
   queueId,
   observationId,
   observationSource,
@@ -41,6 +44,7 @@ export default function useTaskCompletion({
     isTest,
     testPresetId,
     testSetId,
+    labelNames,
     queueId,
     observationId,
     observationSource,

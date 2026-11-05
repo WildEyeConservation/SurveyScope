@@ -1,4 +1,4 @@
-import { Spinner } from 'react-bootstrap';
+import { Spinner } from '@/components/ui/spinner';
 import type { LoadProgress } from '../hooks/useTransectData';
 
 const PHASE_LABEL: Record<LoadProgress['phase'], string> = {
@@ -16,7 +16,7 @@ const PHASE_LABEL: Record<LoadProgress['phase'], string> = {
  */
 export function LoadingCard({ progress }: { progress: LoadProgress }) {
   return (
-    <div className='w-100 h-100 d-flex align-items-center justify-content-center'>
+    <div className='flex h-full w-full items-center justify-center'>
       <div
         style={{
           background: '#4E5D6C',
@@ -27,7 +27,7 @@ export function LoadingCard({ progress }: { progress: LoadProgress }) {
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.35)',
         }}
       >
-        <div className='d-flex align-items-center gap-3 mb-3'>
+        <div className='mb-4 flex items-center gap-4'>
           <Spinner animation='border' size='sm' />
           <span style={{ fontSize: 16, fontWeight: 600 }}>
             Loading transect…
@@ -37,7 +37,7 @@ export function LoadingCard({ progress }: { progress: LoadProgress }) {
           {PHASE_LABEL[progress.phase]}
         </div>
         <div
-          className='d-flex flex-column gap-1'
+          className='flex flex-col gap-1'
           style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}
         >
           <StatRow label='Images fetched' value={progress.images} />
@@ -50,7 +50,7 @@ export function LoadingCard({ progress }: { progress: LoadProgress }) {
 
 function StatRow({ label, value }: { label: string; value: number }) {
   return (
-    <div className='d-flex flex-row justify-content-between gap-4'>
+    <div className='flex flex-row justify-between gap-6'>
       <span style={{ opacity: 0.8 }}>{label}</span>
       <span style={{ fontWeight: 600 }}>{value.toLocaleString()}</span>
     </div>

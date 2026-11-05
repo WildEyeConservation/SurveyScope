@@ -34,7 +34,10 @@ export function headerGuessBytes(size: { width: number; height: number }) {
 export async function openSignedTilePack(
   sign: () => Promise<TilePackAccess | null>,
   size: { width: number; height: number },
-  options: Pick<TilePackOptions, 'fetch' | 'limiter' | 'now' | 'onRequest'> = {}
+  options: Pick<
+    TilePackOptions,
+    'fetch' | 'limiter' | 'now' | 'onRequest'
+  > = {},
 ): Promise<OpenPack | null> {
   const access = await sign();
   if (!access) return null;
@@ -61,12 +64,12 @@ export class TilePackRegistry {
   constructor(
     private capacity = 32,
     private missingMs = 60_000,
-    private now = Date.now
+    private now = Date.now,
   ) {}
 
   get(
     imageKey: string,
-    open: () => Promise<OpenPack | null>
+    open: () => Promise<OpenPack | null>,
   ): Promise<OpenPack | null> {
     if ((this.missing.get(imageKey) ?? 0) > this.now())
       return Promise.resolve(null);
@@ -85,7 +88,7 @@ export class TilePackRegistry {
         },
         () => {
           if (this.packs.get(imageKey) === loading) this.packs.delete(imageKey);
-        }
+        },
       );
     }
     this.packs.delete(imageKey);

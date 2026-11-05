@@ -1,17 +1,17 @@
-import { useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import { GlobalContext, UserContext } from './Context';
+import { Badge } from '@/components/ui/badge';
 import {
-  ReceiveMessageCommand,
   DeleteMessageCommand,
   GetQueueAttributesCommand,
+  ReceiveMessageCommand,
 } from '@aws-sdk/client-sqs';
-import { Badge } from 'react-bootstrap';
-import { TaskBuffer } from './TaskBuffer';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { GlobalContext, UserContext } from './Context';
 import QCAnnotationReview from './QCAnnotationReview';
-import { fetchAllPaginatedResults } from './utils';
-import useUnsavedWorkGuard from './useUnsavedWorkGuard';
+import { TaskBuffer } from './TaskBuffer';
 import { touchQueue } from './touchQueue';
+import useUnsavedWorkGuard from './useUnsavedWorkGuard';
+import { fetchAllPaginatedResults } from './utils';
 
 /**
  * QC Review Task — SQS-driven task buffer for annotation QC review.
@@ -28,7 +28,7 @@ export default function QCReviewTask() {
   useUnsavedWorkGuard();
   const [queueUrl, setQueueUrl] = useState<string | undefined>(undefined);
   const [annotationSetId, setAnnotationSetId] = useState<string | undefined>(
-    undefined
+    undefined,
   );
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [group, setGroup] = useState<string | undefined>(undefined);
@@ -62,7 +62,7 @@ export default function QCReviewTask() {
       {
         annotationSetId,
         selectionSet: ['id', 'name', 'shortcutKey'] as const,
-      }
+      },
     ).then((cats) => {
       if (!mounted) return;
       setCategories(
@@ -70,7 +70,7 @@ export default function QCReviewTask() {
           id: c.id,
           name: c.name,
           shortcutKey: c.shortcutKey ?? null,
-        }))
+        })),
       );
     });
     return () => {
@@ -92,7 +92,7 @@ export default function QCReviewTask() {
           MaxNumberOfMessages: 1,
           MessageAttributeNames: ['All'],
           VisibilityTimeout: 600,
-        })
+        }),
       );
 
       if (response.Messages) {
@@ -109,7 +109,7 @@ export default function QCReviewTask() {
               new DeleteMessageCommand({
                 QueueUrl: queueUrl,
                 ReceiptHandle: entity.ReceiptHandle,
-              })
+              }),
             );
           } catch {
             // ignore
@@ -125,12 +125,12 @@ export default function QCReviewTask() {
               new DeleteMessageCommand({
                 QueueUrl: queueUrl,
                 ReceiptHandle: entity.ReceiptHandle,
-              })
+              }),
             );
           } catch (err) {
             console.error(
               `QC ack failed for annotation ${annotationId} with receipthandle ${entity.ReceiptHandle}`,
-              err
+              err,
             );
             // The caller must know the message is still on the queue, so the
             // annotation is not recorded as handled below.
@@ -166,10 +166,10 @@ export default function QCReviewTask() {
           new GetQueueAttributesCommand({
             QueueUrl: queueUrl,
             AttributeNames: ['ApproximateNumberOfMessages'],
-          })
+          }),
         );
         setJobsRemaining(
-          result.Attributes?.ApproximateNumberOfMessages || 'Unknown'
+          result.Attributes?.ApproximateNumberOfMessages || 'Unknown',
         );
       } catch {
         // ignore polling errors
@@ -182,10 +182,10 @@ export default function QCReviewTask() {
 
   return (
     <div
-      className='d-flex flex-column align-items-center gap-3 w-100 h-100'
+      className='flex h-full w-full flex-col items-center gap-4'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
-      <div className='w-100 h-100'>
+      <div className='h-full w-full'>
         {queueUrl && categories.length > 0 ? (
           <TaskBuffer
             index={index}
@@ -220,19 +220,17 @@ export default function QCReviewTask() {
             )}
           />
         ) : (
-          <div className='d-flex justify-content-center align-items-center h-100'>
-            <div className='text-muted'>Loading QC review queue...</div>
+          <div className='flex h-full items-center justify-center'>
+            <div className='text-muted-foreground'>
+              Loading QC review queue...
+            </div>
           </div>
         )}
       </div>
-      <Badge className='d-flex flex-row align-items-center justify-content-center gap-3 p-2 w-100 bg-secondary flex-wrap'>
-        <p className='mb-0'>
-          {jobsRemaining} jobs remaining (globally)
-        </p>
-        <span className='d-none d-sm-block'>|</span>
-        <p className='mb-0'>
-          {index} jobs completed in this session
-        </p>
+      <Badge className='flex w-full flex-row flex-wrap items-center justify-center gap-4 bg-secondary p-2'>
+        <p className='mb-0'>{jobsRemaining} jobs remaining (globally)</p>
+        <span className='hidden sm:block'>|</span>
+        <p className='mb-0'>{index} jobs completed in this session</p>
       </Badge>
     </div>
   );

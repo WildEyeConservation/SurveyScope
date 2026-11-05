@@ -25,11 +25,11 @@ export async function listUploadedOriginalPaths(args: {
       const uploaded = await storageOperation<string[]>(
         UPLOADED_IMAGE_PATHS,
         { projectId: args.projectId, paths: batch },
-        'uploadedImagePaths'
+        'uploadedImagePaths',
       );
       uploaded.forEach((path) => found.add(path));
     },
-    args.signal
+    args.signal,
   );
   if (args.signal?.aborted) {
     throw new DOMException('Upload check cancelled', 'AbortError');

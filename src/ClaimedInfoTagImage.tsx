@@ -1,3 +1,5 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
   useContext,
   useEffect,
@@ -5,15 +7,14 @@ import {
   useState,
   type ComponentProps,
 } from 'react';
-import { Alert, Button } from 'react-bootstrap';
-import { GlobalContext } from './Context';
 import { useNavigate } from 'react-router-dom';
-import InfoTagAnnotation from './InfoTagAnnotation';
-import { InfoTagSession, requestInfoTagWork } from './infoTagWork';
 import {
   INFO_TAG_HEARTBEAT_MS,
   type InfoTagResponse,
 } from '../shared/infoTagProtocol';
+import { GlobalContext } from './Context';
+import InfoTagAnnotation from './InfoTagAnnotation';
+import { InfoTagSession, requestInfoTagWork } from './infoTagWork';
 
 type Props = Omit<
   ComponentProps<typeof InfoTagAnnotation>,
@@ -52,7 +53,7 @@ export default function ClaimedInfoTagImage(props: Props) {
       },
       (message) => {
         if (!cancelled) setError(message);
-      }
+      },
     );
     setReady(undefined);
     if (visited.current) setVisit((value) => value + 1);
@@ -100,7 +101,7 @@ export default function ClaimedInfoTagImage(props: Props) {
       void session
         .close()
         .catch((failure) =>
-          console.warn('Info Tags claim release failed', failure)
+          console.warn('Info Tags claim release failed', failure),
         );
     };
   }, [client, props.imageId, props.queueId, props.visible, reload]);
@@ -116,7 +117,7 @@ export default function ClaimedInfoTagImage(props: Props) {
   }, [advance, navigate, visible, next]);
 
   return (
-    <div className='d-flex flex-column w-100 h-100'>
+    <div className='flex h-full w-full flex-col'>
       {error && (
         <Alert variant='warning'>
           {error}
@@ -136,7 +137,7 @@ export default function ClaimedInfoTagImage(props: Props) {
         </Alert>
       )}
       {!ready && !error && props.visible && (
-        <div className='text-muted p-2'>
+        <div className='p-2 text-muted-foreground'>
           {advance ? 'Fetching another image…' : 'Reserving image…'}
         </div>
       )}

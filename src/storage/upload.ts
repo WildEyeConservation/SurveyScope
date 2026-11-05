@@ -145,7 +145,7 @@ class HttpError extends Error {
 async function withRetry<T>(
   deps: UploadDependencies,
   signal: AbortSignal,
-  attempt: () => Promise<T>
+  attempt: () => Promise<T>,
 ): Promise<T> {
   for (let n = 1; ; n++) {
     if (signal.aborted) throw abortError();
@@ -161,7 +161,7 @@ async function withRetry<T>(
 async function putWithRetry(
   deps: UploadDependencies,
   signal: AbortSignal,
-  request: Omit<Parameters<PutRequest>[0], 'signal'>
+  request: Omit<Parameters<PutRequest>[0], 'signal'>,
 ): Promise<PutResult> {
   return withRetry(deps, signal, async () => {
     request.onProgress(0);
@@ -177,7 +177,7 @@ async function uploadSingle(
   args: UploadArgs,
   deps: UploadDependencies,
   signal: AbortSignal,
-  contentType: string
+  contentType: string,
 ): Promise<void> {
   await deps.putSlot(async () => {
     if (signal.aborted) throw abortError();
@@ -189,7 +189,7 @@ async function uploadSingle(
         contentType,
         rotation: args.rotation,
       },
-      'prepareImageUpload'
+      'prepareImageUpload',
     );
     if (signal.aborted) throw abortError();
     if (grant.exists) {
@@ -212,7 +212,7 @@ async function uploadMultipart(
   args: UploadArgs,
   deps: UploadDependencies,
   signal: AbortSignal,
-  contentType: string
+  contentType: string,
 ): Promise<void> {
   const base = {
     projectId: args.projectId,
@@ -221,7 +221,7 @@ async function uploadMultipart(
   const grant = await deps.operation<MultipartGrant>(
     CREATE_IMAGE_MULTIPART_UPLOAD,
     { ...base, contentType, rotation: args.rotation },
-    'createImageMultipartUpload'
+    'createImageMultipartUpload',
   );
   if (signal.aborted) throw abortError();
   if (grant.exists) {
@@ -233,7 +233,7 @@ async function uploadMultipart(
   // S3 allows at most 10,000 parts.
   const partSize = Math.max(
     grant.partSize ?? PART_SIZE,
-    Math.ceil(args.file.size / MAX_PARTS)
+    Math.ceil(args.file.size / MAX_PARTS),
   );
   const partCount = Math.ceil(args.file.size / partSize);
 
@@ -254,10 +254,10 @@ async function uploadMultipart(
       const batch = await deps.operation<SignedParts>(
         SIGN_IMAGE_UPLOAD_PARTS,
         { ...base, uploadId, partNumbers },
-        'signImageUploadParts'
+        'signImageUploadParts',
       );
       batch.parts.forEach((p) =>
-        signed.set(p.partNumber, { url: p.url, expiresAt: batch.expiresAt })
+        signed.set(p.partNumber, { url: p.url, expiresAt: batch.expiresAt }),
       );
     });
   // Serialised so concurrent workers share one signing window.
@@ -288,7 +288,7 @@ async function uploadMultipart(
     const start = (partNumber - 1) * partSize;
     const body = args.file.slice(
       start,
-      Math.min(start + partSize, args.file.size)
+      Math.min(start + partSize, args.file.size),
     );
     let attempt = 0;
     const result = await deps.putSlot(() =>
@@ -310,11 +310,11 @@ async function uploadMultipart(
         }
         if (!response.eTag) {
           throw new Error(
-            'S3 did not return a part ETag; check bucket CORS ExposeHeaders'
+            'S3 did not return a part ETag; check bucket CORS ExposeHeaders',
           );
         }
         return response;
-      })
+      }),
     );
     partProgress.delete(partNumber);
     completedBytes += body.size;
@@ -331,7 +331,7 @@ async function uploadMultipart(
       }
     };
     await Promise.all(
-      Array.from({ length: Math.min(PART_CONCURRENCY, partCount) }, worker)
+      Array.from({ length: Math.min(PART_CONCURRENCY, partCount) }, worker),
     );
     if (signal.aborted) throw abortError();
     await withRetry(deps, signal, () =>
@@ -341,11 +341,11 @@ async function uploadMultipart(
           ...base,
           uploadId,
           parts: JSON.stringify(
-            [...eTags].map(([partNumber, eTag]) => ({ partNumber, eTag }))
+            [...eTags].map(([partNumber, eTag]) => ({ partNumber, eTag })),
           ),
         },
-        'completeImageMultipartUpload'
-      )
+        'completeImageMultipartUpload',
+      ),
     );
   } catch (error) {
     // Best effort; the bucket lifecycle rule reclaims leftovers.
@@ -353,7 +353,7 @@ async function uploadMultipart(
       .operation(
         ABORT_IMAGE_MULTIPART_UPLOAD,
         { ...base, uploadId },
-        'abortImageMultipartUpload'
+        'abortImageMultipartUpload',
       )
       .catch(() => {});
     throw error;
@@ -373,7 +373,7 @@ export const defaultUploadDependencies: UploadDependencies = {
 
 export function uploadOriginal(
   args: UploadArgs,
-  deps: UploadDependencies = defaultUploadDependencies
+  deps: UploadDependencies = defaultUploadDependencies,
 ) {
   const controller = new AbortController();
   const result = (async () => {

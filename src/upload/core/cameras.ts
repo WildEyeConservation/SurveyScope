@@ -9,7 +9,7 @@ export interface CameraResolver {
 export async function buildCameraResolver(
   client: UploadClient,
   projectId: string,
-  folderCameraMapping: Record<string, string>
+  folderCameraMapping: Record<string, string>,
 ): Promise<CameraResolver> {
   const { data: existingCameras } =
     await client.models.Camera.camerasByProjectId({ projectId });
@@ -55,7 +55,7 @@ export type CameraWrite = 'reuse' | 'update' | 'create';
 export function planCameraWrite(
   cameraExists: boolean,
   isMapped: boolean,
-  hasEnteredSpec: boolean
+  hasEnteredSpec: boolean,
 ): CameraWrite {
   if (isMapped) return 'reuse';
   if (!cameraExists) return 'create';

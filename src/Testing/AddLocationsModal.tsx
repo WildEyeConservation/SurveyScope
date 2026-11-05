@@ -1,19 +1,25 @@
+import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button-variants';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
+import { ChevronRightIcon } from 'lucide-react';
 import {
-  useState,
-  useEffect,
+  useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
-  useCallback,
+  useState,
 } from 'react';
-import { Button, Form, Spinner } from 'react-bootstrap';
-import { Modal, Header, Title, Body, Footer } from '../Modal';
 import { GlobalContext, TestingContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
 import { loadRows } from '../rowChunks';
 import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
-import LightLocationView from './LightLocationView';
-import ProjectContext from './ProjectContext';
+import { fetchAllPaginatedResults } from '../utils';
 import {
   type CandidateRef,
   type PoolEntry,
@@ -21,6 +27,8 @@ import {
   filterCandidates,
   findAddedKeys,
 } from './addLocationCandidates';
+import LightLocationView from './LightLocationView';
+import ProjectContext from './ProjectContext';
 
 type Props = {
   show: boolean;
@@ -68,7 +76,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const candidateIndexRef = useRef(0);
   const currentCandidate = candidatesRef.current[index] ?? null;
   const [addedLocations, setAddedLocations] = useState<Record<string, boolean>>(
-    {}
+    {},
   );
   const lastAddedRef = useRef<{
     annotationSetId: string;
@@ -91,7 +99,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       entries: PoolEntry[],
       excludedKeys: Set<string>,
       label: string,
-      maxAnn: number | ''
+      maxAnn: number | '',
     ) => {
       const filtered = filterCandidates(entries, label, maxAnn, excludedKeys);
       candidatesRef.current = filtered;
@@ -100,7 +108,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       setIndex(0);
       setBufferKey((k) => k + 1);
     },
-    []
+    [],
   );
 
   const loadPool = useCallback<
@@ -132,7 +140,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         {
           projectId: surveyId,
           selectionSet: ['id'] as const,
-        }
+        },
       )) as any[];
 
       // Labels are per annotation set, so match them across sets by name
@@ -142,10 +150,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           projectId: surveyId,
           selectionSet: ['id', 'name'] as const,
           limit: 10000,
-        }
+        },
       )) as any[];
       const labelById = new Map<string, string>(
-        categories.map((c: any) => [c.id, c.name])
+        categories.map((c: any) => [c.id, c.name]),
       );
 
       // Each loadRows call reports its own running total.
@@ -178,14 +186,14 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 'location.y',
                 'location.source',
               ],
-              { onProgress: reportProgress(`obs:${as.id}`) }
+              { onProgress: reportProgress(`obs:${as.id}`) },
             ),
             loadRows(
               client,
               'annotationsByAnnotationSetId',
               as.id,
               ['imageId', 'x', 'y', 'categoryId'],
-              { onProgress: reportProgress(`ann:${as.id}`) }
+              { onProgress: reportProgress(`ann:${as.id}`) },
             ),
           ]);
           const annotationsByImage = new Map<string, typeof annotationRows>();
@@ -221,7 +229,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                 ann.x >= x - width / 2 &&
                 ann.y >= y - height / 2 &&
                 ann.x <= x + width / 2 &&
-                ann.y <= y + height / 2
+                ann.y <= y + height / 2,
             );
             if (inside.length === 0) continue;
             setEntries.push({
@@ -229,18 +237,18 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
               locationId: obs.locationId,
               location: { imageId, width, height, x, y },
               labels: inside.map(
-                (ann) => labelById.get(ann.categoryId ?? '') ?? ''
+                (ann) => labelById.get(ann.categoryId ?? '') ?? '',
               ),
             });
           }
           return setEntries;
-        })
+        }),
       ).then((sets) => sets.flat());
 
       setLabels(
         [...new Set(entries.flatMap((entry) => entry.labels))]
           .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b))
+          .sort((a, b) => a.localeCompare(b)),
       );
       const excludedKeys = findAddedKeys(entries, presetLocations);
       excludedKeysRef.current = excludedKeys;
@@ -248,7 +256,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       showCandidates(entries, excludedKeys, label, maxAnn);
       setLoading(false);
     },
-    [client, preset.id, surveyId, showCandidates]
+    [client, preset.id, surveyId, showCandidates],
   );
 
   // Fetch project location sets for tiled sizes / testing set
@@ -262,7 +270,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           (client as any).models.LocationSet.locationSetsByProjectId as any
         )(
           { projectId: surveyId },
-          { selectionSet: ['id', 'name', 'description'] as const }
+          { selectionSet: ['id', 'name', 'description'] as const },
         )) as { data: any[] };
         if (!cancelled) setLocationSets(Array.isArray(data) ? data : []);
       } finally {
@@ -329,7 +337,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const matchingTotal = useMemo(
     () =>
       filterCandidates(pool, selectedLabel, maxAnnotations, new Set()).length,
-    [pool, selectedLabel, maxAnnotations]
+    [pool, selectedLabel, maxAnnotations],
   );
 
   const applyFilters = useCallback(() => {
@@ -339,7 +347,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       pool,
       new Set([...excludedKeysRef.current, ...Object.keys(addedLocations)]),
       pendingLabel,
-      pendingMaxAnnotations || ''
+      pendingMaxAnnotations || '',
     );
   }, [
     pendingLabel,
@@ -353,7 +361,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const getOrCreateTestingLocationSetId = useCallback(async () => {
     const TESTING_SET_NAME = 'Testing Locations';
     const existing = (locationSets || []).find(
-      (s: any) => s?.name === TESTING_SET_NAME
+      (s: any) => s?.name === TESTING_SET_NAME,
     );
     if (existing?.id) return existing.id as string;
     const { data: created } = await (client as any).models.LocationSet.create({
@@ -384,7 +392,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         setId: { eq: cand.annotationSetId },
         selectionSet: ['categoryId', 'x', 'y'] as const,
         limit: 10000,
-      }
+      },
     )) as any[];
     if (location.width == null || location.height == null) return;
     const boundsxy: [number, number][] = [
@@ -458,10 +466,10 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       const finalHeight =
         (advancedOpen && changeSize ? customHeight : orig.height) ?? 100;
       const finalX = Math.round(
-        (orig.x as number) + (advancedOpen ? offsetX || 0 : 0)
+        (orig.x as number) + (advancedOpen ? offsetX || 0 : 0),
       );
       const finalY = Math.round(
-        (orig.y as number) + (advancedOpen ? offsetY || 0 : 0)
+        (orig.y as number) + (advancedOpen ? offsetY || 0 : 0),
       );
 
       // Create a new testing location
@@ -519,11 +527,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         </Header>
         <Body>
           <div
-            className='d-flex flex-column gap-3 px-3 pb-3 pt-0'
+            className='flex flex-col gap-4 px-4 pt-0 pb-4'
             style={{ height: '75vh' }}
           >
             {loading ? (
-              <p className='d-flex align-items-center gap-2 p-2'>
+              <p className='flex items-center gap-2 p-2'>
                 <Spinner animation='border' size='sm' /> Loaded{' '}
                 {loadedCount.observations} observations and{' '}
                 {loadedCount.annotations} annotations
@@ -531,16 +539,16 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
             ) : pool.length === 0 ? (
               <p>No available locations to add.</p>
             ) : (
-              <div className='d-flex flex-row gap-3 h-100'>
+              <div className='flex h-full flex-row gap-4'>
                 {/* Left controls column */}
                 <div
-                  className='d-flex flex-column gap-3 border-end border-dark mt-3 pe-3'
+                  className='mt-4 flex flex-col gap-4 border-r border-dark pe-4'
                   style={{ width: '360px', maxWidth: '40%', overflowY: 'auto' }}
                 >
-                  <Form.Group className='d-flex flex-column gap-2'>
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Label filter</Form.Label>
-                      <Form.Select
+                  <div className='flex flex-col gap-3 border border-white/15 bg-white/[0.07] p-3'>
+                    <div>
+                      <Label className='mb-1'>Label</Label>
+                      <NativeSelect
                         value={pendingLabel}
                         onChange={(e) => setPendingLabel(e.target.value)}
                       >
@@ -550,11 +558,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                             {label}
                           </option>
                         ))}
-                      </Form.Select>
-                    </Form.Group>
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Max annotations</Form.Label>
-                      <Form.Control
+                      </NativeSelect>
+                    </div>
+                    <div>
+                      <Label className='mb-1'>Max annotations</Label>
+                      <Input
                         type='number'
                         min={0}
                         placeholder='No limit'
@@ -563,142 +571,157 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                           setPendingMaxAnnotations(
                             e.target.value === ''
                               ? ''
-                              : Number(e.target.value) || ''
+                              : Number(e.target.value) || '',
                           )
                         }
                       />
-                    </Form.Group>
+                    </div>
                     <Button
                       variant='primary'
                       onClick={applyFilters}
                       disabled={loading}
                     >
-                      Filter
+                      Apply filter
                     </Button>
-                  </Form.Group>
-                  <Form.Group className='d-flex flex-column gap-2 pb-3'>
-                    <Form.Check
-                      type='checkbox'
-                      label='Advanced options'
-                      checked={advancedOpen}
-                      onChange={(e) => setAdvancedOpen(e.target.checked)}
-                    />
+                  </div>
+                  <div className='flex flex-col gap-3 border-t border-white/10 pb-4'>
+                    <button
+                      type='button'
+                      onClick={() => setAdvancedOpen(!advancedOpen)}
+                      className='flex items-center gap-2 pt-2 text-left text-sm text-muted-foreground hover:text-foreground'
+                    >
+                      <ChevronRightIcon
+                        className={cn(
+                          'size-4 transition-transform',
+                          advancedOpen && 'rotate-90',
+                        )}
+                      />
+                      Advanced options
+                    </button>
                     {advancedOpen && (
-                      <div className='d-flex flex-row align-items-end gap-2 flex-wrap'>
-                        <Form.Check
-                          type='checkbox'
-                          label='Change location size when adding'
-                          checked={changeSize}
-                          onChange={(e) => setChangeSize(e.target.checked)}
-                        />
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
-                            From tiled sizes
-                          </Form.Label>
-                          <Form.Select
-                            disabled={
-                              loadingLocationSets ||
-                              tiledSizeOptions.length === 0 ||
-                              !changeSize
-                            }
-                            value={selectedSize}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setSelectedSize(val);
-                              const found = tiledSizeOptions.find(
-                                (o) => o.value === val
-                              );
-                              if (found) {
-                                setCustomWidth(found.w);
-                                setCustomHeight(found.h);
+                      <>
+                        <span className='text-xs text-muted-foreground'>
+                          Applied to each location you add while this is open.
+                        </span>
+                        <label className='mb-0 flex items-center justify-between gap-3'>
+                          Resize locations
+                          <Switch
+                            checked={changeSize}
+                            onCheckedChange={setChangeSize}
+                          />
+                        </label>
+                        {changeSize && (
+                          <>
+                            {tiledSizeOptions.length > 0 && (
+                              <div>
+                                <Label className='mb-1'>Tiled size</Label>
+                                <NativeSelect
+                                  disabled={loadingLocationSets}
+                                  value={selectedSize}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSelectedSize(val);
+                                    const found = tiledSizeOptions.find(
+                                      (o) => o.value === val,
+                                    );
+                                    if (found) {
+                                      setCustomWidth(found.w);
+                                      setCustomHeight(found.h);
+                                    }
+                                  }}
+                                >
+                                  <option value=''>Custom size</option>
+                                  {tiledSizeOptions.map((o) => (
+                                    <option key={o.value} value={o.value}>
+                                      {o.label}
+                                    </option>
+                                  ))}
+                                </NativeSelect>
+                              </div>
+                            )}
+                            <div className='grid grid-cols-2 gap-2'>
+                              <div>
+                                <Label className='mb-1'>Width (px)</Label>
+                                <Input
+                                  type='number'
+                                  min={1}
+                                  placeholder='1024'
+                                  value={customWidth}
+                                  onChange={(e) =>
+                                    setCustomWidth(
+                                      e.target.value === ''
+                                        ? ''
+                                        : Math.max(
+                                            1,
+                                            Number(e.target.value) || 1,
+                                          ),
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <Label className='mb-1'>Height (px)</Label>
+                                <Input
+                                  type='number'
+                                  min={1}
+                                  placeholder='1024'
+                                  value={customHeight}
+                                  onChange={(e) =>
+                                    setCustomHeight(
+                                      e.target.value === ''
+                                        ? ''
+                                        : Math.max(
+                                            1,
+                                            Number(e.target.value) || 1,
+                                          ),
+                                    )
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        <div className='grid grid-cols-2 gap-2'>
+                          <div>
+                            <Label className='mb-1'>Offset X (px)</Label>
+                            <Input
+                              type='number'
+                              step={1}
+                              value={offsetX}
+                              onChange={(e) =>
+                                setOffsetX(Number(e.target.value) || 0)
                               }
-                            }}
-                          >
-                            <option value=''>Select size</option>
-                            {tiledSizeOptions.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </Form.Select>
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>Width (px)</Form.Label>
-                          <Form.Control
-                            type='number'
-                            min={1}
-                            placeholder='e.g. 1024'
-                            disabled={!changeSize}
-                            value={customWidth}
-                            onChange={(e) =>
-                              setCustomWidth(
-                                e.target.value === ''
-                                  ? ''
-                                  : Math.max(1, Number(e.target.value) || 1)
-                              )
-                            }
-                          />
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>Height (px)</Form.Label>
-                          <Form.Control
-                            type='number'
-                            min={1}
-                            placeholder='e.g. 1024'
-                            disabled={!changeSize}
-                            value={customHeight}
-                            onChange={(e) =>
-                              setCustomHeight(
-                                e.target.value === ''
-                                  ? ''
-                                  : Math.max(1, Number(e.target.value) || 1)
-                              )
-                            }
-                          />
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
-                            Offset X (px)
-                          </Form.Label>
-                          <Form.Control
-                            type='number'
-                            step={1}
-                            value={offsetX}
-                            onChange={(e) =>
-                              setOffsetX(Number(e.target.value) || 0)
-                            }
-                          />
-                        </Form.Group>
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
-                            Offset Y (px)
-                          </Form.Label>
-                          <Form.Control
-                            type='number'
-                            step={1}
-                            value={offsetY}
-                            onChange={(e) =>
-                              setOffsetY(Number(e.target.value) || 0)
-                            }
-                          />
-                        </Form.Group>
-                      </div>
+                            />
+                          </div>
+                          <div>
+                            <Label className='mb-1'>Offset Y (px)</Label>
+                            <Input
+                              type='number'
+                              step={1}
+                              value={offsetY}
+                              onChange={(e) =>
+                                setOffsetY(Number(e.target.value) || 0)
+                              }
+                            />
+                          </div>
+                        </div>
+                      </>
                     )}
-                  </Form.Group>
+                  </div>
                 </div>
 
                 {/* Right image column */}
                 {candidates.length === 0 ? (
-                  <p className='mt-3'>
+                  <p className='mt-4'>
                     {!selectedLabel && maxAnnotations === ''
                       ? 'No available locations to add.'
                       : matchingTotal > 0
-                      ? `Every location matching the filter (${matchingTotal}) is already in the pool.`
-                      : 'No locations match the filter.'}
+                        ? `Every location matching the filter (${matchingTotal}) is already in the pool.`
+                        : 'No locations match the filter.'}
                   </p>
                 ) : (
-                  <div className='d-flex flex-column flex-grow-1 h-100 w-100'>
-                    <Form.Group className='mt-3 h-100 w-100'>
+                  <div className='flex h-full w-full grow flex-col'>
+                    <div className='mt-4 h-full w-full'>
                       <TaskBuffer
                         key={bufferKey}
                         index={index}
@@ -724,11 +747,13 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                           />
                         )}
                       />
-                    </Form.Group>
-                    <div className='d-flex flex-column w-100 gap-2 pt-3'>
+                    </div>
+                    <div className='flex w-full flex-col gap-2 pt-4'>
                       {currentCandidate && (
                         <a
-                          className='btn btn-outline-info'
+                          className={buttonVariants({
+                            variant: 'outline-info',
+                          })}
                           target='_blank'
                           href={`/surveys/${surveyId}/location/${
                             currentCandidate!.locationId
@@ -755,12 +780,12 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
                         {adding
                           ? 'Adding...'
                           : addedLocations[
-                              `${currentCandidate!.annotationSetId}_${
-                                currentCandidate!.locationId
-                              }`
-                            ]
-                          ? 'Added'
-                          : 'Add to pool'}
+                                `${currentCandidate!.annotationSetId}_${
+                                  currentCandidate!.locationId
+                                }`
+                              ]
+                            ? 'Added'
+                            : 'Add to pool'}
                       </Button>
                     </div>
                   </div>
@@ -770,7 +795,11 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
           </div>
         </Body>
         <Footer>
-          <Button variant='dark' onClick={() => showModal(null)}>
+          <Button
+            variant='ghost'
+            className='mr-auto'
+            onClick={() => showModal(null)}
+          >
             Close
           </Button>
         </Footer>

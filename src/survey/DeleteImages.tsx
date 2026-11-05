@@ -1,34 +1,42 @@
+import * as maplibregl from 'maplibre-gl';
 import {
-  useState,
-  useEffect,
   useCallback,
-  useRef,
-  useMemo,
   useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
-import * as maplibregl from 'maplibre-gl';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
-import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
+
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
 import { booleanPointInPolygon } from '@turf/turf';
 import {
-  Button,
-  Spinner,
-  Alert,
-  ProgressBar,
-  Badge,
-  Form,
-} from 'react-bootstrap';
+  CheckCheckIcon,
+  LassoIcon,
+  Maximize2Icon,
+  Minimize2Icon,
+  MinusIcon,
+  MousePointer2Icon,
+  PlusIcon,
+  ScanIcon,
+  SquareDashedIcon,
+  XIcon,
+} from 'lucide-react';
+import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
+import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { fetchAllPaginatedResults } from '../utils';
-import {
-  BASE_STYLE,
-  EMPTY_FC,
-  escapeHtml,
-  type FeatureCollection,
-} from './surveyMapStyle';
+import { Kbd, MapButton } from './mapControls';
+import { MAP_CONTROLS, MAP_DIVIDER } from './mapTheme';
+import { BASE_STYLE, EMPTY_FC, type FeatureCollection } from './surveyMapStyle';
+
 import './surveyMap.css';
+
 import { loadProjectImages } from '../projectImages';
 
 type ImageData = {
@@ -105,7 +113,7 @@ function errToString(err: any): string {
   if (!err) return '';
   if (typeof err === 'string') return err;
   const parts = [err.errorType, err.name, err.code, err.message].filter(
-    Boolean
+    Boolean,
   );
   if (Array.isArray(err.errors)) {
     for (const e of err.errors) {
@@ -182,7 +190,7 @@ interface RunOpOpts {
  */
 async function runOp<T>(
   fn: () => Promise<T>,
-  opts: RunOpOpts = {}
+  opts: RunOpOpts = {},
 ): Promise<T> {
   const { retries = 5, baseDelay = 300, signal } = opts;
   let attempt = 0;
@@ -201,13 +209,17 @@ async function runOp<T>(
     }
     const errors = (res as any)?.errors as any[] | null | undefined;
     if (errors && errors.length) {
-      if (!signal?.aborted && attempt < retries && errors.some(isTransientError)) {
+      if (
+        !signal?.aborted &&
+        attempt < retries &&
+        errors.some(isTransientError)
+      ) {
         attempt += 1;
         await sleep(backoffDelay(attempt, baseDelay), signal);
         continue;
       }
       const e: any = new Error(
-        errors.map((x) => x?.message || x?.errorType || String(x)).join('; ')
+        errors.map((x) => x?.message || x?.errorType || String(x)).join('; '),
       );
       e.graphQLErrors = errors;
       throw e;
@@ -239,7 +251,7 @@ async function runPool<T>(
   items: T[],
   worker: (item: T, index: number) => Promise<void>,
   concurrency: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   let cursor = 0;
   const workerCount = Math.max(1, Math.min(concurrency, items.length));
@@ -258,7 +270,7 @@ async function runPool<T>(
             // backstop so an unexpected throw doesn't kill the pool.
           }
         }
-      })()
+      })(),
     );
   }
   await Promise.all(runners);
@@ -278,13 +290,14 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     phase: string;
   } | null>(null);
   const [deleteResult, setDeleteResult] = useState<DeletionCounters | null>(
-    null
+    null,
   );
-  const [showInstructions, setShowInstructions] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
   const [shapefileCoords, setShapefileCoords] = useState<
     [number, number][] | null
   >(null);
-  const [showShapefile, setShowShapefile] = useState(true);
   const [loadingShapefile, setLoadingShapefile] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [drawing, setDrawing] = useState(false);
@@ -310,13 +323,15 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     const { signal } = loadAbortRef.current;
     setLoading(true);
     setError(null);
-    setLoadingStatus('Fetching images...');
+    setLoadingStatus('Loading images...');
     setDeleteResult(null);
 
     try {
       const onProgress = (count: number) => {
         if (!signal.aborted) {
-          setLoadingStatus(`Fetching images... (${count} fetched)`);
+          setLoadingStatus(
+            `Loading images · ${count.toLocaleString()} loaded...`,
+          );
         }
       };
       const allImages = (await loadProjectImages(
@@ -334,9 +349,9 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
                 selectionSet: ['id', 'latitude', 'longitude', 'originalPath'],
                 limit: 10000,
               },
-              onProgress
+              onProgress,
             ),
-        }
+        },
       )) as Array<{
         id: string;
         latitude?: number | null;
@@ -354,7 +369,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             typeof img.latitude === 'number' &&
             typeof img.longitude === 'number' &&
             Number.isFinite(img.latitude) &&
-            Number.isFinite(img.longitude)
+            Number.isFinite(img.longitude),
         )
         .map((img) => ({
           id: img.id,
@@ -366,16 +381,18 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       setImages(gpsImages);
       setSelectedIds(new Set());
       setLoadingStatus(
-        `Loaded ${gpsImages.length} images with GPS coordinates (${allImages.length - gpsImages.length
-        } without GPS)`
+        allImages.length > gpsImages.length
+          ? `${(allImages.length - gpsImages.length).toLocaleString()} images without location data are not shown.`
+          : '',
       );
       return gpsImages;
     } catch (err) {
       if (signal.aborted) return [];
       console.error('Failed to fetch images:', err);
       setError(
-        `Failed to fetch images: ${err instanceof Error ? err.message : String(err)
-        }`
+        `Failed to fetch images: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
       return [];
     } finally {
@@ -402,16 +419,16 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           () =>
             (client.models.Shapefile.shapefilesByProjectId as any)(
               { projectId },
-              { signal }
+              { signal },
             ),
-          { signal }
+          { signal },
         )) as any;
         const data = (result?.data ?? []) as Array<{
           coordinates: (number | null)[] | null;
         }>;
         if (data.length > 0 && data[0].coordinates) {
           const flat = data[0].coordinates.filter(
-            (n): n is number => typeof n === 'number' && Number.isFinite(n)
+            (n): n is number => typeof n === 'number' && Number.isFinite(n),
           );
           const coords: [number, number][] = [];
           for (let i = 0; i + 1 < flat.length; i += 2) {
@@ -453,7 +470,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       }
       return inside;
     },
-    []
+    [],
   );
 
   // Select images outside the loaded shapefile
@@ -480,7 +497,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         geometry: { type: 'Point', coordinates: [img.longitude, img.latitude] },
       })),
     }),
-    [images]
+    [images],
   );
 
   // -----------------------------------------------------------------------
@@ -496,16 +513,14 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       center: [0, 0],
       zoom: 2,
       attributionControl: { compact: true },
+      // Box zoom takes shift-clicks, which add images to the selection.
+      boxZoom: false,
     });
     mapRef.current = map;
 
     map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right'
-    );
-    map.addControl(
       new maplibregl.ScaleControl({ unit: 'metric' }),
-      'bottom-left'
+      'bottom-left',
     );
 
     map.on('load', () => {
@@ -528,74 +543,46 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         type: 'circle',
         source: SRC_IMAGES,
         paint: {
+          // Solid dots sized by zoom read cleanly where images overlap.
           'circle-radius': [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            7,
-            5,
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            8,
+            ['case', ['boolean', ['feature-state', 'selected'], false], 3, 2],
+            14,
+            ['case', ['boolean', ['feature-state', 'selected'], false], 6, 4.5],
           ],
           'circle-color': [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
             '#dc3545',
-            '#0d6efd',
-          ],
-          'circle-stroke-width': [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            2,
-            1,
-          ],
-          'circle-stroke-color': '#ffffff',
-          'circle-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            0.9,
-            0.6,
+            '#2563eb',
           ],
         },
       });
 
-      // Click a marker to select it; Ctrl/⌘+click toggles in/out of the set.
-      map.on('click', LYR_IMAGES, (e) => {
+      // Click a marker to select it; Shift or Ctrl/⌘-click toggles it.
+      map.on('click', (e) => {
         if (drawingRef.current) return; // drawing mode owns map clicks
-        const feature = e.features?.[0];
-        if (!feature) return;
+        const [feature] = map.queryRenderedFeatures(e.point, {
+          layers: [LYR_IMAGES],
+        });
+        if (!feature) {
+          setSelectedIds(new Set());
+          return;
+        }
         const id = String(feature.id);
-        const additive = e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+        const { ctrlKey, metaKey, shiftKey } = e.originalEvent;
         setSelectedIds((prev) => {
-          if (additive) {
+          if (ctrlKey || metaKey || shiftKey) {
             const next = new Set(prev);
             if (next.has(id)) next.delete(id);
             else next.add(id);
             return next;
           }
-          return new Set([id]);
+          return prev.size === 1 && prev.has(id) ? new Set() : new Set([id]);
         });
-      });
-
-      // Right-click a marker to view its details.
-      map.on('contextmenu', LYR_IMAGES, (e) => {
-        const feature = e.features?.[0];
-        if (!feature) return;
-        e.originalEvent.preventDefault();
-        const id = String(feature.id);
-        const img = imagesRef.current.find((im) => im.id === id);
-        const [lng, lat] = (feature.geometry as any).coordinates as [
-          number,
-          number
-        ];
-        const path = img?.originalPath || 'Unknown';
-        new maplibregl.Popup({ closeButton: true })
-          .setLngLat([lng, lat])
-          .setHTML(
-            `<div style="max-width:300px;color:#000">
-              <strong>Path:</strong> ${escapeHtml(path)}<br/>
-              <strong>Lat:</strong> ${lat.toFixed(6)}<br/>
-              <strong>Lng:</strong> ${lng.toFixed(6)}
-            </div>`
-          )
-          .addTo(map);
       });
 
       map.on('mouseenter', LYR_IMAGES, () => {
@@ -609,7 +596,8 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       // adapter; we read the finished polygon and convert it into a selection.
       const draw = new TerraDraw({
         adapter: new TerraDrawMapLibreGLAdapter({ map }),
-        modes: [new TerraDrawPolygonMode()],
+        // Default 40px snaps to corners while placing points near them.
+        modes: [new TerraDrawPolygonMode({ pointerDistance: 12 })],
       });
       draw.on('finish', (id) => {
         try {
@@ -623,7 +611,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
               if (
                 booleanPointInPolygon(
                   [img.longitude, img.latitude],
-                  feature as any
+                  feature as any,
                 )
               ) {
                 newSelected.add(img.id);
@@ -670,8 +658,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     if (!mapLoaded) return;
     const map = mapRef.current;
     const src = map?.getSource(SRC_IMAGES) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!map || !src) return;
     src.setData(imagesFC as any);
     appliedSelectionRef.current = new Set();
@@ -716,10 +703,9 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!mapLoaded) return;
     const src = mapRef.current?.getSource(SRC_SHAPEFILE) as
-      | maplibregl.GeoJSONSource
-      | undefined;
+      maplibregl.GeoJSONSource | undefined;
     if (!src) return;
-    if (showShapefile && shapefileCoords && shapefileCoords.length >= 3) {
+    if (shapefileCoords && shapefileCoords.length >= 3) {
       const ring = shapefileCoords.map(([lat, lng]) => [lng, lat]);
       const [fx, fy] = ring[0];
       const [lx, ly] = ring[ring.length - 1];
@@ -737,7 +723,15 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     } else {
       src.setData(EMPTY_FC as any);
     }
-  }, [mapLoaded, showShapefile, shapefileCoords]);
+  }, [mapLoaded, shapefileCoords]);
+
+  const fitAll = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || images.length === 0) return;
+    const bounds = new maplibregl.LngLatBounds();
+    for (const img of images) bounds.extend([img.longitude, img.latitude]);
+    map.fitBounds(bounds, { padding: 50, maxZoom: 16, duration: 0 });
+  }, [images]);
 
   // Fit bounds whenever the displayed image extent changes.
   const lastFitRef = useRef('');
@@ -763,7 +757,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         [minLng, minLat],
         [maxLng, maxLat],
       ],
-      { padding: 50, maxZoom: 16, duration: 0 }
+      { padding: 50, maxZoom: 16, duration: 0 },
     );
   }, [mapLoaded, images]);
 
@@ -805,7 +799,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     async (
       imageIds: string[],
       signal: AbortSignal,
-      failedToFetch: Set<string>
+      failedToFetch: Set<string>,
     ): Promise<Map<string, ImageAggregate>> => {
       const imageMap = new Map<string, ImageAggregate>();
       let totalMemberships = 0;
@@ -829,7 +823,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       // survey, hence the per-page retry.
       const imageSets = (await fetchAllPaginatedResults(
         makeRetrying(client.models.ImageSet.imageSetsByProjectId, signal),
-        { projectId, selectionSet: ['id'], limit: 10000 }
+        { projectId, selectionSet: ['id'], limit: 10000 },
       )) as Array<{ id?: string | null }>;
 
       const membershipByImageId = new Map<
@@ -842,13 +836,13 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         const memberships = (await fetchAllPaginatedResults(
           makeRetrying(
             client.models.ImageSetMembership.imageSetMembershipsByImageSetId,
-            signal
+            signal,
           ),
           {
             imageSetId: imageSet.id,
             selectionSet: ['id', 'imageId', 'imageSetId'],
             limit: 10000,
-          }
+          },
         )) as Array<{
           id?: string | null;
           imageId?: string | null;
@@ -872,49 +866,54 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           if (signal.aborted) return;
           try {
             const membershipRecords = membershipByImageId.get(imageId) ?? [];
-            const [annotations, locations, files, leftNeighbours, rightNeighbours] =
-              await Promise.all([
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.Annotation.annotationsByImageIdAndSetId,
-                    signal
-                  ),
-                  { imageId, selectionSet: ['id', 'setId'], limit: 10000 }
+            const [
+              annotations,
+              locations,
+              files,
+              leftNeighbours,
+              rightNeighbours,
+            ] = await Promise.all([
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.Annotation.annotationsByImageIdAndSetId,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.Location.locationsByImageKey,
-                    signal
-                  ),
-                  { imageId, selectionSet: ['id'], limit: 10000 }
+                { imageId, selectionSet: ['id', 'setId'], limit: 10000 },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.Location.locationsByImageKey,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(client.models.ImageFile.imagesByimageId, signal),
-                  { imageId, selectionSet: ['id'], limit: 10000 }
+                { imageId, selectionSet: ['id'], limit: 10000 },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(client.models.ImageFile.imagesByimageId, signal),
+                { imageId, selectionSet: ['id'], limit: 10000 },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.ImageNeighbour.imageNeighboursByImage1key,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.ImageNeighbour.imageNeighboursByImage1key,
-                    signal
-                  ),
-                  {
-                    image1Id: imageId,
-                    selectionSet: ['image1Id', 'image2Id'],
-                    limit: 10000,
-                  }
+                {
+                  image1Id: imageId,
+                  selectionSet: ['image1Id', 'image2Id'],
+                  limit: 10000,
+                },
+              ),
+              fetchAllPaginatedResults(
+                makeRetrying(
+                  client.models.ImageNeighbour.imageNeighboursByImage2key,
+                  signal,
                 ),
-                fetchAllPaginatedResults(
-                  makeRetrying(
-                    client.models.ImageNeighbour.imageNeighboursByImage2key,
-                    signal
-                  ),
-                  {
-                    image2Id: imageId,
-                    selectionSet: ['image1Id', 'image2Id'],
-                    limit: 10000,
-                  }
-                ),
-              ]);
+                {
+                  image2Id: imageId,
+                  selectionSet: ['image1Id', 'image2Id'],
+                  limit: 10000,
+                },
+              ),
+            ]);
 
             const agg: ImageAggregate = {
               id: imageId,
@@ -987,7 +986,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           }
         },
         FETCH_CONCURRENCY,
-        signal
+        signal,
       );
 
       setDeleteProgress({
@@ -998,7 +997,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
 
       return imageMap;
     },
-    [client, images, projectId]
+    [client, images, projectId],
   );
 
   // -----------------------------------------------------------------------
@@ -1012,32 +1011,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         retryIds && retryIds.length ? retryIds : Array.from(selectedIds);
       if (imageIds.length === 0) return;
 
-      // Confirm on the first attempt only (a retry skips the prompt).
-      if (!retryIds) {
-        const idSet = new Set(imageIds);
-        const samplePaths: string[] = [];
-        for (const img of images) {
-          if (idSet.has(img.id)) {
-            samplePaths.push(img.originalPath || 'Unknown path');
-            if (samplePaths.length >= 3) break;
-          }
-        }
-        const pathSummary =
-          samplePaths.join('\n') +
-          (imageIds.length > 3 ? `\n... and ${imageIds.length - 3} more` : '');
-        const confirmMessage = `Are you sure you want to delete ${imageIds.length} image(s)?
-
-This will permanently delete:
-- The image records
-- All annotations on these images
-- All detections/locations on these images
-
-Sample images:
-${pathSummary}
-
-This action cannot be undone.`;
-        if (!window.confirm(confirmMessage)) return;
-      }
+      setConfirming(false);
 
       const abort = new AbortController();
       abortRef.current = abort;
@@ -1100,7 +1074,9 @@ This action cannot be undone.`;
             for (const annotationId of agg.annotationIds) {
               if (
                 await del(() =>
-                  (client as any).models.Annotation.delete({ id: annotationId })
+                  (client as any).models.Annotation.delete({
+                    id: annotationId,
+                  }),
                 )
               )
                 counters.annotationsDeleted += 1;
@@ -1108,7 +1084,7 @@ This action cannot be undone.`;
             for (const locationId of agg.locationIds) {
               if (
                 await del(() =>
-                  (client as any).models.Location.delete({ id: locationId })
+                  (client as any).models.Location.delete({ id: locationId }),
                 )
               )
                 counters.locationsDeleted += 1;
@@ -1118,7 +1094,7 @@ This action cannot be undone.`;
                 await del(() =>
                   (client as any).models.ImageSetMembership.delete({
                     id: membership.id,
-                  })
+                  }),
                 )
               ) {
                 counters.membershipsDeleted += 1;
@@ -1129,7 +1105,7 @@ This action cannot be undone.`;
             for (const file of agg.fileRecords) {
               if (
                 await del(() =>
-                  (client as any).models.ImageFile.delete({ id: file.id })
+                  (client as any).models.ImageFile.delete({ id: file.id }),
                 )
               )
                 counters.filesDeleted += 1;
@@ -1142,7 +1118,7 @@ This action cannot be undone.`;
                   (client as any).models.ImageNeighbour.delete({
                     image1Id: neighbour.image1Id,
                     image2Id: neighbour.image2Id,
-                  })
+                  }),
                 )
               )
                 counters.neighboursDeleted += 1;
@@ -1153,7 +1129,7 @@ This action cannot be undone.`;
             if (!imageFailed && !signal.aborted) {
               if (
                 await del(() =>
-                  (client as any).models.Image.delete({ id: agg.id })
+                  (client as any).models.Image.delete({ id: agg.id }),
                 )
               )
                 counters.imagesDeleted += 1;
@@ -1170,7 +1146,7 @@ This action cannot be undone.`;
             }
           },
           DELETE_CONCURRENCY,
-          signal
+          signal,
         );
 
         if (signal.aborted) counters.cancelled = true;
@@ -1189,9 +1165,9 @@ This action cannot be undone.`;
                 makeRetrying(
                   (client as any).models.ImageSetMembership
                     .imageSetMembershipsByImageSetId,
-                  signal
+                  signal,
                 ),
-                { imageSetId, selectionSet: ['id'], limit: 10000 }
+                { imageSetId, selectionSet: ['id'], limit: 10000 },
               )) as Array<{ id: string }>;
               await runOp(
                 () =>
@@ -1199,7 +1175,7 @@ This action cannot be undone.`;
                     id: imageSetId,
                     imageCount: memberships.length,
                   }),
-                { signal }
+                { signal },
               );
               counters.imageSetsUpdated += 1;
             } catch (err) {
@@ -1225,7 +1201,7 @@ This action cannot be undone.`;
           });
           try {
             await runOp(() =>
-              client.mutations.updateProjectMemberships({ projectId })
+              client.mutations.updateProjectMemberships({ projectId }),
             );
           } catch (err) {
             console.warn('Failed to notify other users', err);
@@ -1239,8 +1215,8 @@ This action cannot be undone.`;
         const targetSet = new Set(imageIds);
         setSelectedIds(
           new Set(
-            remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id)
-          )
+            remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id),
+          ),
         );
         setDeleteProgress(null);
       } catch (err) {
@@ -1253,15 +1229,16 @@ This action cannot be undone.`;
           const targetSet = new Set(imageIds);
           setSelectedIds(
             new Set(
-              remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id)
-            )
+              remaining.filter((im) => targetSet.has(im.id)).map((im) => im.id),
+            ),
           );
           setDeleteProgress(null);
         } else {
           console.error('Delete operation failed:', err);
           setError(
-            `Delete operation failed: ${err instanceof Error ? err.message : String(err)
-            }`
+            `Delete operation failed: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
           );
           setDeleteProgress(null);
         }
@@ -1270,7 +1247,7 @@ This action cannot be undone.`;
         abortRef.current = null;
       }
     },
-    [selectedIds, images, fetchImageData, fetchImages, client, projectId]
+    [selectedIds, fetchImageData, fetchImages, client, projectId],
   );
 
   const cancelDelete = useCallback(() => {
@@ -1287,312 +1264,407 @@ This action cannot be undone.`;
     setSelectedIds(new Set(images.map((img) => img.id)));
   }, [images]);
 
-  const selectedCount = useMemo(() => selectedIds.size, [selectedIds]);
+  const selectedCount = selectedIds.size;
   const hasImages = images.length > 0;
+  const canSelectOutside =
+    !!shapefileCoords && shapefileCoords.length >= 3 && hasImages;
+  const editable = mapLoaded && hasImages && !loading && !deleting;
+  const singleSelected =
+    selectedCount === 1
+      ? images.find((img) => selectedIds.has(img.id))
+      : undefined;
+
+  const toggleFullscreen = () => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void frame.requestFullscreen?.();
+  };
+
+  useEffect(() => {
+    const onChange = () =>
+      setFullscreen(document.fullscreenElement === frameRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const stopDraw = () => {
+    if (drawingRef.current) toggleDraw();
+  };
+
+  const shortcutsRef = useRef<(e: KeyboardEvent) => void>(() => {});
+  shortcutsRef.current = (e: KeyboardEvent) => {
+    const frame = frameRef.current;
+    if (!frame || !frame.offsetParent || !editable) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, [contenteditable="true"]')) {
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key === 'escape') {
+      if (drawingRef.current) stopDraw();
+      else if (confirming) setConfirming(false);
+      else clearSelection();
+    } else if (key === 'v') stopDraw();
+    else if (key === 'p' && !drawingRef.current) toggleDraw();
+    else if (key === 'o' && canSelectOutside) selectOutsideShapefile();
+    else if (key === 'a') selectAll();
+    else if (key === 'f') fitAll();
+    else if ((key === 'delete' || key === 'backspace') && selectedCount > 0) {
+      e.preventDefault();
+      setConfirming(true);
+    }
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => shortcutsRef.current(e);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const tools = [
+    {
+      label: 'Select images',
+      shortcut: 'V',
+      icon: <MousePointer2Icon className='size-4' />,
+      active: !drawing,
+      onClick: stopDraw,
+    },
+    {
+      label: 'Draw around images to select them',
+      shortcut: 'P',
+      icon: <LassoIcon className='size-4' />,
+      active: drawing,
+      onClick: toggleDraw,
+    },
+    {
+      label: canSelectOutside
+        ? 'Select images outside the survey boundary'
+        : 'No survey boundary',
+      shortcut: canSelectOutside ? 'O' : undefined,
+      icon: <SquareDashedIcon className='size-4' />,
+      disabled: !canSelectOutside,
+      onClick: selectOutsideShapefile,
+      divider: true,
+    },
+    {
+      label: 'Select all images',
+      shortcut: 'A',
+      icon: <CheckCheckIcon className='size-4' />,
+      onClick: selectAll,
+    },
+  ];
+
+  const hint = drawing
+    ? 'Click to draw around images · click the first point to finish'
+    : selectedCount === 0 && hasImages
+      ? 'Click an image to select it · Shift-click to add more'
+      : null;
+
+  const banners = [
+    error && { tone: 'danger', text: error, onClose: () => setError(null) },
+    !loading &&
+      loadingStatus && {
+        tone: 'info',
+        text: loadingStatus,
+        onClose: () => setLoadingStatus(''),
+      },
+  ].filter(Boolean) as {
+    tone: 'danger' | 'info';
+    text: string;
+    onClose: () => void;
+  }[];
+
+  const progressPercent =
+    deleteProgress && deleteProgress.total > 0
+      ? Math.round((deleteProgress.current / deleteProgress.total) * 100)
+      : null;
 
   return (
     <>
-      <div className='p-3 d-flex flex-column gap-3'>
-        {/* Selection header + toolbar */}
-        <div className='d-flex justify-content-between align-items-center flex-wrap gap-2'>
-          <div className='d-flex align-items-baseline gap-2'>
-            <div
-              className='text-uppercase fw-semibold text-muted'
-              style={{ letterSpacing: 0.5, fontSize: 12 }}
-            >
-              Selection
-            </div>
-            <span className='text-muted' style={{ fontSize: 13 }}>
-              {images.length} loaded {' · '}
-              <span
-                className={selectedCount > 0 ? 'text-danger fw-semibold' : ''}
-              >
-                {selectedCount} selected
-              </span>
-            </span>
-          </div>
-          <div className='d-flex gap-2 flex-wrap'>
-            <Button
-              size='sm'
-              variant='outline-secondary'
-              onClick={fetchImages}
-              disabled={loading || deleting}
-            >
-              {loading ? (
-                <>
-                  <Spinner animation='border' size='sm' className='me-1' />
-                  Loading...
-                </>
-              ) : (
-                'Refresh'
-              )}
-            </Button>
-            <Button
-              size='sm'
-              variant='outline-primary'
-              onClick={selectAll}
-              disabled={loading || deleting || images.length === 0}
-            >
-              Select All
-            </Button>
-            <Button
-              size='sm'
-              variant='outline-info'
-              onClick={clearSelection}
-              disabled={loading || deleting || selectedCount === 0}
-            >
-              Clear Selection
-            </Button>
-          </div>
-        </div>
-
-        {/* Instructions (collapsible) */}
-        <div>
-          <button
-            type='button'
-            className='text-muted d-flex align-items-center gap-1'
-            onClick={() => setShowInstructions((v) => !v)}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              fontSize: 13,
-            }}
-          >
-            <span
-              style={{
-                display: 'inline-block',
-                transform: showInstructions ? 'rotate(90deg)' : 'rotate(0deg)',
-                transition: 'transform 0.15s',
-              }}
-            >
-              ▶
-            </span>
-            Instructions
-          </button>
-          {showInstructions && (
-            <ul className='mt-2 mb-0 text-muted' style={{ fontSize: 13 }}>
-              <li>Click on an image marker to select it</li>
-              <li>
-                Hold <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + click to select multiple
-                images
-              </li>
-              <li>
-                Use the <strong>Draw selection</strong> button, then click on the
-                map to outline an area (click the first point to finish)
-              </li>
-              <li>Right-click on a marker to view image details</li>
-              <li>Blue markers = unselected, Red markers = selected</li>
-            </ul>
+      <div className='p-4'>
+        <div
+          ref={frameRef}
+          className={cn(
+            'survey-map',
+            fullscreen && 'h-full rounded-none border-0',
           )}
-        </div>
-
-        {/* Shapefile controls */}
-        {(loadingShapefile || shapefileCoords) && (
-          <div className='d-flex align-items-center gap-2 flex-wrap'>
-            {loadingShapefile && (
-              <span className='text-muted small d-flex align-items-center gap-1'>
-                <Spinner animation='border' size='sm' />
-                Loading shapefile...
-              </span>
-            )}
-            {shapefileCoords && (
-              <>
-                <Badge bg='warning' text='dark'>
-                  Shapefile loaded ({shapefileCoords.length} pts)
-                </Badge>
-                <Form.Check
-                  type='switch'
-                  id='toggle-shapefile-overlay'
-                  label='Show on map'
-                  checked={showShapefile}
-                  onChange={(e) => setShowShapefile(e.target.checked)}
-                />
-                <Button
-                  size='sm'
-                  variant='outline-warning'
-                  onClick={selectOutsideShapefile}
-                  disabled={loading || deleting || images.length === 0}
-                >
-                  Select Outside Shapefile
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Loading status */}
-        {loadingStatus && !error && (
-          <div className='text-muted small'>{loadingStatus}</div>
-        )}
-
-        {/* Error display */}
-        {error && (
-          <Alert variant='danger' dismissible onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-
-        {/* Delete progress */}
-        {deleteProgress && (
-          <div>
-            <div className='text-muted small mb-1'>{deleteProgress.phase}</div>
-            <ProgressBar
-              now={
-                deleteProgress.total > 0
-                  ? (deleteProgress.current / deleteProgress.total) * 100
-                  : 100
-              }
-              label={
-                deleteProgress.total > 0
-                  ? `${deleteProgress.current}/${deleteProgress.total}`
-                  : undefined
-              }
-              animated
-              striped
-            />
-          </div>
-        )}
-
-        {/* Delete result */}
-        {deleteResult && (
-          <Alert
-            variant={
-              deleteResult.cancelled || deleteResult.imagesFailed > 0
-                ? 'warning'
-                : 'success'
-            }
-            dismissible
-            onClose={() => setDeleteResult(null)}
-          >
-            <strong>
-              {deleteResult.cancelled
-                ? 'Deletion cancelled:'
-                : 'Deletion complete:'}
-            </strong>
-            <ul className='mb-0 mt-2'>
-              <li>Images deleted: {deleteResult.imagesDeleted}</li>
-              <li>Annotations deleted: {deleteResult.annotationsDeleted}</li>
-              <li>Locations deleted: {deleteResult.locationsDeleted}</li>
-              <li>File records deleted: {deleteResult.filesDeleted}</li>
-              <li>Memberships deleted: {deleteResult.membershipsDeleted}</li>
-              <li>Neighbour links deleted: {deleteResult.neighboursDeleted}</li>
-              <li>Image sets updated: {deleteResult.imageSetsUpdated}</li>
-              {deleteResult.imagesFailed > 0 && (
-                <li className='text-danger'>
-                  Images not deleted: {deleteResult.imagesFailed}
-                </li>
-              )}
-            </ul>
-            {deleteResult.imagesFailed > 0 && (
-              <Button
-                size='sm'
-                variant='warning'
-                className='mt-2'
-                onClick={() => handleDelete(Array.from(selectedIdsRef.current))}
-                disabled={deleting || loading}
-              >
-                Retry failed ({deleteResult.imagesFailed})
-              </Button>
-            )}
-          </Alert>
-        )}
-
-        {/* Map */}
-        <div className='survey-map'>
+        >
+          {/* Inline: maplibre's unlayered CSS overrides layered utilities here. */}
           <div
             ref={mapContainerRef}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            style={{ position: 'absolute', inset: 0 }}
           />
 
-          {/* Draw selection control */}
-          {mapLoaded && hasImages && (
-            <div
-              className='position-absolute'
-              style={{ top: 10, left: 10, zIndex: 1, maxWidth: 220 }}
-            >
-              <Button
-                size='sm'
-                variant={drawing ? 'warning' : 'light'}
-                onClick={toggleDraw}
-                disabled={loading || deleting}
-                className='shadow-sm'
-              >
-                {drawing ? 'Cancel drawing' : 'Draw selection'}
-              </Button>
-              {drawing && (
+          {(banners.length > 0 || deleteResult) && (
+            <div className='absolute top-3 left-1/2 z-20 flex w-max max-w-[60%] -translate-x-1/2 flex-col gap-2'>
+              {banners.map((banner) => (
                 <div
-                  className='mt-1 small bg-white rounded px-2 py-1 shadow-sm'
-                  style={{ color: '#000' }}
+                  key={banner.text}
+                  className={cn(
+                    'flex items-start gap-3 border px-3 py-2 text-sm text-[#212529] shadow-lg',
+                    banner.tone === 'danger'
+                      ? 'border-danger bg-[#fbe3e2]'
+                      : 'border-black/10 bg-white',
+                  )}
                 >
-                  Click to add boundary points; click the first point to finish.
+                  <span className='flex-1'>{banner.text}</span>
+                  <button
+                    type='button'
+                    aria-label='Dismiss'
+                    className='hover:text-primary'
+                    onClick={banner.onClose}
+                  >
+                    <XIcon className='size-4' />
+                  </button>
+                </div>
+              ))}
+              {deleteResult && (
+                <div
+                  className={cn(
+                    'flex items-start gap-3 border px-3 py-2 text-sm text-[#212529] shadow-lg',
+                    deleteResult.cancelled || deleteResult.imagesFailed > 0
+                      ? 'border-warning bg-[#fff3cd]'
+                      : 'border-success bg-[#e3f4e3]',
+                  )}
+                >
+                  <span className='flex flex-1 flex-col gap-1'>
+                    <span>
+                      {deleteResult.cancelled
+                        ? 'Cancelled after deleting'
+                        : 'Deleted'}{' '}
+                      <strong>
+                        {deleteResult.imagesDeleted.toLocaleString()} image
+                        {deleteResult.imagesDeleted === 1 ? '' : 's'}
+                      </strong>
+                      , {deleteResult.annotationsDeleted.toLocaleString()}{' '}
+                      annotations and{' '}
+                      {deleteResult.locationsDeleted.toLocaleString()}{' '}
+                      detections.
+                    </span>
+                    {deleteResult.imagesFailed > 0 && (
+                      <span className='flex items-center gap-2 text-danger'>
+                        {deleteResult.imagesFailed.toLocaleString()} could not
+                        be deleted and are still selected.
+                        <Button
+                          size='xs'
+                          variant='danger'
+                          onClick={() =>
+                            handleDelete(Array.from(selectedIdsRef.current))
+                          }
+                          disabled={deleting || loading}
+                        >
+                          Retry
+                        </Button>
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    type='button'
+                    aria-label='Dismiss'
+                    className='hover:text-primary'
+                    onClick={() => setDeleteResult(null)}
+                  >
+                    <XIcon className='size-4' />
+                  </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* No-images overlay */}
-          {!hasImages && !loading && (
-            <div
-              className='d-flex justify-content-center align-items-center text-muted'
-              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
-            >
-              No images with GPS coordinates found
-            </div>
-          )}
-
-          {/* Loading overlay */}
-          {loading && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(255, 255, 255, 0.8)',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 1000,
-              }}
-            >
-              <div className='text-center'>
-                <Spinner animation='border' variant='primary' />
-                <div className='mt-2'>{loadingStatus || 'Loading...'}</div>
+          {(loading || loadingShapefile) && (
+            <div className='absolute inset-0 z-30 flex items-center justify-center bg-black/20'>
+              <div
+                className={cn(
+                  'flex items-center gap-2 px-4 py-3 text-sm text-[#212529]',
+                  MAP_CONTROLS,
+                )}
+              >
+                <Spinner animation='border' size='sm' />
+                {loading
+                  ? loadingStatus || 'Loading images...'
+                  : 'Loading survey boundary...'}
               </div>
             </div>
           )}
+
+          {!hasImages && !loading && (
+            <div className='pointer-events-none absolute inset-0 flex items-center justify-center'>
+              <div
+                className={cn('px-4 py-3 text-sm text-[#212529]', MAP_CONTROLS)}
+              >
+                This survey has no images with location data.
+              </div>
+            </div>
+          )}
+
+          {editable && (
+            <div
+              className={cn(
+                'absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2',
+                MAP_CONTROLS,
+              )}
+            >
+              {tools.map((tool) => (
+                <div key={tool.label} className='flex'>
+                  {tool.divider && <div className={MAP_DIVIDER} />}
+                  <MapButton
+                    tipSide='top'
+                    label={tool.label}
+                    shortcut={tool.shortcut}
+                    active={tool.active}
+                    disabled={tool.disabled}
+                    onClick={tool.onClick}
+                  >
+                    {tool.icon}
+                  </MapButton>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {editable && (selectedCount > 0 || hint) && (
+            <div className='absolute bottom-[5.5rem] left-1/2 z-10 w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2'>
+              <div
+                className={cn(
+                  'flex flex-wrap items-center gap-x-3 gap-y-1 border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
+                  MAP_CONTROLS,
+                )}
+              >
+                {selectedCount > 0 && !drawing ? (
+                  <>
+                    <span
+                      className='max-w-96 truncate'
+                      title={singleSelected?.originalPath ?? undefined}
+                    >
+                      <strong>
+                        {selectedCount.toLocaleString()} image
+                        {selectedCount === 1 ? '' : 's'} selected
+                      </strong>
+                      {singleSelected?.originalPath &&
+                        ` · ${singleSelected.originalPath}`}
+                    </span>
+                    <button
+                      type='button'
+                      className='flex items-center gap-1 hover:text-primary'
+                      onClick={clearSelection}
+                    >
+                      Clear <Kbd>Esc</Kbd>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {hint}
+                    {drawing && <Kbd>Esc cancel</Kbd>}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div
+            className={cn(
+              'absolute top-3 left-3 z-10 flex flex-col',
+              MAP_CONTROLS,
+            )}
+          >
+            <MapButton
+              label={fullscreen ? 'Exit full screen' : 'Full screen'}
+              shortcut={fullscreen ? 'Esc' : undefined}
+              onClick={toggleFullscreen}
+            >
+              {fullscreen ? (
+                <Minimize2Icon className='size-4' />
+              ) : (
+                <Maximize2Icon className='size-4' />
+              )}
+            </MapButton>
+            <div className='mx-2 h-px bg-black/15' />
+            <MapButton label='Zoom in' onClick={() => mapRef.current?.zoomIn()}>
+              <PlusIcon className='size-4' />
+            </MapButton>
+            <MapButton
+              label='Zoom out'
+              onClick={() => mapRef.current?.zoomOut()}
+            >
+              <MinusIcon className='size-4' />
+            </MapButton>
+            <MapButton label='Fit to images' shortcut='F' onClick={fitAll}>
+              <ScanIcon className='size-4' />
+            </MapButton>
+          </div>
         </div>
       </div>
       <Footer>
-        {deleting && (
-          <Button variant='outline-light' onClick={cancelDelete}>
-            Cancel
-          </Button>
+        {deleting ? (
+          <>
+            <div className='mr-auto flex min-w-0 flex-1 flex-col gap-1'>
+              <span className='flex items-center gap-2 text-sm'>
+                <Spinner animation='border' size='sm' />
+                {deleteProgress?.phase ?? 'Deleting...'}
+                {progressPercent !== null && (
+                  <span className='text-muted-foreground'>
+                    {deleteProgress!.current.toLocaleString()} of{' '}
+                    {deleteProgress!.total.toLocaleString()}
+                  </span>
+                )}
+              </span>
+              <div className='h-1 max-w-md bg-white/15'>
+                <div
+                  className='h-full bg-danger transition-[width]'
+                  style={{ width: `${progressPercent ?? 100}%` }}
+                />
+              </div>
+            </div>
+            <Button variant='outline-light' onClick={cancelDelete}>
+              Cancel
+            </Button>
+          </>
+        ) : confirming ? (
+          <>
+            <div className='mr-auto'>
+              <div>
+                Permanently delete {selectedCount.toLocaleString()} image
+                {selectedCount === 1 ? '' : 's'}?
+              </div>
+              <div className='text-xs text-muted-foreground'>
+                Their annotations and detections are deleted too. This cannot be
+                undone.
+              </div>
+            </div>
+            <Button
+              variant='outline-light'
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant='danger' onClick={() => handleDelete()}>
+              Delete {selectedCount.toLocaleString()} image
+              {selectedCount === 1 ? '' : 's'}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant='ghost'
+              className='mr-auto'
+              onClick={() => showModal(null)}
+            >
+              Close
+            </Button>
+            <Button
+              variant='danger'
+              onClick={() => setConfirming(true)}
+              disabled={loading || selectedCount === 0}
+            >
+              {selectedCount > 0
+                ? `Delete ${selectedCount.toLocaleString()} image${
+                    selectedCount === 1 ? '' : 's'
+                  }`
+                : 'Delete images'}
+            </Button>
+          </>
         )}
-        <Button
-          variant='danger'
-          onClick={() => handleDelete()}
-          disabled={loading || deleting || selectedCount === 0}
-        >
-          {deleting ? (
-            <>
-              <Spinner animation='border' size='sm' className='me-1' />
-              Deleting...
-            </>
-          ) : (
-            `Delete ${selectedCount > 0 ? `(${selectedCount})` : ''}`
-          )}
-        </Button>
-        <Button
-          variant='dark'
-          onClick={() => showModal(null)}
-          disabled={deleting}
-        >
-          Close
-        </Button>
       </Footer>
     </>
   );

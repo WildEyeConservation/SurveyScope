@@ -1,16 +1,30 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Form, Modal } from 'react-bootstrap';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { Minus, Plus } from 'lucide-react';
 import * as maplibregl from 'maplibre-gl';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
 import { GlobalContext } from '../Context';
 import {
-  makeProjection,
-  createImageMap,
   addImageTiles,
+  createImageMap,
   fitPxBounds,
-  storedZoomToMapZoom,
+  makeProjection,
   mapZoomToStoredZoom,
+  storedZoomToMapZoom,
 } from '../annotator/imageTiles';
 import {
   DEFAULT_ZOOM_OFFSET,
@@ -63,7 +77,7 @@ export default function ZoomPreviewModal({
 }) {
   const { client } = useContext(GlobalContext)!;
   const [candidates, setCandidates] = useState<ZoomPreviewCandidate[] | null>(
-    null
+    null,
   );
   const [index, setIndex] = useState(0);
   const [sample, setSample] = useState<Sample | null>(null);
@@ -107,6 +121,7 @@ export default function ZoomPreviewModal({
   }, [show]);
 
   const candidate = candidates?.[index] ?? null;
+  const [tilesLoading, setTilesLoading] = useState(false);
 
   useEffect(() => {
     if (!candidate) return;
@@ -119,7 +134,7 @@ export default function ZoomPreviewModal({
         if (point.x == null || point.y == null || !point.imageId) {
           const { data: annotation } = await client.models.Annotation.get(
             { id: target.id },
-            { selectionSet: ['id', 'x', 'y', 'imageId'] as const }
+            { selectionSet: ['id', 'x', 'y', 'imageId'] as const },
           );
           if (cancelled) return;
           if (!annotation) {
@@ -130,11 +145,11 @@ export default function ZoomPreviewModal({
         }
         const { data: image } = await client.models.Image.get(
           { id: point.imageId! },
-          { selectionSet: ['id', 'width', 'height'] as const }
+          { selectionSet: ['id', 'width', 'height'] as const },
         );
         const { data: files } = await client.models.ImageFile.imagesByimageId(
           { imageId: point.imageId },
-          { selectionSet: ['id', 'type', 'key'] as const }
+          { selectionSet: ['id', 'type', 'key'] as const },
         );
         const file =
           (files ?? []).find((f) => f.type === 'image/jpeg') ?? files?.[0];
@@ -169,14 +184,14 @@ export default function ZoomPreviewModal({
   const projection = useMemo(
     () =>
       sample ? makeProjection(sample.image.width, sample.image.height) : null,
-    [sample]
+    [sample],
   );
 
   const readValue = (map: maplibregl.Map) =>
     Math.round(
       mode === 'level'
         ? mapZoomToStoredZoom(map.getZoom())
-        : map.getZoom() - baseZoomRef.current
+        : map.getZoom() - baseZoomRef.current,
     );
 
   const toMapZoom = (next: number) =>
@@ -193,7 +208,7 @@ export default function ZoomPreviewModal({
       y - box.height * AUTO_FIT_SCALE,
       x + box.width * AUTO_FIT_SCALE,
       y + box.height * AUTO_FIT_SCALE,
-      OWN_ZOOM
+      OWN_ZOOM,
     );
   };
 
@@ -225,10 +240,13 @@ export default function ZoomPreviewModal({
     const map = createImageMap(
       containerRef.current,
       projection,
-      mode === 'offset' ? OFFSET_MAX_MAP_ZOOM : undefined
+      mode === 'offset' ? OFFSET_MAX_MAP_ZOOM : undefined,
     );
     mapRef.current = map;
     if (mode === 'level') map.setZoomSnap(1);
+    setTilesLoading(true);
+    map.on('dataloading', () => setTilesLoading(true));
+    map.on('idle', () => setTilesLoading(false));
 
     map.on('load', () => {
       addImageTiles(map, sample.sourceKey, image, projection);
@@ -285,14 +303,14 @@ export default function ZoomPreviewModal({
         map.fitBounds(
           [px2lngLat(0, image.height), px2lngLat(image.width, 0)],
           { padding: WHOLE_IMAGE_PADDING, animate: false },
-          OWN_ZOOM
+          OWN_ZOOM,
         );
         baseZoomRef.current = map.getZoom();
       }
       if (!autoRef.current && pinnedRef.current != null) {
         map.jumpTo(
           { center: px2lngLat(x, y), zoom: toMapZoom(pinnedRef.current) },
-          OWN_ZOOM
+          OWN_ZOOM,
         );
       } else {
         fitAuto();
@@ -301,7 +319,7 @@ export default function ZoomPreviewModal({
     });
 
     const onZoom = (
-      event: maplibregl.MapLibreEvent & { ownZoom?: boolean }
+      event: maplibregl.MapLibreEvent & { ownZoom?: boolean },
     ) => {
       const byUser = !event.ownZoom;
       const ended = event.type === 'zoomend';
@@ -328,143 +346,149 @@ export default function ZoomPreviewModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show, sample, projection]);
 
-  const loading = !error && (candidates === null || (candidate && !sample));
+  const loading =
+    !error && (candidates === null || (candidate && !sample) || tilesLoading);
   const empty = candidates !== null && candidates.length === 0;
   const ready = !!sample && value != null;
 
   return (
-    // p-0 overrides the scrollbar padding react-bootstrap adds inline.
-    <Modal show={show} onHide={onClose} fullscreen className='p-0'>
-      <Modal.Header closeButton>
-        <Modal.Title>Set Zoom Level</Modal.Title>
-      </Modal.Header>
-      <Modal.Body className='d-flex flex-column align-items-center gap-2'>
-        <span className='text-muted' style={{ fontSize: '12px' }}>
-          {mode === 'level'
-            ? 'This is a sample location as it will open in the job. Zoom to the level annotators should start at.'
-            : 'This is a sample annotation as it will open in the job. Zoom to the level reviewers should start at.'}
-        </span>
-        <div
-          className='w-100 flex-grow-1'
-          style={{
-            maxWidth: ANNOTATOR_MAX_WIDTH,
-            minHeight: 0,
-            position: 'relative',
-          }}
-        >
-          {sample && (
-            <div
-              ref={containerRef}
-              key={sample.id}
-              style={{
-                width: '100%',
-                height: '100%',
-                borderRadius: 10,
-                overflow: 'hidden',
-                background: '#ffffff',
-              }}
-            />
-          )}
-          {ready && (
-            <div
-              className='d-flex flex-column align-items-center gap-2 p-2 text-dark'
-              style={{ ...ZOOM_PANEL_STYLE, top: 12, left: 12 }}
-            >
-              <Button
-                variant='dark'
-                className='d-flex p-1'
-                aria-label='Zoom in'
-                disabled={value >= ZOOM_LEVEL_COUNT - 1}
-                onClick={() => changeValue(value + 1)}
-              >
-                <Plus size={20} />
-              </Button>
-              <input
-                type='range'
-                aria-label='Zoom level'
-                min={0}
-                max={ZOOM_LEVEL_COUNT - 1}
-                step={1}
-                value={value}
-                onChange={(e) => changeValue(Number(e.target.value))}
+    <Dialog open={show} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent fullscreen>
+        <DialogHeader closeButton>
+          <DialogTitle>Set Zoom Level</DialogTitle>
+        </DialogHeader>
+        <DialogBody className='flex flex-col items-center gap-2 overflow-y-auto'>
+          <span className='text-muted-foreground' style={{ fontSize: '12px' }}>
+            {mode === 'level'
+              ? 'This is a sample location as it will open in the job. Zoom to the level annotators should start at.'
+              : 'This is a sample annotation as it will open in the job. Zoom to the level reviewers should start at.'}
+          </span>
+          <div
+            className='w-full grow'
+            style={{
+              maxWidth: ANNOTATOR_MAX_WIDTH,
+              minHeight: 0,
+              position: 'relative',
+            }}
+          >
+            {sample && (
+              <div
+                ref={containerRef}
+                key={sample.id}
                 style={{
-                  writingMode: 'vertical-lr',
-                  direction: 'rtl',
-                  height: 240,
-                  width: 24,
-                  cursor: 'pointer',
+                  width: '100%',
+                  height: '100%',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  background: '#ffffff',
                 }}
               />
-              <Button
-                variant='dark'
-                className='d-flex p-1'
-                aria-label='Zoom out'
-                disabled={value <= 0}
-                onClick={() => changeValue(value - 1)}
+            )}
+            {ready && (
+              <div
+                className='flex flex-col items-center gap-2 p-2 text-dark'
+                style={{ ...ZOOM_PANEL_STYLE, top: 12, left: 12 }}
               >
-                <Minus size={20} />
-              </Button>
-              {auto ? (
-                <Badge pill bg='warning'>
-                  AUTO
-                </Badge>
-              ) : (
-                <strong style={{ fontSize: '13px' }}>{value}</strong>
-              )}
-            </div>
-          )}
-          {ready && mode === 'level' && (
-            <div
-              className={`px-2 py-1 ${
-                auto ? 'bg-warning text-white fw-bold' : 'text-dark'
-              }`}
-              style={{ ...ZOOM_PANEL_STYLE, top: 12, right: 12 }}
-            >
-              <Form.Switch
-                id='zoom-preview-auto'
-                className='mb-0'
-                label='Auto'
-                checked={auto}
-                onChange={(e) => toggleAuto(e.target.checked)}
-              />
-            </div>
-          )}
-          {(loading || empty || error) && (
-            <div className='position-absolute top-50 start-50 translate-middle text-center'>
-              {error ? (
-                error
-              ) : empty ? (
-                'Nothing matches the current launch settings to preview.'
-              ) : (
-                <span className='spinner-border' role='status' />
-              )}
-            </div>
-          )}
-        </div>
-      </Modal.Body>
-      <Modal.Footer>
-        <span className='me-auto'>
-          {!ready
-            ? ''
-            : auto
-            ? `Auto (Level ${value} for this sample)`
-            : `Level ${value}`}
-        </span>
-        <Button
-          variant='secondary'
-          disabled={!candidates || candidates.length < 2}
-          onClick={() => setIndex((i) => (i + 1) % candidates!.length)}
-        >
-          Next sample
-        </Button>
-        <Button
-          variant='primary'
-          disabled={!ready}
-          onClick={() => onConfirm(auto ? undefined : value!)}
-        >
-          {auto ? 'Use Auto' : `Use Level ${value ?? ''}`}
-        </Button>
-      </Modal.Footer>
-    </Modal>
+                <Button
+                  variant='dark'
+                  className='flex p-1'
+                  aria-label='Zoom in'
+                  disabled={value >= ZOOM_LEVEL_COUNT - 1}
+                  onClick={() => changeValue(value + 1)}
+                >
+                  <Plus size={20} />
+                </Button>
+                <input
+                  type='range'
+                  aria-label='Zoom level'
+                  min={0}
+                  max={ZOOM_LEVEL_COUNT - 1}
+                  step={1}
+                  value={value}
+                  onChange={(e) => changeValue(Number(e.target.value))}
+                  style={{
+                    writingMode: 'vertical-lr',
+                    direction: 'rtl',
+                    height: 240,
+                    width: 24,
+                    cursor: 'pointer',
+                  }}
+                />
+                <Button
+                  variant='dark'
+                  className='flex p-1'
+                  aria-label='Zoom out'
+                  disabled={value <= 0}
+                  onClick={() => changeValue(value - 1)}
+                >
+                  <Minus size={20} />
+                </Button>
+                {auto ? (
+                  <Badge pill variant='warning'>
+                    AUTO
+                  </Badge>
+                ) : (
+                  <strong style={{ fontSize: '13px' }}>{value}</strong>
+                )}
+              </div>
+            )}
+            {ready && mode === 'level' && (
+              <div
+                className='px-2 py-1 text-[#212529]'
+                style={{ ...ZOOM_PANEL_STYLE, top: 12, right: 12 }}
+              >
+                <div className='flex items-center gap-2'>
+                  <Switch
+                    id='zoom-preview-auto'
+                    checked={auto}
+                    onCheckedChange={(c) => toggleAuto(c)}
+                  />
+                  <Label
+                    htmlFor='zoom-preview-auto'
+                    className={`mb-0 text-[#212529] ${auto ? 'font-bold' : ''}`}
+                  >
+                    Auto
+                  </Label>
+                </div>
+              </div>
+            )}
+            {(loading || empty || error) && (
+              <div className='pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center'>
+                {error ? (
+                  error
+                ) : empty ? (
+                  'Nothing matches the current launch settings to preview.'
+                ) : (
+                  <Spinner variant='primary' />
+                )}
+              </div>
+            )}
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <span className='me-auto'>
+            {!ready
+              ? ''
+              : auto
+                ? `Auto (Level ${value} for this sample)`
+                : `Level ${value}`}
+          </span>
+          <Button
+            variant='secondary'
+            disabled={!candidates || candidates.length < 2}
+            onClick={() => setIndex((i) => (i + 1) % candidates!.length)}
+          >
+            Next sample
+          </Button>
+          <Button
+            variant='primary'
+            disabled={!ready}
+            onClick={() => onConfirm(auto ? undefined : value!)}
+          >
+            {auto ? 'Use Auto' : `Use Level ${value ?? ''}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

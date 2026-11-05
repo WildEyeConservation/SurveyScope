@@ -1,12 +1,9 @@
-import { useContext, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useContext, useMemo, useState } from 'react';
 import { GlobalContext, ProjectContext } from '../../Context';
 import { loadProjectImages } from '../../projectImages';
 import { loadProjectNeighbours } from '../../projectNeighbours';
-import type {
-  ImageNeighbourType,
-  ImageType,
-} from '../../schemaTypes';
+import type { ImageNeighbourType, ImageType } from '../../schemaTypes';
 
 export interface HerdLoadProgress {
   phase: 'idle' | 'images' | 'cameras' | 'done';
@@ -51,25 +48,26 @@ export function useHerdData() {
           'cameraId',
           'boundaryStatus',
         ],
-        { onProgress: (n) => setProgress((p) => ({ ...p, images: n })) }
+        { onProgress: (n) => setProgress((p) => ({ ...p, images: n })) },
       );
 
       const imagesById: Record<string, ImageType> = {};
-      for (const img of images) imagesById[img.id] = img as unknown as ImageType;
+      for (const img of images)
+        imagesById[img.id] = img as unknown as ImageType;
 
       const neighbours = await loadProjectNeighbours(
         client,
         project!.id,
-        new Set(images.map((i) => i.id))
+        new Set(images.map((i) => i.id)),
       );
       const rawNeighbours = neighbours.filter(
-        (n) => !n.skipped
+        (n) => !n.skipped,
       ) as unknown as ImageNeighbourType[];
 
       setProgress((p) => ({ ...p, phase: 'cameras' }));
       const cameraResp = await client.models.Camera.camerasByProjectId(
         { projectId: project!.id },
-        { selectionSet: ['id', 'name'], limit: 1000 }
+        { selectionSet: ['id', 'name'], limit: 1000 },
       );
       const cameraNamesById: Record<string, string> = {};
       for (const c of (cameraResp.data ?? []) as Array<{

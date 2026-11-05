@@ -1,7 +1,7 @@
-import { useContext, useCallback, useState, useEffect, useRef } from 'react';
-import { ProjectContext, GlobalContext } from './Context';
-import { fetchAllPaginatedResults } from './utils';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { GlobalContext, ProjectContext } from './Context';
 import type { Identifiable } from './TaskBuffer';
+import { fetchAllPaginatedResults } from './utils';
 
 export default function useTesting() {
   const { currentPM, project, categoriesHook } = useContext(ProjectContext)!;
@@ -42,7 +42,7 @@ export default function useTesting() {
         {
           projectId: project.id,
           selectionSet: ['testPresetId'],
-        }
+        },
       );
 
       await fetchPrimaryLocations(presets);
@@ -62,22 +62,22 @@ export default function useTesting() {
           'testPresetId',
           'annotationSetId',
         ] as const,
-      }
+      },
     );
 
     const seenLocations = testedLocations
       .filter(
         (l) =>
-          l !== null && presets.some((p) => p.testPresetId === l.testPresetId)
+          l !== null && presets.some((p) => p.testPresetId === l.testPresetId),
       )
       .sort(
         (a, b) =>
           new Date(b.createdAt ?? 0).getTime() -
-          new Date(a.createdAt ?? 0).getTime()
+          new Date(a.createdAt ?? 0).getTime(),
       )
       .filter(
         (location, index, self) =>
-          index === self.findIndex((t) => t.locationId === location.locationId)
+          index === self.findIndex((t) => t.locationId === location.locationId),
       )
       .reverse();
 
@@ -88,7 +88,7 @@ export default function useTesting() {
         {
           testPresetId: preset.testPresetId,
           selectionSet: ['locationId', 'createdAt', 'annotationSetId'] as const,
-        }
+        },
       );
 
       testLocations.push(
@@ -97,13 +97,13 @@ export default function useTesting() {
           createdAt: l.createdAt,
           annotationSetId: l.annotationSetId,
           testPresetId: preset.testPresetId,
-        }))
+        })),
       );
     }
 
     // Lookup of valid current test preset-location pairs
     const testKeys = new Set(
-      testLocations.map((l) => `${l.testPresetId}:${l.locationId}`)
+      testLocations.map((l) => `${l.testPresetId}:${l.locationId}`),
     );
 
     // newest test locations, that have not yet been seen, are first up in the array
@@ -111,12 +111,12 @@ export default function useTesting() {
       .filter(
         (l) =>
           l !== null &&
-          !seenLocations.some((sl) => sl.locationId === l.locationId)
+          !seenLocations.some((sl) => sl.locationId === l.locationId),
       )
       .sort(
         (a, b) =>
           new Date(b.createdAt ?? 0).getTime() -
-          new Date(a.createdAt ?? 0).getTime()
+          new Date(a.createdAt ?? 0).getTime(),
       );
 
     // add seen locations to the end of the array as backup (only if still part of current test presets)
@@ -162,16 +162,16 @@ export default function useTesting() {
           locationId: entry.locationId,
           annotationSetId: { eq: entry.annotationSetId },
           selectionSet: ['category.name'],
-        }
+        },
       );
       const testCategories = categoryCounts.map((c) =>
-        c.category.name.toLowerCase()
+        c.category.name.toLowerCase(),
       );
       const surveyCategories = categoriesHook.data?.map((c) =>
-        c.name.toLowerCase()
+        c.name.toLowerCase(),
       );
       const missingCategories = testCategories.filter(
-        (c) => !surveyCategories?.includes(c)
+        (c) => !surveyCategories?.includes(c),
       );
       // Return the first valid test location
       if (missingCategories.length === 0) {
@@ -184,7 +184,7 @@ export default function useTesting() {
     const fallbackIndex = startIndex % length;
     console.warn(
       'No valid test location found, defaulting to candidate',
-      candidateEntries[fallbackIndex]
+      candidateEntries[fallbackIndex],
     );
     iRef.current = (fallbackIndex + 1) % length;
     return candidateEntries[fallbackIndex];

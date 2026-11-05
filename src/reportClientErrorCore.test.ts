@@ -53,7 +53,7 @@ test('reads the messages out of a rejected GraphQL response', () => {
       data: null,
       errors: [{ message: 'Unauthorized' }, { message: 'Second' }],
     }),
-    'Unauthorized; Second'
+    'Unauthorized; Second',
   );
   assert.equal(graphqlErrorMessage(new Error('Network down')), 'Network down');
   assert.equal(graphqlErrorMessage('odd'), 'odd');

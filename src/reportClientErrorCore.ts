@@ -28,7 +28,7 @@ export function describeError(error: unknown): ClientErrorDetails | null {
 }
 
 export function createReportBudget(
-  maxReports: number
+  maxReports: number,
 ): (details: ClientErrorDetails) => boolean {
   const reported = new Set<string>();
   return (details) => {

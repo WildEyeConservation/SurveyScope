@@ -25,9 +25,22 @@ function canCarryAcceptedStatus(candidate: MatchCandidate): boolean {
 export interface PairWorkingState {
   version: number;
   getPairVersion: (pairKey: PairKey) => number;
-  mergeCandidates: (pairKey: PairKey, fresh: MatchCandidate[]) => MatchCandidate[];
-  setCandidatePosition: (pairKey: PairKey, candidateKey: CandidateKey, side: 'A' | 'B', pos: { x: number; y: number }) => void;
-  setCandidateObscured: (pairKey: PairKey, candidateKey: CandidateKey, side: 'A' | 'B', value: boolean) => void;
+  mergeCandidates: (
+    pairKey: PairKey,
+    fresh: MatchCandidate[],
+  ) => MatchCandidate[];
+  setCandidatePosition: (
+    pairKey: PairKey,
+    candidateKey: CandidateKey,
+    side: 'A' | 'B',
+    pos: { x: number; y: number },
+  ) => void;
+  setCandidateObscured: (
+    pairKey: PairKey,
+    candidateKey: CandidateKey,
+    side: 'A' | 'B',
+    value: boolean,
+  ) => void;
   acceptCandidate: (pairKey: PairKey, candidateKey: CandidateKey) => void;
   rejectCandidate: (pairKey: PairKey, candidateKey: CandidateKey) => void;
   clearPair: (pairKey: PairKey) => void;
@@ -41,7 +54,7 @@ export function makePairKey(imageAId: string, imageBId: string): PairKey {
 export function usePairWorkingState(): PairWorkingState {
   // Ref for synchronous reads in callbacks; state for triggering re-renders.
   const storeRef = useRef<Map<PairKey, Map<CandidateKey, CandidateOverride>>>(
-    new Map()
+    new Map(),
   );
   const pairVersionsRef = useRef<Map<PairKey, number>>(new Map());
   const [version, bump] = useState(0);
@@ -60,23 +73,23 @@ export function usePairWorkingState(): PairWorkingState {
     (
       pk: PairKey,
       ck: CandidateKey,
-      mutator: (prev: CandidateOverride) => CandidateOverride
+      mutator: (prev: CandidateOverride) => CandidateOverride,
     ) => {
       const pair = getPair(pk);
       const prev = pair.get(ck) ?? {};
       pair.set(ck, mutator(prev));
       pairVersionsRef.current.set(
         pk,
-        (pairVersionsRef.current.get(pk) ?? 0) + 1
+        (pairVersionsRef.current.get(pk) ?? 0) + 1,
       );
       rerender();
     },
-    [rerender]
+    [rerender],
   );
 
   const getPairVersion: PairWorkingState['getPairVersion'] = useCallback(
     (pk) => pairVersionsRef.current.get(pk) ?? 0,
-    []
+    [],
   );
 
   const mergeCandidates = useCallback(
@@ -90,14 +103,12 @@ export function usePairWorkingState(): PairWorkingState {
         if (!ov) {
           out.push(c);
         } else {
-          const posA =
-            c.realA && !c.isShadowA ? c.posA : ov.posA ?? c.posA;
-          const posB =
-            c.realB && !c.isShadowB ? c.posB : ov.posB ?? c.posB;
+          const posA = c.realA && !c.isShadowA ? c.posA : (ov.posA ?? c.posA);
+          const posB = c.realB && !c.isShadowB ? c.posB : (ov.posB ?? c.posB);
           const status =
             ov.status === 'accepted' && !canCarryAcceptedStatus(c)
               ? c.status
-              : ov.status ?? c.status;
+              : (ov.status ?? c.status);
           out.push({
             ...c,
             posA,
@@ -110,7 +121,7 @@ export function usePairWorkingState(): PairWorkingState {
       }
       return out;
     },
-    []
+    [],
   );
 
   const setCandidatePosition: PairWorkingState['setCandidatePosition'] =
@@ -121,7 +132,7 @@ export function usePairWorkingState(): PairWorkingState {
           ...(side === 'A' ? { posA: pos } : { posB: pos }),
         }));
       },
-      [updateCandidate]
+      [updateCandidate],
     );
 
   const setCandidateObscured: PairWorkingState['setCandidateObscured'] =
@@ -132,17 +143,19 @@ export function usePairWorkingState(): PairWorkingState {
           ...(side === 'A' ? { obscuredA: value } : { obscuredB: value }),
         }));
       },
-      [updateCandidate]
+      [updateCandidate],
     );
 
   const acceptCandidate: PairWorkingState['acceptCandidate'] = useCallback(
-    (pk, ck) => updateCandidate(pk, ck, (prev) => ({ ...prev, status: 'accepted' })),
-    [updateCandidate]
+    (pk, ck) =>
+      updateCandidate(pk, ck, (prev) => ({ ...prev, status: 'accepted' })),
+    [updateCandidate],
   );
 
   const rejectCandidate: PairWorkingState['rejectCandidate'] = useCallback(
-    (pk, ck) => updateCandidate(pk, ck, (prev) => ({ ...prev, rejected: true })),
-    [updateCandidate]
+    (pk, ck) =>
+      updateCandidate(pk, ck, (prev) => ({ ...prev, rejected: true })),
+    [updateCandidate],
   );
 
   const clearPair: PairWorkingState['clearPair'] = useCallback(
@@ -151,18 +164,21 @@ export function usePairWorkingState(): PairWorkingState {
       pairVersionsRef.current.delete(pk);
       rerender();
     },
-    [rerender]
+    [rerender],
   );
 
-  const hasUnsavedWork: PairWorkingState['hasUnsavedWork'] = useCallback((pk) => {
-    const pair = storeRef.current.get(pk);
-    if (!pair || pair.size === 0) return false;
-    for (const ov of pair.values()) {
-      if (ov.posA || ov.posB) return true;
-      if (ov.obscuredA || ov.obscuredB) return true;
-    }
-    return false;
-  }, []);
+  const hasUnsavedWork: PairWorkingState['hasUnsavedWork'] = useCallback(
+    (pk) => {
+      const pair = storeRef.current.get(pk);
+      if (!pair || pair.size === 0) return false;
+      for (const ov of pair.values()) {
+        if (ov.posA || ov.posB) return true;
+        if (ov.obscuredA || ov.obscuredB) return true;
+      }
+      return false;
+    },
+    [],
+  );
 
   return useMemo(
     () => ({
@@ -186,6 +202,6 @@ export function usePairWorkingState(): PairWorkingState {
       rejectCandidate,
       clearPair,
       hasUnsavedWork,
-    ]
+    ],
   );
 }

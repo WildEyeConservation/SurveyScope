@@ -1,6 +1,12 @@
 import { generateClient } from 'aws-amplify/api';
 import pLimit from 'p-limit';
+import {
+  ROW_SOURCES,
+  type FieldOf,
+  type RowSourceName,
+} from '../../shared/rowSources';
 import { graphqlErrorMessage } from '../reportClientErrorCore';
+import { forEachRowChunk, loadRows, streamRows } from '../rowChunks';
 import type {
   AnnotationRow,
   AnnotationSetRow,
@@ -19,12 +25,6 @@ import type {
   RegistrationRows,
   TaskRow,
 } from './types';
-import {
-  ROW_SOURCES,
-  type FieldOf,
-  type RowSourceName,
-} from '../../shared/rowSources';
-import { forEachRowChunk, loadRows, streamRows } from '../rowChunks';
 
 const client = generateClient({ authMode: 'userPool' });
 const limit = pLimit(8);
@@ -35,12 +35,25 @@ const NEIGHBOUR_BATCH = 40;
 const NEIGHBOUR_WORKERS = 6;
 
 export const DETECTORS = [
-  { prefix: 'scoutbot', label: 'ScoutBot' },
-  { prefix: 'heatmap', label: 'Elephant Nadir' },
-  { prefix: 'mad', label: 'MAD' },
-  { prefix: 'owl-d', label: 'OWL-D' },
-  { prefix: 'stormfly', label: 'Stormfly' },
+  { prefix: 'scoutbot', label: 'ScoutBot', bandWidth: 0.05 },
+  { prefix: 'heatmap', label: 'Elephant Nadir', bandWidth: 0.05 },
+  { prefix: 'mad', label: 'MAD', bandWidth: 0.05 },
+  { prefix: 'owl-d', label: 'OWL-D', bandWidth: 0.02 },
 ] as const;
+
+export const BAND_WIDTHS = [0.02, 0.05] as const;
+
+// Confidence band width per detector prefix.
+export type BandWidths = Record<string, number>;
+
+export const DEFAULT_BAND_WIDTHS: BandWidths = Object.fromEntries(
+  DETECTORS.map((detector) => [detector.prefix, detector.bandWidth]),
+);
+
+export function bandWidthFor(widths: BandWidths, source: string): number {
+  const detector = DETECTORS.find((d) => source.startsWith(d.prefix));
+  return (detector && widths[detector.prefix]) || 0.05;
+}
 
 export function detectorLabel(source: string): string {
   const detector = DETECTORS.find((d) => source.startsWith(d.prefix));
@@ -65,14 +78,14 @@ function throwIfAborted(signal: AbortSignal) {
 
 function isDeterministic(message: string): boolean {
   return /validation|unauthori[sz]ed|not authori[sz]ed|FieldUndefined|UnknownType/i.test(
-    message
+    message,
   );
 }
 
 async function runQuery<T>(
   query: string,
   variables: Record<string, unknown>,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     throwIfAborted(signal);
@@ -95,7 +108,7 @@ async function runQuery<T>(
         throw new Error(message);
       }
       await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(500 * 2 ** attempt, 15000))
+        setTimeout(resolve, Math.min(500 * 2 ** attempt, 15000)),
       );
     }
   }
@@ -106,7 +119,7 @@ type Page<Row> = { items: Row[]; nextToken?: string | null };
 function listQuery(
   field: string,
   args: Record<string, string>,
-  fields: string
+  fields: string,
 ) {
   const declared = Object.entries(args)
     .map(([name, type]) => `$${name}: ${type}`)
@@ -129,7 +142,7 @@ async function forEachPage<Row>(
   variables: Record<string, unknown>,
   signal: AbortSignal,
   onPage: (rows: Row[]) => void,
-  startToken?: string
+  startToken?: string,
 ): Promise<void> {
   const query = listQuery(field, args, fields);
   let nextToken: string | null | undefined = startToken;
@@ -137,7 +150,7 @@ async function forEachPage<Row>(
     const data: Record<string, Page<Row>> = await runQuery(
       query,
       { ...variables, limit: PAGE_SIZE, nextToken },
-      signal
+      signal,
     );
     const page = data[field];
     onPage(page.items);
@@ -152,7 +165,7 @@ async function fetchAll<Row>(
   variables: Record<string, unknown>,
   signal: AbortSignal,
   onRows?: (count: number) => void,
-  startToken?: string
+  startToken?: string,
 ): Promise<Row[]> {
   const rows: Row[] = [];
   await forEachPage<Row>(
@@ -165,7 +178,7 @@ async function fetchAll<Row>(
       for (const row of page) rows.push(row);
       onRows?.(page.length);
     },
-    startToken
+    startToken,
   );
   return rows;
 }
@@ -187,7 +200,7 @@ function loadChunked<S extends RowSourceName>(
   fields: readonly FieldOf<S>[],
   scopeId: string,
   ctx: LoadContext,
-  total?: number
+  total?: number,
 ): Promise<unknown[]> {
   const variables = { [ROW_SOURCES[source].partitionKey]: scopeId };
   ctx.onProgress(0, total);
@@ -201,21 +214,21 @@ function loadChunked<S extends RowSourceName>(
         fields.join(' '),
         variables,
         ctx.signal,
-        counted(ctx, total)
+        counted(ctx, total),
       ),
   });
 }
 
 export async function loadProject(
   projectId: string,
-  ctx: LoadContext
+  ctx: LoadContext,
 ): Promise<ProjectRow> {
   const data = await runQuery<{ getProject: ProjectRow | null }>(
     `query SurveyMetrics_getProject($id: ID!) {
       getProject(id: $id) { id name status createdAt organizationId }
     }`,
     { id: projectId },
-    ctx.signal
+    ctx.signal,
   );
   if (!data.getProject) throw new Error(`No survey with id ${projectId}`);
   ctx.onProgress(1, 1);
@@ -229,7 +242,7 @@ export function loadImageSets(projectId: string, ctx: LoadContext) {
     'id name imageCount',
     { projectId },
     ctx.signal,
-    counted(ctx)
+    counted(ctx),
   );
 }
 
@@ -240,7 +253,7 @@ export function loadAnnotationSets(projectId: string, ctx: LoadContext) {
     'id name register createdAt',
     { projectId },
     ctx.signal,
-    counted(ctx)
+    counted(ctx),
   );
 }
 
@@ -251,7 +264,7 @@ export function loadLocationSets(projectId: string, ctx: LoadContext) {
     'id name description locationCount createdAt',
     { projectId },
     ctx.signal,
-    counted(ctx)
+    counted(ctx),
   );
 }
 
@@ -262,13 +275,13 @@ export function loadQueues(projectId: string, ctx: LoadContext) {
     'id name tag annotationSetId locationSetId confidenceThreshold launchedCount observedCount approximateSize requeuesCompleted lastObservationAt createdAt',
     { projectId },
     ctx.signal,
-    counted(ctx)
+    counted(ctx),
   );
 }
 
 export async function loadRegistration(
   projectId: string,
-  ctx: LoadContext
+  ctx: LoadContext,
 ): Promise<RegistrationRows> {
   const onRows = counted(ctx);
   const [progress, buckets] = await Promise.all([
@@ -279,7 +292,7 @@ export async function loadRegistration(
         }
       }`,
       { projectId },
-      ctx.signal
+      ctx.signal,
     ),
     fetchAll<RegistrationBucketRow>(
       'registrationBucketStatsByProjectId',
@@ -287,7 +300,7 @@ export async function loadRegistration(
       'cameraPairKey bucketIndex successCount',
       { projectId },
       ctx.signal,
-      onRows
+      onRows,
     ),
   ]);
   return { progress: progress.getRegistrationProgress, buckets };
@@ -296,7 +309,7 @@ export async function loadRegistration(
 export function loadImages(
   projectId: string,
   ctx: LoadContext,
-  totalHint?: number
+  totalHint?: number,
 ) {
   return loadChunked(
     'imagesByProjectId',
@@ -304,7 +317,7 @@ export function loadImages(
     ['id', 'width', 'height', 'timestamp', 'originalPath', 'cameraId'],
     projectId,
     ctx,
-    totalHint
+    totalHint,
   ) as Promise<ImageRow[]>;
 }
 
@@ -325,11 +338,11 @@ function neighbourBatchQuery(size: number) {
   for (let i = 0; i < size; i++) {
     declared.push(`$i${i}: ID!`);
     fields.push(
-      `n${i}: imageNeighboursByImage1key(image1Id: $i${i}, limit: ${PAGE_SIZE}) { items { ${NEIGHBOUR_FIELDS} } nextToken }`
+      `n${i}: imageNeighboursByImage1key(image1Id: $i${i}, limit: ${PAGE_SIZE}) { items { ${NEIGHBOUR_FIELDS} } nextToken }`,
     );
   }
   return `query SurveyMetrics_neighbours(${declared.join(
-    ', '
+    ', ',
   )}) { ${fields.join(' ')} }`;
 }
 
@@ -362,7 +375,7 @@ function neighbourCollector(imageIds: string[] = []) {
 export async function loadNeighbours(
   projectId: string,
   loadImages: () => Promise<ImageRow[]>,
-  ctx: LoadContext
+  ctx: LoadContext,
 ): Promise<NeighbourRow[]> {
   const { rows, add } = neighbourCollector();
   const images = loadImages();
@@ -376,7 +389,7 @@ export async function loadNeighbours(
       for (const raw of page) add(raw as RawNeighbour);
       ctx.onProgress(rows.length);
     },
-    { signal: ctx.signal }
+    { signal: ctx.signal },
   ).catch((error) => {
     if (ctx.signal.aborted) throw error;
     console.warn('Neighbour chunks failed, querying per image instead', error);
@@ -396,7 +409,7 @@ export async function loadNeighbours(
 
 async function loadNeighboursByImage(
   imageIds: string[],
-  ctx: LoadContext
+  ctx: LoadContext,
 ): Promise<NeighbourRow[]> {
   const { rows, add } = neighbourCollector(imageIds);
 
@@ -418,7 +431,7 @@ async function loadNeighboursByImage(
       const data = await runQuery<Record<string, Page<RawNeighbour>>>(
         neighbourBatchQuery(batch.length),
         variables,
-        ctx.signal
+        ctx.signal,
       );
       for (let index = 0; index < batch.length; index++) {
         const page = data[`n${index}`];
@@ -431,7 +444,7 @@ async function loadNeighboursByImage(
             { image1Id: batch[index] },
             ctx.signal,
             (rest) => rest.forEach(add),
-            page.nextToken
+            page.nextToken,
           );
         }
       }
@@ -449,7 +462,7 @@ export function loadProcessedBy(projectId: string, ctx: LoadContext) {
     BY_PROJECT,
     ['imageId', 'source'],
     projectId,
-    ctx
+    ctx,
   ) as Promise<ProcessedByRow[]>;
 }
 
@@ -457,7 +470,7 @@ export function loadProcessedBy(projectId: string, ctx: LoadContext) {
 export async function scanDetectorLocations(
   projectId: string,
   ctx: LoadContext,
-  onPage: (rows: LocationRow[]) => void
+  onPage: (rows: LocationRow[]) => void,
 ): Promise<number> {
   const onRows = counted(ctx);
   let total = 0;
@@ -494,11 +507,11 @@ export async function scanDetectorLocations(
               fields.join(' '),
               { projectId, source: { beginsWith: detector.prefix } },
               ctx.signal,
-              onPage
+              onPage,
             ),
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
   return total;
 }
@@ -523,7 +536,7 @@ export function loadAnnotations(setId: string, ctx: LoadContext) {
       'createdAt',
     ],
     setId,
-    ctx
+    ctx,
   ) as Promise<AnnotationRow[]>;
 }
 
@@ -533,7 +546,7 @@ export function loadObservations(setId: string, ctx: LoadContext) {
     { annotationSetId: 'ID!' },
     ['locationId', 'owner', 'source', 'createdAt'],
     setId,
-    ctx
+    ctx,
   ) as Promise<ObservationRow[]>;
 }
 
@@ -543,7 +556,7 @@ export function loadCategories(setId: string, ctx: LoadContext) {
     { annotationSetId: 'ID!' },
     ['id', 'name'],
     setId,
-    ctx
+    ctx,
   ) as Promise<CategoryRow[]>;
 }
 
@@ -554,6 +567,6 @@ export function loadTasks(setId: string, ctx: LoadContext) {
     'locationSetId createdAt',
     { annotationSetId: setId },
     ctx.signal,
-    counted(ctx)
+    counted(ctx),
   );
 }

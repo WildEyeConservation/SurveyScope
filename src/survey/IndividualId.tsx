@@ -1,22 +1,31 @@
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Form } from 'react-bootstrap';
-import { LoadingProgressCard } from './LoadingProgressCard';
-import { uploadWorkflowFile } from '../storage/workflowFiles';
+import { DataClient } from '../../amplify/shared/data-schema.generated';
+import { isOnEffort } from '../../shared/boundaryStatus';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
-import { loadRows } from '../rowChunks';
+import { findIncompleteTransectIds } from '../individual-id/utils/transectCompletion';
 import { loadProjectImages } from '../projectImages';
 import { loadProjectNeighbours } from '../projectNeighbours';
-import { DataClient } from '../../amplify/shared/data-schema.generated';
-import { logAdminAction } from '../utils/adminActionLogger';
+import { loadRows } from '../rowChunks';
 import type {
   AnnotationType,
   ImageNeighbourType,
   ImageType,
 } from '../schemaTypes';
-import { findIncompleteTransectIds } from '../individual-id/utils/transectCompletion';
-import { isOnEffort } from '../../shared/boundaryStatus';
+import { uploadWorkflowFile } from '../storage/workflowFiles';
+import { fetchAllPaginatedResults } from '../utils';
+import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  LaunchSummary,
+  SettingRow,
+} from './launchParts';
+import { LoadingProgressCard } from './LoadingProgressCard';
 
 const OUTSIDE_GROUP = 'outside-boundary';
 
@@ -27,7 +36,7 @@ const PAYLOAD_SIZE_THRESHOLD = 200_000;
 type LaunchHandler = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 };
 
@@ -107,9 +116,7 @@ export default function IndividualId({
     neighbours: [],
   });
   const [loading, setLoading] = useState(true);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>(
-    INITIAL_LOAD_STATUS
-  );
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>(INITIAL_LOAD_STATUS);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   // Transects (for the selected label) that still have linking work, computed
   // with the same Munkres/completion logic the harness uses. `null` until
@@ -177,7 +184,7 @@ export default function IndividualId({
   // happened, so the "already complete" gate doesn't apply — the launch
   // lambda detects and creates transects itself.
   const transectsExist = Array.from(imageIdsByTransect.keys()).some(
-    (group) => group !== OUTSIDE_GROUP
+    (group) => group !== OUTSIDE_GROUP,
   );
 
   // Recompute which transects still have work whenever the label changes.
@@ -204,7 +211,7 @@ export default function IndividualId({
       const annotationsByImage: Record<string, AnnotationType[]> = {};
       for (const a of allAnnotations) {
         (annotationsByImage[a.imageId] ??= []).push(
-          a as unknown as AnnotationType
+          a as unknown as AnnotationType,
         );
       }
       const ids = findIncompleteTransectIds({
@@ -253,9 +260,8 @@ export default function IndividualId({
             selectionSet: ['id', 'name'] as const,
           },
           (count) => {
-            if (mounted)
-              setLoadStatus((s) => ({ ...s, categories: count }));
-          }
+            if (mounted) setLoadStatus((s) => ({ ...s, categories: count }));
+          },
         ).then((r) => {
           if (mounted)
             setLoadStatus((s) => ({
@@ -270,9 +276,8 @@ export default function IndividualId({
           client,
           annotationSet.id,
           (count) => {
-            if (mounted)
-              setLoadStatus((s) => ({ ...s, annotations: count }));
-          }
+            if (mounted) setLoadStatus((s) => ({ ...s, annotations: count }));
+          },
         ).then((r) => {
           if (mounted)
             setLoadStatus((s) => ({
@@ -288,7 +293,7 @@ export default function IndividualId({
           project.id,
           (count) => {
             if (mounted) setLoadStatus((s) => ({ ...s, images: count }));
-          }
+          },
         ).then((r) => {
           if (mounted)
             setLoadStatus((s) => ({
@@ -321,7 +326,7 @@ export default function IndividualId({
 
   useEffect(() => {
     setLaunchDisabled(
-      loading || analyzing || !selectedCategoryId || launching || noWork
+      loading || analyzing || !selectedCategoryId || launching || noWork,
     );
   }, [
     loading,
@@ -332,6 +337,9 @@ export default function IndividualId({
     setLaunchDisabled,
   ]);
 
+  const [jobName, setJobName] = useState('');
+  const jobNameRef = useRef(jobName);
+  jobNameRef.current = jobName;
   const selectedCategoryIdRef = useRef(selectedCategoryId);
   const selectedImageIdsRef = useRef(selectedImageIds);
   const transectsExistRef = useRef(transectsExist);
@@ -353,7 +361,7 @@ export default function IndividualId({
     setIndividualIdLaunchHandler({
       execute: async (
         onProgress: (msg: string) => void,
-        onLaunchConfirmed: () => void
+        onLaunchConfirmed: () => void,
       ) => {
         const categoryId = selectedCategoryIdRef.current;
         if (!categoryId) {
@@ -368,7 +376,7 @@ export default function IndividualId({
         const incomplete = incompleteTransectIdsRef.current;
         if (transectsExist && incomplete !== null && incomplete.length === 0) {
           onProgress(
-            'All transects for this label are already complete — nothing to launch.'
+            'All transects for this label are already complete — nothing to launch.',
           );
           return;
         }
@@ -383,13 +391,14 @@ export default function IndividualId({
           annotationSetId: annotationSet.id,
           categoryId,
           categoryName,
+          queueName: jobNameRef.current.trim() || undefined,
           annotatedImageIds: selectedImageIdsRef.current,
         };
         // Omitted when transects don't exist yet: the lambda detects/creates
         // them, and a fresh project has no completed work to skip.
         if (transectsExist && incomplete && incomplete.length > 0) {
           payload.incompleteTransectIds = incomplete.filter(
-            (id) => id !== OUTSIDE_GROUP
+            (id) => id !== OUTSIDE_GROUP,
           );
           payload.includeOutside = incomplete.includes(OUTSIDE_GROUP);
         }
@@ -403,7 +412,7 @@ export default function IndividualId({
           user.userId,
           `Launched ChainLinker for label "${categoryName ?? categoryId}" in annotation set "${annotationSet.name}"`,
           project.id,
-          (project as any).organizationId
+          (project as any).organizationId,
         ).catch(console.error);
       },
     });
@@ -421,100 +430,118 @@ export default function IndividualId({
   ]);
 
   const selectedCategory = availableCategories.find(
-    (c) => c.id === selectedCategoryId
+    (c) => c.id === selectedCategoryId,
+  );
+
+  const outstanding =
+    transectsExist && incompleteTransectIds !== null
+      ? incompleteTransectIds.length
+      : null;
+  useLaunchLabel(
+    outstanding ? `Launch ${plural(outstanding, 'transect')}` : null,
+    !loading && availableCategories.length === 0
+      ? 'There are no annotations to link yet'
+      : noWork
+        ? 'Every transect for this label is already linked'
+        : undefined,
   );
 
   return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
-        {loading ? (
-          <LoadingProgressCard
-            title='Loading ChainLinker data…'
-            rows={[
-              {
-                label: 'Labels',
-                count: loadStatus.categories,
-                done: loadStatus.categoriesDone,
-              },
-              {
-                label: 'Annotations',
-                count: loadStatus.annotations,
-                done: loadStatus.annotationsDone,
-              },
-              {
-                label: 'Images & neighbours',
-                count: loadStatus.images,
-                done: loadStatus.imagesDone,
-              },
-            ]}
-          />
-        ) : availableCategories.length === 0 ? (
-          <Alert variant='warning' className='mb-0'>
-            No labels with annotations found for this annotation set.
-          </Alert>
-        ) : (
-          <>
-            <Form.Group>
-              <Form.Label className='mb-0'>Label to identify</Form.Label>
-              <span
-                className='text-muted d-block mb-1'
-                style={{ fontSize: '12px' }}
+    <div className='flex flex-col gap-4 p-4'>
+      {loading ? (
+        <LoadingProgressCard
+          title='Loading annotations and images...'
+          rows={[
+            {
+              label: 'Labels',
+              count: loadStatus.categories,
+              done: loadStatus.categoriesDone,
+            },
+            {
+              label: 'Annotations',
+              count: loadStatus.annotations,
+              done: loadStatus.annotationsDone,
+            },
+            {
+              label: 'Images and neighbours',
+              count: loadStatus.images,
+              done: loadStatus.imagesDone,
+            },
+          ]}
+        />
+      ) : availableCategories.length === 0 ? (
+        <Banner tone='warning'>
+          This annotation set has no annotations to link yet.
+        </Banner>
+      ) : (
+        <>
+          <div>
+            <Label htmlFor='ii-category' className='mb-1'>
+              Label to link across images
+            </Label>
+            <NativeSelect
+              id='ii-category'
+              value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              disabled={launching}
+            >
+              <option value=''>Select a label...</option>
+              {availableCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          {selectedCategoryId &&
+            selectedCategory &&
+            (noWork ? (
+              <Banner tone='info'>
+                Every transect with {selectedCategory.name} annotations is
+                already linked.
+              </Banner>
+            ) : analyzing ? (
+              <LaunchSummary value='…'>
+                checking which transects still need linking
+                <br />
+                {plural(selectedCategory.imageCount, 'image')} with{' '}
+                {selectedCategory.name}
+              </LaunchSummary>
+            ) : outstanding !== null ? (
+              <LaunchSummary value={outstanding.toLocaleString()}>
+                {outstanding === 1
+                  ? 'transect still needs'
+                  : 'transects still need'}{' '}
+                linking
+                <br />
+                {plural(selectedCategory.imageCount, 'image')} with{' '}
+                {selectedCategory.name}
+              </LaunchSummary>
+            ) : (
+              <LaunchSummary
+                value={selectedCategory.imageCount.toLocaleString()}
               >
-                Select the label whose individuals should be identified across
-                images.
-              </span>
-              <Form.Select
-                value={selectedCategoryId}
-                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                {selectedCategory.imageCount === 1 ? 'image' : 'images'} with{' '}
+                {selectedCategory.name}
+                <br />
+                Their transects become ChainLinker jobs once tiling finishes.
+              </LaunchSummary>
+            ))}
+          <AdvancedOptions disabled={launching}>
+            <SettingRow label='Job name' hint='Shown on the Jobs page'>
+              <Input
+                type='text'
+                aria-label='Job name'
+                placeholder={selectedCategory?.name || 'ChainLinker'}
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
                 disabled={launching}
-              >
-                <option value=''>Select a label...</option>
-                {availableCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
-
-            {selectedCategoryId && selectedCategory && (
-              <div
-                className='border border-dark shadow-sm p-2'
-                style={{ backgroundColor: '#697582' }}
-              >
-                <div className='text-white' style={{ fontSize: '12px' }}>
-                  <div>
-                    Images with <strong>{selectedCategory.name}</strong>{' '}
-                    annotations: <strong>{selectedCategory.imageCount}</strong>
-                  </div>
-                  {analyzing ? (
-                    <div className='text-muted mt-1'>
-                      Checking which transects still need identification…
-                    </div>
-                  ) : transectsExist && incompleteTransectIds !== null ? (
-                    <div className='text-muted mt-1'>
-                      Transects with outstanding work:{' '}
-                      <strong>{incompleteTransectIds.length}</strong>
-                    </div>
-                  ) : (
-                    <div className='text-muted mt-1'>
-                      Transects containing these images will be made available
-                      as ChainLinker jobs once tiling completes.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {noWork && (
-              <Alert variant='warning' className='mb-0'>
-                Every transect with <strong>{selectedCategory?.name}</strong>{' '}
-                annotations has already been fully identified
-              </Alert>
-            )}
-          </>
-        )}
-      </div>
+              />
+            </SettingRow>
+          </AdvancedOptions>
+        </>
+      )}
     </div>
   );
 }
@@ -522,14 +549,14 @@ export default function IndividualId({
 async function fetchSetAnnotations(
   client: DataClient,
   annotationSetId: string,
-  onProgress?: (count: number) => void
+  onProgress?: (count: number) => void,
 ): Promise<AnnotationRow[]> {
   const rows = await loadRows(
     client,
     'annotationsByAnnotationSetId',
     annotationSetId,
     ['categoryId', 'imageId', 'x', 'y', 'objectId', 'oov'],
-    { onProgress }
+    { onProgress },
   );
   return rows.flatMap((row) =>
     row.categoryId && row.imageId && row.x !== null && row.y !== null
@@ -544,14 +571,14 @@ async function fetchSetAnnotations(
             oov: row.oov,
           },
         ]
-      : []
+      : [],
   );
 }
 
 async function fetchProjectImages(
   client: DataClient,
   projectId: string,
-  onProgress?: (count: number) => void
+  onProgress?: (count: number) => void,
 ): Promise<ProjectImages> {
   const images = await loadProjectImages(
     client,
@@ -564,12 +591,12 @@ async function fetchProjectImages(
       'originalPath',
       'boundaryStatus',
     ],
-    { onProgress }
+    { onProgress },
   );
   const neighbours = await loadProjectNeighbours(
     client,
     projectId,
-    new Set(images.map((image) => image.id))
+    new Set(images.map((image) => image.id)),
   );
   return {
     images: images as ProjectImage[],
@@ -579,7 +606,7 @@ async function fetchProjectImages(
 
 async function sendLaunchIndividualIdRequest(
   client: DataClient,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ) {
   const payloadStr = JSON.stringify(payload);
   let requestPayload: string;
@@ -588,7 +615,7 @@ async function sendLaunchIndividualIdRequest(
     const s3Key = await uploadWorkflowFile(
       'launch-payload',
       String(payload.projectId),
-      payloadStr
+      payloadStr,
     );
     requestPayload = JSON.stringify({ payloadS3Key: s3Key });
   } else {
@@ -598,7 +625,7 @@ async function sendLaunchIndividualIdRequest(
   try {
     await (client as any).mutations.launchIndividualId(
       { request: requestPayload },
-      { retry: false }
+      { retry: false },
     );
   } catch (error: any) {
     if (shouldIgnoreLaunchError(error)) {
@@ -618,6 +645,6 @@ function shouldIgnoreLaunchError(error: any): boolean {
     }
   }
   return messages.some((msg) =>
-    /timed out|timeout|Task timed out|socket hang up/i.test(msg)
+    /timed out|timeout|Task timed out|socket hang up/i.test(msg),
   );
 }

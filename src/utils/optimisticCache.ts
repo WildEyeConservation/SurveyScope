@@ -25,7 +25,7 @@ export function isMissingRow(result: unknown): boolean {
 export function withoutRow<T>(
   rows: readonly T[],
   item: T,
-  getKey: KeyFn<T>
+  getKey: KeyFn<T>,
 ): T[] {
   const key = getKey(item);
   return rows.filter((existing) => getKey(existing) !== key);
@@ -36,15 +36,15 @@ export function withRowRestored<T>(
   rows: readonly T[],
   item: T,
   previousItems: readonly T[] | undefined,
-  getKey: KeyFn<T>
+  getKey: KeyFn<T>,
 ): T[] {
   const key = getKey(item);
   const previous = previousItems?.find(
-    (candidate) => getKey(candidate) === key
+    (candidate) => getKey(candidate) === key,
   );
   if (!previous) return [...rows];
   return rows.map((existing) =>
-    getKey(existing) === key ? previous : existing
+    getKey(existing) === key ? previous : existing,
   );
 }
 
@@ -53,11 +53,11 @@ export function withRowReinstated<T>(
   rows: readonly T[],
   item: T,
   previousItems: readonly T[] | undefined,
-  getKey: KeyFn<T>
+  getKey: KeyFn<T>,
 ): T[] {
   const key = getKey(item);
   const previous = previousItems?.find(
-    (candidate) => getKey(candidate) === key
+    (candidate) => getKey(candidate) === key,
   );
   if (!previous) return [...rows];
   if (rows.some((existing) => getKey(existing) === key)) return [...rows];

@@ -1,12 +1,25 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { busyTime, createTileLoadStats } from './tileLoadStats';
 
 const timing = (
   kind: 'header' | 'tile',
   totalMs: number,
-  extra: Partial<{ queueMs: number; ttfbMs: number; bytes: number; status: number }> = {}
-) => ({ kind, queueMs: 0, ttfbMs: totalMs / 2, totalMs, bytes: 100, status: 206, ...extra });
+  extra: Partial<{
+    queueMs: number;
+    ttfbMs: number;
+    bytes: number;
+    status: number;
+  }> = {},
+) => ({
+  kind,
+  queueMs: 0,
+  ttfbMs: totalMs / 2,
+  totalMs,
+  bytes: 100,
+  status: 206,
+  ...extra,
+});
 
 test('sums requests per task', () => {
   let clock = 1_000;
@@ -15,7 +28,11 @@ test('sums requests per task', () => {
   clock = 1_300;
   stats.request('a', 'pack', timing('header', 100));
   clock = 1_700;
-  stats.request('a', 'pack', timing('tile', 300, { queueMs: 50, ttfbMs: 250, bytes: 1000 }));
+  stats.request(
+    'a',
+    'pack',
+    timing('tile', 300, { queueMs: 50, ttfbMs: 250, bytes: 1000 }),
+  );
   stats.request('a', 'pack', timing('tile', 100, { bytes: 500 }));
   stats.request('a', 'legacy', timing('tile', 80, { status: 404, bytes: 0 }));
   stats.request('a', 'legacy', timing('tile', 80, { status: 500, bytes: 0 }));
@@ -82,8 +99,22 @@ test('busy time counts overlapping image work once and skips idle gaps', () => {
 
 test('busyTime merges overlapping and touching intervals', () => {
   assert.equal(busyTime([]), 0);
-  assert.equal(busyTime([[5, 10], [0, 3], [2, 6], [10, 12]]), 12);
-  assert.equal(busyTime([[0, 10], [2, 4]]), 10);
+  assert.equal(
+    busyTime([
+      [5, 10],
+      [0, 3],
+      [2, 6],
+      [10, 12],
+    ]),
+    12,
+  );
+  assert.equal(
+    busyTime([
+      [0, 10],
+      [2, 4],
+    ]),
+    10,
+  );
 });
 
 test('forgets the oldest tasks beyond the cap', () => {

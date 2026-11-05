@@ -1,11 +1,18 @@
-import { useState, useContext, useCallback, useMemo, useEffect } from 'react';
-import { Form, Button, Alert, Spinner, Badge, Card } from 'react-bootstrap';
-import { matrix, inv } from 'mathjs';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
 import type { Matrix } from 'mathjs';
+import { inv, matrix } from 'mathjs';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext, UserContext } from '../Context';
-import { MapLibrePairViewer } from './MapLibrePairViewer';
-import { makeTransform, fetchAllPaginatedResults } from '../utils';
 import type { ImageType } from '../schemaTypes';
+import { fetchAllPaginatedResults, makeTransform } from '../utils';
+import { MapLibrePairViewer } from './MapLibrePairViewer';
 
 type CameraOption = { id: string; name: string };
 
@@ -74,10 +81,13 @@ export default function HomographyViewer() {
     try {
       const { data } = await client.models.Camera.camerasByProjectId(
         { projectId },
-        { selectionSet: ['id', 'name'], limit: 1000 }
+        { selectionSet: ['id', 'name'], limit: 1000 },
       );
       const list: CameraOption[] = (data ?? [])
-        .filter((c: { id?: string | null; name?: string | null }) => !!c?.id && !!c?.name)
+        .filter(
+          (c: { id?: string | null; name?: string | null }) =>
+            !!c?.id && !!c?.name,
+        )
         .map((c: { id: string; name: string }) => ({ id: c.id, name: c.name }))
         .sort((a, b) => a.name.localeCompare(b.name));
       if (list.length === 0) {
@@ -123,7 +133,7 @@ export default function HomographyViewer() {
       }
 
       const flat = rec.homography.filter(
-        (v: unknown): v is number => typeof v === 'number'
+        (v: unknown): v is number => typeof v === 'number',
       );
       if (flat.length !== 9) throw new Error('Stored homography is malformed');
 
@@ -151,7 +161,7 @@ export default function HomographyViewer() {
         reversedDirection,
       });
     },
-    [client]
+    [client],
   );
 
   const handleLoadManual = useCallback(async () => {
@@ -190,7 +200,7 @@ export default function HomographyViewer() {
             'rightNeighbours.homography',
           ],
           limit: 1000,
-        }
+        },
       )) as Array<{
         id: string;
         cameraId?: string | null;
@@ -207,7 +217,8 @@ export default function HomographyViewer() {
       }>;
 
       const imageCamera = new Map<string, string | null>();
-      for (const img of rawImages) imageCamera.set(img.id, img.cameraId ?? null);
+      for (const img of rawImages)
+        imageCamera.set(img.id, img.cameraId ?? null);
 
       const seen = new Map<string, ProjectPair>();
       const ingest = (n: {
@@ -231,7 +242,7 @@ export default function HomographyViewer() {
       }
       return Array.from(seen.values());
     },
-    [client]
+    [client],
   );
 
   const handleLoadRandomPair = useCallback(async () => {
@@ -267,7 +278,7 @@ export default function HomographyViewer() {
         throw new Error(
           sameCamera
             ? `No pairs with a stored homography found within this camera`
-            : `No pairs with a stored homography found between the two selected cameras`
+            : `No pairs with a stored homography found between the two selected cameras`,
         );
       }
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
@@ -304,17 +315,14 @@ export default function HomographyViewer() {
   }, [pair]);
 
   // Empty, stable refs so MapLibrePairViewer doesn't think points have changed.
-  const emptyPoints = useMemo(
-    () => [[], []] as [never[], never[]],
-    []
-  );
+  const emptyPoints = useMemo(() => [[], []] as [never[], never[]], []);
   const noopSetter = useCallback(() => {}, []);
   const noopAction = useCallback(() => {}, []);
 
   if (!isSysadmin) {
     return (
       <Card
-        className='w-100'
+        className='w-full'
         style={{
           maxWidth: '720px',
           marginTop: '12px',
@@ -322,42 +330,42 @@ export default function HomographyViewer() {
           height: 'fit-content',
         }}
       >
-        <Card.Header>
-          <Card.Title className='mb-0'>
+        <CardHeader>
+          <CardTitle className='mb-0'>
             <h4 className='mb-0'>Restricted</h4>
-          </Card.Title>
-        </Card.Header>
-        <Card.Body>
-          <Card.Text>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className='last:mb-0'>
             The homography sanity-check viewer is only available to system
             administrators.
-          </Card.Text>
-        </Card.Body>
+          </p>
+        </CardContent>
       </Card>
     );
   }
 
   return (
-    <div className='p-3 d-flex flex-column gap-3' style={{ height: '100vh' }}>
+    <div className='flex flex-col gap-4 p-4' style={{ height: '100vh' }}>
       <div>
         <h4 className='mb-1'>Homography Sanity Check</h4>
-        <p className='small mb-0' style={{ opacity: 0.75 }}>
+        <p className='mb-0 text-sm' style={{ opacity: 0.75 }}>
           Loads a stored ImageNeighbour homography and renders it across both
           images via the same preview transform the manual workbench uses. Hover
           / click an image to verify the correspondence visually.
         </p>
       </div>
 
-      <Form
+      <form
         onSubmit={(e) => {
           e.preventDefault();
           handleLoadManual();
         }}
       >
-        <div className='d-flex flex-wrap gap-3 align-items-end'>
-          <Form.Group>
-            <Form.Label className='small mb-1'>Image 1 ID</Form.Label>
-            <Form.Control
+        <div className='flex flex-wrap items-end gap-4'>
+          <div>
+            <Label className='mb-1 text-sm'>Image 1 ID</Label>
+            <Input
               size='sm'
               value={image1IdInput}
               onChange={(e) => setImage1IdInput(e.target.value)}
@@ -365,10 +373,10 @@ export default function HomographyViewer() {
               style={{ width: '300px' }}
               spellCheck={false}
             />
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='small mb-1'>Image 2 ID</Form.Label>
-            <Form.Control
+          </div>
+          <div>
+            <Label className='mb-1 text-sm'>Image 2 ID</Label>
+            <Input
               size='sm'
               value={image2IdInput}
               onChange={(e) => setImage2IdInput(e.target.value)}
@@ -376,7 +384,7 @@ export default function HomographyViewer() {
               style={{ width: '300px' }}
               spellCheck={false}
             />
-          </Form.Group>
+          </div>
           <Button
             size='sm'
             type='submit'
@@ -386,12 +394,12 @@ export default function HomographyViewer() {
             Load Pair
           </Button>
 
-          <div className='border-start mx-2' style={{ height: '2.25rem' }} />
+          <div className='mx-2 border-l' style={{ height: '2.25rem' }} />
 
-          <Form.Group>
-            <Form.Label className='small mb-1'>Project ID</Form.Label>
-            <div className='d-flex gap-2'>
-              <Form.Control
+          <div>
+            <Label className='mb-1 text-sm'>Project ID</Label>
+            <div className='flex gap-2'>
+              <Input
                 size='sm'
                 value={projectIdInput}
                 onChange={(e) => setProjectIdInput(e.target.value)}
@@ -409,10 +417,10 @@ export default function HomographyViewer() {
                 {camerasLoading ? 'Loading…' : 'Load Cameras'}
               </Button>
             </div>
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='small mb-1'>Camera A</Form.Label>
-            <Form.Select
+          </div>
+          <div>
+            <Label className='mb-1 text-sm'>Camera A</Label>
+            <NativeSelect
               size='sm'
               value={cameraAId}
               onChange={(e) => setCameraAId(e.target.value)}
@@ -427,11 +435,11 @@ export default function HomographyViewer() {
                   {c.name}
                 </option>
               ))}
-            </Form.Select>
-          </Form.Group>
-          <Form.Group>
-            <Form.Label className='small mb-1'>Camera B</Form.Label>
-            <Form.Select
+            </NativeSelect>
+          </div>
+          <div>
+            <Label className='mb-1 text-sm'>Camera B</Label>
+            <NativeSelect
               size='sm'
               value={cameraBId}
               onChange={(e) => setCameraBId(e.target.value)}
@@ -446,54 +454,59 @@ export default function HomographyViewer() {
                   {c.name}
                 </option>
               ))}
-            </Form.Select>
-          </Form.Group>
+            </NativeSelect>
+          </div>
           <Button
             size='sm'
             type='button'
             variant='outline-primary'
-            disabled={loading || projectPairsLoading || !cameraAId || !cameraBId}
+            disabled={
+              loading || projectPairsLoading || !cameraAId || !cameraBId
+            }
             onClick={handleLoadRandomPair}
           >
             {projectPairsLoading
               ? 'Fetching project pairs…'
               : cameraAId && cameraBId && cameraAId === cameraBId
-              ? 'Random Same-Camera Pair'
-              : 'Random Cross-Camera Pair'}
+                ? 'Random Same-Camera Pair'
+                : 'Random Cross-Camera Pair'}
           </Button>
         </div>
-      </Form>
+      </form>
 
       {loading && (
-        <div className='d-flex align-items-center gap-2'>
+        <div className='flex items-center gap-2'>
           <Spinner animation='border' size='sm' />
-          <span className='small'>Loading pair…</span>
+          <span className='text-sm'>Loading pair…</span>
         </div>
       )}
 
       {error && (
-        <Alert variant='danger' className='py-2 px-3 small mb-0'>
+        <Alert variant='danger' className='mb-0 px-4 py-2 text-sm'>
           {error}
         </Alert>
       )}
 
       {pair && (
         <>
-          <div className='d-flex flex-wrap gap-2 align-items-center small' style={{ opacity: 0.85 }}>
-            <Badge bg='secondary'>
+          <div
+            className='flex flex-wrap items-center gap-2 text-sm'
+            style={{ opacity: 0.85 }}
+          >
+            <Badge variant='secondary'>
               Source: {pair.rec.homographySource ?? 'unknown'}
             </Badge>
-            <Badge bg={pair.reversedDirection ? 'warning' : 'info'}>
+            <Badge variant={pair.reversedDirection ? 'warning' : 'info'}>
               {pair.reversedDirection
                 ? 'DB direction reversed (H inverted for display)'
                 : 'DB direction matches input'}
             </Badge>
-            {pair.rec.skipped ? <Badge bg='danger'>skipped</Badge> : null}
-            <span className='ms-2 mono'>
+            {pair.rec.skipped ? <Badge variant='danger'>skipped</Badge> : null}
+            <span className='mono ml-2'>
               DB record: {pair.rec.image1Id} → {pair.rec.image2Id}
             </span>
           </div>
-          <div className='flex-grow-1' style={{ minHeight: 0 }}>
+          <div className='grow' style={{ minHeight: 0 }}>
             <MapLibrePairViewer
               key={`maplibre-viewer-${pair.images[0].id}::${pair.images[1].id}`}
               images={pair.images}

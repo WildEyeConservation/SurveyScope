@@ -1,19 +1,34 @@
-import { Form, Button, Spinner, Alert, ProgressBar } from 'react-bootstrap';
-import { Footer } from '../Modal';
-import { useState, useContext, useEffect, useCallback, useRef } from 'react';
-import { GlobalContext } from '../Context';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
+import { XIcon } from 'lucide-react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Schema } from '../amplify/client-schema';
-import TileConfiguration from '../TileConfiguration';
-import type { TiledLaunchRequest } from '../types/LaunchTask';
+import { GlobalContext } from '../Context';
+import { Footer } from '../Modal';
 import {
   readFalseNegativeFile,
   uploadWorkflowFile,
 } from '../storage/workflowFiles';
+import TileConfiguration, { type TileSettings } from '../TileConfiguration';
+import type { TiledLaunchRequest } from '../types/LaunchTask';
+import { SectionTitle } from './SurveyStructure';
 
 // Threshold in bytes above which we upload the payload to S3.
 const PAYLOAD_SIZE_THRESHOLD = 200 * 1024; // 200KB
 
 type TilingTaskStatus = 'idle' | 'processing' | 'completed' | 'failed';
+
+function parseSettings(description?: string | null) {
+  try {
+    const parsed = JSON.parse(description ?? '');
+    return typeof parsed?.horizontalTiles === 'number'
+      ? (parsed as TileSettings)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function ManageTiles({
   project,
@@ -32,7 +47,12 @@ export default function ManageTiles({
     totalLocations: number;
   } | null>(null);
   const [currentTileCount, setCurrentTileCount] = useState<number | null>(null);
+  const [currentSettings, setCurrentSettings] = useState<TileSettings | null>(
+    null,
+  );
   const [loadingTileCount, setLoadingTileCount] = useState(true);
+  const [expectedTiles, setExpectedTiles] = useState(0);
+  const [confirming, setConfirming] = useState(false);
   const [handleCreateTask, setHandleCreateTask] = useState<
     (() => Promise<TiledLaunchRequest>) | null
   >(null);
@@ -72,9 +92,10 @@ export default function ManageTiles({
       try {
         const { data } = await client.models.LocationSet.get(
           { id: tiledLocationSetId },
-          { selectionSet: ['locationCount'], signal }
+          { selectionSet: ['locationCount', 'description'], signal },
         );
         setCurrentTileCount(data?.locationCount ?? 0);
+        setCurrentSettings(parseSettings(data?.description));
       } catch (err) {
         if (signal.aborted) return;
         console.error('Failed to load tile count', err);
@@ -93,8 +114,8 @@ export default function ManageTiles({
     async function checkActiveTilingTask() {
       if (!tiledLocationSetId) return;
       try {
-        const { data: tasks } = await
-          client.models.TilingTask.tilingTasksByProjectId(
+        const { data: tasks } =
+          await client.models.TilingTask.tilingTasksByProjectId(
             { projectId: project.id },
             {
               selectionSet: [
@@ -107,14 +128,14 @@ export default function ManageTiles({
               ],
               limit: 10,
               signal,
-            }
+            },
           );
 
         // Find active task for our location set
         const activeTask = tasks?.find(
           (t) =>
             t.locationSetId === tiledLocationSetId &&
-            (t.status === 'pending' || t.status === 'processing')
+            (t.status === 'pending' || t.status === 'processing'),
         );
 
         if (activeTask) {
@@ -146,14 +167,14 @@ export default function ManageTiles({
         const { data: annotationSets } =
           await client.models.AnnotationSet.annotationSetsByProjectId(
             { projectId: project.id },
-            { selectionSet: ['id'], limit: 100, signal }
+            { selectionSet: ['id'], limit: 100, signal },
           );
         if (!annotationSets?.length) return;
 
         for (const as of annotationSets) {
           if (signal.aborted) return;
           const pool = await readFalseNegativeFile(as.id, 'pool', signal).catch(
-            () => null
+            () => null,
           );
           if (pool) {
             if (!signal.aborted) setHasFnData(true);
@@ -184,22 +205,20 @@ export default function ManageTiles({
 
         const signal = pollAbortRef.current?.signal;
         try {
-          const { data: task } = await
-            client.models.TilingTask
-              .get(
-                { id: tilingTaskId },
-                {
-                  signal,
-                  selectionSet: [
-                    'id',
-                    'status',
-                    'totalBatches',
-                    'completedBatches',
-                    'totalLocations',
-                    'errorMessage',
-                  ],
-                }
-              );
+          const { data: task } = await client.models.TilingTask.get(
+            { id: tilingTaskId },
+            {
+              signal,
+              selectionSet: [
+                'id',
+                'status',
+                'totalBatches',
+                'completedBatches',
+                'totalLocations',
+                'errorMessage',
+              ],
+            },
+          );
 
           if (!task) return;
 
@@ -218,9 +237,10 @@ export default function ManageTiles({
             if (tiledLocationSetId) {
               const { data: ls } = await client.models.LocationSet.get(
                 { id: tiledLocationSetId },
-                { selectionSet: ['locationCount'], signal }
+                { selectionSet: ['locationCount', 'description'], signal },
               );
               setCurrentTileCount(ls?.locationCount ?? 0);
+              setCurrentSettings(parseSettings(ls?.description));
             }
           } else if (task.status === 'failed') {
             clearInterval(pollInterval);
@@ -236,7 +256,7 @@ export default function ManageTiles({
 
       pollingRef.current = pollInterval;
     },
-    [client.models.TilingTask, client.models.LocationSet, tiledLocationSetId]
+    [client.models.TilingTask, client.models.LocationSet, tiledLocationSetId],
   );
 
   // Poll for the tiling task to appear and get its ID
@@ -257,35 +277,35 @@ export default function ManageTiles({
       attempts++;
       const signal = pollAbortRef.current?.signal;
       try {
-        const { data: tasks } = await
-          client.models.TilingTask
-            .tilingTasksByProjectId(
-              { projectId: project.id },
-              {
-                signal,
-                selectionSet: [
-                  'id',
-                  'status',
-                  'totalBatches',
-                  'completedBatches',
-                  'totalLocations',
-                  'locationSetId',
-                  'createdAt',
-                ],
-                limit: 10,
-              }
-            );
+        const { data: tasks } =
+          await client.models.TilingTask.tilingTasksByProjectId(
+            { projectId: project.id },
+            {
+              signal,
+              selectionSet: [
+                'id',
+                'status',
+                'totalBatches',
+                'completedBatches',
+                'totalLocations',
+                'locationSetId',
+                'createdAt',
+              ],
+              limit: 10,
+            },
+          );
 
         // Find the most recent active task for our location set
         const activeTask = tasks
           ?.filter(
             (t) =>
               t.locationSetId === tiledLocationSetId &&
-              (t.status === 'pending' || t.status === 'processing')
+              (t.status === 'pending' || t.status === 'processing'),
           )
           .sort(
             (a, b) =>
-              new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
+              new Date(b.createdAt!).getTime() -
+              new Date(a.createdAt!).getTime(),
           )[0];
 
         if (activeTask) {
@@ -302,11 +322,12 @@ export default function ManageTiles({
           if (tiledLocationSetId) {
             const { data: ls } = await client.models.LocationSet.get(
               { id: tiledLocationSetId },
-              { selectionSet: ['locationCount'], signal }
+              { selectionSet: ['locationCount', 'description'], signal },
             );
             const newCount = ls?.locationCount ?? 0;
             if (newCount > 0 && newCount !== currentTileCount) {
               setCurrentTileCount(newCount);
+              setCurrentSettings(parseSettings(ls?.description));
               setTilingStatus('completed');
               setProcessing(false);
               setStatusMessage('Tiles created successfully!');
@@ -341,20 +362,12 @@ export default function ManageTiles({
 
     if (!tiledLocationSetId) {
       setError(
-        'No tiled location set configured for this survey. Please contact support.'
+        'No tiled location set configured for this survey. Please contact support.',
       );
       return;
     }
 
-    // Confirm with user if there are existing tiles
-    if (currentTileCount && currentTileCount > 0) {
-      const message = hasFnData
-        ? `This will delete all ${currentTileCount} existing tiles and create new ones. All false-negative data (annotations, observations, and pool files) will also be permanently deleted. Are you sure you want to continue?`
-        : `This will delete all ${currentTileCount} existing tiles and create new ones. Are you sure you want to continue?`;
-      const confirmed = window.confirm(message);
-      if (!confirmed) return;
-    }
-
+    setConfirming(false);
     setError(null);
     setProcessing(true);
     setTilingStatus('processing');
@@ -397,7 +410,7 @@ export default function ManageTiles({
         const s3Key = await uploadWorkflowFile(
           'launch-payload',
           project.id,
-          payloadStr
+          payloadStr,
         );
         requestPayload = JSON.stringify({ payloadS3Key: s3Key });
       } else {
@@ -425,7 +438,7 @@ export default function ManageTiles({
             const body =
               typeof resultData?.body === 'string'
                 ? JSON.parse(resultData.body)
-                : resultData?.body ?? resultData;
+                : (resultData?.body ?? resultData);
 
             if (body?.tilingTaskId && isActiveRef.current) {
               // Clear the generic polling and start specific task polling
@@ -440,12 +453,18 @@ export default function ManageTiles({
               startPollingProgress(body.tilingTaskId);
             }
           } catch (parseErr) {
-            console.log('Could not parse lambda response, continuing with polling', parseErr);
+            console.log(
+              'Could not parse lambda response, continuing with polling',
+              parseErr,
+            );
           }
         })
         .catch((err) => {
           // Log the error but don't fail - polling will find the task
-          console.log('Lambda call error (expected due to timeout):', err?.message ?? err);
+          console.log(
+            'Lambda call error (expected due to timeout):',
+            err?.message ?? err,
+          );
         });
     } catch (err: any) {
       console.error('Failed to prepare tile request', err);
@@ -458,123 +477,183 @@ export default function ManageTiles({
   const progressPercent =
     tilingProgress && tilingProgress.totalBatches > 0
       ? Math.round(
-        (tilingProgress.completedBatches / tilingProgress.totalBatches) * 100
-      )
+          (tilingProgress.completedBatches / tilingProgress.totalBatches) * 100,
+        )
       : 0;
+
+  const hasTiles = !!currentTileCount && currentTileCount > 0;
 
   return (
     <>
-      <div className='p-3'>
-        {/* Current status */}
-        <div className='mb-3'>
-          <h6>Current Tile Status</h6>
+      <div className='flex flex-col gap-2 p-4'>
+        <SectionTitle className='border-b-0 pb-0'>Current tiles</SectionTitle>
+        <div className='flex items-center gap-4 border border-white/15 bg-white/[0.07] px-4 py-3'>
           {loadingTileCount ? (
-            <div className='d-flex align-items-center gap-2'>
+            <span className='flex items-center gap-2 text-muted-foreground'>
               <Spinner animation='border' size='sm' />
-              <span>Loading...</span>
-            </div>
+              Loading tiles...
+            </span>
           ) : !tiledLocationSetId ? (
-            <Alert variant='warning'>
-              No tile location set configured for this survey. Tiles will be
-              created when you click "Generate Tiles".
-            </Alert>
+            <span className='text-sm text-warning'>
+              This survey has no tile set, so tiles cannot be generated here.
+            </span>
           ) : (
-            <p className='mb-0'>
-              <strong>{currentTileCount ?? 0}</strong> tiles currently in this
-              survey
-            </p>
+            <>
+              <span className='text-2xl font-bold tabular-nums'>
+                {(currentTileCount ?? 0).toLocaleString()}
+              </span>
+              <span className='text-xs text-muted-foreground'>
+                {hasTiles && currentSettings ? (
+                  <>
+                    tiles · {currentSettings.horizontalTiles} ×{' '}
+                    {currentSettings.verticalTiles} per image ·{' '}
+                    {currentSettings.width.toLocaleString()} ×{' '}
+                    {currentSettings.height.toLocaleString()} px ·{' '}
+                    {currentSettings.minSidelap} px between columns,{' '}
+                    {currentSettings.minOverlap} px between rows
+                  </>
+                ) : hasTiles ? (
+                  'tiles'
+                ) : (
+                  'tiles · none generated yet'
+                )}
+              </span>
+            </>
           )}
         </div>
 
-        {/* FN data warning */}
-        {hasFnData && currentTileCount != null && currentTileCount > 0 && (
-          <Alert variant='warning'>
-            <strong>Warning:</strong> This project has existing false-negative
-            data (annotations, observations, and pool files). Regenerating tiles
-            will permanently delete all false-negative work.
-          </Alert>
-        )}
-
-        {/* Error display */}
         {error && (
-          <Alert variant='danger' dismissible onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-
-        {/* Progress display */}
-        {processing && tilingStatus === 'processing' && (
-          <div className='mb-3'>
-            <Alert variant='info'>
-              <div className='d-flex align-items-center gap-2 mb-2'>
-                <Spinner animation='border' size='sm' />
-                <span>{statusMessage || 'Processing...'}</span>
-              </div>
-              {tilingProgress && tilingProgress.totalBatches > 0 && (
-                <>
-                  <ProgressBar
-                    now={progressPercent}
-                    label={`${progressPercent}%`}
-                    className='mb-2'
-                  />
-                  <small>
-                    Batch {tilingProgress.completedBatches} of{' '}
-                    {tilingProgress.totalBatches} ({tilingProgress.totalLocations}{' '}
-                    total tiles)
-                  </small>
-                </>
-              )}
-            </Alert>
+          <div className='flex items-start gap-3 border border-danger bg-danger/15 px-4 py-3 text-sm'>
+            <span className='flex-1'>{error}</span>
+            <button
+              type='button'
+              aria-label='Dismiss'
+              className='hover:text-primary'
+              onClick={() => setError(null)}
+            >
+              <XIcon className='size-4' />
+            </button>
           </div>
         )}
 
-        {/* Success message */}
-        {tilingStatus === 'completed' && !processing && (
-          <Alert variant='success' dismissible onClose={() => setTilingStatus('idle')}>
-            {statusMessage || 'Tiles created successfully!'}
-          </Alert>
+        {processing && tilingStatus === 'processing' && (
+          <div className='flex flex-col gap-2 border border-white/15 bg-white/[0.07] px-4 py-3 text-sm'>
+            <span className='flex items-center gap-2'>
+              <Spinner animation='border' size='sm' />
+              {statusMessage || 'Processing...'}
+            </span>
+            {tilingProgress && tilingProgress.totalBatches > 0 && (
+              <>
+                <Progress
+                  value={progressPercent}
+                  label={`${progressPercent}%`}
+                />
+                <span className='text-xs text-muted-foreground'>
+                  Batch {tilingProgress.completedBatches} of{' '}
+                  {tilingProgress.totalBatches} ·{' '}
+                  {tilingProgress.totalLocations.toLocaleString()} tiles
+                </span>
+              </>
+            )}
+          </div>
         )}
 
-        {/* Tile configuration */}
-        <Form.Group className='mb-3'>
-          <h6>Tile Configuration</h6>
-          <TileConfiguration
-            name={`${project.name} - Tiles`}
-            projectId={project.id}
-            existingLocationSetId={tiledLocationSetId ?? undefined}
-            setHandleCreateTask={setHandleCreateTask}
-            setLaunchDisabled={setLaunchDisabled}
-            disabled={processing}
-          />
-        </Form.Group>
+        {tilingStatus === 'completed' && !processing && (
+          <div className='flex items-center gap-3 border border-success bg-success/15 px-4 py-3 text-sm'>
+            <span className='flex-1'>
+              {statusMessage || 'Tiles created successfully!'}
+            </span>
+            <button
+              type='button'
+              aria-label='Dismiss'
+              className='hover:text-primary'
+              onClick={() => setTilingStatus('idle')}
+            >
+              <XIcon className='size-4' />
+            </button>
+          </div>
+        )}
+
+        {!loadingTileCount && tiledLocationSetId && (
+          <>
+            <SectionTitle className='mt-4 border-b-0 pb-0'>
+              {hasTiles ? 'New tiles' : 'Tiles'}
+            </SectionTitle>
+            <TileConfiguration
+              name={`${project.name} - Tiles`}
+              projectId={project.id}
+              existingLocationSetId={tiledLocationSetId}
+              initial={currentSettings ?? undefined}
+              setHandleCreateTask={setHandleCreateTask}
+              setLaunchDisabled={setLaunchDisabled}
+              onExpectedTilesChange={setExpectedTiles}
+              disabled={processing}
+            />
+          </>
+        )}
       </div>
 
       <Footer>
-        <Button
-          variant='primary'
-          onClick={handleRegenerateTiles}
-          disabled={launchDisabled || processing || checkingFnData}
-        >
-          {processing ? (
-            <>
-              <Spinner animation='border' size='sm' className='me-2' />
-              Creating Tiles...
-            </>
-          ) : currentTileCount && currentTileCount > 0 ? (
-            'Regenerate Tiles'
-          ) : (
-            'Generate Tiles'
-          )}
-        </Button>
-        <Button
-          variant='dark'
-          onClick={() => showModal(null)}
-          disabled={processing}
-        >
-          Close
-        </Button>
+        {confirming ? (
+          <>
+            <div className='mr-auto'>
+              <div>
+                Delete {(currentTileCount ?? 0).toLocaleString()} tiles and
+                create {expectedTiles.toLocaleString()} new ones?
+              </div>
+              {hasFnData && (
+                <div className='text-xs text-warning'>
+                  This survey's false-negative annotations, observations and
+                  pool files will be deleted too.
+                </div>
+              )}
+            </div>
+            <Button
+              variant='outline-light'
+              onClick={() => setConfirming(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant='danger' onClick={handleRegenerateTiles}>
+              Regenerate tiles
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant='ghost'
+              className='mr-auto'
+              onClick={() => showModal(null)}
+              disabled={processing}
+            >
+              Close
+            </Button>
+            <Button
+              variant='primary'
+              onClick={() =>
+                hasTiles ? setConfirming(true) : handleRegenerateTiles()
+              }
+              disabled={
+                launchDisabled ||
+                processing ||
+                checkingFnData ||
+                !tiledLocationSetId
+              }
+            >
+              {processing ? (
+                <>
+                  <Spinner animation='border' size='sm' />
+                  Creating tiles...
+                </>
+              ) : hasTiles ? (
+                'Regenerate tiles'
+              ) : (
+                'Generate tiles'
+              )}
+            </Button>
+          </>
+        )}
       </Footer>
     </>
   );
 }
-

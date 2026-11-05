@@ -105,7 +105,7 @@ export type StrataLayout = {
 // The areas the network divides the boundary into, north to south.
 export function strataSections(
   boundary: LatLng[] | null,
-  network: StrataNetwork
+  network: StrataNetwork,
 ): StrataLayout {
   const ringLatLng = boundary ? openRing(boundary) : [];
   if (ringLatLng.length < 3) return { sections: [], dangling: false };
@@ -194,7 +194,7 @@ export function strataSections(
     queue.push(...adjacency[v]);
   }
   const kept = edges.filter(
-    ({ u, v }) => reached.has(u) && adjacency[u].has(v)
+    ({ u, v }) => reached.has(u) && adjacency[u].has(v),
   );
   const dangling = kept.filter((e) => !e.boundary).length < lineEdges;
 
@@ -202,8 +202,8 @@ export function strataSections(
     [...adjacency[i]].sort(
       (x, y) =>
         Math.atan2(vertices[x][1] - origin[1], vertices[x][0] - origin[0]) -
-        Math.atan2(vertices[y][1] - origin[1], vertices[y][0] - origin[0])
-    )
+        Math.atan2(vertices[y][1] - origin[1], vertices[y][0] - origin[0]),
+    ),
   );
   const visited = new Set<string>();
   const faces: XY[][] = [];
@@ -229,7 +229,7 @@ export function strataSections(
   const outer = faces.reduce(
     (best, face, i) =>
       Math.abs(signedArea(face)) > Math.abs(signedArea(faces[best])) ? i : best,
-    0
+    0,
   );
   const sections = faces
     .filter((_, i) => i !== outer)
@@ -249,7 +249,7 @@ export type NetworkTarget =
 
 function place(
   network: StrataNetwork,
-  target: NetworkTarget
+  target: NetworkTarget,
 ): { network: StrataNetwork; index: number } {
   if (target.kind === 'node') return { network, index: target.index };
   const index = network.nodes.length;
@@ -257,7 +257,7 @@ function place(
   if (target.kind === 'point') return { network: { ...network, nodes }, index };
   const [a, b] = network.edges[target.edge];
   const edges = network.edges.map((edge, i) =>
-    i === target.edge ? ([a, index] as [number, number]) : edge
+    i === target.edge ? ([a, index] as [number, number]) : edge,
   );
   edges.push([index, b]);
   return { network: { nodes, edges }, index };
@@ -266,7 +266,7 @@ function place(
 export function connect(
   network: StrataNetwork,
   from: NetworkTarget,
-  to: NetworkTarget
+  to: NetworkTarget,
 ): { network: StrataNetwork; end: number } {
   const start = place(network, from);
   // Both ends on one edge: the second is joined by position instead.
@@ -277,7 +277,7 @@ export function connect(
   const end = place(start.network, target);
   const [a, b] = [start.index, end.index];
   const exists = end.network.edges.some(
-    ([x, y]) => (x === a && y === b) || (x === b && y === a)
+    ([x, y]) => (x === a && y === b) || (x === b && y === a),
   );
   if (a === b || exists) return { network: end.network, end: b };
   return {
@@ -298,14 +298,14 @@ function prune(network: StrataNetwork): StrataNetwork {
   return {
     nodes,
     edges: network.edges.map(
-      ([a, b]) => [remap.get(a)!, remap.get(b)!] as [number, number]
+      ([a, b]) => [remap.get(a)!, remap.get(b)!] as [number, number],
     ),
   };
 }
 
 export function removeNode(
   network: StrataNetwork,
-  index: number
+  index: number,
 ): StrataNetwork {
   return prune({
     ...network,
@@ -315,7 +315,7 @@ export function removeNode(
 
 export function removeEdge(
   network: StrataNetwork,
-  edge: number
+  edge: number,
 ): StrataNetwork {
   return prune({
     ...network,
@@ -326,7 +326,7 @@ export function removeEdge(
 export function moveNode(
   network: StrataNetwork,
   index: number,
-  point: LatLng
+  point: LatLng,
 ): StrataNetwork {
   return {
     ...network,

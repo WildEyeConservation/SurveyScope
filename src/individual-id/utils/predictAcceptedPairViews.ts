@@ -24,7 +24,7 @@ interface Input {
   categoryId: string | undefined;
   mergeCandidates: (
     key: string,
-    candidates: MatchCandidate[]
+    candidates: MatchCandidate[],
   ) => MatchCandidate[];
 }
 
@@ -44,11 +44,11 @@ export function predictAcceptedPairViews({
     (candidate) =>
       candidate.status === 'pending' &&
       !candidate.informational &&
-      !candidate.oovSide
+      !candidate.oovSide,
   );
   if (!current || !candidates?.length) return views;
   const preview = new Map(
-    annotations.map((annotation) => [annotation.id, annotation])
+    annotations.map((annotation) => [annotation.id, annotation]),
   );
   const changedImages = new Set<string>();
   for (const candidate of candidates) {
@@ -56,7 +56,7 @@ export function predictAcceptedPairViews({
     for (const side of ['A', 'B'] as const) {
       const real = side === 'A' ? candidate.realA : candidate.realB;
       const position = side === 'A' ? candidate.posA : candidate.posB;
-      const existing = real ? preview.get(real.id) ?? real : undefined;
+      const existing = real ? (preview.get(real.id) ?? real) : undefined;
       if (existing) {
         actors.push(
           position
@@ -65,7 +65,7 @@ export function predictAcceptedPairViews({
                 x: Math.round(position.x),
                 y: Math.round(position.y),
               }
-            : existing
+            : existing,
         );
       } else if (position) {
         actors.push({
@@ -80,13 +80,13 @@ export function predictAcceptedPairViews({
     if (!actors.length) continue;
     const ids = new Set(actors.map((actor) => actor.id));
     const roots = new Set(
-      actors.flatMap((actor) => (actor.objectId ? [actor.objectId] : []))
+      actors.flatMap((actor) => (actor.objectId ? [actor.objectId] : [])),
     );
     const chainOnly = [...preview.values()].filter(
       (annotation) =>
         !ids.has(annotation.id) &&
         (roots.has(annotation.id) ||
-          (!!annotation.objectId && roots.has(annotation.objectId)))
+          (!!annotation.objectId && roots.has(annotation.objectId))),
     );
     const members = [...actors, ...chainOnly];
     // Same guard as linking: conflicting merges cannot be accepted.
@@ -96,7 +96,7 @@ export function predictAcceptedPairViews({
       if (
         isOlder(
           imagesById[member.imageId] ?? {},
-          imagesById[oldest.imageId] ?? {}
+          imagesById[oldest.imageId] ?? {},
         )
       )
         oldest = member;
@@ -136,7 +136,7 @@ export function predictAcceptedPairViews({
         backward: pair.backward,
         leniency,
         categoryFilter: categoryId,
-      })
+      }),
     );
     return {
       ...view,

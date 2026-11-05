@@ -147,7 +147,13 @@ async function main(): Promise<void> {
         indexName: annotationIndex,
         hashAttribute: 'setId',
         hashValue: job.annotationSetId,
-        fields: ['id', 'objectId', 'imageId', 'categoryId'],
+        fields: [
+          'id',
+          'objectId',
+          'imageId',
+          'categoryId',
+          'outsideBoundary',
+        ],
       },
       async (pageAnnotations) => {
         for (const annotation of pageAnnotations) {

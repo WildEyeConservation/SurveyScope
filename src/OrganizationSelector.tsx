@@ -1,9 +1,14 @@
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { ChevronDown } from 'lucide-react';
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext, UserContext } from './Context';
 import { Schema } from './amplify/client-schema';
-import Dropdown from 'react-bootstrap/Dropdown';
-import DropdownButton from 'react-bootstrap/DropdownButton';
-import ButtonGroup from 'react-bootstrap/ButtonGroup';
 
 function OrganizationSelector({
   organization,
@@ -28,7 +33,7 @@ function OrganizationSelector({
     if (!myOrganizations?.length) return;
 
     const adminMemberships = myOrganizations.filter(
-      (membership) => membership.isAdmin
+      (membership) => membership.isAdmin,
     );
     if (!adminMemberships.length) return;
 
@@ -50,11 +55,11 @@ function OrganizationSelector({
             await client.models.Organization.get({
               id: membership.organizationId,
             })
-          ).data
-      )
+          ).data,
+      ),
     ).then((allOrganizations) => {
       const validOrganizations = allOrganizations.filter(
-        (organization) => organization !== null
+        (organization) => organization !== null,
       );
       setOrganizations(validOrganizations);
 
@@ -82,32 +87,31 @@ function OrganizationSelector({
   }
 
   return (
-    <DropdownButton
-      as={ButtonGroup}
-      key={'Primary'}
-      id={`dropdown-variants-Primary`}
-      variant={'primary'}
-      title={
-        organization.id
-          ? organizations.find((org) => org.id === organization.id)?.name
-          : 'Select an Organisation'
-      }
-    >
-      {organizations?.map((organization) => (
-        <Dropdown.Item
-          key={organization.id}
-          eventKey={organization.id}
-          onClick={() => {
-            setOrganization({
-              id: organization.id,
-              name: organization.name,
-            });
-          }}
-        >
-          {organization.name}
-        </Dropdown.Item>
-      ))}
-    </DropdownButton>
+    <DropdownMenu key={'Primary'}>
+      <DropdownMenuTrigger asChild>
+        <Button id={`dropdown-variants-Primary`} variant={'primary'}>
+          {organization.id
+            ? organizations.find((org) => org.id === organization.id)?.name
+            : 'Select an Organisation'}{' '}
+          <ChevronDown className='size-3' />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='start'>
+        {organizations?.map((organization) => (
+          <DropdownMenuItem
+            key={organization.id}
+            onSelect={() => {
+              setOrganization({
+                id: organization.id,
+                name: organization.name,
+              });
+            }}
+          >
+            {organization.name}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

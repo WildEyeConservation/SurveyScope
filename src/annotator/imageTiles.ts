@@ -47,7 +47,7 @@ export const mapZoomToStoredZoom = (zoom: number) => zoom + 1;
 export function createImageMap(
   container: HTMLDivElement,
   projection: ImageProjection,
-  maxZoom = projection.maxNativeZoom + 4
+  maxZoom = projection.maxNativeZoom + 4,
 ): maplibregl.Map {
   ensureTileProtocol();
   const minZoom = -2;
@@ -79,16 +79,16 @@ export function addImageTiles(
   sourceKey: string,
   image: { width: number; height: number; id: string; sharedImageId?: string },
   projection: ImageProjection,
-  taskId?: string
+  taskId?: string,
 ) {
   const context = imageTileContext(image, taskId);
   const query = new URLSearchParams(
     Object.entries(context)
       .filter(([, value]) => value != null)
-      .map(([key, value]) => [key, String(value)])
+      .map(([key, value]) => [key, String(value)]),
   );
   const template = `detweb://slippymaps/${encodeURIComponent(
-    sourceKey
+    sourceKey,
   )}/{z}/{y}/{x}.png?${query}`;
   map.addSource(SOURCE_TILES, {
     type: 'raster',
@@ -119,7 +119,7 @@ export function fitPxBounds(
   top: number,
   right: number,
   bottom: number,
-  eventData?: Record<string, unknown>
+  eventData?: Record<string, unknown>,
 ) {
   const container = map.getContainer();
   const camera = pxBoundsCamera(
@@ -128,7 +128,7 @@ export function fitPxBounds(
     left,
     top,
     right,
-    bottom
+    bottom,
   );
   if (camera) map.jumpTo(camera, eventData);
 }

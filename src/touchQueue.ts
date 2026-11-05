@@ -5,7 +5,7 @@ const lastTouched = new Map<string, number>();
 export async function touchQueue(
   client: { mutations: unknown },
   id: string,
-  force = false
+  force = false,
 ): Promise<boolean> {
   const now = Date.now();
   if (!force && now - (lastTouched.get(id) ?? 0) < HOUR_MS) return true;

@@ -1,7 +1,7 @@
 import type { ImageType } from './schemaTypes';
 
 export type TaskAcknowledgement = (
-  submittedAt?: number
+  submittedAt?: number,
 ) => void | Promise<void>;
 
 export type AnnotationImage = Pick<ImageType, 'id' | 'width' | 'height'> &
@@ -48,6 +48,8 @@ export interface AnnotationWorkspaceProps {
   /** Stable identifier for retry-safe Observation creation. */
   observationId?: string;
   taskTag?: string;
+  /** Image only: no header, side legend or frame, for viewers embedded in a page. */
+  embedded?: boolean;
 }
 
 /** A fully hydrated task returned by the annotation queue source. */

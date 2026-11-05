@@ -21,18 +21,18 @@ onImageSessionChange(() => files.clear());
 export function loadImageFiles(
   client: FilesClient,
   imageId: string,
-  taskId?: string
+  taskId?: string,
 ): Promise<ImageFileType[]> {
   const cached = files.get(imageId);
   if (cached) return cached;
   const loading = timed(
     () =>
       client.models.ImageFile.imagesByimageId({ imageId }).then(
-        ({ data }) => data
+        ({ data }) => data,
       ),
     (ms) => {
       if (taskId) tileLoadStats.step(taskId, 'fileLookup', ms);
-    }
+    },
   );
   files.set(imageId, loading);
   const forget = () => {

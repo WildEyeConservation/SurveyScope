@@ -2,7 +2,7 @@
 export async function sampleSuccessfulScans<T, U>(
   files: T[],
   sampleSize: number,
-  scan: (file: T) => Promise<U | null>
+  scan: (file: T) => Promise<U | null>,
 ): Promise<{ sample: U[]; consumed: number }> {
   const sample: U[] = [];
   let consumed = 0;

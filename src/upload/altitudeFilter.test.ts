@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   altitudeBandFrom,
   computeAglByRow,
@@ -44,7 +44,7 @@ test('computeAglByRow subtracts ground elevation', async () => {
   const agl = await computeAglByRow(
     rows,
     false,
-    async (lat) => ground.get(rows.find((r) => r.lat === lat)!) ?? null
+    async (lat) => ground.get(rows.find((r) => r.lat === lat)!) ?? null,
   );
   assert.equal(agl.get(rows[0]), 100);
   assert.equal(agl.size, 1);
@@ -64,7 +64,7 @@ test('an explicit AGL of 0 is a known height outside a positive band', async () 
   assert.equal(agl.get(rows[0]), 0);
   assert.equal(
     isOutsideAltitudeBand(agl.get(rows[0]), { min: 80, max: 120 }),
-    true
+    true,
   );
 });
 

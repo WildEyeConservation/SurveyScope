@@ -1,23 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
 import {
-  Eye,
   ExternalLink,
+  Eye,
   EyeOff,
   RotateCw,
   ScanEye,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  isAnnotationOnEffort,
+  OUTSIDE_SURVEY_AREA,
+} from '../../shared/boundaryStatus';
+import type { AnnotationImageMeta, ChainAnnotation } from './types';
 import {
   CHAIN_TILE_SIZE,
   fetchCenteredCrop,
   getCropZoomRange,
 } from './utils/tileCrop';
-import type { AnnotationImageMeta, ChainAnnotation } from './types';
-import {
-  isOnEffort,
-  OUTSIDE_SURVEY_AREA,
-} from '../../shared/boundaryStatus';
 
 interface Props {
   annotation: ChainAnnotation;
@@ -72,7 +72,9 @@ export function ChainTile({
   const [error, setError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
-  const maxZoomOut = meta ? getCropZoomRange(meta.width, meta.height).maxSteps : 0;
+  const maxZoomOut = meta
+    ? getCropZoomRange(meta.width, meta.height).maxSteps
+    : 0;
   const effectiveZoomOut = Math.min(zoomOut, maxZoomOut);
 
   useEffect(() => {
@@ -323,11 +325,15 @@ export function ChainTile({
             <div style={{ opacity: 0.85, marginTop: 2 }}>
               Camera: {popupCamera ?? 'Unknown'}
             </div>
-            {meta && !isOnEffort(meta.boundaryStatus) && (
-              <div style={{ fontWeight: 600, marginTop: 2 }}>
-                {OUTSIDE_SURVEY_AREA}
-              </div>
-            )}
+            {meta &&
+              !isAnnotationOnEffort(
+                meta.boundaryStatus,
+                annotation.outsideBoundary,
+              ) && (
+                <div style={{ fontWeight: 600, marginTop: 2 }}>
+                  {OUTSIDE_SURVEY_AREA}
+                </div>
+              )}
           </>
         )}
       </div>

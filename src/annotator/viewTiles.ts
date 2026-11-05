@@ -26,14 +26,14 @@ export function viewTiles(input: {
     const s = DEFAULT_VIEW_BOUNDS_SCALE;
     scale = Math.min(
       viewport.width / (2 * location.width * s),
-      viewport.height / (2 * location.height * s)
+      viewport.height / (2 * location.height * s),
     );
   }
   if (!Number.isFinite(scale) || scale <= 0) return [];
   // Raster sources round to the nearest level and stop at the source maxzoom.
   const z = Math.min(
     projection.maxNativeZoom,
-    Math.max(0, Math.round(Math.log2((scale * n) / TILE_SIZE)))
+    Math.max(0, Math.round(Math.log2((scale * n) / TILE_SIZE))),
   );
   const tilePx = n / 2 ** z;
   const cols = Math.ceil(image.width / tilePx);

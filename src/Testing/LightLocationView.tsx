@@ -1,12 +1,12 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext, ProjectContext } from '../Context';
-import { useOptimisticUpdates } from '../useOptimisticUpdates';
 import MapLibreLightViewer, {
   LightAnnotation,
   LightRect,
 } from '../annotator/MapLibreLightViewer';
 import { buildAnnotationFeatureProperties } from '../annotator/annotationFeatures';
 import type { ExtendedAnnotationType } from '../schemaTypes';
+import { useOptimisticUpdates } from '../useOptimisticUpdates';
 
 type MinimalLocationRef = { id: string; annotationSetId: string };
 
@@ -71,7 +71,7 @@ export default function LightLocationView({
       // The set may belong to another project than the one in context.
       const { data: annotationSet } = await client.models.AnnotationSet.get(
         { id: locationRef.annotationSetId },
-        { selectionSet: ['projectId'] }
+        { selectionSet: ['projectId'] },
       );
       if (!annotationSet) return;
       const jpeg = files.find((f) => f.type === 'image/jpeg') || files[0];
@@ -120,10 +120,10 @@ export default function LightLocationView({
       if (!imageId || !setId) return { data: [], nextToken: undefined } as any;
       return (client as any).models.Annotation.annotationsByImageIdAndSetId(
         { imageId, setId: { eq: setId } },
-        { nextToken }
+        { nextToken },
       ) as any;
     },
-    subscriptionFilter
+    subscriptionFilter,
   ) as any;
 
   const annotations = useMemo<LightAnnotation[]>(
@@ -135,14 +135,14 @@ export default function LightLocationView({
           return {
             ...buildAnnotationFeatureProperties(
               a as ExtendedAnnotationType,
-              () => category?.color ?? 'red'
+              () => category?.color ?? 'red',
             ),
             x: a.x,
             y: a.y,
             popupLines: [`Label: ${category?.name ?? 'Unknown'}`],
           };
         }),
-    [annotationsHook.data, categories, loaded?.annotationSetId]
+    [annotationsHook.data, categories, loaded?.annotationSetId],
   );
 
   const rects = useMemo<LightRect[]>(() => {
@@ -169,10 +169,10 @@ export default function LightLocationView({
   }, [loaded, overlay]);
 
   return (
-    <div className='d-flex flex-md-row flex-column justify-content-center w-100 h-100 gap-3 overflow-auto'>
+    <div className='flex h-full w-full flex-col justify-center gap-4 overflow-auto md:flex-row'>
       {/* Center image */}
       <div
-        className='d-flex flex-column align-items-center w-100 h-100 gap-3'
+        className='flex h-full w-full flex-col items-center gap-4'
         style={{ maxWidth: '1024px' }}
       >
         {loaded && sourceKey && (

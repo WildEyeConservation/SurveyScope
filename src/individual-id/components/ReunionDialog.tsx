@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   show: boolean;
@@ -15,22 +23,23 @@ interface Props {
  */
 export function ReunionDialog({ show, count, onConfirm }: Props) {
   return (
-    <Modal show={show} centered backdrop='static' keyboard={false}>
-      <Modal.Header>
-        <Modal.Title>Review reunions</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        Every direct image pair is complete. We found{' '}
-        <strong>{count}</strong>{' '}
-        {count === 1 ? 'image pair' : 'image pairs'} further along the
-        transect where an animal may have reappeared after going out of
-        view. Review each one to finish the transect.
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant='primary' onClick={onConfirm}>
-          Review {count === 1 ? 'reunion' : 'reunions'}
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show}>
+      <DialogContent centered static>
+        <DialogHeader>
+          <DialogTitle>Review reunions</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          Every direct image pair is complete. We found <strong>{count}</strong>{' '}
+          {count === 1 ? 'image pair' : 'image pairs'} further along the
+          transect where an animal may have reappeared after going out of view.
+          Review each one to finish the transect.
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='primary' onClick={onConfirm}>
+            Review {count === 1 ? 'reunion' : 'reunions'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

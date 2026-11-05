@@ -1,10 +1,10 @@
+import type { BoundaryStatus } from '../../../shared/boundaryStatus';
 import { registerImageFile } from '../../storage/api';
 import type { CreatedImage, ImageData } from '../../types/ImageData';
 import type { CameraResolver } from './cameras';
 import type { ElevationService } from './elevation';
-import type { UploadClient } from './types';
 import { unwrap, withRetry } from './retry';
-import type { BoundaryStatus } from '../../../shared/boundaryStatus';
+import type { UploadClient } from './types';
 
 export interface RecordWriterContext {
   client: UploadClient;
@@ -16,7 +16,7 @@ export interface RecordWriterContext {
   cameras: CameraResolver;
   classifyBoundary?: (
     lat: number | null | undefined,
-    lng: number | null | undefined
+    lng: number | null | undefined,
   ) => BoundaryStatus | null;
   signal?: AbortSignal;
 }
@@ -28,7 +28,7 @@ export class RecordWriter {
   async createImageRecords(
     imageData: ImageData,
     _fileType: string,
-    phash: string | undefined
+    phash: string | undefined,
   ): Promise<CreatedImage> {
     const {
       client,
@@ -42,15 +42,11 @@ export class RecordWriter {
     } = this.ctx;
 
     let groundElevation = 0;
-    if (
-      imageData.latitude &&
-      imageData.longitude &&
-      !imageData.altitude_agl
-    ) {
+    if (imageData.latitude && imageData.longitude && !imageData.altitude_agl) {
       groundElevation =
         (await elevation.getElevation(
           imageData.latitude,
-          imageData.longitude
+          imageData.longitude,
         )) ?? 0;
     }
 
@@ -83,8 +79,8 @@ export class RecordWriter {
               undefined,
             group: organizationId,
           }),
-        { signal }
-      )
+        { signal },
+      ),
     );
 
     await withRetry(
@@ -94,12 +90,12 @@ export class RecordWriter {
           imageSetId,
           group: organizationId,
         }),
-      { signal }
+      { signal },
     );
 
     await withRetry(
       () => registerImageFile(projectId, img.id, img.originalPath!),
-      { signal }
+      { signal },
     );
 
     return {

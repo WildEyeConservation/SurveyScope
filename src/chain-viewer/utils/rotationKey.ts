@@ -10,7 +10,7 @@ import type { AnnotationImageMeta } from '../types';
  */
 export function rotationKeyFor(
   meta: AnnotationImageMeta | undefined,
-  imageId: string
+  imageId: string,
 ): string {
   if (meta?.cameraId) return `cam:${meta.cameraId}`;
   return `img:${imageId}`;

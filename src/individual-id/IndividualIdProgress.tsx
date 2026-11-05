@@ -1,5 +1,6 @@
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
 import { useContext, useEffect, useState } from 'react';
-import { Spinner, ProgressBar } from 'react-bootstrap';
 import { GlobalContext } from '../Context';
 
 /**
@@ -38,7 +39,7 @@ export default function IndividualIdProgress({
               'totalTransects',
               'remainingTransects',
             ],
-          }
+          },
         );
         const jobs = data || [];
         const job =
@@ -52,7 +53,7 @@ export default function IndividualIdProgress({
                 total: job.totalTransects ?? 0,
                 remaining: job.remainingTransects ?? 0,
               }
-            : null
+            : null,
         );
       } catch (e) {
         if (!cancelled) console.warn('IndividualIdProgress load failed', e);
@@ -76,15 +77,15 @@ export default function IndividualIdProgress({
 
   const completed = Math.max(0, stats.total - stats.remaining);
   return (
-    <div className='d-flex flex-column w-100'>
+    <div className='flex w-full flex-col'>
       <p className='mb-0'>
         {completed} / {stats.total} transects completed
       </p>
-      <ProgressBar
-        now={completed}
+      <Progress
+        value={completed}
         max={stats.total}
         animated
-        className='w-100'
+        className='w-full'
       />
     </div>
   );

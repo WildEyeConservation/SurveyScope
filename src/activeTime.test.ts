@@ -6,10 +6,7 @@ import test from 'node:test';
  * exercised without a DOM. The hook wires the same rule to pointer, key and
  * wheel events.
  */
-function accumulate(
-  gapsMs: number[],
-  idleGapMs: number
-): number {
+function accumulate(gapsMs: number[], idleGapMs: number): number {
   let total = 0;
   for (const gap of gapsMs) {
     if (gap > 0 && gap <= idleGapMs) total += gap;

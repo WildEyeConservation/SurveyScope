@@ -1,3 +1,14 @@
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Combobox } from '@/components/ui/combobox';
+import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
+import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
+import { Download, Play, Square } from 'lucide-react';
 import {
   useCallback,
   useContext,
@@ -6,13 +17,18 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Alert, Button, Form, ProgressBar, Spinner } from 'react-bootstrap';
-import Select from 'react-select';
-import { GlobalContext } from '../Context';
-import { useUsers } from '../apiInterface';
-import { fetchAllPaginatedResults } from '../utils';
 import type { Schema } from '../amplify/client-schema';
-import { AbortError, loadAnnotationSets } from './loaders';
+import { useUsers } from '../apiInterface';
+import { GlobalContext } from '../Context';
+import { fetchAllPaginatedResults } from '../utils';
+import {
+  AbortError,
+  BAND_WIDTHS,
+  DEFAULT_BAND_WIDTHS,
+  DETECTORS,
+  loadAnnotationSets,
+  type BandWidths,
+} from './loaders';
 import {
   STATS,
   entitiesFor,
@@ -25,15 +41,13 @@ import {
 } from './report';
 import SurveyMetricsResults from './SurveyMetricsResults';
 import type { AnnotationSetRow } from './types';
-import '../AdminSurveys.css';
-import './SurveyMetrics.css';
 
 type SurveyOption = { value: string; label: string; imageCount: number };
 
 const COST_CLASS: Record<StatCost, string> = {
-  light: 'bg-secondary',
-  heavy: 'bg-warning text-dark',
-  'very heavy': 'bg-danger',
+  light: 'border-white/30 text-muted-foreground',
+  heavy: 'border-warning/60 text-warning',
+  'very heavy': 'border-danger/70 text-danger',
 };
 
 // Survives switching admin tabs, which unmounts this component.
@@ -55,9 +69,10 @@ export default function SurveyMetrics() {
   const [loadingSets, setLoadingSets] = useState(false);
   const [setId, setSetId] = useState('');
   const [selected, setSelected] = useState<Set<StatId>>(
-    () => new Set<StatId>(['overview'])
+    () => new Set<StatId>(['overview']),
   );
   const [reuseCache, setReuseCache] = useState(true);
+  const [bandWidths, setBandWidths] = useState<BandWidths>(DEFAULT_BAND_WIDTHS);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<ReportProgress | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -81,16 +96,16 @@ export default function SurveyMetrics() {
                 'imageSets.imageCount',
               ],
               limit: 10000,
-            }
+            },
           ),
           fetchAllPaginatedResults<Schema['Organization']['type']>(
             client.models.Organization.list,
-            { selectionSet: ['id', 'name'], limit: 10000 }
+            { selectionSet: ['id', 'name'], limit: 10000 },
           ),
         ]);
         if (!active) return;
         const orgNames = new Map(
-          organizations.map((org) => [org.id, org.name])
+          organizations.map((org) => [org.id, org.name]),
         );
         setSurveys(
           projects
@@ -105,13 +120,13 @@ export default function SurveyMetrics() {
                 }[]) ?? []
               ).reduce((sum, set) => sum + (set.imageCount ?? 0), 0),
             }))
-            .sort((a, b) => a.label.localeCompare(b.label))
+            .sort((a, b) => a.label.localeCompare(b.label)),
         );
       } catch (err) {
         console.error('Failed to load surveys', err);
         if (active) {
           setError(
-            err instanceof Error ? err.message : 'Failed to load surveys.'
+            err instanceof Error ? err.message : 'Failed to load surveys.',
           );
         }
       } finally {
@@ -168,15 +183,15 @@ export default function SurveyMetrics() {
       const user = users.find((candidate) => parts.includes(candidate.id));
       return user?.name || user?.email || parts[parts.length - 1];
     },
-    [users]
+    [users],
   );
 
   const activeStats = useMemo(
     () =>
       STATS.filter(
-        (stat) => selected.has(stat.id) && (!stat.needsSet || setId)
+        (stat) => selected.has(stat.id) && (!stat.needsSet || setId),
       ),
-    [selected, setId]
+    [selected, setId],
   );
 
   const toggle = (id: StatId) =>
@@ -203,6 +218,7 @@ export default function SurveyMetrics() {
         annotationSetId: setId || null,
         statIds: activeStats.map((stat) => stat.id),
         imageCountHint: survey.imageCount || undefined,
+        bandWidths,
         cache,
         reuseCache,
         signal: abort.signal,
@@ -245,172 +261,305 @@ export default function SurveyMetrics() {
     URL.revokeObjectURL(url);
   };
 
-  const renderStats = (needsSet: boolean) =>
-    STATS.filter((stat) => stat.needsSet === needsSet).map((stat) => (
-      <Form.Check
+  const statTile = (stat: (typeof STATS)[number]) => {
+    const disabled = running || (stat.needsSet && !setId);
+    const checked = selected.has(stat.id);
+    return (
+      <label
         key={stat.id}
-        id={`survey-metric-${stat.id}`}
-        type='checkbox'
-        className='survey-metrics-stat'
-        checked={selected.has(stat.id)}
-        disabled={running || (needsSet && !setId)}
-        onChange={() => toggle(stat.id)}
-        label={
-          <>
-            <span className='survey-metrics-stat-label'>{stat.label}</span>
-            <span className={`badge ms-2 ${COST_CLASS[stat.cost]}`}>
+        htmlFor={`survey-metric-${stat.id}`}
+        className={cn(
+          'flex items-start gap-3 border p-3 transition-colors',
+          checked && !disabled
+            ? 'border-primary bg-primary/10'
+            : 'border-white/15',
+          disabled
+            ? 'cursor-not-allowed opacity-50'
+            : 'cursor-pointer hover:bg-white/5',
+        )}
+      >
+        <Checkbox
+          id={`survey-metric-${stat.id}`}
+          className='mt-0.5'
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={() => toggle(stat.id)}
+        />
+        <div className='min-w-0 flex-1'>
+          <div className='flex flex-wrap items-center justify-between gap-2'>
+            <span className='font-semibold'>{stat.label}</span>
+            <span
+              className={cn(
+                'rounded-full border px-2 text-xs leading-5',
+                COST_CLASS[stat.cost],
+              )}
+            >
               {stat.cost}
             </span>
-            <div className='survey-metrics-stat-description'>
-              {stat.description}
-            </div>
-          </>
-        }
-      />
-    ));
+          </div>
+          <div className='mt-1 text-sm text-muted-foreground'>
+            {stat.description}
+          </div>
+        </div>
+      </label>
+    );
+  };
 
   const plannedEntities = entitiesFor(activeStats.map((stat) => stat.id));
+  const usesBands = activeStats.some(
+    (stat) => stat.id === 'detectorOutput' || stat.id === 'confidenceCoverage',
+  );
+  const setName = (id: string) =>
+    annotationSets.find((set) => set.id === id)?.name ?? id;
+  const setOptions = annotationSets.map((set) => ({
+    value: set.id,
+    label: set.name,
+  }));
 
   return (
-    <div className='admin-surveys survey-metrics'>
-      <div className='survey-metrics-pickers'>
-        <div>
-          <Form.Label className='mb-1'>Survey</Form.Label>
-          <Select
-            className='text-black'
-            options={surveys}
-            value={survey}
-            onChange={setSurvey}
-            isLoading={loadingSurveys}
-            isDisabled={running}
-            isClearable
-            placeholder='Select a survey…'
-          />
-        </div>
-        <div>
-          <Form.Label className='mb-1'>Annotation set</Form.Label>
-          <Form.Select
-            value={setId}
-            onChange={(event) => setSetId(event.target.value)}
-            disabled={!survey || running || loadingSets}
-          >
-            <option value=''>
-              {loadingSets ? 'Loading…' : 'None (survey-wide stats only)'}
-            </option>
-            {annotationSets.map((set) => (
-              <option key={set.id} value={set.id}>
-                {set.name}
-              </option>
-            ))}
-          </Form.Select>
-        </div>
-      </div>
-
-      <div className='survey-metrics-groups'>
-        <div>
-          <h6>Survey-wide</h6>
-          {renderStats(false)}
-        </div>
-        <div>
-          <h6>Annotation set</h6>
-          {!setId && (
-            <div className='survey-metrics-stat-description mb-2'>
-              Select an annotation set to enable these.
-            </div>
-          )}
-          {renderStats(true)}
-        </div>
-      </div>
-
-      <div className='d-flex align-items-center gap-3 flex-wrap mb-3'>
-        {running ? (
-          <Button variant='outline-danger' onClick={cancel}>
-            Cancel
-          </Button>
-        ) : (
-          <Button
-            variant='primary'
-            onClick={fetchReport}
-            disabled={!survey || activeStats.length === 0}
-          >
-            Fetch
-          </Button>
-        )}
-        <Form.Check
-          id='survey-metrics-reuse'
-          type='checkbox'
-          label='Reuse data already fetched for this survey'
-          checked={reuseCache}
-          disabled={running}
-          onChange={(event) => setReuseCache(event.target.checked)}
-        />
+    <div className='flex flex-col gap-4'>
+      <div className='flex items-center justify-between gap-2'>
+        <h5 className='mb-0'>Survey Metrics</h5>
         {report && !running && (
-          <Button variant='outline-light' size='sm' onClick={download}>
+          <Button variant='outline-success' onClick={download}>
+            <Download size={16} />
             Download JSON
           </Button>
         )}
-        {!running && survey && plannedEntities.length > 0 && (
-          <span className='survey-metrics-stat-description'>
-            Reads {plannedEntities.length} data set
-            {plannedEntities.length === 1 ? '' : 's'} for {activeStats.length}{' '}
-            stat
-            {activeStats.length === 1 ? '' : 's'}.
-          </span>
-        )}
       </div>
 
-      {error && (
-        <Alert variant='danger' className='mb-3'>
-          {error}
-        </Alert>
-      )}
+      <div className='flex flex-wrap items-end gap-2'>
+        <div className='min-w-72 flex-[1.4]'>
+          <Label className='mb-1'>Survey</Label>
+          <Combobox
+            options={surveys}
+            value={survey}
+            onChange={(option) =>
+              setSurvey(
+                surveys.find((item) => item.value === option?.value) ?? null,
+              )
+            }
+            loading={loadingSurveys}
+            disabled={running}
+            clearable
+            placeholder='Select a survey…'
+            name='Survey'
+          />
+        </div>
+        <div className='min-w-60 flex-1'>
+          <Label className='mb-1'>Annotation set</Label>
+          <Combobox
+            options={setOptions}
+            value={setOptions.find((option) => option.value === setId) ?? null}
+            onChange={(option) => setSetId(option?.value ?? '')}
+            loading={loadingSets}
+            disabled={!survey || running}
+            clearable
+            placeholder={
+              survey ? 'None (survey-wide only)' : 'Select a survey first'
+            }
+            name='Annotation set'
+          />
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className='flex flex-wrap items-center justify-between gap-2 py-3'>
+          <div className='font-semibold'>Metrics to fetch</div>
+          <div className='flex gap-1 text-sm'>
+            <Button
+              variant='ghost'
+              size='sm'
+              disabled={running}
+              onClick={() =>
+                setSelected(
+                  new Set(
+                    STATS.filter((stat) => stat.cost === 'light').map(
+                      (stat) => stat.id,
+                    ),
+                  ),
+                )
+              }
+            >
+              Light only
+            </Button>
+            <Button
+              variant='ghost'
+              size='sm'
+              disabled={running}
+              onClick={() => setSelected(new Set(STATS.map((stat) => stat.id)))}
+            >
+              All
+            </Button>
+            <Button
+              variant='ghost'
+              size='sm'
+              disabled={running}
+              onClick={() => setSelected(new Set())}
+            >
+              None
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className='grid gap-4 lg:grid-cols-2'>
+          <div className='flex flex-col gap-2'>
+            <div className='text-sm font-semibold tracking-wide text-muted-foreground uppercase'>
+              Survey-wide
+            </div>
+            {STATS.filter((stat) => !stat.needsSet).map(statTile)}
+          </div>
+          <div className='flex flex-col gap-2'>
+            <div className='text-sm font-semibold tracking-wide text-muted-foreground uppercase'>
+              Annotation set
+              {setId && (
+                <span className='ml-2 tracking-normal normal-case'>
+                  {setName(setId)}
+                </span>
+              )}
+            </div>
+            {!setId && (
+              <div className='text-sm text-muted-foreground'>
+                Pick an annotation set above to enable these.
+              </div>
+            )}
+            {STATS.filter((stat) => stat.needsSet).map(statTile)}
+          </div>
+        </CardContent>
+        {usesBands && (
+          <div className='flex flex-col gap-2 border-t border-border-subtle px-4 py-3'>
+            <div className='text-sm font-semibold tracking-wide text-muted-foreground uppercase'>
+              Confidence band width
+            </div>
+            <div className='flex flex-wrap gap-x-6 gap-y-2'>
+              {DETECTORS.map((detector) => (
+                <div key={detector.prefix} className='flex items-center gap-2'>
+                  <span>{detector.label}</span>
+                  <div
+                    role='radiogroup'
+                    aria-label={`${detector.label} confidence band width`}
+                    className='inline-flex border border-white/30'
+                  >
+                    {BAND_WIDTHS.map((width) => (
+                      <button
+                        key={width}
+                        type='button'
+                        role='radio'
+                        disabled={running}
+                        aria-checked={bandWidths[detector.prefix] === width}
+                        onClick={() =>
+                          setBandWidths((previous) => ({
+                            ...previous,
+                            [detector.prefix]: width,
+                          }))
+                        }
+                        className={cn(
+                          'px-2.5 py-1 text-sm tabular-nums transition-colors disabled:opacity-60',
+                          bandWidths[detector.prefix] === width
+                            ? 'bg-primary text-white'
+                            : 'enabled:hover:bg-white/10',
+                        )}
+                      >
+                        {width.toFixed(2)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className='flex flex-wrap items-center gap-4 border-t border-border-subtle px-4 py-3'>
+          <label className='flex cursor-pointer items-center gap-2'>
+            <Switch
+              checked={reuseCache}
+              disabled={running}
+              onCheckedChange={setReuseCache}
+            />
+            Reuse data already fetched for this survey
+          </label>
+          <div className='ml-auto flex items-center gap-3'>
+            {!running && survey && plannedEntities.length > 0 && (
+              <span className='text-sm text-muted-foreground'>
+                {activeStats.length} metric
+                {activeStats.length === 1 ? '' : 's'}, reading{' '}
+                {plannedEntities.length} data set
+                {plannedEntities.length === 1 ? '' : 's'}
+              </span>
+            )}
+            {running ? (
+              <Button variant='outline-danger' onClick={cancel}>
+                <Square size={14} />
+                Cancel
+              </Button>
+            ) : (
+              <Button
+                variant='primary'
+                onClick={fetchReport}
+                disabled={!survey || activeStats.length === 0}
+              >
+                <Play size={14} />
+                Fetch
+              </Button>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      {error && <Alert variant='danger'>{error}</Alert>}
 
       {progress &&
         (running || progress.tasks.some((task) => task.state === 'error')) && (
-          <div className='ss-card mb-3'>
-            <div className='survey-metrics-card-header'>
-              <strong>
+          <Card>
+            <CardHeader className='flex items-center justify-between py-3'>
+              <div className='font-semibold'>
                 {progress.phase === 'fetching' && 'Fetching data'}
                 {progress.phase === 'computing' &&
                   `Computing ${progress.computing ?? ''} (${
                     progress.computed + 1
                   } of ${progress.toCompute})`}
                 {progress.phase === 'done' && 'Finished'}
-              </strong>
+              </div>
               {running && startedAt !== null && (
-                <span className='d-flex align-items-center gap-2'>
+                <span className='flex items-center gap-2 text-sm tabular-nums'>
                   <Spinner animation='border' size='sm' />
                   {elapsed(now - startedAt)}
                 </span>
               )}
-            </div>
-            <div className='survey-metrics-card-body'>
+            </CardHeader>
+            <CardContent className='flex flex-col gap-2'>
               {progress.tasks.map((task) => (
-                <div key={task.entity} className='survey-metrics-task'>
-                  <div className='survey-metrics-task-label'>{task.label}</div>
-                  <div className='survey-metrics-task-bar'>
-                    <ProgressBar
-                      now={
-                        task.state === 'done' || task.state === 'cached'
-                          ? 100
-                          : task.total
+                <div
+                  key={task.entity}
+                  className='grid grid-cols-[minmax(140px,220px)_1fr_minmax(120px,auto)] items-center gap-3 text-sm'
+                >
+                  <div>{task.label}</div>
+                  <Progress
+                    value={
+                      task.state === 'done' || task.state === 'cached'
+                        ? 100
+                        : task.total
                           ? Math.min(100, (task.count / task.total) * 100)
                           : task.state === 'running'
-                          ? 100
-                          : 0
-                      }
-                      animated={task.state === 'running' && !task.total}
-                      striped={task.state === 'running' && !task.total}
-                      variant={
-                        task.state === 'error'
-                          ? 'danger'
-                          : task.state === 'done' || task.state === 'cached'
+                            ? 100
+                            : 0
+                    }
+                    animated={task.state === 'running' && !task.total}
+                    striped={task.state === 'running' && !task.total}
+                    variant={
+                      task.state === 'error'
+                        ? 'danger'
+                        : task.state === 'done' || task.state === 'cached'
                           ? 'success'
                           : undefined
-                      }
-                    />
-                  </div>
-                  <div className='survey-metrics-task-count'>
+                    }
+                  />
+                  <div
+                    className={cn(
+                      'text-right [overflow-wrap:anywhere] tabular-nums',
+                      task.state === 'pending' && 'text-muted-foreground',
+                      task.state === 'error' && 'text-danger',
+                    )}
+                  >
                     {task.state === 'pending' && 'Waiting'}
                     {task.state === 'error' && (task.error ?? 'Failed')}
                     {task.state === 'cached' &&
@@ -424,24 +573,20 @@ export default function SurveyMetrics() {
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         )}
 
       {report && (
-        <>
-          <div className='survey-metrics-stat-description mb-2'>
-            Generated {new Date(report.generatedAt).toLocaleString()} in{' '}
-            {elapsed(report.durationMs)}
-            {report.annotationSetId &&
-              ` for annotation set ${
-                annotationSets.find((set) => set.id === report.annotationSetId)
-                  ?.name ?? report.annotationSetId
-              }`}
-            .
-          </div>
-          <SurveyMetricsResults report={report} userName={userName} />
-        </>
+        <SurveyMetricsResults
+          report={report}
+          userName={userName}
+          summary={`Generated ${new Date(report.generatedAt).toLocaleString()} in ${elapsed(report.durationMs)}${
+            report.annotationSetId
+              ? ` for annotation set ${setName(report.annotationSetId)}`
+              : ''
+          }`}
+        />
       )}
     </div>
   );

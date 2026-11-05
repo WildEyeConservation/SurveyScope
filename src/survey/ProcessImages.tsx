@@ -1,21 +1,21 @@
-import { Form, Spinner, Button } from 'react-bootstrap';
-import { Footer } from '../Modal';
-import { useState, useContext, useEffect, useCallback, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import { CheckIcon, RefreshCwIcon } from 'lucide-react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
-import Select from 'react-select';
+import { Footer } from '../Modal';
 import { parseLaunchResponse } from './launchResponse';
 import {
   MODELS,
   dispatchBatches,
-  findUnprocessedImages,
+  findUnprocessedByModel,
   type ModelValue,
   type ScanImage,
 } from './processImagesScan';
+import { SectionTitle } from './SurveyStructure';
 
-const MODEL_OPTIONS = (Object.keys(MODELS) as ModelValue[]).map((value) => ({
-  label: MODELS[value].label,
-  value,
-}));
+const MODEL_VALUES: ModelValue[] = ['owl-d', 'scoutbotv3', 'elephant', 'mad'];
 
 const BATCH_SIZE = 500;
 const DISPATCH_CONCURRENCY = 4;
@@ -28,26 +28,55 @@ export default function ProcessImages({
   organizationId: string;
 }) {
   const { client, backend, showModal } = useContext(GlobalContext)!;
-  const [model, setModel] = useState<{
-    label: string;
-    value: ModelValue;
-  } | null>(() => MODEL_OPTIONS.find((o) => o.value === 'owl-d')!);
-  const [scanning, setScanning] = useState(false);
-  const [processing, setProcessing] = useState(false);
   const [scan, setScan] = useState<{
-    model: ModelValue;
-    images: ScanImage[];
+    total: number;
+    unprocessed: Record<string, ScanImage[]>;
   } | null>(null);
-  const [imagesLoaded, setImagesLoaded] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [imagesLoaded, setImagesLoaded] = useState(0);
+  const [projectStatus, setProjectStatus] = useState<string | null>(null);
+  const [scanKey, setScanKey] = useState(0);
+  const [queueing, setQueueing] = useState<ModelValue | null>(null);
+  const [error, setError] = useState<{
+    model: ModelValue | null;
+    message: string;
+  } | null>(null);
+  // Images were queued but the survey status update failed.
   const [statusPending, setStatusPending] = useState<ModelValue | null>(null);
-  const scanAbortRef = useRef(new AbortController());
 
   useEffect(() => {
     const controller = new AbortController();
-    scanAbortRef.current = controller;
+    const { signal } = controller;
+    setScan(null);
+    setImagesLoaded(0);
+    // Only the scan reports errors without a model.
+    setError((e) => (e?.model === null ? null : e));
+    Promise.all([
+      findUnprocessedByModel(client, projectId, MODEL_VALUES, {
+        signal,
+        onProgress: (count) => {
+          if (!signal.aborted) setImagesLoaded(count);
+        },
+      }),
+      client.models.Project.get(
+        { id: projectId },
+        { selectionSet: ['status'], signal },
+      ),
+    ])
+      .then(([result, { data: project }]) => {
+        if (signal.aborted) return;
+        setScan(result);
+        setProjectStatus(project?.status ?? null);
+      })
+      .catch((err) => {
+        if (signal.aborted) return;
+        console.error('Failed to scan images', err);
+        setError({
+          model: null,
+          message: 'The images could not be checked. Refresh to try again.',
+        });
+      });
     return () => controller.abort();
-  }, []);
+  }, [client, projectId, scanKey]);
 
   const findLocationSetByName = useCallback(
     async (name: string) => {
@@ -78,50 +107,6 @@ export default function ProcessImages({
     },
     [client.models.LocationSet, projectId],
   );
-
-  const scanImages = useCallback(async () => {
-    if (!model) return;
-    const { signal } = scanAbortRef.current;
-    setScanning(true);
-    setScan(null);
-    setError(null);
-    setImagesLoaded(0);
-    try {
-      const images = await findUnprocessedImages(
-        client,
-        projectId,
-        MODELS[model.value].source,
-        {
-          signal,
-          onProgress: (count) => {
-            if (!signal.aborted) setImagesLoaded(count);
-          },
-        },
-      );
-      if (signal.aborted) return;
-      setScan({ model: model.value, images });
-    } catch (err) {
-      if (signal.aborted) return;
-      console.error('Failed to scan images', err);
-      setError('Failed to scan images, please try again.');
-    } finally {
-      if (!signal.aborted) setScanning(false);
-    }
-  }, [client, projectId, model]);
-
-  useEffect(() => {
-    // reset when model changes
-    setScan(null);
-    setImagesLoaded(null);
-    setError(null);
-  }, [model]);
-
-  const canProcess =
-    !!model &&
-    !scanning &&
-    !processing &&
-    (statusPending === model.value ||
-      (scan?.model === model.value && scan.images.length > 0));
 
   const dispatchImages = async (
     modelValue: ModelValue,
@@ -207,25 +192,22 @@ export default function ProcessImages({
         ),
     );
     if (dispatchError) {
-      setScan(null);
       throw new Error(
         `${dispatchError.message}. ${queued} of ${images.length} images were confirmed queued and others may be too; scan again once they finish to process the rest.`,
       );
     }
   };
 
-  const processImages = async () => {
-    if (!canProcess || !model) return;
-    const config = MODELS[model.value];
-
-    setProcessing(true);
+  const processModel = async (model: ModelValue) => {
+    if (!scan) return;
+    const config = MODELS[model];
+    setQueueing(model);
     setError(null);
 
     try {
-      if (statusPending !== model.value) {
-        await dispatchImages(model.value, scan!.images);
-        setScan(null);
-        setStatusPending(model.value);
+      if (statusPending !== model) {
+        await dispatchImages(model, scan.unprocessed[model]);
+        setStatusPending(model);
       }
 
       const { errors } = await client.models.Project.update({
@@ -238,87 +220,191 @@ export default function ProcessImages({
         );
       }
       setStatusPending(null);
+      setProjectStatus(config.status);
 
       client.mutations.updateProjectMemberships({
         projectId: projectId,
       });
-
-      showModal(null);
     } catch (err) {
       console.error('Failed to process images', err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Something went wrong, please try again.',
-      );
+      setError({
+        model,
+        message:
+          err instanceof Error
+            ? err.message
+            : 'Something went wrong, please try again.',
+      });
     } finally {
-      setProcessing(false);
+      setQueueing(null);
     }
   };
 
+  const processingModel = MODEL_VALUES.find(
+    (model) => MODELS[model].status === projectStatus,
+  );
+  const busy = !!projectStatus?.startsWith('processing') || !!queueing;
+  const otherWork =
+    projectStatus?.startsWith('processing') && !processingModel
+      ? projectStatus.replace(/^processing-?/, '') || 'processing'
+      : null;
+
   return (
     <>
-      <Form className='p-3'>
-        <Form.Group>
-          <Form.Label className='mb-0'>Model</Form.Label>
-          <Select
-            value={model}
-            onChange={(m) => setModel(m)}
-            options={MODEL_OPTIONS}
-            placeholder='Select a model'
-            className='text-black'
-            isDisabled={scanning || processing}
-          />
-          <Button
-            variant='primary'
-            onClick={scanImages}
-            disabled={!model || scanning || processing}
-            className='mt-2'
-          >
-            Scan
-          </Button>
-          {scanning ? (
-            <div className='d-flex flex-column align-items-center'>
-              <Spinner animation='border' role='status' />
-              <p className='mb-0'>Determining images to process...</p>
-              <p className='mb-1'>Found {imagesLoaded ?? 0} images</p>
+      <div className='flex flex-col gap-2 p-4'>
+        <SectionTitle
+          className='border-b-0 pb-0'
+          action={
+            <Button
+              variant='link'
+              size='sm'
+              className='p-0 text-muted-foreground hover:text-foreground'
+              disabled={(!scan && !error) || !!queueing}
+              onClick={() => setScanKey((key) => key + 1)}
+            >
+              <RefreshCwIcon className='size-3.5' />
+              Refresh
+            </Button>
+          }
+        >
+          Models
+        </SectionTitle>
+        {otherWork && (
+          <div className='border border-warning bg-warning/15 px-4 py-2 text-sm'>
+            This survey is busy with {otherWork}. Models can be processed once
+            it finishes.
+          </div>
+        )}
+        {error && !error.model && (
+          <div className='border border-danger bg-danger/15 px-4 py-2 text-sm'>
+            {error.message}
+          </div>
+        )}
+        {!scan && !error ? (
+          <div className='flex items-center gap-2 border border-white/15 bg-white/[0.07] px-4 py-3 text-muted-foreground'>
+            <Spinner animation='border' size='sm' />
+            Checking images
+            {imagesLoaded > 0 && ` · ${imagesLoaded.toLocaleString()} loaded`}
+            ...
+          </div>
+        ) : (
+          scan && (
+            <div className='border border-white/15 bg-white/[0.07]'>
+              {MODEL_VALUES.map((model) => {
+                const remaining = scan.unprocessed[model].length;
+                const processed = scan.total - remaining;
+                const percent = scan.total
+                  ? Math.floor((processed / scan.total) * 100)
+                  : 0;
+                const isProcessing = processingModel === model;
+                const isQueueing = queueing === model;
+                const done = scan.total > 0 && remaining === 0;
+                const retry = statusPending === model;
+                return (
+                  <div
+                    key={model}
+                    className='flex items-center gap-4 border-b border-white/[0.08] px-4 py-3 last:border-b-0'
+                  >
+                    <div className='flex min-w-0 flex-1 flex-col gap-1.5'>
+                      <div className='flex items-center gap-2'>
+                        <span className='truncate font-semibold'>
+                          {MODELS[model].label}
+                        </span>
+                        {(isProcessing || (!done && processed > 0)) && (
+                          <StatusChip
+                            state={isProcessing ? 'processing' : 'partial'}
+                          />
+                        )}
+                      </div>
+                      <div className='h-1.5 bg-white/15'>
+                        <div
+                          className={cn(
+                            'h-full transition-[width]',
+                            done ? 'bg-success' : 'bg-primary',
+                          )}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                      <span className='text-xs text-muted-foreground tabular-nums'>
+                        {processed.toLocaleString()} of{' '}
+                        {scan.total.toLocaleString()} images processed
+                        {isProcessing && ' · counts update when you refresh'}
+                      </span>
+                      {error?.model === model && (
+                        <span className='text-xs text-danger'>
+                          {error.message}
+                        </span>
+                      )}
+                    </div>
+                    <div className='w-44 shrink-0 text-right'>
+                      {done && !retry ? (
+                        <span className='inline-flex items-center gap-1 text-sm text-success'>
+                          <CheckIcon className='size-4' />
+                          All processed
+                        </span>
+                      ) : (
+                        <Button
+                          variant={retry ? 'warning' : 'primary'}
+                          disabled={(busy && !retry) || !!queueing}
+                          title={
+                            busy && !isQueueing
+                              ? 'Only one model can process at a time'
+                              : undefined
+                          }
+                          onClick={() => processModel(model)}
+                        >
+                          {isQueueing ? (
+                            <>
+                              <Spinner animation='border' size='sm' />
+                              Queueing...
+                            </>
+                          ) : retry ? (
+                            'Retry status update'
+                          ) : (
+                            `Process ${remaining.toLocaleString()} image${
+                              remaining === 1 ? '' : 's'
+                            }`
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ) : scan ? (
-            scan.images.length > 0 ? (
-              <p className='mb-0 mt-2'>
-                Found {scan.images.length} unprocessed images
-              </p>
-            ) : (
-              <p className='mb-0 mt-2'>All images have been processed</p>
-            )
-          ) : null}
-          {processing && (
-            <div className='d-flex flex-column align-items-center mt-2'>
-              <Spinner animation='border' role='status' />
-              <p className='mb-0'>Queueing images...</p>
-            </div>
-          )}
-          {error && <p className='mb-0 mt-2 text-danger'>{error}</p>}
-        </Form.Group>
-      </Form>
+          )
+        )}
+      </div>
       <Footer>
         <Button
-          variant='primary'
-          onClick={processImages}
-          disabled={!canProcess}
-        >
-          {statusPending && statusPending === model?.value
-            ? 'Retry status update'
-            : 'Process Images'}
-        </Button>
-        <Button
-          variant='dark'
+          variant='ghost'
+          className='mr-auto'
           onClick={() => showModal(null)}
-          disabled={processing}
+          disabled={!!queueing}
         >
           Close
         </Button>
       </Footer>
     </>
+  );
+}
+
+function StatusChip({ state }: { state: 'processing' | 'partial' }) {
+  const { label, className } = {
+    processing: {
+      label: 'Processing',
+      className: 'border-primary text-primary',
+    },
+    partial: {
+      label: 'Partly processed',
+      className: 'border-warning text-warning',
+    },
+  }[state];
+  return (
+    <span className={cn('border px-1.5 text-[11px] leading-5', className)}>
+      {state === 'processing' && (
+        <span className='mr-1 inline-block size-1.5 animate-pulse rounded-full bg-primary align-middle' />
+      )}
+      {label}
+    </span>
   );
 }

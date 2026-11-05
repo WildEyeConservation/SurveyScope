@@ -167,7 +167,7 @@ export function createTileLoadStats(now: () => number = () => Date.now()) {
       tasks.delete(taskId);
       const { busy, tileBusy, ...counts } = e;
       const metrics = Object.fromEntries(
-        Object.entries(counts).map(([k, v]) => [k, Math.round(v)])
+        Object.entries(counts).map(([k, v]) => [k, Math.round(v)]),
       ) as Omit<TileLoadMetrics, 'imageBusyMs' | 'tileBusyMs'>;
       return {
         ...metrics,
@@ -202,7 +202,7 @@ export const tileLoadStats = createTileLoadStats();
 
 export async function timed<T>(
   task: () => Promise<T>,
-  record: (ms: number) => void
+  record: (ms: number) => void,
 ): Promise<T> {
   const start = performance.now();
   try {

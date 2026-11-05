@@ -41,6 +41,6 @@ export function escapeHtml(s: string): string {
         '>': '&gt;',
         '"': '&quot;',
         "'": '&#39;',
-      }[c]!)
+      })[c]!,
   );
 }

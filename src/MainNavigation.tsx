@@ -1,17 +1,15 @@
-import { useContext, useEffect, useState } from 'react';
-import Navbar from 'react-bootstrap/Navbar';
-import Nav from 'react-bootstrap/Nav';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { ProgressIndicators } from './ProgressIndicators.jsx';
-import { Outlet } from 'react-router-dom';
-import Container from 'react-bootstrap/Container';
-import Notifications from './user/Notifications.tsx';
-import { UserContext, GlobalContext } from './Context.tsx';
-import Settings from './user/Settings.tsx';
-import { Card /*, OverlayTrigger, Tooltip */ } from 'react-bootstrap';
-import UploadProgress from './upload/UploadProgress.tsx';
-import { verifyToken } from './utils/jwt.ts';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
+import { Menu } from 'lucide-react';
+import { useContext, useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { GlobalContext, UserContext } from './Context.tsx';
+import { ProgressIndicators } from './ProgressIndicators.jsx';
+import UploadProgress from './upload/UploadProgress.tsx';
+import Notifications from './user/Notifications.tsx';
+import Settings from './user/Settings.tsx';
+import { verifyToken } from './utils/jwt.ts';
 
 export default function MainNavigation({ signOut }: { signOut: () => void }) {
   const {
@@ -32,7 +30,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
   const navigate = useNavigate();
 
   const myAdminProjects = myProjectsHook.data?.filter(
-    (project) => project.isAdmin
+    (project) => project.isAdmin,
   );
 
   const belongsToOrganization = myOrganizationHook.data.length > 0;
@@ -40,9 +38,9 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
   useEffect(() => {
     setIsAnnotatePath(
       /^\/surveys\/[^/]+\/annotate$/.test(location.pathname) ||
-      /^\/surveys\/[^/]+\/qc-review\/[^/]+$/.test(location.pathname) ||
-      /^\/surveys\/[^/]+\/info-tags\/[^/]+$/.test(location.pathname) ||
-      /^\/surveys\/[^/]+\/homography\/[^/]+$/.test(location.pathname)
+        /^\/surveys\/[^/]+\/qc-review\/[^/]+$/.test(location.pathname) ||
+        /^\/surveys\/[^/]+\/info-tags\/[^/]+$/.test(location.pathname) ||
+        /^\/surveys\/[^/]+\/homography\/[^/]+$/.test(location.pathname),
     );
   }, [location.pathname]);
 
@@ -58,7 +56,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
       navigate(
         myAdminProjects?.length > 0 || isOrganizationAdmin
           ? '/surveys'
-          : '/jobs'
+          : '/jobs',
       );
     }
   }, [isOrganizationAdmin, myAdminProjects.length, belongsToOrganization]);
@@ -98,7 +96,9 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
               });
 
             if (!jollyResultsMembership) {
-              const { data: surveyProject } = await client.models.Project.get({ id: payload.surveyId });
+              const { data: surveyProject } = await client.models.Project.get({
+                id: payload.surveyId,
+              });
               await client.models.JollyResultsMembership.create({
                 surveyId: payload.surveyId,
                 annotationSetId: payload.annotationSetId,
@@ -131,31 +131,28 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
     }
   }, [isOrganizationAdmin]);
 
-  const expand = 'lg';
+  const [navOpen, setNavOpen] = useState(false);
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
   return (
     <div
-      className='App d-flex flex-column'
+      className='App flex flex-col'
       style={{ height: '100dvh', overflow: 'hidden' }}
     >
-      <Navbar
-        bg='secondary'
-        className='px-3'
-        variant='dark'
-        sticky='top'
-        key={expand}
-        expand={expand}
-        collapseOnSelect
-      >
-        <Navbar.Brand
-          className='d-flex flex-row align-items-center flex-nowrap me-2'
+      <nav className='sticky top-0 z-[1020] flex flex-wrap items-center justify-between bg-secondary px-4 py-2 text-white lg:flex-nowrap lg:justify-start'>
+        <div
+          className='me-2 flex flex-row flex-nowrap items-center py-[0.3125rem] text-xl whitespace-nowrap'
           onClick={() => {
             if (!isAnnotatePath) {
               navigate(
                 isOrganizationAdmin
                   ? '/surveys'
                   : belongsToOrganization
-                  ? '/jobs'
-                  : '/'
+                    ? '/jobs'
+                    : '/',
               );
             }
           }}
@@ -167,97 +164,50 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
             style={{ height: '32px', marginRight: '4px' }}
           />
           <h1 style={{ marginBottom: '0px', fontSize: '24px' }}>SurveyScope</h1>
-        </Navbar.Brand>
-        <Navbar.Toggle aria-controls='responsive-navbar-nav' />
-        <Navbar.Collapse id='responsive-navbar-nav'>
+        </div>
+        <button
+          type='button'
+          aria-controls='responsive-navbar-nav'
+          aria-expanded={navOpen}
+          aria-label='Toggle navigation'
+          className='border border-white/10 px-3 py-1 text-white/75 lg:hidden'
+          onClick={() => setNavOpen((o) => !o)}
+        >
+          <Menu className='size-7' />
+        </button>
+        <div
+          id='responsive-navbar-nav'
+          className={cn(
+            'w-full grow basis-full items-center lg:flex lg:basis-auto',
+            navOpen ? 'block' : 'hidden',
+          )}
+        >
           {!isAnnotatePath && (
-            <Nav fill activeKey={location.pathname}>
+            <div className='flex flex-col lg:flex-row'>
               {belongsToOrganization && (
                 <>
                   {(myAdminProjects?.length > 0 || isOrganizationAdmin) && (
-                    <Nav.Link
-                      as={NavLink}
-                      eventKey={`surveys`}
-                      to={`surveys`}
-                      className='px-2'
-                    >
-                      Surveys
-                    </Nav.Link>
+                    <NavItem to={`surveys`}>Surveys</NavItem>
                   )}
-                  <Nav.Link
-                    as={NavLink}
-                    eventKey={`jobs`}
-                    to={`jobs`}
-                    className='px-2'
-                  >
-                    Jobs
-                  </Nav.Link>
+                  <NavItem to={`jobs`}>Jobs</NavItem>
                 </>
               )}
-              <Nav.Link
-                as={NavLink}
-                eventKey='workflow-statistics'
-                to='workflow-statistics'
-                className='px-2'
-              >
-                Workflow Statistics
-              </Nav.Link>
+              <NavItem to={'workflow-statistics'}>Workflow Statistics</NavItem>
               {isOrganizationAdmin && (
                 <>
-                  <Nav.Link
-                    as={NavLink}
-                    eventKey={`permissions`}
-                    to={`permissions`}
-                    className='px-2'
-                  >
-                    Permissions
-                  </Nav.Link>
-                  <Nav.Link
-                    as={NavLink}
-                    eventKey={`testing`}
-                    to={`testing`}
-                    className='px-2'
-                  >
-                    User Testing
-                  </Nav.Link>
+                  <NavItem to={`permissions`}>Permissions</NavItem>
+                  <NavItem to={`testing`}>User Testing</NavItem>
                 </>
               )}
               {cognitoGroups.includes('sysadmin') && (
-                <>
-                  <Nav.Link
-                    as={NavLink}
-                    eventKey={`SSAdmin`}
-                    to={`SSAdmin`}
-                    className='px-2'
-                  >
-                    Admin
-                  </Nav.Link>
-                  <Nav.Link
-                    as={NavLink}
-                    eventKey={`chain-share-admin`}
-                    to={`chain-share-admin`}
-                    className='px-2'
-                  >
-                    Chain Shares
-                  </Nav.Link>
-                  {process.env.NODE_ENV === 'development' && (
-                    <Nav.Link
-                      as={NavLink}
-                      eventKey={`dev-actions`}
-                      to={`dev-actions`}
-                      className='px-2'
-                    >
-                      Dev Actions
-                    </Nav.Link>
-                  )}
-                </>
+                <NavItem to={`SSAdmin`}>Admin</NavItem>
               )}
               {/* Shared Results hidden for now.
               <OverlayTrigger
                 placement='bottom'
                 overlay={<Tooltip id='shared-results-tooltip'>Under maintenance</Tooltip>}
               >
-                <div className='d-inline-block'>
+                <div className='inline-block'>
                   <Nav.Link
                     as={NavLink}
                     eventKey={`shared-results`}
@@ -267,49 +217,39 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
                     style={{ pointerEvents: 'none' }}
                   >
                     Shared Results
-                  </Nav.Link>
+                  </NavItem>
                 </div>
               </OverlayTrigger>
               */}
               {(cognitoGroups.includes('sysadmin') ||
                 cognitoGroups.some((g) => g.startsWith('chainshare-'))) && (
-                <Nav.Link
-                  as={NavLink}
-                  eventKey={`shared-chains`}
-                  to={`shared-chains`}
-                  className='px-2'
-                >
-                  Shared Chains
-                </Nav.Link>
+                <NavItem to={`shared-chains`}>Shared Chains</NavItem>
               )}
-            </Nav>
+            </div>
           )}
-          <div className='d-flex flex-column flex-lg-row flex-grow-1 align-items-center justify-content-end gap-3 gap-lg-0 mt-2 mt-lg-0'>
+          <div className='mt-2 flex grow flex-col items-center justify-end gap-4 lg:mt-0 lg:flex-row lg:gap-0'>
             <UploadProgress />
             <ProgressIndicators />
             <Settings signOut={signOut} />
             <Notifications />
           </div>
-        </Navbar.Collapse>
-      </Navbar>
-      <Container
-        fluid
-        className='d-flex justify-content-center h-100 overflow-y-auto'
-      >
+        </div>
+      </nav>
+      <div className='mx-auto flex h-full w-full justify-center overflow-y-auto px-3'>
         {(!belongsToOrganization &&
           location.pathname === '/SSRegisterOrganization') ||
-          belongsToOrganization ||
-          location.pathname === '/workflow-statistics' ||
-          location.pathname.startsWith('/jolly') ||
-          location.pathname.startsWith('/shared-results') ||
-          location.pathname.startsWith('/shared-chains') ||
-          (cognitoGroups.includes('sysadmin') &&
-            (location.pathname === '/SSAdmin' ||
-              location.pathname.startsWith('/chain-share-admin'))) ? (
+        belongsToOrganization ||
+        location.pathname === '/workflow-statistics' ||
+        location.pathname.startsWith('/jolly') ||
+        location.pathname.startsWith('/shared-results') ||
+        location.pathname.startsWith('/shared-chains') ||
+        (cognitoGroups.includes('sysadmin') &&
+          (location.pathname === '/SSAdmin' ||
+            location.pathname.startsWith('/chain-share-admin'))) ? (
           <Outlet />
         ) : (
           <Card
-            className='w-100'
+            className='w-full'
             style={{
               maxWidth: '960px',
               marginTop: '12px',
@@ -317,22 +257,20 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
               height: 'fit-content',
             }}
           >
-            <Card.Header>
-              <Card.Title className='mb-0'>
+            <CardHeader>
+              <CardTitle className='mb-0'>
                 <h4 className='mb-0'>Welcome</h4>
-              </Card.Title>
-            </Card.Header>
-            <Card.Body>
-              <Card.Text>
-                You are not currently a member of any organisation.
-              </Card.Text>
-              <Card.Text>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>You are not currently a member of any organisation.</p>
+              <p className='mb-0'>
                 Please visit the{' '}
                 <a href='https://wildeyeconservation.org/surveyscope-registration/'>
                   Wildeye Conservation website
                 </a>{' '}
                 to register your organisation.
-              </Card.Text>
+              </p>
               {/* <Card.Text>
                 Please take note of the following:
                 <ul>
@@ -363,10 +301,26 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
               >
                 Register Organisation
               </Button>*/}
-            </Card.Body>
+            </CardContent>
           </Card>
         )}
-      </Container>
+      </div>
     </div>
+  );
+}
+
+function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        cn(
+          'flex-auto px-2 py-2 text-center no-underline transition-colors hover:text-white',
+          isActive ? 'text-white' : 'text-white/75',
+        )
+      }
+    >
+      {children}
+    </NavLink>
   );
 }

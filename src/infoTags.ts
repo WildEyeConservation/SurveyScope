@@ -1,7 +1,8 @@
 import pLimit from 'p-limit';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
-import { fetchAllPaginatedResults } from './utils';
+import { isMarkedOutside, outsideBoundaryFields } from './annotationBoundary';
 import { loadRows } from './rowChunks';
+import { fetchAllPaginatedResults } from './utils';
 
 export const INFO_TAG_CSV_DELIMITER = '|';
 
@@ -28,7 +29,7 @@ export function formatInfoTagsForCsv(names: string[]): string {
 // only the names are needed (a filter's options, a popup's lookup table).
 export async function fetchInfoTagNamesForSet(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<Map<string, string>> {
   const tags = await fetchAllPaginatedResults(
     client.models.InfoTag.infoTagsByAnnotationSetId,
@@ -36,7 +37,7 @@ export async function fetchInfoTagNamesForSet(
       annotationSetId,
       selectionSet: ['id', 'name'] as const,
       limit: 1000,
-    }
+    },
   );
   return new Map(tags.map((tag) => [tag.id, tag.name]));
 }
@@ -45,7 +46,7 @@ export async function fetchInfoTagNamesForSet(
 export async function fetchInfoTagDataForSet(
   client: DataClient,
   annotationSetId: string,
-  onProgress?: (count: number) => void
+  onProgress?: (count: number) => void,
 ): Promise<InfoTagSetData> {
   // A set with no tags defined cannot have any links, so the scan of the link
   // index - by far the expensive half - is skipped for untagged sets.
@@ -59,7 +60,7 @@ export async function fetchInfoTagDataForSet(
     'annotationInfoTagsByAnnotationSetId',
     annotationSetId,
     [],
-    { onProgress }
+    { onProgress },
   );
 
   const tagIdsByAnnotation = new Map<string, string[]>();
@@ -74,7 +75,7 @@ export async function fetchInfoTagDataForSet(
 
 export function infoTagNamesFor(
   data: InfoTagSetData,
-  annotationId: string
+  annotationId: string,
 ): string[] {
   return (data.tagIdsByAnnotation.get(annotationId) ?? [])
     .map((id) => data.nameById.get(id))
@@ -85,7 +86,7 @@ export function infoTagNamesFor(
 export async function fetchInfoTagsForAnnotations(
   client: DataClient,
   annotationSetId: string,
-  annotationIds: string[]
+  annotationIds: string[],
 ): Promise<Map<string, string[]>> {
   const data = await fetchInfoTagDataForSet(client, annotationSetId);
   const result = new Map<string, string[]>();
@@ -98,12 +99,12 @@ export async function fetchInfoTagsForAnnotations(
 export async function fetchAllInfoTagsForSet(
   client: DataClient,
   annotationSetId: string,
-  onProgress?: (count: number) => void
+  onProgress?: (count: number) => void,
 ): Promise<Map<string, string[]>> {
   const data = await fetchInfoTagDataForSet(
     client,
     annotationSetId,
-    onProgress
+    onProgress,
   );
   const result = new Map<string, string[]>();
   for (const annotationId of data.tagIdsByAnnotation.keys()) {
@@ -115,7 +116,7 @@ export async function fetchAllInfoTagsForSet(
 export async function attachInfoTagsToAnnotations<T extends { id: string }>(
   client: DataClient,
   annotations: T[],
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<Array<T & { infoTags?: string[] }>> {
   const data = await fetchInfoTagDataForSet(client, annotationSetId);
   // Always replace the API relationship field, even for sets without tags.
@@ -123,9 +124,7 @@ export async function attachInfoTagsToAnnotations<T extends { id: string }>(
   return annotations.map((annotation) => ({
     ...annotation,
     infoTags:
-      data.nameById.size > 0
-        ? infoTagNamesFor(data, annotation.id)
-        : undefined,
+      data.nameById.size > 0 ? infoTagNamesFor(data, annotation.id) : undefined,
   }));
 }
 
@@ -137,7 +136,7 @@ type MutationOutcome = {
 // so every write has to be inspected or failures pass for successes.
 export function assertNoGraphqlErrors(
   result: MutationOutcome | null | undefined,
-  description: string
+  description: string,
 ): void {
   const message = result?.errors?.[0]?.message;
   if (message) throw new Error(`${description}: ${message}`);
@@ -149,7 +148,7 @@ const ALREADY_APPLIED = /conditional (request failed|check)/i;
 
 function assertLinkWriteSucceeded(
   result: MutationOutcome | null | undefined,
-  description: string
+  description: string,
 ): void {
   const message = result?.errors?.[0]?.message;
   if (!message || ALREADY_APPLIED.test(message)) return;
@@ -179,6 +178,7 @@ export type ImageAnnotationRow = {
   y: number;
   infoTaggedBy: string | null;
   tagIds: string[];
+  outsideBoundary?: boolean;
 };
 
 // The tag links ride along with the annotations of the image being worked on.
@@ -187,7 +187,7 @@ export type ImageAnnotationRow = {
 export async function fetchImageAnnotationsWithTags(
   client: DataClient,
   imageId: string,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<ImageAnnotationRow[]> {
   const rows: ImageAnnotationRow[] = [];
   let nextToken: string | null | undefined = undefined;
@@ -208,17 +208,18 @@ export async function fetchImageAnnotationsWithTags(
           'infoTaggedBy',
           'infoTags.annotationId',
           'infoTags.infoTagId',
-        ] as const,
+          ...outsideBoundaryFields<'id'>(),
+        ],
         limit: 10000,
         nextToken,
-      }
+      },
     );
     // A partial read resolves with data alongside `errors`; treating a link
     // that failed to load as "no tag" would write the user's screen back over
     // tags that are actually there, so refuse to work from it.
     assertNoGraphqlErrors(
       result,
-      `Failed to load annotations for image ${imageId}`
+      `Failed to load annotations for image ${imageId}`,
     );
     for (const annotation of result.data ?? []) {
       rows.push({
@@ -232,6 +233,7 @@ export async function fetchImageAnnotationsWithTags(
         y: annotation.y,
         infoTaggedBy: annotation.infoTaggedBy ?? null,
         tagIds: infoTagIdsFromLinks(annotation.infoTags),
+        outsideBoundary: isMarkedOutside(annotation),
       });
     }
     nextToken = result.nextToken;
@@ -247,12 +249,12 @@ export async function fetchInfoTagNamesForImage(
   client: DataClient,
   imageId: string,
   annotationSetId: string,
-  nameById: Map<string, string>
+  nameById: Map<string, string>,
 ): Promise<Map<string, string[]>> {
   const rows = await fetchImageAnnotationsWithTags(
     client,
     imageId,
-    annotationSetId
+    annotationSetId,
   );
   const result = new Map<string, string[]>();
   for (const row of rows) {
@@ -268,14 +270,14 @@ export async function fetchInfoTagNamesForImage(
 // Links reference their tag, so they have to go first.
 export async function deleteInfoTagDataForSet(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<void> {
   const limit = pLimit(10);
   const links = await loadRows(
     client,
     'annotationInfoTagsByAnnotationSetId',
     annotationSetId,
-    []
+    [],
   );
   await Promise.all(
     links.map((link) =>
@@ -285,35 +287,35 @@ export async function deleteInfoTagDataForSet(
             annotationId: link.annotationId,
             infoTagId: link.infoTagId,
           }),
-          'Failed to delete info tag link'
-        )
-      )
-    )
+          'Failed to delete info tag link',
+        ),
+      ),
+    ),
   );
 
   const tags = await fetchAllPaginatedResults(
     client.models.InfoTag.infoTagsByAnnotationSetId,
-    { annotationSetId, selectionSet: ['id'] as const, limit: 1000 }
+    { annotationSetId, selectionSet: ['id'] as const, limit: 1000 },
   );
   await Promise.all(
     tags.map((tag) =>
       limit(async () =>
         assertLinkWriteSucceeded(
           await client.models.InfoTag.delete({ id: tag.id }),
-          'Failed to delete info tag'
-        )
-      )
-    )
+          'Failed to delete info tag',
+        ),
+      ),
+    ),
   );
 }
 
 export async function hasInfoTagsForSet(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<boolean> {
   const { data } = await client.models.InfoTag.infoTagsByAnnotationSetId(
     { annotationSetId },
-    { selectionSet: ['id'] as const, limit: 1 }
+    { selectionSet: ['id'] as const, limit: 1 },
   );
   return data.length > 0;
 }

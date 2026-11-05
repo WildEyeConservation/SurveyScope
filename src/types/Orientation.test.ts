@@ -18,20 +18,11 @@ test('resolves independent landscape and portrait corrections per camera', () =>
     CameraB: { landscape: 180 },
   };
 
-  assert.equal(
-    orientationCorrectionFor(rotations, 'CameraA', 'landscape'),
-    90
-  );
-  assert.equal(
-    orientationCorrectionFor(rotations, 'CameraA', 'portrait'),
-    270
-  );
-  assert.equal(
-    orientationCorrectionFor(rotations, 'CameraB', 'portrait'),
-    0
-  );
+  assert.equal(orientationCorrectionFor(rotations, 'CameraA', 'landscape'), 90);
+  assert.equal(orientationCorrectionFor(rotations, 'CameraA', 'portrait'), 270);
+  assert.equal(orientationCorrectionFor(rotations, 'CameraB', 'portrait'), 0);
   assert.equal(
     orientationCorrectionFor({ CameraC: 90 }, 'CameraC', 'portrait'),
-    90
+    90,
   );
 });

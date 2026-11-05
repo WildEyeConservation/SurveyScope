@@ -1,5 +1,5 @@
-import * as maplibregl from 'maplibre-gl';
 import { RotateCw } from 'lucide-react';
+import * as maplibregl from 'maplibre-gl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 /** MapLibre control that rotates an image map clockwise in 90-degree steps. */
@@ -19,7 +19,7 @@ export default class MapRotateControl implements maplibregl.IControl {
     button.style.alignItems = 'center';
     button.style.justifyContent = 'center';
     button.innerHTML = renderToStaticMarkup(
-      <RotateCw size={16} color='#333' strokeWidth={2.5} />
+      <RotateCw size={16} color='#333' strokeWidth={2.5} />,
     );
     button.addEventListener('click', () => {
       const nextBearing = Math.round(map.getBearing() / 90) * 90 - 90;

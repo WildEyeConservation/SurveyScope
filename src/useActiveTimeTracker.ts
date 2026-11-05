@@ -29,7 +29,7 @@ export interface ActiveTimeTracker {
 }
 
 export function useActiveTimeTracker(
-  options: { idleGapMs?: number; enabled?: boolean } = {}
+  options: { idleGapMs?: number; enabled?: boolean } = {},
 ): ActiveTimeTracker {
   const idleGapMs = options.idleGapMs ?? DEFAULT_IDLE_GAP_MS;
   const enabled = options.enabled ?? true;
@@ -55,7 +55,10 @@ export function useActiveTimeTracker(
     // Same signals the transect heartbeat already treats as activity.
     window.addEventListener('pointerdown', onActivity, true);
     window.addEventListener('keydown', onActivity, true);
-    window.addEventListener('wheel', onActivity, { capture: true, passive: true });
+    window.addEventListener('wheel', onActivity, {
+      capture: true,
+      passive: true,
+    });
     return () => {
       window.removeEventListener('pointerdown', onActivity, true);
       window.removeEventListener('keydown', onActivity, true);

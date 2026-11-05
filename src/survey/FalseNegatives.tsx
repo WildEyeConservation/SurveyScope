@@ -1,23 +1,41 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Alert, Form, Spinner } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { DataClient } from '../../amplify/shared/data-schema.generated';
+import { isCentreObserved } from '../../shared/locationGeometry';
+import { Schema } from '../amplify/client-schema';
+import { GlobalContext, UserContext } from '../Context';
+import { loadRows } from '../rowChunks';
 import {
   deleteFalseNegativeFiles,
   readFalseNegativeFile,
   uploadWorkflowFile,
 } from '../storage/workflowFiles';
-import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
-import { loadRows } from '../rowChunks';
-import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  LaunchSummary,
+  SettingRow,
+} from './launchParts';
+import { LoadingProgressCard } from './LoadingProgressCard';
 import { loadLocationCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
-import { isCentreObserved } from '../../shared/locationGeometry';
 
 type LaunchHandler = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 };
 
@@ -70,12 +88,11 @@ export default function FalseNegatives({
 
   // Global tiled location set from project
   const tiledLocationSetId = (project as any).tiledLocationSetId as
-    | string
-    | undefined;
+    string | undefined;
 
   // Queue tag
   const [queueTag, setQueueTag] = useState<string>(
-    `${annotationSet.name} - False Negatives`
+    `${annotationSet.name} - False Negatives`,
   );
 
   // Tile count state
@@ -86,22 +103,24 @@ export default function FalseNegatives({
   const [batchSize, setBatchSize] = useState<number>(200);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
   const [samplePercent, setSamplePercent] = useState<number>(5);
-  const [showAdvancedOptions, setShowAdvancedOptions] =
-    useState<boolean>(false);
   const [summaryLoading, setSummaryLoading] = useState<boolean>(false);
-  const [summaryMessage, setSummaryMessage] = useState<string>('');
+  const [summaryError, setSummaryError] = useState(false);
+  const [summaryProgress, setSummaryProgress] = useState({
+    tiles: 0,
+    reviewed: 0,
+    annotations: 0,
+    step: 0,
+  });
   const [expectedTiles, setExpectedTiles] = useState<number | null>(null);
   const [candidateTiles, setCandidateTiles] = useState<number | null>(null);
-  const [estimatedSampleTiles, setEstimatedSampleTiles] = useState<
-    number | null
-  >(null);
+  const summaryStartedRef = useRef(false);
 
   // FN pool + history state
   const [loadingManifests, setLoadingManifests] = useState<boolean>(true);
   const [fnPool, setFnPool] = useState<FnPool | null>(null);
   const [fnHistory, setFnHistory] = useState<FnHistory | null>(null);
   const [remainingTiles, setRemainingTiles] = useState<MinimalTile[] | null>(
-    null
+    null,
   );
   const [loadingRemaining, setLoadingRemaining] = useState<boolean>(false);
 
@@ -129,14 +148,14 @@ export default function FalseNegatives({
       try {
         const pool = await readFalseNegativeFile<FnPool>(
           annotationSet.id,
-          'pool'
+          'pool',
         );
         if (!mounted) return;
         setFnPool(pool);
         const history = pool
           ? await readFalseNegativeFile<FnHistory>(
               annotationSet.id,
-              'history'
+              'history',
             ).catch(() => null)
           : null;
         if (mounted) setFnHistory(history);
@@ -168,7 +187,7 @@ export default function FalseNegatives({
       try {
         const { data } = await client.models.LocationSet.get(
           { id: tiledLocationSetId },
-          { selectionSet: ['locationCount'] }
+          { selectionSet: ['locationCount'] },
         );
         if (mounted) {
           setGlobalTileCount(data?.locationCount ?? 0);
@@ -202,11 +221,11 @@ export default function FalseNegatives({
       try {
         const observedLocationIds = await fetchObservedLocationIds(
           client,
-          annotationSet.id
+          annotationSet.id,
         );
         const annotationPoints = await fetchAnnotationPointsDetailed(
           client,
-          annotationSet.id
+          annotationSet.id,
         );
 
         // Collect all launched tiles across all launches
@@ -217,7 +236,7 @@ export default function FalseNegatives({
           if (observedLocationIds.has(tile.id)) return false;
           const anns = annotationPoints.get(tile.imageId) || [];
           const hasAnnotation = anns.some((pt) =>
-            isInsideTile(pt.x, pt.y, tile)
+            isInsideTile(pt.x, pt.y, tile),
           );
           return !hasAnnotation;
         });
@@ -275,18 +294,26 @@ export default function FalseNegatives({
   const fetchLocationsFromSet = useCallback(
     async (
       locationSetId: string,
-      onProgress?: (message: string) => void
+      onProgress?: (message: string) => void,
+      onCount?: (count: number) => void,
     ): Promise<MinimalTile[]> => {
       onProgress?.('Querying locations...');
       const allLocs = await loadRows(
         client,
         'locationsBySetIdAndConfidence',
         locationSetId,
-        ['imageId', 'x', 'y', 'width', 'height']
+        ['imageId', 'x', 'y', 'width', 'height'],
+        { onProgress: onCount },
       );
       return allLocs
-        .filter(loc => loc.x !== 0 && loc.y !== 0 && (loc.width ?? 0) !== 0 && (loc.height ?? 0) !== 0)
-        .map(loc => ({
+        .filter(
+          (loc) =>
+            loc.x !== 0 &&
+            loc.y !== 0 &&
+            (loc.width ?? 0) !== 0 &&
+            (loc.height ?? 0) !== 0,
+        )
+        .map((loc) => ({
           id: loc.id,
           imageId: loc.imageId!,
           x: loc.x!,
@@ -295,39 +322,42 @@ export default function FalseNegatives({
           height: loc.height!,
         }));
     },
-    [client]
+    [client],
   );
 
   const computeSummary = useCallback(async () => {
     if (!tiledLocationSetId) return;
 
     setSummaryLoading(true);
-    setSummaryMessage('Preparing tile data...');
+    setSummaryError(false);
+    setSummaryProgress({ tiles: 0, reviewed: 0, annotations: 0, step: 0 });
     setCandidateTiles(null);
-    setEstimatedSampleTiles(null);
     setExpectedTiles(null);
+    const progress = (change: Partial<typeof summaryProgress>) =>
+      setSummaryProgress((prev) => ({ ...prev, ...change }));
     try {
-      setSummaryMessage('Fetching tiles...');
       const tiles = await fetchLocationsFromSet(
         tiledLocationSetId,
-        setSummaryMessage
+        undefined,
+        (count) => progress({ tiles: count }),
       );
-
       setExpectedTiles(tiles.length);
+      progress({ tiles: tiles.length, step: 1 });
 
-      setSummaryMessage('Fetching reviewed locations...');
       const observationPoints = await fetchObservationPointsDetailed(
         client,
-        annotationSet.id
+        annotationSet.id,
+        (count) => progress({ reviewed: count }),
       );
+      progress({ step: 2 });
 
-      setSummaryMessage('Fetching annotations...');
       const annotationPoints = await fetchAnnotationPointsDetailed(
         client,
-        annotationSet.id
+        annotationSet.id,
+        (count) => progress({ annotations: count }),
       );
+      progress({ step: 3 });
 
-      setSummaryMessage('Evaluating tiles...');
       const candidates = tiles.filter((tile) => {
         const obs = observationPoints.get(tile.imageId) || [];
         const anns = annotationPoints.get(tile.imageId) || [];
@@ -336,35 +366,22 @@ export default function FalseNegatives({
         return !hasObservation && !hasAnnotation;
       });
       setCandidateTiles(candidates.length);
-
-      const normalizedPercent = Math.min(Math.max(samplePercent, 0), 100);
-      const availableTiles = candidates.length;
-      let estimatedSamples = Math.floor(
-        (availableTiles * normalizedPercent) / 100
-      );
-      if (
-        normalizedPercent > 0 &&
-        estimatedSamples === 0 &&
-        availableTiles > 0
-      ) {
-        estimatedSamples = 1;
-      }
-      setEstimatedSampleTiles(estimatedSamples);
-
-      setSummaryMessage('');
     } catch (error) {
       console.error('Summary calculation failed', error);
-      setSummaryMessage('Unable to compute summary');
+      setSummaryError(true);
     } finally {
       setSummaryLoading(false);
     }
-  }, [
-    annotationSet.id,
-    client,
-    fetchLocationsFromSet,
-    samplePercent,
-    tiledLocationSetId,
-  ]);
+  }, [annotationSet.id, client, fetchLocationsFromSet, tiledLocationSetId]);
+
+  const estimatedSampleTiles = useMemo(() => {
+    if (candidateTiles === null) return null;
+    const normalizedPercent = Math.min(Math.max(samplePercent, 0), 100);
+    const estimate = Math.floor((candidateTiles * normalizedPercent) / 100);
+    return normalizedPercent > 0 && estimate === 0 && candidateTiles > 0
+      ? 1
+      : estimate;
+  }, [candidateTiles, samplePercent]);
 
   // Refs for stable launch handler (avoid re-render loops)
   const modeRef = useRef(mode);
@@ -400,7 +417,7 @@ export default function FalseNegatives({
     setFalseNegativesLaunchHandler({
       execute: async (
         onProgress: (msg: string) => void,
-        onLaunchConfirmed: () => void
+        onLaunchConfirmed: () => void,
       ) => {
         const currentTiledLocationSetId = tiledLocationSetIdRef.current;
         if (!currentTiledLocationSetId) {
@@ -447,7 +464,7 @@ export default function FalseNegatives({
             user.userId,
             `Continued False Negatives queue for annotation set "${annotationSet.name}" in project "${project.name}" (${remaining.length} remaining tiles)`,
             project.id,
-            project.organizationId
+            project.organizationId,
           ).catch(console.error);
         } else if (currentMode === 'additional') {
           // Additional sample mode – Lambda loads from existing pool
@@ -479,14 +496,14 @@ export default function FalseNegatives({
             user.userId,
             `Launched additional ${samplePercentRef.current}% False Negatives sample for annotation set "${annotationSet.name}" in project "${project.name}"`,
             project.id,
-            project.organizationId
+            project.organizationId,
           ).catch(console.error);
         } else {
           // First launch mode – sample from all tiles
           onProgress('Fetching locations from global tile set...');
           const locationTiles = await fetchLocationsFromSet(
             currentTiledLocationSetId,
-            onProgress
+            onProgress,
           );
           if (locationTiles.length === 0) {
             alert('No locations found in the global tiled set');
@@ -520,7 +537,7 @@ export default function FalseNegatives({
             user.userId,
             `Launched False Negatives queue for annotation set "${annotationSet.name}" in project "${project.name}" (${samplePercentRef.current}% sample)`,
             project.id,
-            project.organizationId
+            project.organizationId,
           ).catch(console.error);
         }
       },
@@ -547,7 +564,7 @@ export default function FalseNegatives({
   const handleReset = useCallback(async () => {
     if (
       !confirm(
-        'Reset all false negatives data? This will delete all observations and annotations from false negative reviews, clear the candidate pool and launch history, allowing you to start fresh. This cannot be undone.'
+        'Reset all false negatives data? This will delete all observations and annotations from false negative reviews, clear the candidate pool and launch history, allowing you to start fresh. This cannot be undone.',
       )
     ) {
       return;
@@ -562,7 +579,7 @@ export default function FalseNegatives({
       if (!history) {
         history = await readFalseNegativeFile<FnHistory>(
           annotationSet.id,
-          'history'
+          'history',
         ).catch(() => null);
       }
 
@@ -575,7 +592,7 @@ export default function FalseNegatives({
         const runWithConcurrency = async <T,>(
           items: T[],
           fn: (item: T) => Promise<void>,
-          concurrency: number
+          concurrency: number,
         ): Promise<void> => {
           const queue = [...items];
           const workers = Array.from({ length: concurrency }, async () => {
@@ -605,32 +622,37 @@ export default function FalseNegatives({
                     filter: { annotationSetId: { eq: annotationSet.id } },
                     limit: 100,
                     nextToken,
-                  }
+                  },
                 );
               const deletePromises = (data || []).map((obs) =>
-                client.models.Observation.delete({ id: obs.id })
+                client.models.Observation.delete({ id: obs.id }),
               );
               await Promise.all(deletePromises);
               nextToken = nt as string | null | undefined;
             } while (nextToken);
 
             observationsDeleted++;
-            if (observationsDeleted % 10 === 0 || observationsDeleted === totalTiles) {
+            if (
+              observationsDeleted % 10 === 0 ||
+              observationsDeleted === totalTiles
+            ) {
               setResetProgress(
-                `Deleting observations (${observationsDeleted}/${totalTiles} tiles)...`
+                `Deleting observations (${observationsDeleted}/${totalTiles} tiles)...`,
               );
             }
           },
-          50
+          50,
         );
 
         // Delete annotations by imageId with source containing "false-negative"
         // Get unique imageIds from launched tiles
         const uniqueImageIds = Array.from(
-          new Set(allLaunchedTiles.map((t) => t.imageId))
+          new Set(allLaunchedTiles.map((t) => t.imageId)),
         );
         let imagesProcessed = 0;
-        setResetProgress(`Deleting annotations (0/${uniqueImageIds.length} images)...`);
+        setResetProgress(
+          `Deleting annotations (0/${uniqueImageIds.length} images)...`,
+        );
 
         await runWithConcurrency(
           uniqueImageIds,
@@ -644,23 +666,26 @@ export default function FalseNegatives({
                     filter: { source: { contains: 'false-negative' } },
                     limit: 100,
                     nextToken,
-                  }
+                  },
                 );
               const deletePromises = (data || []).map((ann) =>
-                client.models.Annotation.delete({ id: ann.id })
+                client.models.Annotation.delete({ id: ann.id }),
               );
               await Promise.all(deletePromises);
               nextToken = nt as string | null | undefined;
             } while (nextToken);
 
             imagesProcessed++;
-            if (imagesProcessed % 10 === 0 || imagesProcessed === uniqueImageIds.length) {
+            if (
+              imagesProcessed % 10 === 0 ||
+              imagesProcessed === uniqueImageIds.length
+            ) {
               setResetProgress(
-                `Deleting annotations (${imagesProcessed}/${uniqueImageIds.length} images)...`
+                `Deleting annotations (${imagesProcessed}/${uniqueImageIds.length} images)...`,
               );
             }
           },
-          50
+          50,
         );
       }
 
@@ -703,6 +728,19 @@ export default function FalseNegatives({
     return Math.min(count, remainingInPool);
   })();
 
+  const batchField = (
+    <div>
+      <Label className='mb-1'>Batch size</Label>
+      <Input
+        type='number'
+        title='The number of annotation jobs a user can pick up at a time'
+        value={batchSize}
+        onChange={(e) => setBatchSize(Number(e.target.value))}
+        disabled={launching}
+      />
+    </div>
+  );
+
   const zoomSetting = (
     <ZoomSetting
       mode='level'
@@ -711,490 +749,289 @@ export default function FalseNegatives({
       loadCandidates={() =>
         loadLocationCandidates(
           client,
-          tiledLocationSetId ? [tiledLocationSetId] : []
+          tiledLocationSetId ? [tiledLocationSetId] : [],
         )
       }
       disabled={launching || !tiledLocationSetId}
     />
   );
 
-  return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
-        {mode === 'loading' ? (
-          <p
-            className='text-muted mb-0 text-center'
-            style={{ fontSize: '12px' }}
-          >
-            Loading...
-          </p>
-        ) : showNoTilesWarning ? (
-          <Alert variant='warning' className='mb-0'>
-            <strong>No tiles configured.</strong>
-            <p className='mb-0 mt-1' style={{ fontSize: '14px' }}>
-              Please go to <strong>Edit Survey &gt; Manage Tiles</strong> to
-              create tiles for this survey before launching a false negatives
-              task.
-            </p>
-          </Alert>
-        ) : mode === 'continue' ? (
-          // ── Continue mode UI ──
-          <>
-          <div
-            className='border border-dark shadow-sm p-2'
-            style={{ backgroundColor: '#697582' }}
-          >
-            <p className='mb-0 text-white'>
-              <strong>Continuing False Negatives Task</strong>
-            </p>
-            <p className='mb-0 mt-2 text-white' style={{ fontSize: '14px' }}>
-              {coveragePercent}% of candidate pool has been covered
-              ({totalLaunched} of {poolSize} candidates launched across{' '}
-              {fnHistory?.launches.length ?? 0} session
-              {(fnHistory?.launches.length ?? 0) !== 1 ? 's' : ''})
-            </p>
-            {loadingRemaining ? (
-              <div className='mt-2 d-flex align-items-center gap-2 text-white'>
-                <Spinner animation='border' size='sm' />
-                <span style={{ fontSize: '12px' }}>
-                  Calculating remaining tiles...
-                </span>
-              </div>
-            ) : remainingTiles !== null ? (
-              <div className='mt-2'>
-                <p className='mb-0 text-white' style={{ fontSize: '14px' }}>
-                  <strong>{remainingTiles.length}</strong> tiles remaining from
-                  previous launches
-                </p>
-              </div>
-            ) : null}
-            <div className='mt-3'>
-              <button
-                type='button'
-                className='btn btn-outline-light btn-sm'
-                onClick={handleReset}
-                disabled={launching || resetting}
-              >
-                {resetting ? (
-                  <span className='d-inline-flex align-items-center'>
-                    <Spinner animation='border' size='sm' className='me-2' />
-                    {resetProgress || 'Resetting...'}
-                  </span>
-                ) : (
-                  'Reset FN Data'
-                )}
-              </button>
-            </div>
-          </div>
-          {zoomSetting}
-          </>
-        ) : mode === 'additional' ? (
-          // ── Additional sample mode UI ──
-          <>
-            <div
-              className='border border-dark shadow-sm p-2'
-              style={{ backgroundColor: '#697582' }}
-            >
-              <p className='mb-0 text-white'>
-                <strong>False Negatives Progress</strong>
-              </p>
-              <p
-                className='mb-0 mt-2 text-white'
-                style={{ fontSize: '14px' }}
-              >
-                {coveragePercent}% of candidate pool has been covered
-              </p>
-              <div
-                className='mt-1 text-white'
-                style={{ fontSize: '12px' }}
-              >
-                <div>
-                  Pool size: <strong>{poolSize}</strong>
-                </div>
-                <div>
-                  Launched: <strong>{totalLaunched}</strong> across{' '}
-                  {fnHistory?.launches.length ?? 0} session
-                  {(fnHistory?.launches.length ?? 0) !== 1 ? 's' : ''}
-                </div>
-                <div>
-                  Remaining candidates: <strong>{remainingInPool}</strong>
-                </div>
-              </div>
-            </div>
+  // The first-launch summary runs once the tiles are known to exist.
+  useEffect(() => {
+    if (
+      mode !== 'first-launch' ||
+      !tiledLocationSetId ||
+      !globalTileCount ||
+      summaryStartedRef.current
+    ) {
+      return;
+    }
+    summaryStartedRef.current = true;
+    computeSummary();
+  }, [mode, tiledLocationSetId, globalTileCount, computeSummary]);
 
-            {poolExhausted ? (
-              <Alert variant='success' className='mb-0'>
-                All candidates from the original pool have been launched.
-              </Alert>
-            ) : (
+  useLaunchLabel(
+    mode === 'first-launch' && estimatedSampleTiles
+      ? `Launch ${plural(estimatedSampleTiles, 'tile')}`
+      : mode === 'continue' && remainingTiles?.length
+        ? `Launch ${plural(remainingTiles.length, 'remaining tile')}`
+        : mode === 'additional' && additionalSampleCount
+          ? `Launch ${plural(additionalSampleCount, 'tile')}`
+          : null,
+    showNoTilesWarning
+      ? 'Create tiles in Edit Survey › Manage Tiles first'
+      : mode === 'additional' && poolExhausted
+        ? 'Every candidate tile has been launched'
+        : undefined,
+  );
+
+  const advanced = (
+    <AdvancedOptions disabled={launching}>
+      <SettingRow label='Job name' hint='Shown on the Jobs page'>
+        <Input
+          type='text'
+          aria-label='Job name'
+          value={queueTag}
+          onChange={(e) => setQueueTag(e.target.value)}
+          disabled={launching}
+        />
+      </SettingRow>
+      {fnPool && (
+        <SettingRow
+          label='Reset false negative data'
+          hint='Deletes the reviews, annotations and history so you can start over.'
+        >
+          <Button
+            variant='outline-danger'
+            className='w-full'
+            onClick={handleReset}
+            disabled={launching || resetting}
+          >
+            {resetting ? (
               <>
-                <Form.Group>
-                  <Form.Label className='mb-0'>
-                    Additional sample size (%)
-                  </Form.Label>
-                  <span
-                    className='text-muted d-block mb-1'
-                    style={{ fontSize: '12px' }}
-                  >
-                    Percentage of the candidate pool ({poolSize}{' '}
-                    tiles). Up to {remainingInPool} tiles can still be launched.
-                  </span>
-                  <Form.Control
-                    type='number'
-                    min={0}
-                    max={100}
-                    step={1}
-                    value={samplePercent}
-                    onChange={(e) =>
-                      setSamplePercent(
-                        Number((e.target as HTMLInputElement).value)
-                      )
-                    }
-                    disabled={launching}
-                  />
-                </Form.Group>
-
-                {zoomSetting}
-
-                <Form.Group>
-                  <Form.Switch
-                    label='Show Advanced Options'
-                    checked={showAdvancedOptions}
-                    onChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                    disabled={launching}
-                  />
-                </Form.Group>
-
-                {showAdvancedOptions && (
-                  <div
-                    className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
-                    style={{ backgroundColor: '#697582' }}
-                  >
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Batch Size</Form.Label>
-                      <span
-                        className='text-muted d-block mb-1'
-                        style={{ fontSize: '12px' }}
-                      >
-                        The number of annotation jobs a user can pick up at a
-                        time.
-                      </span>
-                      <Form.Control
-                        type='number'
-                        value={batchSize}
-                        onChange={(e) =>
-                          setBatchSize(
-                            Number((e.target as HTMLInputElement).value)
-                          )
-                        }
-                        disabled={launching}
-                      />
-                    </Form.Group>
-                    <Form.Group>
-                      <Form.Label className='mb-0'>Job Name</Form.Label>
-                      <span
-                        className='text-muted d-block mb-1'
-                        style={{ fontSize: '12px' }}
-                      >
-                        Modify this to display a different name for the job in
-                        the jobs page.
-                      </span>
-                      <Form.Control
-                        type='text'
-                        value={queueTag}
-                        onChange={(e) =>
-                          setQueueTag((e.target as HTMLInputElement).value)
-                        }
-                        disabled={launching}
-                      />
-                    </Form.Group>
-                  </div>
-                )}
-
-                <div
-                  className='border border-dark shadow-sm p-2'
-                  style={{ backgroundColor: '#697582' }}
-                >
-                  <div className='text-white' style={{ fontSize: '12px' }}>
-                    <div>
-                      New sample ({samplePercent}% of pool):{' '}
-                      <strong>{additionalSampleCount}</strong> tiles
-                    </div>
-                    <div>
-                      After launch: {totalLaunched + additionalSampleCount} of{' '}
-                      {poolSize} launched (
-                      {poolSize > 0
-                        ? (
-                          ((totalLaunched + additionalSampleCount) /
-                            poolSize) *
-                          100
-                        ).toFixed(1)
-                        : '0.0'}
-                      %)
-                    </div>
-                  </div>
-                </div>
+                <Spinner animation='border' size='sm' />
+                {resetProgress || 'Resetting...'}
               </>
+            ) : (
+              'Reset'
             )}
+          </Button>
+        </SettingRow>
+      )}
+    </AdvancedOptions>
+  );
 
-            <div>
-              <button
-                type='button'
-                className='btn btn-outline-danger btn-sm'
-                onClick={handleReset}
-                disabled={launching || resetting}
-              >
-                {resetting ? (
-                  <span className='d-inline-flex align-items-center'>
-                    <Spinner animation='border' size='sm' className='me-2' />
-                    {resetProgress || 'Resetting...'}
-                  </span>
-                ) : (
-                  'Reset FN Data'
-                )}
-              </button>
-            </div>
-          </>
-        ) : (
-          // ── First launch mode UI ──
-          <>
-            <div
-              className='border border-dark shadow-sm p-2'
-              style={{ backgroundColor: '#697582' }}
-            >
-              <p className='mb-0 text-white'>
-                <strong>{globalTileCount}</strong> tiles available for false
-                negative sampling.
-              </p>
-              <p className='mb-0 mt-1 text-muted' style={{ fontSize: '12px' }}>
-                To modify tiles, go to Edit Survey &gt; Manage Tiles.
-              </p>
-            </div>
-
-            <Form.Group>
-              <Form.Label className='mb-0'>Sample size (%)</Form.Label>
-              <Form.Control
-                type='number'
-                min={0}
-                max={100}
-                step={1}
-                value={samplePercent}
-                onChange={(e) =>
-                  setSamplePercent(Number((e.target as HTMLInputElement).value))
-                }
-                disabled={launching}
-              />
-            </Form.Group>
-
-            {zoomSetting}
-
-            <Form.Group>
-              <Form.Switch
-                label='Show Advanced Options'
-                checked={showAdvancedOptions}
-                onChange={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                disabled={launching}
-              />
-            </Form.Group>
-
-            {showAdvancedOptions && (
-              <div
-                className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
-                style={{ backgroundColor: '#697582' }}
-              >
-                <Form.Group>
-                  <Form.Label className='mb-0'>Batch Size</Form.Label>
-                  <span
-                    className='text-muted d-block mb-1'
-                    style={{ fontSize: '12px' }}
-                  >
-                    The number of annotation jobs a user can pick up at a time.
-                  </span>
-                  <Form.Control
-                    type='number'
-                    value={batchSize}
-                    onChange={(e) =>
-                      setBatchSize(
-                        Number((e.target as HTMLInputElement).value)
-                      )
-                    }
-                    disabled={launching}
-                  />
-                </Form.Group>
-                <Form.Group>
-                  <Form.Label className='mb-0'>Job Name</Form.Label>
-                  <span
-                    className='text-muted d-block mb-1'
-                    style={{ fontSize: '12px' }}
-                  >
-                    Modify this to display a different name for the job in the
-                    jobs page.
-                  </span>
-                  <Form.Control
-                    type='text'
-                    value={queueTag}
-                    onChange={(e) =>
-                      setQueueTag((e.target as HTMLInputElement).value)
-                    }
-                    disabled={launching}
-                  />
-                </Form.Group>
-              </div>
-            )}
-
-            <div
-              className='border border-dark shadow-sm p-2'
-              style={{ backgroundColor: '#697582' }}
-            >
-              <div className='d-flex align-items-center justify-content-between'>
-                <div className='text-white' style={{ fontSize: '12px' }}>
-                  <div>Expected tiles: {expectedTiles ?? '—'}</div>
-                  <div>Estimated candidate tiles: {candidateTiles ?? '—'}</div>
-                  <div>
-                    Estimated launch ({samplePercent}%):{' '}
-                    {estimatedSampleTiles ?? '—'}
-                  </div>
-                </div>
-                <button
-                  type='button'
-                  className='btn btn-primary'
-                  disabled={launching || summaryLoading}
-                  onClick={computeSummary}
-                >
-                  {summaryLoading ? (
-                    <span className='d-inline-flex align-items-center'>
-                      <Spinner animation='border' size='sm' className='me-2' />{' '}
-                      Computing summary...
-                    </span>
-                  ) : (
-                    'Compute Summary'
-                  )}
-                </button>
-              </div>
-              {summaryMessage && (
-                <div className='mt-2 text-muted' style={{ fontSize: '12px' }}>
-                  {summaryMessage}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+  const sampleField = (label: string) => (
+    <div>
+      <Label className='mb-1'>{label}</Label>
+      <div className='relative'>
+        <Input
+          type='number'
+          min={0}
+          max={100}
+          step={1}
+          className='pr-8'
+          value={samplePercent}
+          onChange={(e) => setSamplePercent(Number(e.target.value))}
+          disabled={launching}
+        />
+        <span className='pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#6c757d]'>
+          %
+        </span>
       </div>
+    </div>
+  );
+
+  return (
+    <div className='flex flex-col gap-4 p-4'>
+      {mode === 'loading' ? (
+        <LoadingProgressCard
+          title='Loading false negative history...'
+          rows={[
+            {
+              label: 'Tiles',
+              count: globalTileCount ?? 0,
+              done: !loadingTileCount,
+            },
+            {
+              label: 'Previous launches',
+              count: fnHistory?.launches.length ?? 0,
+              done: !loadingManifests,
+            },
+            ...(fnPool
+              ? [
+                  {
+                    label: 'Tiles left from earlier launches',
+                    count: remainingTiles?.length ?? 0,
+                    done: !loadingRemaining && remainingTiles !== null,
+                  },
+                ]
+              : []),
+          ]}
+        />
+      ) : showNoTilesWarning ? (
+        <Banner tone='warning'>
+          This survey has no tiles yet. Create them in Edit Survey › Manage
+          Tiles.
+        </Banner>
+      ) : mode === 'continue' ? (
+        <>
+          <LaunchSummary value={remainingTiles?.length.toLocaleString() ?? '—'}>
+            tiles from earlier launches still need a look
+            <br />
+            {coveragePercent}% of the candidate pool launched across{' '}
+            {plural(fnHistory?.launches.length ?? 0, 'session')}
+          </LaunchSummary>
+          <div className='grid gap-3 sm:grid-cols-2'>
+            {batchField}
+            {zoomSetting}
+          </div>
+          {advanced}
+        </>
+      ) : mode === 'additional' ? (
+        <>
+          <LaunchSummary value={`${coveragePercent}%`}>
+            of the candidate pool launched ({totalLaunched.toLocaleString()} of{' '}
+            {poolSize.toLocaleString()})
+            <br />
+            {poolExhausted
+              ? 'Every candidate tile has been launched.'
+              : `${remainingInPool.toLocaleString()} candidates can still be launched`}
+          </LaunchSummary>
+          {!poolExhausted && (
+            <div className='grid gap-3 sm:grid-cols-3'>
+              {sampleField('Additional sample of the pool')}
+              {batchField}
+              {zoomSetting}
+            </div>
+          )}
+          {advanced}
+        </>
+      ) : (
+        <>
+          {summaryLoading ? (
+            <LoadingProgressCard
+              title='Finding tiles nobody has looked at...'
+              rows={[
+                {
+                  label: 'Tiles',
+                  count: summaryProgress.tiles,
+                  done: summaryProgress.step > 0,
+                },
+                {
+                  label: 'Reviewed locations',
+                  count: summaryProgress.reviewed,
+                  done: summaryProgress.step > 1,
+                },
+                {
+                  label: 'Annotations',
+                  count: summaryProgress.annotations,
+                  done: summaryProgress.step > 2,
+                },
+              ]}
+            />
+          ) : summaryError ? (
+            <Banner tone='danger'>
+              The candidate tiles could not be worked out.{' '}
+              <Button variant='link' className='p-0' onClick={computeSummary}>
+                Try again
+              </Button>
+            </Banner>
+          ) : (
+            <LaunchSummary
+              value={estimatedSampleTiles?.toLocaleString() ?? '—'}
+            >
+              tiles sampled ({samplePercent}% of{' '}
+              {candidateTiles?.toLocaleString() ?? '—'} candidates)
+              <br />
+              Candidates are the {expectedTiles?.toLocaleString() ?? '—'} tiles
+              minus those already reviewed or annotated
+            </LaunchSummary>
+          )}
+          <div className='grid gap-3 sm:grid-cols-3'>
+            {sampleField('Sample size')}
+            {batchField}
+            {zoomSetting}
+          </div>
+          {advanced}
+        </>
+      )}
     </div>
   );
 }
 
-// Fetch observation points - locations that humans have reviewed
-// Returns a map of imageId -> array of tile bounds (locations that were observed)
+type TileBounds = { x: number; y: number; width: number; height: number };
+
+// Tile bounds of every location a human has reviewed, by image.
 async function fetchObservationPointsDetailed(
   client: DataClient,
-  annotationSetId: string
-): Promise<
-  Map<string, Array<{ x: number; y: number; width: number; height: number }>>
-> {
-  const map = new Map<
-    string,
-    Array<{ x: number; y: number; width: number; height: number }>
-  >();
-
-  // OPTIMIZATION: Fetch observations with location data included in the same query
-  // This avoids N+1 queries by including location fields in the selectionSet
-  let nextToken: string | null | undefined = undefined;
-  do {
-    const { data, nextToken: nt } =
-      await client.models.Observation.observationsByAnnotationSetId(
-        { annotationSetId },
-        {
-          selectionSet: [
-            'locationId',
-            'location.id',
-            'location.imageId',
-            'location.width',
-            'location.height',
-            'location.x',
-            'location.y',
-          ] as const,
-          limit: 10000,
-          nextToken,
-        }
-      );
-    for (const item of data || []) {
-      const location = (item as any)?.location;
-      if (!location?.imageId) continue;
-      const imageId = location.imageId as string;
-      const list = map.get(imageId) || [];
-      list.push({
-        x: Number(location.x ?? 0),
-        y: Number(location.y ?? 0),
-        width: Number(location.width ?? 0),
-        height: Number(location.height ?? 0),
-      });
-      map.set(imageId, list);
-    }
-    nextToken = nt as string | null | undefined;
-  } while (nextToken);
-
+  annotationSetId: string,
+  onCount?: (count: number) => void,
+): Promise<Map<string, TileBounds[]>> {
+  const rows = await loadRows(
+    client,
+    'observationsByAnnotationSetId',
+    annotationSetId,
+    [
+      'location.imageId',
+      'location.x',
+      'location.y',
+      'location.width',
+      'location.height',
+    ],
+    { onProgress: onCount },
+  );
+  const map = new Map<string, TileBounds[]>();
+  for (const row of rows) {
+    const imageId = row['location.imageId'];
+    if (!imageId) continue;
+    const list = map.get(imageId) ?? [];
+    list.push({
+      x: Number(row['location.x'] ?? 0),
+      y: Number(row['location.y'] ?? 0),
+      width: Number(row['location.width'] ?? 0),
+      height: Number(row['location.height'] ?? 0),
+    });
+    map.set(imageId, list);
+  }
   return map;
 }
 
-// Fetch the set of location IDs that have been observed (reviewed by a human).
-// Used by computeRemaining to check if a specific launched tile was reviewed,
-// rather than checking geometric overlap which can match nearby tiles.
+// Match exact tiles, not geometric overlap.
 async function fetchObservedLocationIds(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
 ): Promise<Set<string>> {
-  const ids = new Set<string>();
-  let nextToken: string | null | undefined = undefined;
-  do {
-    const { data, nextToken: nt } =
-      await client.models.Observation.observationsByAnnotationSetId(
-        { annotationSetId },
-        {
-          selectionSet: ['locationId'] as const,
-          limit: 10000,
-          nextToken,
-        }
-      );
-    for (const item of data || []) {
-      const locationId = (item as any)?.locationId as string | undefined;
-      if (locationId) {
-        ids.add(locationId);
-      }
-    }
-    nextToken = nt as string | null | undefined;
-  } while (nextToken);
-  return ids;
+  const rows = await loadRows(
+    client,
+    'observationsByAnnotationSetId',
+    annotationSetId,
+    ['locationId'],
+  );
+  return new Set(
+    rows.flatMap((row) => (row.locationId ? [row.locationId] : [])),
+  );
 }
 
 async function fetchAnnotationPointsDetailed(
   client: DataClient,
-  annotationSetId: string
+  annotationSetId: string,
+  onCount?: (count: number) => void,
 ): Promise<Map<string, Array<{ x: number; y: number }>>> {
+  const rows = await loadRows(
+    client,
+    'annotationsByAnnotationSetId',
+    annotationSetId,
+    ['imageId', 'x', 'y'],
+    { onProgress: onCount },
+  );
   const map = new Map<string, Array<{ x: number; y: number }>>();
-  let nextToken: string | null | undefined = undefined;
-  do {
-    const { data, nextToken: nt } =
-      await client.models.Annotation.annotationsByAnnotationSetId(
-        { setId: annotationSetId },
-        {
-          selectionSet: ['imageId', 'x', 'y'] as const,
-          limit: 10000,
-          nextToken,
-        }
-      );
-    for (const item of data || []) {
-      const imageId = item?.imageId as string | undefined;
-      if (!imageId) continue;
-      const list = map.get(imageId) || [];
-      list.push({
-        x: Number(item.x ?? 0),
-        y: Number(item.y ?? 0),
-      });
-      map.set(imageId, list);
-    }
-    nextToken = nt as string | null | undefined;
-  } while (nextToken);
+  for (const row of rows) {
+    if (!row.imageId) continue;
+    const list = map.get(row.imageId) ?? [];
+    list.push({ x: Number(row.x ?? 0), y: Number(row.y ?? 0) });
+    map.set(row.imageId, list);
+  }
   return map;
 }
 
@@ -1204,7 +1041,7 @@ const PAYLOAD_SIZE_THRESHOLD = 200 * 1024; // 200KB
 
 async function sendLaunchFalseNegativesRequest(
   client: DataClient,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ) {
   const payloadStr = JSON.stringify(payload);
   const payloadSize = new Blob([payloadStr]).size;
@@ -1216,7 +1053,7 @@ async function sendLaunchFalseNegativesRequest(
     const s3Key = await uploadWorkflowFile(
       'launch-payload',
       String(payload.projectId),
-      payloadStr
+      payloadStr,
     );
     requestPayload = JSON.stringify({ payloadS3Key: s3Key });
   } else {
@@ -1224,9 +1061,12 @@ async function sendLaunchFalseNegativesRequest(
   }
 
   try {
-    await (client as any).mutations.launchFalseNegatives({
-      request: requestPayload,
-    }, { retry: false });
+    await (client as any).mutations.launchFalseNegatives(
+      {
+        request: requestPayload,
+      },
+      { retry: false },
+    );
   } catch (error: any) {
     if (shouldIgnoreLaunchError(error)) {
       console.warn('Ignoring launch lambda timeout response', error);
@@ -1245,7 +1085,7 @@ function shouldIgnoreLaunchError(error: any): boolean {
     }
   }
   return messages.some((msg) =>
-    /timed out|timeout|Task timed out|socket hang up/i.test(msg)
+    /timed out|timeout|Task timed out|socket hang up/i.test(msg),
   );
 }
 
@@ -1259,7 +1099,7 @@ type MinimalTileForCheck = {
 function isInsideTile(
   px: number,
   py: number,
-  tile: MinimalTileForCheck
+  tile: MinimalTileForCheck,
 ): boolean {
   const halfW = tile.width / 2;
   const halfH = tile.height / 2;

@@ -1,19 +1,33 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { Button, Spinner } from 'react-bootstrap';
-import { Modal, Body, Header, Footer, Title } from './Modal';
+import DataTable, { type DataColumn } from '@/components/DataTable';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { Body, Footer, Header, Modal, Title } from './Modal';
 
+import {
+  chainsMarkedOutside,
+  isOnEffort,
+  type BoundaryStatus,
+} from '../shared/boundaryStatus';
+import { outsideBoundaryFields } from './annotationBoundary';
 import { GlobalContext } from './Context';
-import { loadRows } from './rowChunks';
 import { loadProjectImages } from './projectImages';
-import { isOnEffort, type BoundaryStatus } from '../shared/boundaryStatus';
-import MyTable from './Table';
-import LabeledToggleSwitch from './LabeledToggleSwitch';
+import { loadRows } from './rowChunks';
+import { fetchAllPaginatedResults } from './utils';
 
 interface AnnotationRow {
   id: string;
   objectId: string | null;
   source: string | null;
-  category: string;
+  categoryId: string | null;
+}
+
+interface CountRow {
+  name: string;
+  color: string | null;
+  count: number;
+  fn: number;
 }
 
 interface Props {
@@ -31,93 +45,169 @@ const AnnotationCountModal: React.FC<Props> = ({
 }) => {
   const { client } = useContext(GlobalContext)!;
   const [annotations, setAnnotations] = useState<AnnotationRow[]>([]);
+  const [categories, setCategories] = useState<
+    Map<string, { name: string; color: string | null }>
+  >(new Map());
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [hasFalseNegatives, setHasFalseNegatives] = useState(false);
+  const [loaded, setLoaded] = useState(0);
 
   useEffect(() => {
-    async function getAnnotationCounts() {
-      setLoading(true);
-
-      // Categories load by survey: a set can use another set's category.
-      const [rows, categories, images] = await Promise.all([
-        loadRows(client, 'annotationsByAnnotationSetId', setId, [
+    if (!setId || !show) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    setLoading(true);
+    setLoaded(0);
+    // Categories load by survey: a set can use another set's category.
+    Promise.all([
+      loadRows(
+        client,
+        'annotationsByAnnotationSetId',
+        setId,
+        [
           'categoryId',
           'objectId',
           'source',
           'imageId',
-        ]),
-        loadRows(client, 'categoriesByProjectId', projectId, ['name']),
-        loadProjectImages(client, projectId, ['boundaryStatus']),
-      ]);
-      const names = new Map(categories.map((c) => [c.id, c.name]));
-      const outside = new Set(
-        images
-          .filter(
-            (image) =>
-              !isOnEffort(image.boundaryStatus as BoundaryStatus | null)
-          )
-          .map((image) => image.id)
-      );
-      const result = rows
-        .filter((a) => !outside.has(a.imageId ?? ''))
-        .map((a) => ({
-          id: a.id,
-          objectId: a.objectId,
-          source: a.source,
-          category: names.get(a.categoryId ?? '') ?? 'Unknown',
-        }));
-      setAnnotations(result);
+          ...outsideBoundaryFields<'outsideBoundary'>(),
+        ],
+        { signal, onProgress: setLoaded },
+      ),
+      loadRows(client, 'categoriesByProjectId', projectId, ['name'], {
+        signal,
+      }),
+      fetchAllPaginatedResults(client.models.Category.categoriesByProjectId, {
+        projectId,
+        selectionSet: ['id', 'color'] as const,
+        signal,
+      }).catch(() => []),
+      loadProjectImages(client, projectId, ['boundaryStatus'], { signal }),
+    ])
+      .then(([rows, names, colours, images]) => {
+        if (signal.aborted) return;
+        const outside = new Set(
+          images
+            .filter(
+              (image) =>
+                !isOnEffort(image.boundaryStatus as BoundaryStatus | null),
+            )
+            .map((image) => image.id),
+        );
+        const colourById = new Map(colours.map((c) => [c.id, c.color]));
+        setCategories(
+          new Map(
+            names.map((c) => [
+              c.id,
+              {
+                name: c.name ?? 'Unknown',
+                color: colourById.get(c.id) ?? null,
+              },
+            ]),
+          ),
+        );
+        const markedChains = chainsMarkedOutside(rows);
+        setAnnotations(
+          rows
+            .filter(
+              (a) =>
+                !outside.has(a.imageId ?? '') &&
+                !markedChains.has(a.objectId ?? a.id),
+            )
+            .map((a) => ({
+              id: a.id,
+              objectId: a.objectId,
+              source: a.source,
+              categoryId: a.categoryId,
+            })),
+        );
+      })
+      .catch((err) => {
+        if (!signal.aborted) console.error('Failed to load annotations', err);
+      })
+      .finally(() => {
+        if (!signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [client, setId, projectId, show]);
 
-      setLoading(false);
-
-      if (
-        result.some((annotation) =>
-          annotation.source?.includes('false-negative')
-        )
-      ) {
-        setHasFalseNegatives(true);
-      }
+  const rows = useMemo(() => {
+    const byLabel = new Map<string, CountRow>();
+    for (const a of annotations) {
+      if (primaryOnly && a.objectId !== a.id) continue;
+      const category = categories.get(a.categoryId ?? '');
+      const key = category?.name ?? 'Unknown';
+      const row = byLabel.get(key) ?? {
+        name: category?.name ?? 'Unknown',
+        color: category?.color ?? null,
+        count: 0,
+        fn: 0,
+      };
+      row.count++;
+      if (a.source?.includes('false-negative')) row.fn++;
+      byLabel.set(key, row);
     }
+    return [...byLabel.values()].sort((a, b) => b.count - a.count);
+  }, [annotations, categories, primaryOnly]);
 
-    if (setId && show) {
-      getAnnotationCounts();
-    }
-  }, [setId, projectId, show]);
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  const hasFalseNegatives = annotations.some((a) =>
+    a.source?.includes('false-negative'),
+  );
 
-  //reduce to group by category
-  const annotationByCategory = annotations.reduce((acc, annotation) => {
-    const category = annotation.category;
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(annotation);
-    return acc;
-  }, {} as { [category: string]: AnnotationRow[] });
-
-  const falseNegativesByCategory = annotations.reduce((acc, annotation) => {
-    const category = annotation.category;
-    if (!acc[category]) {
-      acc[category] = 0;
-    }
-    if (annotation.source?.includes('false-negative')) {
-      acc[category]++;
-    }
-    return acc;
-  }, {} as { [category: string]: number });
-
-  const tableData = Object.entries(annotationByCategory).map(
-    ([category, annotations]) => ({
-      id: category,
-      rowData: [
-        category,
-        primaryOnly
-          ? annotations.filter(
-            (annotation) => annotation.objectId === annotation.id
-          ).length
-          : annotations.length,
-      ].concat(hasFalseNegatives ? [falseNegativesByCategory[category]] : []),
-    })
+  const columns = useMemo<DataColumn<CountRow>[]>(
+    () => [
+      {
+        id: 'swatch',
+        header: '',
+        enableSorting: false,
+        meta: { className: 'w-8' },
+        cell: ({ row }) => (
+          <span
+            className='block size-2.5'
+            style={{ backgroundColor: row.original.color || '#adb5bd' }}
+          />
+        ),
+      },
+      {
+        accessorKey: 'name',
+        header: 'Label',
+        meta: { className: 'max-w-40 truncate' },
+      },
+      {
+        id: 'bar',
+        header: '',
+        enableSorting: false,
+        meta: { className: 'w-1/2' },
+        cell: ({ row }) => (
+          <div className='h-2 bg-white/10'>
+            <div
+              className='h-full'
+              style={{
+                width: `${total ? (row.original.count / total) * 100 : 0}%`,
+                backgroundColor: row.original.color || '#adb5bd',
+              }}
+            />
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'count',
+        header: 'Count',
+        meta: { className: 'w-24 text-right tabular-nums' },
+        cell: ({ row }) => row.original.count.toLocaleString(),
+      },
+      ...(hasFalseNegatives
+        ? [
+            {
+              accessorKey: 'fn',
+              header: 'False negatives',
+              meta: { className: 'w-36 text-right tabular-nums' },
+              cell: ({ row }) => row.original.fn.toLocaleString(),
+            } satisfies DataColumn<CountRow>,
+          ]
+        : []),
+    ],
+    [total, hasFalseNegatives],
   );
 
   return (
@@ -126,56 +216,70 @@ const AnnotationCountModal: React.FC<Props> = ({
         <Title>Annotation Set Details</Title>
       </Header>
       <Body>
-        <div className='p-3'>
+        <div className='flex flex-col gap-3 p-4'>
           {loading ? (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: '16px',
-              }}
-            >
-              <Spinner
-                animation='border'
-                variant='light'
-                size='sm'
-                className='me-2'
-              />
-              Fetching annotations...
+            <div className='flex items-center gap-2 text-muted-foreground'>
+              <Spinner animation='border' size='sm' />
+              Loading annotations
+              {loaded > 0 && ` · ${loaded.toLocaleString()} loaded`}...
             </div>
           ) : (
-            <div className='d-flex flex-column gap-2 w-100'>
-              <LabeledToggleSwitch
-                className='mb-2'
-                leftLabel='All annotations'
-                rightLabel='Primary only'
-                checked={primaryOnly}
-                onChange={(checked) => {
-                  setPrimaryOnly(checked);
-                }}
+            <>
+              <div className='flex flex-wrap items-center gap-4'>
+                <span className='text-3xl font-bold tabular-nums'>
+                  {total.toLocaleString()}
+                </span>
+                <span className='text-xs leading-tight text-muted-foreground'>
+                  {primaryOnly ? 'primary annotations' : 'annotations'}
+                  <br />
+                  {rows.length} label{rows.length === 1 ? '' : 's'}
+                </span>
+                <div
+                  role='radiogroup'
+                  aria-label='Annotations to count'
+                  className='ml-auto inline-flex border border-white/30'
+                >
+                  {[
+                    { value: false, label: 'All annotations' },
+                    {
+                      value: true,
+                      label: 'Primary only',
+                      title: 'Counts each individual animal once',
+                    },
+                  ].map((option) => (
+                    <button
+                      key={option.label}
+                      type='button'
+                      role='radio'
+                      aria-checked={primaryOnly === option.value}
+                      title={option.title}
+                      onClick={() => setPrimaryOnly(option.value)}
+                      className={cn(
+                        'px-3 py-1.5 text-base leading-normal transition-colors',
+                        primaryOnly === option.value
+                          ? 'bg-primary text-white'
+                          : 'hover:bg-white/10',
+                      )}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <DataTable
+                storageKey='annotation-counts'
+                columns={columns}
+                data={rows}
+                getRowId={(row) => row.name}
+                initialSorting={[{ id: 'count', desc: true }]}
+                emptyMessage='No annotations yet.'
               />
-              <MyTable
-                tableHeadings={[
-                  { content: 'Label', style: { width: '33%' } },
-                  {
-                    content: primaryOnly ? 'Primary only' : 'All annotations',
-                    style: { width: '33%' },
-                  },
-                ].concat(
-                  hasFalseNegatives
-                    ? [{ content: 'False Negatives', style: { width: '34%' } }]
-                    : []
-                )}
-                tableData={tableData}
-                emptyMessage='No annotations found'
-              />
-            </div>
+            </>
           )}
         </div>
       </Body>
       <Footer>
-        <Button variant='dark' onClick={handleClose}>
+        <Button variant='ghost' className='mr-auto' onClick={handleClose}>
           Close
         </Button>
       </Footer>

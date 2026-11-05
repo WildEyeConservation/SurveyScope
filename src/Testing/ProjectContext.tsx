@@ -1,7 +1,7 @@
-import { Project, Management } from '../UserContext';
-import { Schema } from '../amplify/client-schema';
-import { UserContext, GlobalContext } from '../Context';
 import { useContext, useEffect, useState } from 'react';
+import { Schema } from '../amplify/client-schema';
+import { GlobalContext, UserContext } from '../Context';
+import { Management, Project } from '../UserContext';
 import { fetchAllPaginatedResults } from '../utils';
 
 export default function ProjectContext({
@@ -29,7 +29,7 @@ export default function ProjectContext({
         {
           userId: user.userId,
           filter: { projectId: { eq: surveyId } },
-        }
+        },
       );
       setCurrentPM(currentPM);
     };

@@ -42,11 +42,14 @@ const { data, create, update, delete } = useOptimisticUpdates(
     'OrganizationMembership', listMemberships, subscriptionFilter, { compositeKey }
 );
 */
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useContext, useMemo, useCallback } from 'react';
-import type { Schema } from './amplify/client-schema';
-import type { DataModels, SubscriptionOptions } from '../amplify/shared/data-schema.generated';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useContext, useEffect, useMemo } from 'react';
+import type {
+  DataModels,
+  SubscriptionOptions,
+} from '../amplify/shared/data-schema.generated';
 import { GlobalContext, ProjectContext } from './Context';
+import type { Schema } from './amplify/client-schema';
 import { useCognitoGroups } from './cognitoGroups';
 import {
   isMissingRow,
@@ -54,7 +57,6 @@ import {
   withRowRestored,
   withoutRow,
 } from './utils/optimisticCache';
-
 
 // Options interface to optionally pass a composite key resolver and subscription auth mode
 export interface OptimisticOptions<T> {
@@ -67,17 +69,14 @@ export interface OptimisticOptions<T> {
   staleTime?: number;
 }
 
-export function useOptimisticUpdates<
-  T,
-  ModelKey extends keyof DataModels
->(
+export function useOptimisticUpdates<T, ModelKey extends keyof DataModels>(
   modelKey: ModelKey,
   listFunction: (
-    nextToken?: string
+    nextToken?: string,
   ) => Promise<{ data: T[]; nextToken?: string | null }>,
   subscriptionFilter?: SubscriptionOptions<any>,
   options?: OptimisticOptions<T>,
-  updateFunction?: (progress: number) => Promise<void>
+  updateFunction?: (progress: number) => Promise<void>,
 ) {
   const { client } = useContext(GlobalContext);
   const queryClient = useQueryClient();
@@ -95,7 +94,7 @@ export function useOptimisticUpdates<
         ? listFunction(nextToken)
         : client.models[modelKey].list({ nextToken });
     },
-    [listFunction, client, modelKey]
+    [listFunction, client, modelKey],
   );
 
   const { data, ...queryResult } = useQuery({
@@ -121,7 +120,10 @@ export function useOptimisticUpdates<
   // Resubscribe when groups change: a subscription's auth filter is fixed at start.
   useEffect(() => {
     const subOptions = options?.authMode
-      ? ({ ...(subscriptionFilter ?? {}), authMode: options.authMode } as typeof subscriptionFilter)
+      ? ({
+          ...(subscriptionFilter ?? {}),
+          authMode: options.authMode,
+        } as typeof subscriptionFilter)
       : subscriptionFilter;
 
     const createSub = model.onCreate(subOptions).subscribe({
@@ -140,8 +142,8 @@ export function useOptimisticUpdates<
         if (data == null) return;
         queryClient.setQueryData<T[]>(queryKey, (old = []) =>
           old.map((item) =>
-            getKey(item) === getKey(data) ? { ...item, ...data } : item
-          )
+            getKey(item) === getKey(data) ? { ...item, ...data } : item,
+          ),
         );
       },
       error: (error: unknown) => console.warn(error),
@@ -151,7 +153,7 @@ export function useOptimisticUpdates<
       next: (data: T) => {
         if (data == null) return;
         queryClient.setQueryData<T[]>(queryKey, (old = []) =>
-          old.filter((item) => getKey(item) !== getKey(data))
+          old.filter((item) => getKey(item) !== getKey(data)),
         );
       },
       error: (error: unknown) => console.warn(error),
@@ -173,13 +175,13 @@ export function useOptimisticUpdates<
   */
   const dropFromCache = (item: T) => {
     queryClient.setQueryData<T[]>(queryKey, (old = []) =>
-      withoutRow(old, item, getKey)
+      withoutRow(old, item, getKey),
     );
   };
 
   const restoreInCache = (item: T, previousItems: T[] | undefined) => {
     queryClient.setQueryData<T[]>(queryKey, (old = []) =>
-      withRowRestored(old, item, previousItems, getKey)
+      withRowRestored(old, item, previousItems, getKey),
     );
   };
 
@@ -199,7 +201,7 @@ export function useOptimisticUpdates<
       if (!isMissingRow(result)) return;
       console.error(
         `${String(modelKey)}.create returned no row — the write was rejected. Rolling back.`,
-        newItem
+        newItem,
       );
       dropFromCache(newItem);
     },
@@ -218,8 +220,8 @@ export function useOptimisticUpdates<
         old.map((item) =>
           getKey(item) === getKey(updatedItem)
             ? { ...item, ...updatedItem }
-            : item
-        )
+            : item,
+        ),
       );
       return { previousItems };
     },
@@ -227,7 +229,7 @@ export function useOptimisticUpdates<
       if (!isMissingRow(result)) return;
       console.error(
         `${String(modelKey)}.update returned no row — the write was rejected. Rolling back.`,
-        updatedItem
+        updatedItem,
       );
       restoreInCache(updatedItem, context?.previousItems);
     },
@@ -243,7 +245,7 @@ export function useOptimisticUpdates<
       await queryClient.cancelQueries({ queryKey });
       const previousItems = queryClient.getQueryData<T[]>(queryKey);
       queryClient.setQueryData<T[]>(queryKey, (old = []) =>
-        old.filter((item) => getKey(item) !== getKey(deletedItem))
+        old.filter((item) => getKey(item) !== getKey(deletedItem)),
       );
       return { previousItems };
     },
@@ -256,13 +258,13 @@ export function useOptimisticUpdates<
       if (!isMissingRow(result)) return;
       console.warn(
         `${String(modelKey)}.delete returned no row; the row may still exist.`,
-        deletedItem
+        deletedItem,
       );
     },
     onError: (err, deletedItem, context) => {
       console.error(err, deletedItem, context);
       queryClient.setQueryData<T[]>(queryKey, (old = []) =>
-        withRowReinstated(old, deletedItem, context?.previousItems, getKey)
+        withRowReinstated(old, deletedItem, context?.previousItems, getKey),
       );
     },
   });
@@ -290,22 +292,26 @@ export const useQueues = () => {
     () => ({
       filter: { projectId: { eq: project.id } },
     }),
-    [project.id]
+    [project.id],
   );
 
-  const originalHook = useOptimisticUpdates<Schema['Queue']['type'], 'Queue'>( // eslint-disable-line @typescript-eslint/no-explicit-any
+  const originalHook = useOptimisticUpdates<
+    Schema['Queue']['type'],
+    'Queue'
+  > // eslint-disable-line @typescript-eslint/no-explicit-any
+  (
     'Queue',
     async (nextToken) =>
       client.models.Queue.list({
         filter: subscriptionFilter.filter,
         nextToken,
       }),
-    subscriptionFilter
+    subscriptionFilter,
   );
   const remove = ({ id }: { id: string }) => {
-    client.mutations.deleteQueueMutation({ queueId: id }).catch((err: any) =>
-      console.error('deleteQueueMutation failed:', err)
-    );
+    client.mutations
+      .deleteQueueMutation({ queueId: id })
+      .catch((err: any) => console.error('deleteQueueMutation failed:', err));
     originalHook.delete({ id } as Schema['Queue']['type']);
   };
   return { ...originalHook, delete: remove };

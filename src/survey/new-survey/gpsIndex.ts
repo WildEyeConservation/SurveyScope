@@ -63,7 +63,7 @@ export function buildGpsIndex(rows: GpsRow[]): GpsIndex {
  */
 export function bracketTimestamp(
   index: GpsIndex,
-  ts: number
+  ts: number,
 ): { prev: GpsRow; next: GpsRow } | null {
   const { sorted } = index;
   if (sorted.length < 2) return null;
@@ -89,7 +89,7 @@ export function bracketTimestamp(
  */
 export function interpolateAt(
   index: GpsIndex,
-  ts: number
+  ts: number,
 ): { timestamp: number; lat: number; lng: number; alt: number } | null {
   const exact = index.byTimestamp.get(ts);
   if (exact) {
@@ -118,7 +118,7 @@ export function interpolateAt(
  * Non-finite values are skipped; returns null when nothing finite remains.
  */
 export function minMaxOf(
-  values: Iterable<number>
+  values: Iterable<number>,
 ): { min: number; max: number } | null {
   let min = Infinity;
   let max = -Infinity;
@@ -143,7 +143,7 @@ export function gpsRowKey(row: GpsRow): string {
 export function nextMapRemovedKeys(
   prev: Set<string>,
   offered: GpsRow[],
-  visible: GpsRow[]
+  visible: GpsRow[],
 ): Set<string> {
   const visibleKeys = new Set(visible.map(gpsRowKey));
   const next = new Set<string>();

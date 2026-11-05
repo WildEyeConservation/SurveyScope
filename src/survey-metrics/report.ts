@@ -20,6 +20,8 @@ import {
 } from './collectors';
 import {
   AbortError,
+  DEFAULT_BAND_WIDTHS,
+  bandWidthFor,
   loadAnnotationSets,
   loadAnnotations,
   loadCategories,
@@ -34,6 +36,7 @@ import {
   loadRegistration,
   loadTasks,
   scanDetectorLocations,
+  type BandWidths,
   type LoadContext,
 } from './loaders';
 import type {
@@ -257,7 +260,7 @@ export const STATS = [
     compute: ({ locationScan }) => {
       if (!locationScan.coverage) {
         throw new Error(
-          'Detector locations were not matched against this set.'
+          'Detector locations were not matched against this set.',
         );
       }
       return locationScan.coverage;
@@ -332,6 +335,7 @@ export type ReportRequest = {
   statIds: StatId[];
   // Denominators for progress only.
   imageCountHint?: number;
+  bandWidths?: BandWidths;
   cache: ReportCache;
   reuseCache: boolean;
   signal: AbortSignal;
@@ -344,18 +348,23 @@ export function entitiesFor(statIds: StatId[]): EntityKey[] {
     if (statIds.includes(stat.id)) stat.needs.forEach((key) => needed.add(key));
   }
   return (Object.keys(ENTITY_LABELS) as EntityKey[]).filter((key) =>
-    needed.has(key)
+    needed.has(key),
   );
 }
 
 function cacheKey(
   request: ReportRequest,
   entity: EntityKey,
-  forSet = SET_ENTITIES.includes(entity)
+  forSet = SET_ENTITIES.includes(entity),
 ) {
+  // Confidence bands are counted during the scan, so they key its cache.
+  const name =
+    entity === 'locationScan'
+      ? `${entity}@${JSON.stringify(request.bandWidths ?? DEFAULT_BAND_WIDTHS)}`
+      : entity;
   return forSet
-    ? `${request.surveyId}:${entity}:${request.annotationSetId}`
-    : `${request.surveyId}:${entity}`;
+    ? `${request.surveyId}:${name}:${request.annotationSetId}`
+    : `${request.surveyId}:${name}`;
 }
 
 function rowCount(data: unknown): number {
@@ -370,7 +379,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
   const { surveyId, annotationSetId, signal } = request;
   const stats = STATS.filter(
     (stat) =>
-      request.statIds.includes(stat.id) && (!stat.needsSet || annotationSetId)
+      request.statIds.includes(stat.id) && (!stat.needsSet || annotationSetId),
   );
   const entities = entitiesFor(stats.map((stat) => stat.id));
   const wantsCoverage = stats.some((stat) => stat.id === 'confidenceCoverage');
@@ -441,7 +450,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         if (entity === 'locationScan' && wantsCoverage) {
           try {
             const observations = (await load(
-              'observations'
+              'observations',
             )) as ObservationRow[];
             needs.annotations = (await load('annotations')) as AnnotationRow[];
             needs.observations = observations;
@@ -454,7 +463,12 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         const data = await fetchEntity(entity, request, ctx, needs);
         const fetchedAt = new Date().toISOString();
         if (entity === 'annotations' || entity === 'observations') {
-          request.cache.delete(cacheKey(request, 'locationScan', true));
+          const scanPrefix = `${surveyId}:locationScan@`;
+          const setSuffix = `:${annotationSetId}`;
+          for (const cached of [...request.cache.keys()]) {
+            if (cached.startsWith(scanPrefix) && cached.endsWith(setSuffix))
+              request.cache.delete(cached);
+          }
         }
         if (entity === 'locationScan') {
           const scan = data as LocationScan;
@@ -506,7 +520,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
     } catch (error) {
       failures.set(
         entity,
-        error instanceof Error ? error.message : String(error)
+        error instanceof Error ? error.message : String(error),
       );
     }
   }
@@ -520,7 +534,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
     fetchedAt: Object.fromEntries(
       tasks
         .filter((task) => task.fetchedAt)
-        .map((task) => [task.entity, task.fetchedAt])
+        .map((task) => [task.entity, task.fetchedAt]),
     ),
     stats: {},
   };
@@ -546,7 +560,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         throw new Error(
           `Could not fetch ${ENTITY_LABELS[
             failed
-          ].toLowerCase()}: ${failures.get(failed)}`
+          ].toLowerCase()}: ${failures.get(failed)}`,
         );
       }
       const queues = (data.queues as QueueRow[] | undefined) ?? [];
@@ -582,17 +596,19 @@ type Dependencies = {
 
 async function scanLocations(
   surveyId: string,
+  widths: BandWidths,
   ctx: LoadContext,
-  needs: Dependencies
+  needs: Dependencies,
 ): Promise<LocationScan> {
+  const widthFor = (source: string) => bandWidthFor(widths, source);
   const detections: DetectionScan = new Map();
   const coverage =
     needs.observations && needs.annotations
-      ? scanConfidenceCoverage(needs.observations, needs.annotations)
+      ? scanConfidenceCoverage(needs.observations, needs.annotations, widthFor)
       : null;
   const rows = await scanDetectorLocations(surveyId, ctx, (page) => {
     for (const location of page) {
-      addDetection(detections, location);
+      addDetection(detections, location, widthFor);
       coverage?.add(location);
     }
   });
@@ -603,7 +619,7 @@ function fetchEntity(
   entity: EntityKey,
   request: ReportRequest,
   ctx: LoadContext,
-  needs: Dependencies
+  needs: Dependencies,
 ): Promise<unknown> {
   const { surveyId } = request;
   const setId = request.annotationSetId ?? '';
@@ -627,7 +643,12 @@ function fetchEntity(
     case 'processedBy':
       return loadProcessedBy(surveyId, ctx);
     case 'locationScan':
-      return scanLocations(surveyId, ctx, needs);
+      return scanLocations(
+        surveyId,
+        request.bandWidths ?? DEFAULT_BAND_WIDTHS,
+        ctx,
+        needs,
+      );
     case 'annotations':
       return loadAnnotations(setId, ctx);
     case 'observations':

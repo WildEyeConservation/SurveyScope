@@ -1,14 +1,14 @@
 import { useCallback, useContext, useRef } from 'react';
-import { GlobalContext, ImageContext, ProjectContext } from './Context';
-import useCreateTestResult from './useCreateTestResult';
-import { GraphQLError } from './limitedClient';
-import { persistObservation } from './persistObservation';
-import { tileLoadStats } from './storage/tileLoadStats';
-import { prefetchPlanner } from './annotator/prefetchPlanner';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
 } from './annotationTypes';
+import { prefetchPlanner } from './annotator/prefetchPlanner';
+import { GlobalContext, ImageContext, ProjectContext } from './Context';
+import { GraphQLError } from './limitedClient';
+import { persistObservation } from './persistObservation';
+import { tileLoadStats } from './storage/tileLoadStats';
+import useCreateTestResult from './useCreateTestResult';
 
 /* This hook will take an ack callback as input and create a new ack callback that:
 - Uses the graphQL API to create an Observation entry for the current user.
@@ -25,6 +25,7 @@ interface UseCreateObservationProps {
   testPresetId?: string;
   /** The ephemeral set the user's test annotations were written to. */
   testSetId?: string;
+  labelNames?: string[];
   /** Queue ID persisted on the Observation for server-side progress aggregation. */
   queueId?: string;
   /** Stable SQS message identifier used to make Observation creation retry safe. */
@@ -44,6 +45,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     ack,
     testPresetId,
     testSetId,
+    labelNames,
     queueId,
     observationId,
     observationSource,
@@ -68,6 +70,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     annotationSetId,
     testSetId: isTest ? testSetId : undefined,
     testPresetId,
+    labelNames,
   });
 
   const newAck = useCallback(
@@ -80,7 +83,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
         const submittedTimestamp = submittedAt ?? Date.now();
         if (!id || !annotationSetId || !project) {
           throw new Error(
-            'Cannot complete task without a location, annotation set, and project'
+            'Cannot complete task without a location, annotation set, and project',
           );
         }
 
@@ -100,7 +103,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           console.warn(
             `Time taken (${timeTaken}ms) exceeds maximum (${maxTime}ms) for ${
               hasSighting ? 'sighting' : 'search'
-            }. Clamping to the maximum.`
+            }. Clamping to the maximum.`,
           );
           timeTaken = maxTime;
         }
@@ -157,7 +160,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
                       'locationId',
                       'queueId',
                     ],
-                  }
+                  },
                 )
             : undefined,
           expected: {
@@ -203,7 +206,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
       observationSource,
       client,
       ack,
-    ]
+    ],
   );
 
   return newAck;

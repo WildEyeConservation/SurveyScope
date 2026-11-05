@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   show: boolean;
@@ -24,25 +32,28 @@ export function NavigateAwayDialog({
     destination === 'prev'
       ? 'previous image pair'
       : destination === 'next'
-      ? 'next image pair'
-      : 'another image pair';
+        ? 'next image pair'
+        : 'another image pair';
   return (
-    <Modal show={show} onHide={onCancel} centered>
-      <Modal.Header closeButton>
-        <Modal.Title>Leave this image pair?</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        You have un-accepted matches on this image pair. Your marker positions
-        will be remembered, but no links will be saved. Continue to the {verb}?
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant='secondary' onClick={onCancel}>
-          Stay
-        </Button>
-        <Button variant='warning' onClick={onConfirm}>
-          Leave
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent centered>
+        <DialogHeader closeButton>
+          <DialogTitle>Leave this image pair?</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          You have un-accepted matches on this image pair. Your marker positions
+          will be remembered, but no links will be saved. Continue to the {verb}
+          ?
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='secondary' onClick={onCancel}>
+            Stay
+          </Button>
+          <Button variant='warning' onClick={onConfirm}>
+            Leave
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -15,7 +15,7 @@ function keyEvent(
   code: string,
   modifiers: Partial<
     Record<'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey', boolean>
-  > = {}
+  > = {},
 ): KeyboardEvent {
   return {
     key,
@@ -40,13 +40,13 @@ test('stored shortcuts normalise to the same form the matcher produces', () => {
 test('the hotkey react-hotkeys-hook reports as matched resolves the category', () => {
   assert.equal(
     canonicalHotkeyFromParsed({ ctrl: true, keys: ['h'] }),
-    'ctrl+h'
+    'ctrl+h',
   );
   assert.equal(canonicalHotkeyFromParsed({ keys: ['h'] }), 'h');
   // Modifiers repeated inside keys must not leak into the key part.
   assert.equal(
     canonicalHotkeyFromParsed({ ctrl: true, keys: ['ctrl', 'h'] }),
-    'ctrl+h'
+    'ctrl+h',
   );
 });
 
@@ -60,11 +60,11 @@ test('a combo shortcut matches its own category, not the plain-key one', () => {
   assert.equal(
     findShortcutMatch(keyEvent('h', 'KeyH', { ctrlKey: true }), categories, get)
       ?.id,
-    'hyena'
+    'hyena',
   );
   assert.equal(
     findShortcutMatch(keyEvent('h', 'KeyH'), categories, get)?.id,
-    'hippo'
+    'hippo',
   );
 });
 
@@ -73,7 +73,7 @@ test('shortcuts recorded as physical key names match the character pressed', () 
   assert.equal(
     findShortcutMatch(keyEvent('.', 'Period'), categories, (c) => c.shortcutKey)
       ?.id,
-    'dot'
+    'dot',
   );
 });
 
@@ -83,7 +83,7 @@ test('a shortcut recorded on one layout matches the same physical key on another
   assert.equal(
     findShortcutMatch(keyEvent('q', 'KeyA'), categories, (c) => c.shortcutKey)
       ?.id,
-    'antelope'
+    'antelope',
   );
 });
 
@@ -93,9 +93,9 @@ test('a shortcut stored as a shifted character still matches', () => {
     findShortcutMatch(
       keyEvent('+', 'Equal', { shiftKey: true }),
       categories,
-      (c) => c.shortcutKey
+      (c) => c.shortcutKey,
     )?.id,
-    'fp'
+    'fp',
   );
 });
 
@@ -105,9 +105,9 @@ test('modifier presses no longer trigger an unmodified shortcut', () => {
     findShortcutMatch(
       keyEvent('h', 'KeyH', { ctrlKey: true }),
       categories,
-      (c) => c.shortcutKey
+      (c) => c.shortcutKey,
     ),
-    undefined
+    undefined,
   );
 });
 
@@ -117,4 +117,7 @@ test('shortcuts render readably', () => {
   assert.equal(formatShortcutKey('space'), 'Space');
   assert.equal(formatShortcutKey('shift+8'), 'Shift+8');
   assert.equal(formatShortcutKey(null), '');
+  assert.equal(formatShortcutKey('+'), '+');
+  assert.equal(formatShortcutKey('shift++'), 'Shift++');
+  assert.equal(formatShortcutKey('#'), '#');
 });

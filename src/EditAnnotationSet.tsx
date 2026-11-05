@@ -1,11 +1,15 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { useQuery } from '@tanstack/react-query';
 import React, { useContext, useEffect, useState } from 'react';
-import { Button, Form, Spinner } from 'react-bootstrap';
-import { Modal, Body, Header, Footer, Title } from './Modal';
 import { GlobalContext } from './Context';
+import { Body, Footer, Header, Modal, Title } from './Modal';
 import { Tab, Tabs } from './Tabs';
 import { Schema } from './amplify/client-schema';
+import { loadRows } from './rowChunks';
 import LabelEditor from './survey/LabelEditor';
-import { useQuery } from '@tanstack/react-query';
 
 interface EditAnnotationSetModalProps {
   show: boolean;
@@ -32,18 +36,20 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveLabels, setSaveLabels] = useState<
-    ((
-      annotationSetId: string,
-      projectId: string,
-      group: string
-    ) => Promise<void>) | null
+    | ((
+        annotationSetId: string,
+        projectId: string,
+        group: string,
+      ) => Promise<void>)
+    | null
   >(null);
   const [saveInfoTags, setSaveInfoTags] = useState<
-    ((
-      annotationSetId: string,
-      projectId: string,
-      group: string
-    ) => Promise<void>) | null
+    | ((
+        annotationSetId: string,
+        projectId: string,
+        group: string,
+      ) => Promise<void>)
+    | null
   >(null);
 
   const { data: fetchedCategories, isFetching: categoriesLoading } = useQuery({
@@ -52,7 +58,7 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
     staleTime: 0,
     queryFn: async () => {
       const { data } = await client.models.Category.categoriesByAnnotationSetId(
-        { annotationSetId: annotationSet.id }
+        { annotationSetId: annotationSet.id },
       );
       return data ?? [];
     },
@@ -62,11 +68,44 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
     enabled: show,
     staleTime: 0,
     queryFn: async () => {
-      const { data } =
-        await client.models.InfoTag.infoTagsByAnnotationSetId({
-          annotationSetId: annotationSet.id,
-        });
+      const { data } = await client.models.InfoTag.infoTagsByAnnotationSetId({
+        annotationSetId: annotationSet.id,
+      });
       return data ?? [];
+    },
+  });
+
+  const [labelCount, setLabelCount] = useState<number>();
+  const [infoTagCount, setInfoTagCount] = useState<number>();
+  const { data: usage } = useQuery({
+    queryKey: ['annotation-set-label-usage-v2', annotationSet.id],
+    enabled: show,
+    staleTime: 0,
+    // Holds Maps, which don't survive being saved to localStorage.
+    meta: { persist: false },
+    queryFn: async () => {
+      const [annotations, links] = await Promise.all([
+        loadRows(client, 'annotationsByAnnotationSetId', annotationSet.id, [
+          'categoryId',
+        ]),
+        loadRows(
+          client,
+          'annotationInfoTagsByAnnotationSetId',
+          annotationSet.id,
+          ['infoTagId'],
+        ),
+      ]);
+      const count = (ids: (string | null)[]) => {
+        const counts = new Map<string, number>();
+        for (const id of ids) {
+          if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+        return counts;
+      };
+      return {
+        labels: count(annotations.map((a) => a.categoryId)),
+        infoTags: count(links.map((l) => l.infoTagId)),
+      };
     },
   });
 
@@ -87,14 +126,14 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
         await saveLabels(
           annotationSet.id,
           project.id,
-          project.group || project.organizationId
+          project.group || project.organizationId,
         );
       }
       if (saveInfoTags) {
         await saveInfoTags(
           annotationSet.id,
           project.id,
-          project.group || project.organizationId
+          project.group || project.organizationId,
         );
       }
       setStatusMessage('');
@@ -103,7 +142,7 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
     } catch (err) {
       console.error('Failed to save annotation set edits', err);
       setErrorMessage(
-        err instanceof Error ? err.message : 'Failed to save changes'
+        err instanceof Error ? err.message : 'Failed to save changes',
       );
     } finally {
       setIsSaving(false);
@@ -121,19 +160,22 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
       </Header>
       <Body>
         <Tabs>
-          <Tab label='Labels'>
-            <Form className='d-flex flex-column gap-2 p-3'>
-              <Form.Group controlId='annotationSetName'>
-                <Form.Label>Name</Form.Label>
-                <Form.Control
+          <Tab
+            label={`Labels (${labelCount ?? fetchedCategories?.length ?? 0})`}
+          >
+            <form className='flex flex-col gap-2 p-4'>
+              <div>
+                <Label htmlFor='annotationSetName'>Name</Label>
+                <Input
+                  id='annotationSetName'
                   type='text'
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder='Enter new name'
                 />
-              </Form.Group>
+              </div>
               {categoriesLoading || !fetchedCategories ? (
-                <div className='d-flex align-items-center gap-2 py-3'>
+                <div className='flex items-center gap-2 py-4'>
                   <Spinner size='sm' />
                   <span>Loading labels...</span>
                 </div>
@@ -149,14 +191,18 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
                   isEditing
                   setHandleSave={setSaveLabels}
                   onStatusChange={setStatusMessage}
+                  usage={usage?.labels}
+                  onCountChange={setLabelCount}
                 />
               )}
-            </Form>
+            </form>
           </Tab>
-          <Tab label='Info Tags'>
-            <Form className='d-flex flex-column gap-2 p-3'>
+          <Tab
+            label={`Info Tags (${infoTagCount ?? fetchedInfoTags?.length ?? 0})`}
+          >
+            <form className='flex flex-col gap-2 p-4'>
               {infoTagsLoading || !fetchedInfoTags ? (
-                <div className='d-flex align-items-center gap-2 py-3'>
+                <div className='flex items-center gap-2 py-4'>
                   <Spinner size='sm' />
                   <span>Loading info tags...</span>
                 </div>
@@ -175,38 +221,17 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
                   description='Define optional informational tags that can be toggled on annotations.'
                   setHandleSave={setSaveInfoTags}
                   onStatusChange={setStatusMessage}
+                  usage={usage?.infoTags}
+                  onCountChange={setInfoTagCount}
                 />
               )}
-            </Form>
+            </form>
           </Tab>
         </Tabs>
         <Footer>
-          {errorMessage ? (
-            <span className='text-danger me-auto' style={{ fontSize: 12 }}>
-              {errorMessage}
-            </span>
-          ) : statusMessage ? (
-            <span className='text-muted me-auto d-flex align-items-center gap-2' style={{ fontSize: 12 }}>
-              <Spinner size='sm' />
-              {statusMessage}
-            </span>
-          ) : null}
           <Button
-            variant='primary'
-            disabled={isSaving || categoriesLoading || infoTagsLoading}
-            onClick={handleSave}
-          >
-            {isSaving ? (
-              <span className='d-flex align-items-center gap-2'>
-                <Spinner size='sm' />
-                Saving...
-              </span>
-            ) : (
-              'Save Changes'
-            )}
-          </Button>
-          <Button
-            variant='dark'
+            variant='ghost'
+            className='mr-auto'
             disabled={isSaving}
             onClick={() => {
               handleClose();
@@ -216,6 +241,21 @@ const EditAnnotationSetModal: React.FC<EditAnnotationSetModalProps> = ({
             }}
           >
             Cancel
+          </Button>
+          {errorMessage ? (
+            <span className='text-xs text-danger'>{errorMessage}</span>
+          ) : statusMessage ? (
+            <span className='flex items-center gap-2 text-xs text-muted-foreground'>
+              <Spinner size='sm' />
+              {statusMessage}
+            </span>
+          ) : null}
+          <Button
+            variant='primary'
+            disabled={isSaving || categoriesLoading || infoTagsLoading}
+            onClick={handleSave}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </Footer>
       </Body>

@@ -1,14 +1,9 @@
-import { Alert, Button } from 'react-bootstrap';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { useContext, useEffect, useMemo, useState } from 'react';
-import { Footer } from '../Modal';
 import { GlobalContext } from '../Context';
+import { Footer } from '../Modal';
 import { loadProjectImages } from '../projectImages';
-import CameraMaskEditor, { type MaskTarget } from './masks/CameraMaskEditor';
-import {
-  MASK_HELP,
-  loadStoredSample,
-  strideSamples,
-} from './masks/samplePreview';
 import {
   parseCameraMasks,
   serializeCameraMasks,
@@ -18,6 +13,12 @@ import {
   orientationGroupForDimensions,
   type ImageOrientationGroup,
 } from '../types/Orientation';
+import CameraMaskEditor, { type MaskTarget } from './masks/CameraMaskEditor';
+import {
+  MASK_HELP,
+  loadStoredSample,
+  strideSamples,
+} from './masks/samplePreview';
 
 const SAMPLES_KEPT_PER_GROUP = 200;
 
@@ -47,7 +48,7 @@ export default function EditMasks({ projectId }: { projectId: string }) {
         (
           await client.models.Camera.camerasByProjectId(
             { projectId },
-            { signal }
+            { signal },
           )
         ).data ?? [];
       const grouped: Record<string, SampleImage[]> = {};
@@ -55,7 +56,7 @@ export default function EditMasks({ projectId }: { projectId: string }) {
         client,
         projectId,
         ['cameraId', 'width', 'height', 'originalPath'],
-        { signal }
+        { signal },
       );
       for (const image of images) {
         if (!image.cameraId || image.width === null || image.height === null)
@@ -74,16 +75,16 @@ export default function EditMasks({ projectId }: { projectId: string }) {
       setCameras(cameraRows.map((c) => ({ id: c.id, name: c.name })));
       setMasks(
         Object.fromEntries(
-          cameraRows.map((c) => [c.name, parseCameraMasks(c.masks)])
-        )
+          cameraRows.map((c) => [c.name, parseCameraMasks(c.masks)]),
+        ),
       );
       setSaved(
         Object.fromEntries(
           cameraRows.map((c) => [
             c.name,
             serializeCameraMasks(parseCameraMasks(c.masks)),
-          ])
-        )
+          ]),
+        ),
       );
       setSamples(grouped);
     }
@@ -119,15 +120,15 @@ export default function EditMasks({ projectId }: { projectId: string }) {
                   if (!key) throw new Error('Image file not found');
                   return loadStoredSample(image, key);
                 },
-              })
+              }),
             ),
-          }))
+          })),
       ),
-    [cameras, samples, client]
+    [cameras, samples, client],
   );
 
   const changed = cameras.filter(
-    (camera) => serializeCameraMasks(masks[camera.name]) !== saved[camera.name]
+    (camera) => serializeCameraMasks(masks[camera.name]) !== saved[camera.name],
   );
 
   const handleSave = async () => {
@@ -148,12 +149,12 @@ export default function EditMasks({ projectId }: { projectId: string }) {
   };
 
   if (isLoading) {
-    return <div className='p-3'>Loading...</div>;
+    return <div className='p-4'>Loading...</div>;
   }
 
   if (loadFailed) {
     return (
-      <Alert variant='danger' className='m-3'>
+      <Alert variant='danger' className='m-4'>
         Could not load this survey&apos;s cameras. Close and reopen the survey
         to try again.
       </Alert>
@@ -162,7 +163,7 @@ export default function EditMasks({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <div className='d-flex flex-column gap-3 p-3'>
+      <div className='flex flex-col gap-4 p-4'>
         <p className='mb-0' style={{ fontSize: 14 }}>
           {MASK_HELP}
         </p>

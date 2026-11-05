@@ -1,5 +1,5 @@
-import { LEGACY_STORMFLY_BOX_SIZE } from '../useLaunchTask';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
+import { LEGACY_STORMFLY_BOX_SIZE } from '../useLaunchTask';
 
 // Level is absolute; offset is steps in from a whole-image fit.
 export type ZoomPreviewMode = 'level' | 'offset';
@@ -30,7 +30,7 @@ export function pickZoomPreviewCandidates<T>(items: T[]): T[] {
 export async function loadLocationCandidates(
   client: DataClient,
   locationSetIds: string[],
-  confidence?: { lower: number; upper: number }
+  confidence?: { lower: number; upper: number },
 ): Promise<ZoomPreviewCandidate[]> {
   const pages = await Promise.all(
     locationSetIds.map((setId) =>
@@ -53,9 +53,9 @@ export async function loadLocationCandidates(
             'imageId',
             'source',
           ] as const,
-        }
-      )
-    )
+        },
+      ),
+    ),
   );
   const found: ZoomPreviewCandidate[] = [];
   for (const loc of pages.flatMap((page) => page.data ?? [])) {

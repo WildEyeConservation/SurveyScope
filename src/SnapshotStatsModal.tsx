@@ -1,7 +1,17 @@
-import { useState } from 'react';
-import { Modal, Button } from 'react-bootstrap';
-import MyTable from './Table';
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import exportFromJSON from 'export-from-json';
+import { useState } from 'react';
 import { neutraliseCsvRows } from '../shared/csv';
 
 type AnnotationSet = { label: string; value: string };
@@ -31,7 +41,7 @@ type Props = {
   queryObservations: (
     annotationSetId: string,
     lowerLimitOverride?: string,
-    upperLimitOverride?: string
+    upperLimitOverride?: string,
   ) => Promise<any[]>;
 };
 
@@ -91,7 +101,7 @@ export default function SnapshotStatsModal({
       const observations = await queryObservations(
         s.value,
         lowerLimit,
-        upperLimit
+        upperLimit,
       );
       observations.forEach((o: any) => {
         const ownerValue = o.owner || '';
@@ -116,7 +126,10 @@ export default function SnapshotStatsModal({
         }
         const entry = tempStats[userId];
         entry.observationCount += 1;
-        entry.annotationCount = Math.max(0, entry.annotationCount + (o.annotationCount || 0));
+        entry.annotationCount = Math.max(
+          0,
+          entry.annotationCount + (o.annotationCount || 0),
+        );
         const sighting = o.annotationCount > 0 ? 1 : 0;
         entry.sightingCount += sighting;
         let timeTaken = o.timeTaken || 0;
@@ -144,8 +157,8 @@ export default function SnapshotStatsModal({
         'Jobs completed': statsEntry.observationCount,
         'Average search time (s/job)': (
           statsEntry.searchTime /
-            1000 /
-            (statsEntry.searchCount || statsEntry.observationCount || 1)
+          1000 /
+          (statsEntry.searchCount || statsEntry.observationCount || 1)
         ).toFixed(1),
         'Total Annotations': Math.max(0, statsEntry.annotationCount),
         'Total Sightings': statsEntry.sightingCount,
@@ -160,97 +173,103 @@ export default function SnapshotStatsModal({
     const fileName =
       `${projectLabel}_Snapshot_${startString}_${endString}_${snapshotStartTime}_${snapshotEndTime}`.replace(
         / /g,
-        '_'
+        '_',
       );
     exportFromJSON({
       data: neutraliseCsvRows(data),
       fileName,
-      exportType: exportFromJSON.types.csv
+      exportType: exportFromJSON.types.csv,
     });
   };
 
   return (
-    <Modal show={show} onHide={onHide} size='xl' backdrop='static'>
-      <Modal.Header>
-        <Modal.Title>Snapshot Stats for {projectLabel}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <div className='d-flex flex-column gap-2'>
-          <div className='d-flex justify-content-between align-items-center gap-2'>
-            <div style={{ width: '150px' }}>
-              <label>Date: {startDate?.toLocaleDateString()}</label>
-              <label>Start Time:</label>
+    <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
+      <DialogContent size='xl' onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle>Snapshot Stats for {projectLabel}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div className='flex flex-col gap-2'>
+            <div className='flex items-center justify-between gap-2'>
+              <div style={{ width: '150px' }}>
+                <label>Date: {startDate?.toLocaleDateString()}</label>
+                <label>Start Time:</label>
+              </div>
+              <Input
+                type='time'
+                value={snapshotStartTime}
+                onChange={(e) => setSnapshotStartTime(e.target.value)}
+              />
             </div>
-            <input
-              type='time'
-              className='form-control'
-              value={snapshotStartTime}
-              onChange={(e) => setSnapshotStartTime(e.target.value)}
+            <div className='flex items-center justify-between gap-2'>
+              <div style={{ width: '150px' }}>
+                <label>Date: {endDate?.toLocaleDateString()}</label>
+                <label>End Time:</label>
+              </div>
+              <Input
+                type='time'
+                value={snapshotEndTime}
+                onChange={(e) => setSnapshotEndTime(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className='mt-4 overflow-x-auto'>
+            <DataTable
+              storageKey='snapshot-stats'
+              columns={columnsFromHeadings(tableHeadings)}
+              data={cellRows(
+                Object.keys(snapshotStats).map((userId) => ({
+                  id: userId,
+                  rowData: [
+                    allUsers.find((u) => u.id == userId)?.name,
+                    formatDuration(snapshotStats[userId].activeTime),
+                    snapshotStats[userId].observationCount,
+                    (
+                      snapshotStats[userId].searchTime /
+                      1000 /
+                      (snapshotStats[userId].searchCount ||
+                        snapshotStats[userId].observationCount ||
+                        1)
+                    ).toFixed(1),
+                    Math.max(0, snapshotStats[userId].annotationCount),
+                    snapshotStats[userId].sightingCount,
+                    formatDuration(snapshotStats[userId].searchTime),
+                    formatDuration(snapshotStats[userId].annotationTime),
+                    (
+                      snapshotStats[userId].observationCount /
+                        snapshotStats[userId].sightingCount || 0
+                    ).toFixed(1),
+                    formatDuration(snapshotStats[userId].waitingTime),
+                  ],
+                })),
+              )}
+              getRowId={(row) => row.id}
+              emptyMessage="No snapshot stats. Please select time range and click 'Run Snapshot'."
             />
           </div>
-          <div className='d-flex justify-content-between align-items-center gap-2'>
-            <div style={{ width: '150px' }}>
-              <label>Date: {endDate?.toLocaleDateString()}</label>
-              <label>End Time:</label>
-            </div>
-            <input
-              type='time'
-              className='form-control'
-              value={snapshotEndTime}
-              onChange={(e) => setSnapshotEndTime(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className='mt-3 overflow-x-auto'>
-          <MyTable
-            tableHeadings={tableHeadings}
-            tableData={Object.keys(snapshotStats).map((userId) => ({
-              id: userId,
-              rowData: [
-                allUsers.find((u) => u.id == userId)?.name,
-                formatDuration(snapshotStats[userId].activeTime),
-                snapshotStats[userId].observationCount,
-                (
-                  snapshotStats[userId].searchTime /
-                    1000 /
-                    (snapshotStats[userId].searchCount ||
-                      snapshotStats[userId].observationCount ||
-                      1)
-                ).toFixed(1),
-                Math.max(0, snapshotStats[userId].annotationCount),
-                snapshotStats[userId].sightingCount,
-                formatDuration(snapshotStats[userId].searchTime),
-                formatDuration(snapshotStats[userId].annotationTime),
-                (
-                  snapshotStats[userId].observationCount /
-                    snapshotStats[userId].sightingCount || 0
-                ).toFixed(1),
-                formatDuration(snapshotStats[userId].waitingTime),
-              ],
-            }))}
-            emptyMessage="No snapshot stats. Please select time range and click 'Run Snapshot'."
-          />
-        </div>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button
-          variant='success'
-          onClick={handleExportSnapshot}
-          disabled={snapshotLoading || Object.keys(snapshotStats).length === 0}
-        >
-          Export Snapshot
-        </Button>
-        <Button
-          variant='primary'
-          onClick={handleRunSnapshot}
-          disabled={snapshotLoading || !snapshotStartTime || !snapshotEndTime}
-        >
-          {snapshotLoading ? 'Loading...' : 'Run Snapshot'}
-        </Button>
-        <Button variant='dark' onClick={onHide}>
-          Close
-        </Button>
-      </Modal.Footer>
-    </Modal>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='ghost' className='mr-auto' onClick={onHide}>
+            Close
+          </Button>
+          <Button
+            variant='success'
+            onClick={handleExportSnapshot}
+            disabled={
+              snapshotLoading || Object.keys(snapshotStats).length === 0
+            }
+          >
+            Export Snapshot
+          </Button>
+          <Button
+            variant='primary'
+            onClick={handleRunSnapshot}
+            disabled={snapshotLoading || !snapshotStartTime || !snapshotEndTime}
+          >
+            {snapshotLoading ? 'Loading...' : 'Run Snapshot'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,5 +1,5 @@
-import { useContext } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useContext } from 'react';
 import { GlobalContext } from '../../Context';
 import { fetchAllPaginatedResults } from '../../utils';
 import { emptyOverlay, type Overlay } from './shareStats';
@@ -58,7 +58,7 @@ export function useAllChainReviewFeedback(shareId: string | undefined) {
             'updatedAt',
           ] as const,
           limit: 10000,
-        }
+        },
       )) as Array<{
         id: string;
         owner?: string | null;

@@ -1,7 +1,7 @@
-import { useParams } from 'react-router-dom';
 import { useContext, useEffect, useState } from 'react';
-import { GlobalContext } from './Context';
+import { useParams } from 'react-router-dom';
 import AnnotationWorkspace from './AnnotationWorkspace';
+import { GlobalContext } from './Context';
 
 export function LocationLoader() {
   const { locationId, annotationSetId } = useParams();
@@ -30,7 +30,7 @@ export function LocationLoader() {
           'image.altitude_agl',
           'image.boundaryStatus',
         ],
-      }
+      },
     ).then(({ data }) => {
       if (!cancelled) setLocation(data);
     });
@@ -41,7 +41,7 @@ export function LocationLoader() {
 
   return (
     <div
-      className='d-flex flex-column align-items-center w-100 h-100'
+      className='flex h-full w-full flex-col items-center'
       style={{ paddingTop: '12px', paddingBottom: '12px' }}
     >
       {location && (

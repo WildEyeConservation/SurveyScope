@@ -1,5 +1,5 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import { runSurveySave, surveySaveSettled } from './surveySaves';
 
 test('saves for one survey run one after another', async () => {
@@ -23,7 +23,7 @@ test('loads wait for a save in progress, even one that fails', async () => {
   let failSave!: (err: Error) => void;
   const save = runSurveySave(
     'q',
-    () => new Promise<void>((_, reject) => (failSave = reject))
+    () => new Promise<void>((_, reject) => (failSave = reject)),
   );
   let loaded = false;
   const load = surveySaveSettled('q').then(() => (loaded = true));

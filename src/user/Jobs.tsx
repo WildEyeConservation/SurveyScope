@@ -1,15 +1,23 @@
-import { Card } from 'react-bootstrap';
-import { useContext, useEffect, useState } from 'react';
-import { UserContext, GlobalContext } from '../Context';
-import { Schema } from '../amplify/client-schema';
-import { Spinner, Button, Form } from 'react-bootstrap';
-import MyTable from '../Table';
+import DataTable from '@/components/DataTable';
+import { cellRows, columnsFromHeadings } from '@/components/cellColumns';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import { Spinner } from '@/components/ui/spinner';
+import {
+  GetQueueAttributesCommand,
+  type GetQueueAttributesCommandInput,
+} from '@aws-sdk/client-sqs';
+import { Maximize2, Minimize2 } from 'lucide-react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type GetQueueAttributesCommandInput } from '@aws-sdk/client-sqs';
-import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
-import ProjectProgress from './ProjectProgress';
+import { GlobalContext, UserContext } from '../Context';
+import PageHeader from '../PageHeader';
+import { Schema } from '../amplify/client-schema';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress';
-import { Minimize2, Maximize2 } from 'lucide-react';
+import ProjectProgress from './ProjectProgress';
 
 const STORAGE_KEYS = {
   COMPACT_MODE: 'jobsCompactMode',
@@ -43,7 +51,7 @@ export default function Jobs() {
 
   const [displayProjects, setDisplayProjects] = useState<Project[]>([]);
   const [jobsRemaining, setJobsRemaining] = useState<Record<string, string>>(
-    {}
+    {},
   );
   const [individualIdJobs, setIndividualIdJobs] = useState<
     {
@@ -56,9 +64,12 @@ export default function Jobs() {
     }[]
   >([]);
   const [isLoading, setIsLoading] = useState(false);
+  const hasLoadedRef = useRef(false);
   const [takingJob, setTakingJob] = useState(false);
   const [deletingJob] = useState(false);
-  const [scanningProjects, setScanningProjects] = useState<Set<string>>(new Set());
+  const [scanningProjects, setScanningProjects] = useState<Set<string>>(
+    new Set(),
+  );
   const [search, setSearch] = useState('');
 
   // Initialize sortBy from localStorage or use default
@@ -85,7 +96,7 @@ export default function Jobs() {
 
   const [sortBy, setSortBy] = useState(getInitialSortBy);
   const [organizationFilter, setOrganizationFilter] = useState(
-    getInitialOrganizationFilter
+    getInitialOrganizationFilter,
   );
 
   // Initialize compactMode from localStorage or use default
@@ -139,7 +150,7 @@ export default function Jobs() {
     if (typeof window !== 'undefined') {
       localStorage.setItem(
         STORAGE_KEYS.ORGANIZATION_FILTER,
-        organizationFilter
+        organizationFilter,
       );
     }
   }, [organizationFilter]);
@@ -151,11 +162,10 @@ export default function Jobs() {
     let validProjects: Project[] = [];
     let activeProjects: Project[] = [];
 
-    // Fetches the member projects and their queues. Only the first load shows
-    // the spinner; later refreshes swap the list in quietly.
     async function loadProjects(showSpinner: boolean) {
       const memberships = userProjectMembershipHook.data;
       if (!memberships) return;
+      showSpinner &&= !hasLoadedRef.current;
       if (showSpinner) setIsLoading(true);
 
       const projectResults = await Promise.all(
@@ -173,9 +183,9 @@ export default function Jobs() {
                 'createdAt',
                 'queues.*',
               ],
-            }
-          )
-        )
+            },
+          ),
+        ),
       );
 
       if (cancelled) return; // stop if unmounted
@@ -187,7 +197,7 @@ export default function Jobs() {
         .map((result) => (result as { data: Project | null }).data)
         .filter(
           (project): project is Project =>
-            project !== null && project.status !== 'launching'
+            project !== null && project.status !== 'launching',
         );
 
       // Hidden jobs are for admins only: organisation admins, plus admins of
@@ -196,20 +206,21 @@ export default function Jobs() {
         const canSeeHidden =
           !!myOrganizationHook.data?.find(
             (membership) =>
-              membership.organizationId === project.organization.id
+              membership.organizationId === project.organization.id,
           )?.isAdmin ||
           !!memberships.find(
-            (membership) => membership.projectId === project.id
+            (membership) => membership.projectId === project.id,
           )?.isAdmin;
         return {
           ...project,
           queues: project.queues.filter(
-            (queue) => canSeeHidden || !queue.hidden
+            (queue) => canSeeHidden || !queue.hidden,
           ),
         };
       });
 
       setDisplayProjects(validProjects);
+      hasLoadedRef.current = true;
       if (showSpinner) setIsLoading(false);
 
       refreshJobs();
@@ -232,7 +243,7 @@ export default function Jobs() {
               client.models as any
             ).IndividualIdJob.individualIdJobsByProjectId(
               { projectId: project.id },
-              { selectionSet: ['id', 'name', 'status'] }
+              { selectionSet: ['id', 'name', 'status'] },
             );
             for (const job of data || []) {
               if (job.status === 'active') {
@@ -247,13 +258,9 @@ export default function Jobs() {
               }
             }
           } catch (e) {
-            console.warn(
-              'Failed to load Individual ID jobs',
-              project.id,
-              e
-            );
+            console.warn('Failed to load Individual ID jobs', project.id, e);
           }
-        })
+        }),
       );
       if (cancelled) return;
       setIndividualIdJobs(entries);
@@ -263,7 +270,7 @@ export default function Jobs() {
       if (cancelled) return;
 
       const queueUrls = validProjects.flatMap((project) =>
-        project.queues.map((queue) => queue.url || '')
+        project.queues.map((queue) => queue.url || ''),
       );
 
       const jobsRemaining = (
@@ -275,13 +282,13 @@ export default function Jobs() {
             };
             const sqsClient = await getSqsClient();
             const result = await sqsClient.send(
-              new GetQueueAttributesCommand(params)
+              new GetQueueAttributesCommand(params),
             );
             return {
               [queueUrl]:
                 result.Attributes?.ApproximateNumberOfMessages || 'Unknown',
             };
-          })
+          }),
         )
       ).reduce((acc, curr) => ({ ...acc, ...curr }), {});
 
@@ -295,13 +302,13 @@ export default function Jobs() {
       // request must not block their initial load or subsequent refreshes.
       void getIndividualIdJobs();
       void getJobsRemaining().catch((e) =>
-        console.warn('Failed to refresh queue counts', e)
+        console.warn('Failed to refresh queue counts', e),
       );
     }
 
     function refreshProjects() {
       loadProjects(false).catch((e) =>
-        console.warn('Failed to refresh jobs', e)
+        console.warn('Failed to refresh jobs', e),
       );
     }
 
@@ -339,8 +346,8 @@ export default function Jobs() {
       displayProjects.map((project) => [
         project.organization.id,
         project.organization.name,
-      ])
-    ).entries()
+      ]),
+    ).entries(),
   ).map(([id, name]) => ({ id, name }));
 
   const filteredProjects = displayProjects.filter((project) => {
@@ -348,7 +355,7 @@ export default function Jobs() {
     const matchesOrganization =
       !organizationFilter || project.organization.id === organizationFilter;
     const matchesQueue = project.queues.some((queue) =>
-      (queue.tag || '').toLowerCase().includes(searchLower)
+      (queue.tag || '').toLowerCase().includes(searchLower),
     );
     const matchesSearch =
       searchLower === '' ||
@@ -375,7 +382,11 @@ export default function Jobs() {
     return 0;
   });
 
-  async function handleTakeJob(job: { queueId: string; projectId: string; tag?: string | null }) {
+  async function handleTakeJob(job: {
+    queueId: string;
+    projectId: string;
+    tag?: string | null;
+  }) {
     setTakingJob(true);
 
     if (job.tag === 'qc-review') {
@@ -397,16 +408,21 @@ export default function Jobs() {
     }
 
     const currentMembership = userProjectMembershipHook.data.find(
-      (membership) => membership.projectId === job.projectId
+      (membership) => membership.projectId === job.projectId,
     );
 
     if (!currentMembership) {
-      console.warn(`handleTakeJob: no membership found for project ${job.projectId}`);
+      console.warn(
+        `handleTakeJob: no membership found for project ${job.projectId}`,
+      );
       setTakingJob(false);
       return;
     }
 
-    userProjectMembershipHook.update({ id: currentMembership.id, queueId: job.queueId });
+    userProjectMembershipHook.update({
+      id: currentMembership.id,
+      queueId: job.queueId,
+    });
     navigate(`/surveys/${job.projectId}/annotate`);
 
     setTakingJob(false);
@@ -421,16 +437,18 @@ export default function Jobs() {
   }) {
     setTakingJob(true);
     try {
-      const res: any = await (client as any).mutations.claimIndividualIdTransect(
+      const res: any = await (
+        client as any
+      ).mutations.claimIndividualIdTransect(
         { jobId: job.jobId },
-        { retry: false }
+        { retry: false },
       );
       const result =
         typeof res?.data === 'string' ? JSON.parse(res.data) : res?.data;
       if (!result || result.none || !result.transectId) {
         alert(
           result?.message ||
-            'No transects are available right now. Please try again later.'
+            'No transects are available right now. Please try again later.',
         );
         setTakingJob(false);
         return;
@@ -462,7 +480,7 @@ export default function Jobs() {
           if (
             numJobsRemaining === 0 &&
             !userProjectMembershipHook.data?.find(
-              (membership) => membership.projectId === project.id
+              (membership) => membership.projectId === project.id,
             )?.isAdmin
           ) {
             return null;
@@ -470,7 +488,7 @@ export default function Jobs() {
 
           const paddingClass = compactMode ? 'p-1' : 'p-2';
           const gapClass = compactMode ? 'gap-1' : 'gap-2';
-          const rowGapClass = compactMode ? 'gap-1' : 'gap-3';
+          const rowGapClass = compactMode ? 'gap-1' : 'gap-4';
           const badgeFontSize = compactMode ? '11px' : '14px';
           const typeFontSize = compactMode ? '12px' : '14px';
 
@@ -478,18 +496,26 @@ export default function Jobs() {
             id: queue.id,
             rowData: [
               <div
-                className={`d-flex justify-content-between align-items-center ${paddingClass}`}
+                className={`flex items-center justify-between ${paddingClass}`}
                 key={queue.id}
               >
-                <div className={`d-flex flex-row ${rowGapClass} align-items-center`}>
+                <div className={`flex flex-row ${rowGapClass} items-center`}>
                   <div>
                     {compactMode ? (
                       <h6 className='mb-0'>
-                        {queue.tag === 'qc-review' || queue.tag === 'info-tags' || queue.tag === 'homography' ? queue.name : (queue.tag || project.name)}
+                        {queue.tag === 'qc-review' ||
+                        queue.tag === 'info-tags' ||
+                        queue.tag === 'homography'
+                          ? queue.name
+                          : queue.tag || project.name}
                       </h6>
                     ) : (
                       <h5 className='mb-0'>
-                        {queue.tag === 'qc-review' || queue.tag === 'info-tags' || queue.tag === 'homography' ? queue.name : (queue.tag || project.name)}
+                        {queue.tag === 'qc-review' ||
+                        queue.tag === 'info-tags' ||
+                        queue.tag === 'homography'
+                          ? queue.name
+                          : queue.tag || project.name}
                       </h5>
                     )}
                     {!compactMode && (
@@ -504,29 +530,38 @@ export default function Jobs() {
                         marginBottom: '0px',
                       }}
                     >
-                      Type: {queue.tag === 'qc-review' ? 'Review' : queue.tag === 'info-tags' ? 'Info Tags' : queue.tag === 'homography' ? 'Homography' : queue.name}
+                      Type:{' '}
+                      {queue.tag === 'qc-review'
+                        ? 'Review'
+                        : queue.tag === 'info-tags'
+                          ? 'Info Tags'
+                          : queue.tag === 'homography'
+                            ? 'Homography'
+                            : queue.name}
                     </p>
                   </div>
                   {/* Only admins receive hidden queues, so this is admin-only. */}
                   {queue.hidden && (
-                    <span
-                      className='badge bg-secondary'
+                    <Badge
+                      variant='secondary'
                       style={{ fontSize: badgeFontSize }}
                     >
                       Hidden
-                    </span>
+                    </Badge>
                   )}
                 </div>
                 <div
-                  className={`d-flex flex-row ${gapClass} align-items-center`}
+                  className={`flex flex-row ${gapClass} items-center`}
                   style={{ maxWidth: '600px', width: '100%' }}
                 >
                   <ProjectProgress
                     projectId={project.id}
                     onScanningChange={(isScanning) => {
-                      setScanningProjects(prev => {
+                      setScanningProjects((prev) => {
                         const next = new Set(prev);
-                        isScanning ? next.add(project.id) : next.delete(project.id);
+                        isScanning
+                          ? next.add(project.id)
+                          : next.delete(project.id);
                         return next;
                       });
                     }}
@@ -536,7 +571,10 @@ export default function Jobs() {
                     className='ms-1'
                     variant='primary'
                     disabled={
-                      takingJob || deletingJob || numJobsRemaining === 0 || scanningProjects.has(project.id)
+                      takingJob ||
+                      deletingJob ||
+                      numJobsRemaining === 0 ||
+                      scanningProjects.has(project.id)
                     }
                     onClick={() =>
                       handleTakeJob({
@@ -554,7 +592,7 @@ export default function Jobs() {
             ],
           };
         })
-        .filter((item) => item !== null)
+        .filter((item) => item !== null),
     ),
     ...individualIdJobs
       .filter((job) => {
@@ -572,17 +610,17 @@ export default function Jobs() {
       .map((job) => {
         const paddingClass = compactMode ? 'p-1' : 'p-2';
         const gapClass = compactMode ? 'gap-1' : 'gap-2';
-        const rowGapClass = compactMode ? 'gap-1' : 'gap-3';
+        const rowGapClass = compactMode ? 'gap-1' : 'gap-4';
         const typeFontSize = compactMode ? '12px' : '14px';
 
         return {
           id: job.jobId,
           rowData: [
             <div
-              className={`d-flex justify-content-between align-items-center ${paddingClass}`}
+              className={`flex items-center justify-between ${paddingClass}`}
               key={job.jobId}
             >
-              <div className={`d-flex flex-row ${rowGapClass} align-items-center`}>
+              <div className={`flex flex-row ${rowGapClass} items-center`}>
                 <div>
                   {compactMode ? (
                     <h6 className='mb-0'>{job.name}</h6>
@@ -606,10 +644,10 @@ export default function Jobs() {
                 </div>
               </div>
               <div
-                className={`d-flex flex-row ${gapClass} align-items-center`}
+                className={`flex flex-row ${gapClass} items-center`}
                 style={{ maxWidth: '600px', width: '100%' }}
               >
-                <div className='flex-grow-1'>
+                <div className='grow'>
                   <IndividualIdProgress projectId={job.projectId} />
                 </div>
                 <Button
@@ -640,86 +678,88 @@ export default function Jobs() {
         width: '100%',
         maxWidth: '1555px',
         marginTop: '16px',
-        marginBottom: '16px',
+        paddingBottom: '16px',
+        alignSelf: 'flex-start',
       }}
     >
       <Card>
-        <Card.Header className='d-flex flex-column flex-lg-row align-items-lg-center gap-3'>
-          <Card.Title className='mb-0 flex-shrink-0' style={{ whiteSpace: 'nowrap' }}>
-            <h4 className='mb-0'>Jobs Available</h4>
-          </Card.Title>
-          <div className='d-flex flex-column flex-lg-row gap-2 w-100 w-lg-auto ms-lg-auto justify-content-lg-end align-items-lg-center'>
-            <Form.Control
-              className='w-100'
-              type='text'
-              style={{
-                minWidth: 0,
-                width: '100%',
-                maxWidth: isMobile ? '100%' : '250px',
-              }}
-              placeholder='Search'
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Form.Select
-              className='w-100 w-lg-auto'
-              value={organizationFilter}
-              onChange={(e) => setOrganizationFilter(e.target.value)}
-              style={{
-                minWidth: 0,
-                width: '100%',
-                maxWidth: isMobile ? '100%' : '250px',
-              }}
+        <PageHeader title='Jobs Available'>
+          <Input
+            className='w-full'
+            type='text'
+            style={{
+              minWidth: 0,
+              width: '100%',
+              maxWidth: isMobile ? '100%' : '250px',
+            }}
+            placeholder='Search'
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <NativeSelect
+            className='w-full'
+            value={organizationFilter}
+            onChange={(e) => setOrganizationFilter(e.target.value)}
+            style={{
+              minWidth: 0,
+              width: '100%',
+              maxWidth: isMobile ? '100%' : '250px',
+            }}
+          >
+            <option value=''>All organisations</option>
+            {organizationOptions.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.name}
+              </option>
+            ))}
+          </NativeSelect>
+          <NativeSelect
+            className='w-full'
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{
+              minWidth: 0,
+              width: '100%',
+              maxWidth: isMobile ? '100%' : '250px',
+            }}
+          >
+            <option value='createdAt'>Created (newest first)</option>
+            <option value='createdAt-reverse'>Created (oldest first)</option>
+            <option value='name'>Name (A-Z)</option>
+            <option value='name-reverse'>Name (Z-A)</option>
+          </NativeSelect>
+          {!isMobile && (
+            <Button
+              variant='info'
+              size='icon'
+              className='flex-none'
+              onClick={() => setCompactMode(!compactMode)}
+              title={compactMode ? 'Expand view' : 'Compact view'}
             >
-              <option value=''>All organisations</option>
-              {organizationOptions.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name}
-                </option>
-              ))}
-            </Form.Select>
-            <Form.Select
-              className='w-100 w-lg-auto'
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              style={{
-                minWidth: 0,
-                width: '100%',
-                maxWidth: isMobile ? '100%' : '250px',
-              }}
-            >
-              <option value='createdAt'>Created (newest first)</option>
-              <option value='createdAt-reverse'>Created (oldest first)</option>
-              <option value='name'>Name (A-Z)</option>
-              <option value='name-reverse'>Name (Z-A)</option>
-            </Form.Select>
-            {!isMobile && (
-              <Button
-                variant='info'
-                onClick={() => setCompactMode(!compactMode)}
-                title={compactMode ? 'Expand view' : 'Compact view'}
-                style={{
-                  minWidth: 'fit-content',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-              </Button>
-            )}
-          </div>
-        </Card.Header>
-        <Card.Body className='overflow-x-auto'>
+              {compactMode ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+            </Button>
+          )}
+        </PageHeader>
+        <CardContent className='overflow-x-auto'>
           {isLoading ? (
             <Spinner />
           ) : (
-            <MyTable
-              tableData={tableData}
-              pagination={true}
-              itemsPerPage={5}
+            <DataTable
+              storageKey='jobs'
+              columns={columnsFromHeadings(
+                Array.from(
+                  { length: tableData[0]?.rowData.length ?? 1 },
+                  () => ({ content: '' }),
+                ),
+              )}
+              data={cellRows(tableData)}
+              getRowId={(row) => row.id}
+              pageSize={5}
+              hideHeader
               emptyMessage='No jobs available'
             />
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
     </div>
   );

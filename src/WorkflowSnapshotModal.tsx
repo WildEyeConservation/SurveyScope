@@ -1,12 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Modal } from 'react-bootstrap';
-import exportFromJSON from 'export-from-json';
-import { neutraliseCsvRows } from '../shared/csv';
-import MyTable from './Table';
+import DataTable from '@/components/DataTable';
+import { columnsFromHeadings } from '@/components/cellColumns';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
-  eventToContribution,
-  fetchAllWorkflowEvents,
-} from './workflowEvents';
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import exportFromJSON from 'export-from-json';
+import { DownloadIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { neutraliseCsvRows } from '../shared/csv';
+import { fetchWorkflowTotals } from './workflowEvents';
 import {
   buildWorkflowSections,
   localDateString,
@@ -26,12 +37,6 @@ interface Props {
   userName: (userId: string) => string;
 }
 
-/**
- * Recomputes the per-user tables for a time-of-day window, e.g. one morning
- * shift, by reading the raw task events rather than the daily buckets. The
- * window runs from the start time on the screen's "From" date to the end time
- * on its "To" date, in local time.
- */
 export default function WorkflowSnapshotModal({
   show,
   onHide,
@@ -69,8 +74,9 @@ export default function WorkflowSnapshotModal({
     try {
       const lower = new Date(`${startString}T${startTime}:00`);
       const upper = new Date(`${endString}T${endTime}:59.999`);
-      if (upper < lower) throw new Error('The end of the window is before its start.');
-      const events = await fetchAllWorkflowEvents(
+      if (upper < lower)
+        throw new Error('The end of the window is before its start.');
+      const totals = await fetchWorkflowTotals(
         client,
         {
           projectId,
@@ -78,136 +84,131 @@ export default function WorkflowSnapshotModal({
           startAt: lower.toISOString(),
           endAt: upper.toISOString(),
         },
-        setProgress
+        setProgress,
       );
-      setSections(buildWorkflowSections(events.map(eventToContribution), userName));
+      setSections(buildWorkflowSections(totals, userName));
     } catch (snapshotError) {
       setError(
         snapshotError instanceof Error
           ? snapshotError.message
-          : 'Failed to load the snapshot'
+          : 'Failed to load the snapshot',
       );
     } finally {
       setLoading(false);
     }
   }
 
-  const windowLabel = useMemo(
-    () =>
-      startString && endString
-        ? `${startString} ${startTime} to ${endString} ${endTime}`
-        : 'Set From and To dates on the statistics screen first.',
-    [startString, endString, startTime, endTime]
-  );
-
   function exportSnapshot() {
     if (!sections) return;
     sections.forEach((section) => {
       exportFromJSON({
         data: neutraliseCsvRows(sectionToCsvRows(section)),
-        fileName: `${projectLabel}_${section.label}_Snapshot_${startString}_${startTime}_${endString}_${endTime}`.replace(
-          /[\s:]/g,
-          '_'
-        ),
+        fileName:
+          `${projectLabel}_${section.label}_Snapshot_${startString}_${startTime}_${endString}_${endTime}`.replace(
+            /[\s:]/g,
+            '_',
+          ),
         exportType: exportFromJSON.types.csv,
       });
     });
   }
 
   return (
-    <Modal show={show} onHide={onHide} size='xl' backdrop='static'>
-      <Modal.Header closeButton>
-        <Modal.Title>Snapshot for {projectLabel}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        <p className='text-muted mb-3'>
-          Totals for a time-of-day window, in local time. Window: {windowLabel}
-        </p>
-        <div className='d-flex align-items-end gap-3 flex-wrap'>
-          <div>
-            <label htmlFor='snapshot-start-time' className='form-label mb-1'>
-              Start time on {startString ?? '—'}
-            </label>
-            <input
-              id='snapshot-start-time'
-              type='time'
-              className='form-control'
-              value={startTime}
-              onChange={(event) => setStartTime(event.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor='snapshot-end-time' className='form-label mb-1'>
-              End time on {endString ?? '—'}
-            </label>
-            <input
-              id='snapshot-end-time'
-              type='time'
-              className='form-control'
-              value={endTime}
-              onChange={(event) => setEndTime(event.target.value)}
-            />
-          </div>
-          <Button
-            variant='primary'
-            onClick={runSnapshot}
-            disabled={loading || !canRun || !startTime || !endTime}
-          >
-            {loading ? `Loading… ${progress} events` : 'Run snapshot'}
-          </Button>
-        </div>
-
-        {error && (
-          <Alert variant='danger' className='mt-3'>
-            {error}
-          </Alert>
-        )}
-
-        {sections?.length === 0 && (
-          <Alert variant='info' className='mt-3'>
-            No completions in this window.
-          </Alert>
-        )}
-
-        {sections?.map((section) => (
-          <div key={section.workflowType} className='mt-4'>
-            <h5 className='mb-2'>{section.label}</h5>
-            <div className='overflow-x-auto'>
-              <MyTable
-                tableHeadings={section.headings}
-                tableData={[
-                  ...section.rows.map((row) => ({
-                    id: row.id,
-                    rowData: row.cells,
-                  })),
-                  ...(section.footer
-                    ? [
-                        {
-                          id: `${section.workflowType}:__total`,
-                          rowData: section.footer.map((cell, index) => (
-                            <strong key={index}>{cell}</strong>
-                          )),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
+    <Dialog open={show} onOpenChange={(o) => !o && onHide()}>
+      <DialogContent size='xl' onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader closeButton>
+          <DialogTitle>Snapshot · {projectLabel}</DialogTitle>
+        </DialogHeader>
+        <DialogBody className='flex flex-col gap-4'>
+          {!startString || !endString ? (
+            <Alert variant='info'>
+              Pick a date range on the statistics page first.
+            </Alert>
+          ) : (
+            <div className='flex flex-wrap items-end gap-3'>
+              {(
+                [
+                  ['From', startString, startTime, setStartTime],
+                  ['To', endString, endTime, setEndTime],
+                ] as const
+              ).map(([label, date, time, setTime]) => (
+                <div key={label}>
+                  <Label htmlFor={`snapshot-${label}`} className='mb-1'>
+                    {label}
+                  </Label>
+                  <div className='flex'>
+                    <span className='flex items-center border border-r-0 border-white/30 bg-white/[0.07] px-3 tabular-nums'>
+                      {date}
+                    </span>
+                    <Input
+                      id={`snapshot-${label}`}
+                      type='time'
+                      className='w-36'
+                      value={time}
+                      onChange={(event) => setTime(event.target.value)}
+                    />
+                  </div>
+                </div>
+              ))}
+              <Button
+                variant='primary'
+                onClick={runSnapshot}
+                disabled={loading || !canRun || !startTime || !endTime}
+              >
+                {loading ? (
+                  <>
+                    <Spinner size='sm' />
+                    {progress.toLocaleString()} completions read
+                  </>
+                ) : (
+                  'Run snapshot'
+                )}
+              </Button>
+              <span className='basis-full text-xs text-muted-foreground'>
+                Dates come from the statistics page; pick the times of day here,
+                in local time.
+              </span>
             </div>
-          </div>
-        ))}
-      </Modal.Body>
-      <Modal.Footer>
-        <Button
-          variant='success'
-          onClick={exportSnapshot}
-          disabled={loading || !sections || sections.length === 0}
-        >
-          Export snapshot
-        </Button>
-        <Button variant='dark' onClick={onHide}>
-          Close
-        </Button>
-      </Modal.Footer>
-    </Modal>
+          )}
+
+          {error && <Alert variant='danger'>{error}</Alert>}
+
+          {sections?.length === 0 && (
+            <Alert variant='info'>No completions in this window.</Alert>
+          )}
+
+          {sections?.map((section) => (
+            <div key={section.workflowType}>
+              <div className='mb-2 font-semibold'>{section.label}</div>
+              <div className='overflow-x-auto'>
+                <DataTable
+                  storageKey={`workflow-snapshot-${section.workflowType}`}
+                  columns={columnsFromHeadings(section.headings)}
+                  data={section.rows.map((row) => ({
+                    id: row.id,
+                    cells: row.cells,
+                  }))}
+                  getRowId={(row) => row.id}
+                  footer={section.footer ?? undefined}
+                />
+              </div>
+            </div>
+          ))}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='ghost' className='mr-auto' onClick={onHide}>
+            Close
+          </Button>
+          <Button
+            variant='outline-primary'
+            onClick={exportSnapshot}
+            disabled={loading || !sections || sections.length === 0}
+          >
+            <DownloadIcon className='size-4' />
+            Export
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

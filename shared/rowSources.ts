@@ -57,6 +57,7 @@ export const ROW_SOURCES = {
       source: 'dict',
       oov: 'bool',
       obscured: 'bool',
+      outsideBoundary: 'bool',
       owner: 'dict',
       reviewedBy: 'dict',
       reviewCatId: 'dict',

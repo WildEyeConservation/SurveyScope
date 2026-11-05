@@ -1,13 +1,14 @@
-import { Card } from 'react-bootstrap';
+import { Card, CardContent } from '@/components/ui/card';
+import { useContext, useState } from 'react';
+import { GlobalContext, TestingContext } from '../Context';
 import OrganizationSelector from '../OrganizationSelector';
-import { useState, useContext } from 'react';
+import PageHeader from '../PageHeader';
 import { Tab, Tabs } from '../Tabs';
-import Surveys from './Surveys';
-import { TestingContext, GlobalContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
 import { useOptimisticUpdates } from '../useOptimisticUpdates';
-import Users from './Users';
 import Results from './Results';
+import Surveys from './Surveys';
+import Users from './Users';
 
 export default function Testing() {
   const { client } = useContext(GlobalContext)!;
@@ -29,7 +30,7 @@ export default function Testing() {
       }),
     {
       filter: { organizationId: { eq: organization.id } },
-    }
+    },
   );
 
   const { data: testPresets } = useOptimisticUpdates<
@@ -45,7 +46,7 @@ export default function Testing() {
     {
       filter: { organizationId: { eq: organization.id } },
     },
-    { staleTime: 5 * 60 * 1000 }
+    { staleTime: 5 * 60 * 1000 },
   );
 
   const membershipsHook = useOptimisticUpdates<
@@ -64,7 +65,7 @@ export default function Testing() {
     {
       compositeKey: (membership) =>
         `${membership.organizationId}:${membership.userId}`,
-    }
+    },
   );
   return (
     <TestingContext.Provider
@@ -80,22 +81,20 @@ export default function Testing() {
           width: '100%',
           maxWidth: '1555px',
           marginTop: '16px',
-          marginBottom: '16px',
+          paddingBottom: '16px',
+          alignSelf: 'flex-start',
         }}
       >
         <Card>
-          <Card.Header className='d-flex justify-content-between mb-0'>
-            <Card.Title className='mb-0'>
-              <h4 className='mb-0'>User Testing</h4>
-            </Card.Title>
+          <PageHeader title='User Testing'>
             <OrganizationSelector
               organization={organization}
               setOrganization={setOrganization}
             />
-          </Card.Header>
-          <Card.Body>
+          </PageHeader>
+          <CardContent>
             {organization.id && (
-              <Tabs defaultTab={0}>
+              <Tabs key={organization.id} defaultTab={0}>
                 <Tab label='Surveys'>
                   <Surveys />
                 </Tab>
@@ -107,7 +106,7 @@ export default function Testing() {
                 </Tab>
               </Tabs>
             )}
-          </Card.Body>
+          </CardContent>
         </Card>
       </div>
     </TestingContext.Provider>

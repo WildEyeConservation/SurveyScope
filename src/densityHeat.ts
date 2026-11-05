@@ -15,7 +15,7 @@ export const DEFAULT_HEAT_RADIUS_KM = 5;
 // A fixed ground radius, within pixel limits at the far zoom levels.
 export function heatRadiusExpression(
   radiusKm: number,
-  latitude: number
+  latitude: number,
 ): ExpressionSpecification {
   const pxPerMetreAtZoom0 =
     512 / (EARTH_CIRCUMFERENCE_M * Math.cos((latitude * Math.PI) / 180));
@@ -37,7 +37,7 @@ export function heatRadiusExpression(
 // Scales the kernel sums so the colour ramp spans the survey's own densities.
 export function heatIntensity(
   points: [number, number][],
-  radiusKm: number
+  radiusKm: number,
 ): number {
   if (points.length === 0 || radiusKm <= 0) return 1;
   const kx = METERS_PER_DEGREE_LNG * Math.cos((points[0][1] * Math.PI) / 180);

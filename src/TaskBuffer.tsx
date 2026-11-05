@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { UserContext } from './Context';
 import {
   insertBufferedTaskAfter,
@@ -44,7 +44,7 @@ interface TaskBufferProps<T extends TaskPayload> {
   beforeNext?: (
     task: T & { id: string },
     index: number,
-    context: { standbyReady: boolean }
+    context: { standbyReady: boolean },
   ) => Promise<BeforeNextDecision<T>>;
   /** Renders one buffered task. Receives the fetched task fields plus navigation props. */
   renderTask: (task: BufferedTaskProps<T>) => React.ReactNode;
@@ -71,9 +71,9 @@ export function TaskBuffer<T extends TaskPayload>({
   renderTask,
 }: TaskBufferProps<T>) {
   const [buffer, setBuffer] = useState<Array<T & { id: string }>>([]);
-  const [standbyBuffer, setStandbyBuffer] = useState<
-    Array<T & { id: string }>
-  >([]);
+  const [standbyBuffer, setStandbyBuffer] = useState<Array<T & { id: string }>>(
+    [],
+  );
   const [waitingCount, setWaitingCount] = useState<number>(0);
   const advancingRef = useRef(false);
   const { setJobsCompleted } = useContext(UserContext)!;
@@ -168,10 +168,9 @@ export function TaskBuffer<T extends TaskPayload>({
   }
 
   return (
-    <div className='w-100 h-100' style={{ position: 'relative' }}>
+    <div className='h-full w-full' style={{ position: 'relative' }}>
       {renderedEntries.map(({ entry, subsetIndex, isStandby }) => {
-        const isCurrent =
-          !isStandby && subsetIndex === index - subsetStart;
+        const isCurrent = !isStandby && subsetIndex === index - subsetStart;
         /*
         `inert` rather than aria-hidden. Clicking "Next Location" leaves DOM
         focus on that button, and a browser refuses to apply aria-hidden to an
@@ -191,7 +190,7 @@ export function TaskBuffer<T extends TaskPayload>({
         return (
           <div
             key={entry.id}
-            className='d-flex justify-content-center w-100 h-100'
+            className='flex h-full w-full justify-center'
             {...inertProps}
             style={{
               visibility: isCurrent ? 'visible' : 'hidden',
@@ -222,8 +221,8 @@ export function TaskBuffer<T extends TaskPayload>({
                               currentBuffer,
                               index,
                               decision.task,
-                              crypto.randomUUID()
-                            )
+                              crypto.randomUUID(),
+                            ),
                           );
                         } else if (
                           decision?.kind === 'promote-standby' &&
@@ -235,8 +234,8 @@ export function TaskBuffer<T extends TaskPayload>({
                               currentBuffer,
                               index,
                               currentHotStandby,
-                              decision.overrides
-                            )
+                              decision.overrides,
+                            ),
                           );
                           setStandbyBuffer((current) => current.slice(1));
                         }

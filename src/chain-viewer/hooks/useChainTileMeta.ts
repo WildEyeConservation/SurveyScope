@@ -1,7 +1,7 @@
 import { useContext, useEffect, useState } from 'react';
+import type { BoundaryStatus } from '../../../shared/boundaryStatus';
 import { GlobalContext } from '../../Context';
 import type { AnnotationImageMeta, Chain } from '../types';
-import type { BoundaryStatus } from '../../../shared/boundaryStatus';
 import {
   selectSourceKeyForImage,
   type ImageFileRow,
@@ -19,12 +19,12 @@ type ChainImageRow = {
 
 type GetChainImage = (
   input: { id: string },
-  options: { selectionSet: readonly string[] }
+  options: { selectionSet: readonly string[] },
 ) => Promise<{ data?: ChainImageRow | null }>;
 
 type ListImageFilesByImageId = (
   input: { imageId: string },
-  options: { selectionSet: readonly string[] }
+  options: { selectionSet: readonly string[] },
 ) => Promise<{ data?: ImageFileRow[] | null }>;
 
 /**
@@ -43,7 +43,7 @@ export function useChainTileMeta(chain: Chain | null) {
   useEffect(() => {
     if (!chain) return;
     const needed = chain.annotations.filter(
-      (a) => !metaByAnnotationId.has(a.id)
+      (a) => !metaByAnnotationId.has(a.id),
     );
     if (needed.length === 0) {
       setLoading(false);
@@ -61,7 +61,8 @@ export function useChainTileMeta(chain: Chain | null) {
       await Promise.all(
         uniqueImageIds.map(async (imageId) => {
           try {
-            const getImage = client.models.Image.get as unknown as GetChainImage;
+            const getImage = client.models.Image
+              .get as unknown as GetChainImage;
             const listImageFilesByImageId = client.models.ImageFile
               .imagesByimageId as unknown as ListImageFilesByImageId;
             const [imgResp, fileResp] = await Promise.all([
@@ -78,25 +79,28 @@ export function useChainTileMeta(chain: Chain | null) {
                     'camera.name',
                     'boundaryStatus',
                   ] as const,
-                }
+                },
               ),
               listImageFilesByImageId(
                 { imageId },
-                { selectionSet: ['key', 'path', 'type'] as const }
+                { selectionSet: ['key', 'path', 'type'] as const },
               ),
             ]);
             const image = imgResp?.data ?? null;
             imageById.set(imageId, image);
             sourceKeyById.set(
               imageId,
-              selectSourceKeyForImage(fileResp?.data ?? [], image?.originalPath)
+              selectSourceKeyForImage(
+                fileResp?.data ?? [],
+                image?.originalPath,
+              ),
             );
           } catch (err) {
             console.error('Failed to fetch chain tile meta', imageId, err);
             imageById.set(imageId, null);
             sourceKeyById.set(imageId, null);
           }
-        })
+        }),
       );
 
       if (cancelled) return;

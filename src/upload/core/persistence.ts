@@ -1,5 +1,9 @@
 import localforage from 'localforage';
-import type { CreatedImage, ImageData, UploadedFiles } from '../../types/ImageData';
+import type {
+  CreatedImage,
+  ImageData,
+  UploadedFiles,
+} from '../../types/ImageData';
 import type { UploadMetadata } from './types';
 
 // Keep store names stable so interrupted uploads remain resumable.
@@ -92,7 +96,9 @@ export class UploadStateStore {
   }
 
   async getMetadata(): Promise<UploadMetadata | null> {
-    return (await metadataStore.getItem(this.projectId)) as UploadMetadata | null;
+    return (await metadataStore.getItem(
+      this.projectId,
+    )) as UploadMetadata | null;
   }
 
   /** Forces all pending debounced writes out; call before finalize/pause. */

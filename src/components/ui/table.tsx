@@ -1,0 +1,143 @@
+import { cn } from '@/lib/utils';
+import * as React from 'react';
+
+const Table = React.forwardRef(function Table(
+  {
+    className,
+    striped = false,
+    hover = false,
+    bordered = false,
+    borderless = false,
+    size,
+    variant,
+    responsive = false,
+    ...props
+  }: React.ComponentProps<'table'> & {
+    striped?: boolean;
+    hover?: boolean;
+    bordered?: boolean;
+    borderless?: boolean;
+    size?: 'sm';
+    variant?: 'dark';
+    responsive?: boolean;
+  },
+  ref: React.ForwardedRef<React.ComponentRef<'table'>>,
+) {
+  const table = (
+    <table
+      ref={ref}
+      data-slot='table'
+      data-striped={striped || undefined}
+      data-hover={hover || undefined}
+      data-bordered={bordered || undefined}
+      data-borderless={borderless || undefined}
+      data-size={size}
+      data-variant={variant}
+      className={cn(
+        'mb-4 w-full caption-bottom border-collapse align-top text-sm text-white',
+        className,
+      )}
+      {...props}
+    />
+  );
+  if (!responsive) return table;
+  return (
+    <div data-slot='table-container' className='w-full overflow-x-auto'>
+      {table}
+    </div>
+  );
+});
+
+const TableHeader = React.forwardRef(function TableHeader(
+  { className, ...props }: React.ComponentProps<'thead'>,
+  ref: React.ForwardedRef<React.ComponentRef<'thead'>>,
+) {
+  return (
+    <thead
+      data-slot='table-header'
+      className={cn('align-bottom', className)}
+      ref={ref}
+      {...props}
+    />
+  );
+});
+
+const TableBody = React.forwardRef(function TableBody(
+  { className, ...props }: React.ComponentProps<'tbody'>,
+  ref: React.ForwardedRef<React.ComponentRef<'tbody'>>,
+) {
+  return (
+    <tbody data-slot='table-body' className={className} ref={ref} {...props} />
+  );
+});
+
+const TableFooter = React.forwardRef(function TableFooter(
+  { className, ...props }: React.ComponentProps<'tfoot'>,
+  ref: React.ForwardedRef<React.ComponentRef<'tfoot'>>,
+) {
+  return (
+    <tfoot
+      data-slot='table-footer'
+      className={className}
+      ref={ref}
+      {...props}
+    />
+  );
+});
+
+const TableRow = React.forwardRef(function TableRow(
+  { className, ...props }: React.ComponentProps<'tr'>,
+  ref: React.ForwardedRef<React.ComponentRef<'tr'>>,
+) {
+  return (
+    <tr data-slot='table-row' className={className} ref={ref} {...props} />
+  );
+});
+
+const TableHead = React.forwardRef(function TableHead(
+  { className, ...props }: React.ComponentProps<'th'>,
+  ref: React.ForwardedRef<React.ComponentRef<'th'>>,
+) {
+  return (
+    <th
+      data-slot='table-head'
+      className={cn('text-left font-bold', className)}
+      ref={ref}
+      {...props}
+    />
+  );
+});
+
+const TableCell = React.forwardRef(function TableCell(
+  { className, ...props }: React.ComponentProps<'td'>,
+  ref: React.ForwardedRef<React.ComponentRef<'td'>>,
+) {
+  return (
+    <td data-slot='table-cell' className={className} ref={ref} {...props} />
+  );
+});
+
+const TableCaption = React.forwardRef(function TableCaption(
+  { className, ...props }: React.ComponentProps<'caption'>,
+  ref: React.ForwardedRef<React.ComponentRef<'caption'>>,
+) {
+  return (
+    <caption
+      data-slot='table-caption'
+      className={cn('py-2 text-left text-muted-foreground', className)}
+      ref={ref}
+      {...props}
+    />
+  );
+});
+
+export {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+};

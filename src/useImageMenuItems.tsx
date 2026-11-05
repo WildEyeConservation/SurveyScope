@@ -1,5 +1,4 @@
 import { useContext, useMemo } from 'react';
-import { imageDownloadUrl } from './storage/api';
 import {
   ImageContext,
   ManagementContext,
@@ -7,6 +6,7 @@ import {
   UserContext,
 } from './Context';
 import type { AnnotationImage, AnnotationLocation } from './annotationTypes';
+import { imageDownloadUrl } from './storage/api';
 
 /** A single entry in the image-level context menu, rendered as a React
  * overlay by the MapLibre viewers. */
@@ -45,7 +45,7 @@ export default function useImageMenuItems({
   const { user } = useContext(UserContext)!;
 
   const belongsToCurrentProject = projectMemberships?.find(
-    (pm) => pm.userId == user.userId && pm.projectId == project.id
+    (pm) => pm.userId == user.userId && pm.projectId == project.id,
   );
 
   // Legacy projects stored the full key; newer ones prefix org/project ids,
@@ -76,7 +76,7 @@ export default function useImageMenuItems({
             navigator.clipboard
               .writeText(displaySource ?? sourceKey ?? '')
               .catch((err) =>
-                console.error('Failed to copy to clipboard:', err)
+                console.error('Failed to copy to clipboard:', err),
               );
           },
         },
@@ -108,7 +108,7 @@ export default function useImageMenuItems({
               window.URL.revokeObjectURL(objectUrl);
             });
           },
-        }
+        },
       );
 
       if (!isTest) {
@@ -120,7 +120,7 @@ export default function useImageMenuItems({
               if (!hasPrevNeighbour) return;
               const newUrl = window.location.href.replace(
                 /^(.*?\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}).*$/,
-                `$1/image/${prevImages?.[0]?.image?.id}/${location?.annotationSetId}`
+                `$1/image/${prevImages?.[0]?.image?.id}/${location?.annotationSetId}`,
               );
               window.open(newUrl, '_blank');
             },
@@ -132,7 +132,7 @@ export default function useImageMenuItems({
               if (!hasNextNeighbour) return;
               const newUrl = window.location.href.replace(
                 /^(.*?\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}).*$/,
-                `$1/image/${nextImages?.[0]?.image?.id}/${location?.annotationSetId}`
+                `$1/image/${nextImages?.[0]?.image?.id}/${location?.annotationSetId}`,
               );
               window.open(newUrl, '_blank');
             },
@@ -151,12 +151,12 @@ export default function useImageMenuItems({
               // now replace the last part of the url with the location id
               const newUrl = url.replace(
                 /\/[^/]+\/?$/,
-                `/location/${location?.id}/${location?.annotationSetId}`
+                `/location/${location?.id}/${location?.annotationSetId}`,
               );
               navigator.clipboard
                 .writeText(newUrl)
                 .catch((err) =>
-                  console.error('Failed to copy to clipboard:', err)
+                  console.error('Failed to copy to clipboard:', err),
                 );
             },
           },
@@ -167,12 +167,12 @@ export default function useImageMenuItems({
               // now replace the last part of the url with the location id
               const newUrl = url.replace(
                 /\/[^/]+\/?$/,
-                `/image/${image.id}/${location?.annotationSetId}`
+                `/image/${image.id}/${location?.annotationSetId}`,
               );
               navigator.clipboard
                 .writeText(newUrl)
                 .catch((err) =>
-                  console.error('Failed to copy to clipboard:', err)
+                  console.error('Failed to copy to clipboard:', err),
                 );
             },
           },
@@ -209,10 +209,10 @@ export default function useImageMenuItems({
               navigator.clipboard
                 .writeText(gpsText)
                 .catch((err) =>
-                  console.error('Failed to copy to clipboard:', err)
+                  console.error('Failed to copy to clipboard:', err),
                 );
             },
-          }
+          },
         );
       }
     }

@@ -1,3 +1,5 @@
+import type { TileContext } from '../../StorageLayer';
+import { preparedTileKey } from './preparedTileCache';
 import {
   annotationTiles,
   baseTiles,
@@ -5,8 +7,6 @@ import {
   type Tile,
   type TilePoint,
 } from './tiles';
-import type { TileContext } from '../../StorageLayer';
-import { preparedTileKey } from './preparedTileCache';
 
 export interface TilePreloadPlan {
   context: TileContext;
@@ -27,15 +27,15 @@ export async function preloadTiles(
     context: TileContext,
     sourceKey: string,
     tile: Tile,
-    maxZ: number
+    maxZ: number,
   ) => Promise<unknown>,
-  cancelled: () => boolean
+  cancelled: () => boolean,
 ): Promise<void> {
   const jobs = new Map<string, PreloadJob>();
   const add = (job: PreloadJob) => {
     jobs.set(
       preparedTileKey(job.context, job.sourceKey, job.tile, job.maxZ),
-      job
+      job,
     );
   };
   const queues = plans.map(({ context, sourceKey, points }) => {

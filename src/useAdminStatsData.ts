@@ -1,10 +1,10 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { DateTime } from 'luxon';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { AdminStatsPayload, StatCounts } from '../shared/adminStats';
+import type { Schema } from './amplify/client-schema';
+import { useUsers } from './apiInterface';
 import { GlobalContext } from './Context';
 import { fetchAllPaginatedResults } from './utils';
-import { useUsers } from './apiInterface';
-import type { Schema } from './amplify/client-schema';
-import type { AdminStatsPayload, StatCounts } from '../shared/adminStats';
 
 export type MonthKey = string; // yyyy-LL
 
@@ -32,6 +32,7 @@ interface BreakdownCounts {
 export interface ProjectBreakdownMetric {
   projectId: string;
   projectName: string;
+  createdAt: string | null;
   totals: BreakdownCounts;
   thisMonth: BreakdownCounts;
 }
@@ -73,9 +74,16 @@ interface Loaded {
   stats: AdminStatsPayload;
 }
 
-function buildMonthKeys(monthCount: number, now: DateTime): MonthKey[] {
-  const start = now.minus({ months: monthCount - 1 }).startOf('month');
-  return Array.from({ length: monthCount }, (_, i) =>
+export interface MonthRange {
+  from: MonthKey;
+  to: MonthKey;
+}
+
+function buildMonthKeys({ from, to }: MonthRange): MonthKey[] {
+  const start = DateTime.fromFormat(from, 'yyyy-LL', { zone: 'utc' });
+  const end = DateTime.fromFormat(to, 'yyyy-LL', { zone: 'utc' });
+  const count = Math.max(Math.round(end.diff(start, 'months').months) + 1, 1);
+  return Array.from({ length: count }, (_, i) =>
     start.plus({ months: i }).toFormat('yyyy-LL'),
   );
 }
@@ -122,7 +130,7 @@ const imageCountOf = (project: Project) =>
     0,
   );
 
-export function useAdminStatsData(monthCount: number): AdminStatsData {
+export function useAdminStatsData(range: MonthRange): AdminStatsData {
   const { client } = useContext(GlobalContext)!;
   const { users: cognitoUsers } = useUsers();
   const [loading, setLoading] = useState(false);
@@ -132,8 +140,9 @@ export function useAdminStatsData(monthCount: number): AdminStatsData {
 
   const nowRef = useRef(DateTime.utc());
   const months = useMemo(
-    () => buildMonthKeys(monthCount, nowRef.current),
-    [monthCount],
+    () => buildMonthKeys(range),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [range.from, range.to],
   );
   const thisMonthKey = nowRef.current.toFormat('yyyy-LL');
 
@@ -232,6 +241,7 @@ export function useAdminStatsData(monthCount: number): AdminStatsData {
     const projectRow = (p: Project): ProjectBreakdownMetric => ({
       projectId: p.id,
       projectName: p.name,
+      createdAt: p.createdAt ?? null,
       totals: {
         surveys: 1,
         images: imageCountOf(p),

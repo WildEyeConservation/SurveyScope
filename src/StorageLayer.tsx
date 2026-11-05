@@ -6,10 +6,10 @@ import {
   type TileCoordinate,
 } from '../shared/imageTiles';
 import {
-  storageOperation,
   GENERATE_TILE,
   SIGN_TILES,
   SIGN_TILE_PACK,
+  storageOperation,
 } from './storage/api';
 import { loadAuthorizedTile } from './storage/tileLoader';
 import {
@@ -17,6 +17,17 @@ import {
   timed,
   type TileRequestTiming,
 } from './storage/tileLoadStats';
+import {
+  TilePackRegistry,
+  loadPackTile,
+  openSignedTilePack,
+} from './storage/tilePackSource';
+import {
+  TileUrlBatcher,
+  tileImageKey,
+  type SignedTileBatch,
+  type TileContext,
+} from './storage/tileUrlBatcher';
 
 const forTask = (context: TileContext, record: (taskId: string) => void) => {
   if (context.taskId) record(context.taskId);
@@ -36,17 +47,6 @@ function packReporter(taskId: string) {
   }
   return reporter;
 }
-import {
-  loadPackTile,
-  openSignedTilePack,
-  TilePackRegistry,
-} from './storage/tilePackSource';
-import {
-  TileUrlBatcher,
-  tileImageKey,
-  type TileContext,
-  type SignedTileBatch,
-} from './storage/tileUrlBatcher';
 
 export type { TileContext } from './storage/tileUrlBatcher';
 
@@ -75,10 +75,10 @@ const urls = new TileUrlBatcher((context, sourceKey, tiles) =>
           sourceKey,
           tiles: JSON.stringify(tiles),
         },
-        'signImageTiles'
+        'signImageTiles',
       ),
-    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms, true))
-  )
+    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms, true)),
+  ),
 );
 
 // Only a change of user rejects in-flight tiles; token refreshes must not.
@@ -139,7 +139,7 @@ export function imageTileContext(
     height: number;
     sharedImageId?: string;
   },
-  taskId?: string
+  taskId?: string,
 ): TileContext {
   return {
     imageId: image.id,
@@ -168,7 +168,7 @@ const generationQueues = new Map<string, PendingTile[]>();
 async function flushGeneration(
   batch: PendingTile[],
   sourceKey: string,
-  context: TileContext
+  context: TileContext,
 ) {
   for (
     let offset = 0;
@@ -189,12 +189,12 @@ async function flushGeneration(
               rows: chunk.map((t) => t.row),
               cols: chunk.map((t) => t.col),
             },
-            'generateTile'
+            'generateTile',
           ),
         (ms) =>
           forTask(context, (id) =>
-            tileLoadStats.generate(id, ms, chunk.length)
-          )
+            tileLoadStats.generate(id, ms, chunk.length),
+          ),
       );
       chunk.forEach((entry, i) => {
         if (result[i]) entry.resolve(base64ToBlob(result[i]));
@@ -210,7 +210,7 @@ function generateTile(
   sourceKey: string,
   context: TileContext,
   tile: TileCoordinate,
-  scope: string
+  scope: string,
 ): Promise<Blob> {
   const key = tileImageKey(scope, context, sourceKey);
   return new Promise((resolve, reject) => {
@@ -235,7 +235,7 @@ const openPack = (scope: string, context: TileContext, sourceKey: string) =>
     openSignedTilePack(() => signTilePack(context, sourceKey), context, {
       onRequest: (timing) =>
         forTask(context, (id) => tileLoadStats.request(id, 'pack', timing)),
-    })
+    }),
   );
 
 export async function primeImageTiles(sourceKey: string, context: TileContext) {
@@ -254,11 +254,11 @@ function signTilePack(context: TileContext, sourceKey: string) {
           sharedImageId: context.sharedImageId,
           sourceKey,
         },
-        'signImageTilePack'
+        'signImageTilePack',
       ),
-    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms))
+    (ms) => forTask(context, (id) => tileLoadStats.sign(id, ms)),
   ).then((signed) =>
-    signed.url ? { url: signed.url, expiresAt: signed.expiresAt } : null
+    signed.url ? { url: signed.url, expiresAt: signed.expiresAt } : null,
   );
 }
 
@@ -267,14 +267,15 @@ async function fetchLegacyTile(taskId: string | undefined, url: string) {
   const response = await fetch(url, { cache: 'no-store' });
   const ttfbMs = performance.now() - sentAt;
   const body = response.ok ? await response.arrayBuffer() : null;
-  if (taskId) tileLoadStats.request(taskId, 'legacy', {
-    kind: 'tile',
-    queueMs: 0,
-    ttfbMs,
-    totalMs: performance.now() - sentAt,
-    bytes: body?.byteLength ?? 0,
-    status: response.status,
-  });
+  if (taskId)
+    tileLoadStats.request(taskId, 'legacy', {
+      kind: 'tile',
+      queueMs: 0,
+      ttfbMs,
+      totalMs: performance.now() - sentAt,
+      bytes: body?.byteLength ?? 0,
+      status: response.status,
+    });
   if (!body) return response;
   return new Response(body, {
     status: response.status,
@@ -288,7 +289,7 @@ const blobsInFlight = new Map<string, Promise<Blob>>();
 
 export async function getTileBlob(
   path: string,
-  context: TileContext
+  context: TileContext,
 ): Promise<Blob> {
   const match = TILE_PATH.exec(path);
   if (!match || !context.imageId) {

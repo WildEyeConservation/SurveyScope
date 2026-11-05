@@ -4,7 +4,7 @@ import { SignJWT, jwtVerify } from 'jose';
 export const createToken = async (
   payload: any,
   expiration: Date,
-  secret: string
+  secret: string,
 ) => {
   const s = new TextEncoder().encode(secret);
 

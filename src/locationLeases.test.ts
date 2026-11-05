@@ -1,5 +1,5 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import { createLocationLeases } from './locationLeases';
 
 test('skips a duplicate while leased and serves a redelivery after the lease', () => {

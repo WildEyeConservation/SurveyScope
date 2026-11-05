@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useCallback,
   useContext,
@@ -6,65 +7,58 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import ChangeCategoryModal from '../ChangeCategoryModal';
 import { GlobalContext, ProjectContext } from '../Context';
+import { imageTileContext } from '../StorageLayer';
 import { recordWorkflowTask } from '../recordWorkflowTask';
-import { useActiveTimeTracker } from '../useActiveTimeTracker';
 import type {
   AnnotationType,
+  CategoryType,
   ImageNeighbourType,
   ImageType,
 } from '../schemaTypes';
+import { useActiveTimeTracker } from '../useActiveTimeTracker';
+import { IndividualIdMapPair } from './IndividualIdMapPair';
+import { DeleteAnnotationDialog } from './components/DeleteAnnotationDialog';
+import { LinkAnnotationDialog } from './components/LinkAnnotationDialog';
+import { LoadingCard } from './components/LoadingCard';
+import { NavigateAwayDialog } from './components/NavigateAwayDialog';
+import { PairCompleteDialog } from './components/PairCompleteDialog';
+import { ProgressBar } from './components/ProgressBar';
+import { ReunionDialog } from './components/ReunionDialog';
+import { SplitChainDialog } from './components/SplitChainDialog';
+import { TransectCompleteDialog } from './components/TransectCompleteDialog';
+import { makePairKey, usePairWorkingState } from './hooks/usePairWorkingState';
 import { useTransectData, type TransectData } from './hooks/useTransectData';
-import {
-  makePairKey,
-  usePairWorkingState,
-} from './hooks/usePairWorkingState';
-import { buildMatchCandidates } from './utils/munkres';
-import { buildNeighbourTransforms } from './utils/transforms';
-import { evaluatePairCompletion } from './utils/completion';
-import { isOov } from './utils/identity';
-import { buildLanes, filterLanesToAttention } from './utils/lanes';
+import type {
+  MatchCandidate,
+  NeighbourPairWithMeta,
+  PairCompletionState,
+} from './types';
 import {
   buildChainSplitPlan,
   findDuplicateSameImageChainAnnotationIds,
   findSameImageAnnotationConflicts,
   type ChainSplitPlan,
 } from './utils/chains';
-import {
-  findReunions,
-  type ReunionCandidate,
-} from './utils/reunionSearch';
-import type {
-  MatchCandidate,
-  NeighbourPairWithMeta,
-  PairCompletionState,
-} from './types';
-import { IndividualIdMapPair } from './IndividualIdMapPair';
-import { ProgressBar } from './components/ProgressBar';
-import { LoadingCard } from './components/LoadingCard';
-import { NavigateAwayDialog } from './components/NavigateAwayDialog';
-import { PairCompleteDialog } from './components/PairCompleteDialog';
-import { ReunionDialog } from './components/ReunionDialog';
-import { TransectCompleteDialog } from './components/TransectCompleteDialog';
-import { LinkAnnotationDialog } from './components/LinkAnnotationDialog';
-import { DeleteAnnotationDialog } from './components/DeleteAnnotationDialog';
-import { SplitChainDialog } from './components/SplitChainDialog';
-import { imageTileContext } from '../StorageLayer';
-import { getZoomRingTile } from './utils/zoomRingTiles';
-import { pairTilePoints } from './utils/tiles';
+import { evaluatePairCompletion } from './utils/completion';
+import { completionNavigationTarget } from './utils/completionNavigation';
+import { isOov } from './utils/identity';
+import { isOlder } from './utils/imageAge';
+import { imageSourceQuery } from './utils/imageSource';
+import { buildLanes, filterLanesToAttention } from './utils/lanes';
+import { buildMatchCandidates } from './utils/munkres';
+import { predictAcceptedPairViews } from './utils/predictAcceptedPairViews';
 import {
   preloadPairIndices,
   serializePreloadTargets,
   type ZoomRingPreloadTarget,
 } from './utils/preloadTargets';
 import { preloadTiles, type TilePreloadPlan } from './utils/preloadTiles';
-import { imageSourceQuery } from './utils/imageSource';
-import { isOlder } from './utils/imageAge';
-import { predictAcceptedPairViews } from './utils/predictAcceptedPairViews';
-import { completionNavigationTarget } from './utils/completionNavigation';
-import ChangeCategoryModal from '../ChangeCategoryModal';
-import type { CategoryType } from '../schemaTypes';
+import { findReunions, type ReunionCandidate } from './utils/reunionSearch';
+import { pairTilePoints } from './utils/tiles';
+import { buildNeighbourTransforms } from './utils/transforms';
+import { getZoomRingTile } from './utils/zoomRingTiles';
 
 /**
  * BFS hop budget for reunion search. We walk the neighbour graph this far
@@ -101,7 +95,7 @@ const MAX_WAITING_MS = 10 * 60 * 1000;
 /** Group annotations by imageId — used to keep `annotationsByImage` in
  * sync with `annotations` whenever we mutate the transect cache. */
 function indexByImage(
-  annotations: AnnotationType[]
+  annotations: AnnotationType[],
 ): Record<string, AnnotationType[]> {
   const out: Record<string, AnnotationType[]> = {};
   for (const a of annotations) (out[a.imageId] ??= []).push(a);
@@ -116,7 +110,7 @@ function indexByImage(
  */
 function buildChainIdsFor(
   annotations: AnnotationType[],
-  annotationId: string
+  annotationId: string,
 ): string[] {
   const ids = new Set<string>([annotationId]);
   const target = annotations.find((a) => a.id === annotationId);
@@ -131,14 +125,16 @@ function buildChainIdsFor(
   return Array.from(ids);
 }
 
-function annotationSignature(annotations: AnnotationType[] | undefined): string {
+function annotationSignature(
+  annotations: AnnotationType[] | undefined,
+): string {
   if (!annotations?.length) return '';
   return annotations
     .map(
       (a) =>
         `${a.id}:${a.categoryId}:${a.x}:${a.y}:${a.objectId ?? ''}:${
           a.obscured ? 1 : 0
-        }:${isOov(a) ? 1 : 0}`
+        }:${isOov(a) ? 1 : 0}`,
     )
     .join('|');
 }
@@ -219,7 +215,7 @@ export function IndividualIdHarness({
   const [leniency, setLeniency] = useState<number>(() =>
     typeof leniencyProp === 'number' && leniencyProp >= 0
       ? leniencyProp
-      : DEFAULT_LENIENCY
+      : DEFAULT_LENIENCY,
   );
 
   // Kept in a ref so the Phase-6 completion detector can fire it from an
@@ -259,17 +255,17 @@ export function IndividualIdHarness({
             (q.queryKey[0] === 'individual-id-transect' ||
               q.queryKey[0] === 'individual-id-chain'),
         },
-        (old) => (old ? mutate(old) : old)
+        (old) => (old ? mutate(old) : old),
       );
     },
-    [queryClient]
+    [queryClient],
   );
 
   // Local annotations cache: starts as the harness load, then mutates
   // optimistically when the user accepts a match. We refetch from React Query
   // on a debounce afterwards.
   const [localAnnotations, setLocalAnnotations] = useState<AnnotationType[]>(
-    []
+    [],
   );
   useEffect(() => {
     if (transect.data?.annotations)
@@ -379,7 +375,7 @@ export function IndividualIdHarness({
   const synthesiseReunionPair = useCallback(
     (
       c: ReunionCandidate,
-      imagesById: Record<string, ImageType>
+      imagesById: Record<string, ImageType>,
     ): NeighbourPairWithMeta | null => {
       const imageA = imagesById[c.imageAId];
       const imageB = imagesById[c.imageBId];
@@ -400,7 +396,7 @@ export function IndividualIdHarness({
         } as unknown as ImageNeighbourType,
       };
     },
-    []
+    [],
   );
 
   // Chain-review mode: continuously recompute reunion candidates from the
@@ -448,8 +444,8 @@ export function IndividualIdHarness({
     () =>
       chainObjectId
         ? [...directPairs, ...chainSyntheticPairs]
-        : reunionMode?.pairs ?? directPairs,
-    [chainObjectId, directPairs, chainSyntheticPairs, reunionMode]
+        : (reunionMode?.pairs ?? directPairs),
+    [chainObjectId, directPairs, chainSyntheticPairs, reunionMode],
   );
 
   // ---- Build all pair-candidate lists in display order ----
@@ -523,7 +519,7 @@ export function IndividualIdHarness({
   // cameras. Single camera with no overlaps → one row.
   const lanes = useMemo(
     () => buildLanes(pairs, transect.data?.cameraNamesById ?? {}),
-    [pairs, transect.data?.cameraNamesById]
+    [pairs, transect.data?.cameraNamesById],
   );
 
   // ---- Current pair index + navigation guards ----
@@ -567,7 +563,7 @@ export function IndividualIdHarness({
     if (tAnns && tAnns.length > 0 && localAnnotations.length === 0) return;
     initialisedRef.current = true;
     const firstIncomplete = pairViews.findIndex(
-      (v) => v.completion.status === 'incomplete'
+      (v) => v.completion.status === 'incomplete',
     );
     setCurrentIndex(Math.max(0, firstIncomplete));
   }, [pairViews, transect.data?.annotations, localAnnotations.length]);
@@ -601,7 +597,7 @@ export function IndividualIdHarness({
       return;
     }
     const anyIncomplete = pairViews.some(
-      (v) => v.completion.status === 'incomplete'
+      (v) => v.completion.status === 'incomplete',
     );
     if (anyIncomplete) return;
 
@@ -649,7 +645,7 @@ export function IndividualIdHarness({
       const pending = new Set(
         merged
           .filter((m) => !m.informational && m.status !== 'accepted')
-          .map((m) => m.pairKey)
+          .map((m) => m.pairKey),
       );
       const reviewKey = `${p.image1Id}|${p.image2Id}`;
       const seen = reviewedReunionsRef.current.get(reviewKey);
@@ -719,9 +715,7 @@ export function IndividualIdHarness({
   useEffect(() => {
     if (!visibleLanes.length) return;
     if (visibleLanes[activeLane]?.entries.includes(currentIndex)) return;
-    const li = visibleLanes.findIndex((l) =>
-      l.entries.includes(currentIndex)
-    );
+    const li = visibleLanes.findIndex((l) => l.entries.includes(currentIndex));
     setActiveLane(li >= 0 ? li : 0);
   }, [currentIndex, visibleLanes, activeLane]);
 
@@ -741,8 +735,7 @@ export function IndividualIdHarness({
         return;
       }
       const here = pairViews[currentIndex];
-      const stillHasWork =
-        here && here.completion.status === 'incomplete';
+      const stillHasWork = here && here.completion.status === 'incomplete';
       if (stillHasWork) {
         setNavAway({ show: true, target, direction, lane });
       } else {
@@ -750,7 +743,7 @@ export function IndividualIdHarness({
         setActiveLane(lane);
       }
     },
-    [pairViews, currentIndex]
+    [pairViews, currentIndex],
   );
 
   // Prev/next arrows walk the active lane's entries, not the global flat
@@ -766,10 +759,10 @@ export function IndividualIdHarness({
       requestPair(
         lane.entries[next],
         delta === 1 ? 'next' : 'prev',
-        activeLane
+        activeLane,
       );
     },
-    [visibleLanes, activeLane, currentIndex, requestPair]
+    [visibleLanes, activeLane, currentIndex, requestPair],
   );
 
   const confirmNavAway = () => {
@@ -792,13 +785,13 @@ export function IndividualIdHarness({
       const laneIndex = lanes.findIndex((l) => l.entries.includes(pairIndex));
       return laneIndex >= 0 ? laneIndex : activeLane;
     },
-    [lanes, activeLane]
+    [lanes, activeLane],
   );
 
   const completeNavigationTarget = useMemo(
     () =>
       completionNavigationTarget(pairViews, lanes, activeLane, currentIndex),
-    [pairViews, lanes, activeLane, currentIndex]
+    [pairViews, lanes, activeLane, currentIndex],
   );
 
   // Pair views as if the current proposals were accepted, for preloading.
@@ -823,7 +816,7 @@ export function IndividualIdHarness({
       leniency,
       categoryId,
       working.mergeCandidates,
-    ]
+    ],
   );
   const predictedNavigationTarget = useMemo(
     () =>
@@ -831,9 +824,9 @@ export function IndividualIdHarness({
         predictedPairViews,
         lanes,
         activeLane,
-        currentIndex
+        currentIndex,
       ),
-    [predictedPairViews, lanes, activeLane, currentIndex]
+    [predictedPairViews, lanes, activeLane, currentIndex],
   );
 
   // Serialized so accepts and refetches do not restart an unchanged preload.
@@ -841,7 +834,7 @@ export function IndividualIdHarness({
     const indices = preloadPairIndices(
       visibleLanes[activeLane]?.entries ?? [],
       currentIndex,
-      completeNavigationTarget?.target
+      completeNavigationTarget?.target,
     );
     const selections: Array<{ index: number; view: PairView }> = [];
     if (predictedNavigationTarget) {
@@ -861,7 +854,7 @@ export function IndividualIdHarness({
       for (const side of ['A', 'B'] as const) {
         const image = side === 'A' ? pair.imageA : pair.imageB;
         const foreign = (annotationsByImage[image.id] ?? []).filter(
-          (a) => a.categoryId !== categoryId && !isOov(a)
+          (a) => a.categoryId !== categoryId && !isOov(a),
         );
         targets.push({
           image,
@@ -892,7 +885,7 @@ export function IndividualIdHarness({
           async ({ image, points }): Promise<TilePreloadPlan | null> => {
             try {
               const sourceKey = await queryClient.fetchQuery(
-                imageSourceQuery(client, image)
+                imageSourceQuery(client, image),
               );
               if (!sourceKey || cancelled) return null;
               return {
@@ -903,12 +896,12 @@ export function IndividualIdHarness({
             } catch {
               return null;
             }
-          }
-        )
+          },
+        ),
       );
       if (cancelled) return;
       const plans = resolved.filter(
-        (plan): plan is TilePreloadPlan => plan !== null
+        (plan): plan is TilePreloadPlan => plan !== null,
       );
       await preloadTiles(plans, getZoomRingTile, () => cancelled);
     }, 0);
@@ -983,7 +976,7 @@ export function IndividualIdHarness({
     if (completePopup.target !== undefined) {
       setCurrentIndex(completePopup.target);
       setActiveLane(
-        completePopup.lane ?? laneContainingPair(completePopup.target)
+        completePopup.lane ?? laneContainingPair(completePopup.target),
       );
     }
     setCompletePopup({ show: false });
@@ -1013,7 +1006,7 @@ export function IndividualIdHarness({
     if (pairWaitingMsRef.current !== null) return;
     pairWaitingMsRef.current = Math.min(
       Date.now() - pairShownAtRef.current,
-      MAX_WAITING_MS
+      MAX_WAITING_MS,
     );
     activeTime.reset();
   }, [activeTime]);
@@ -1063,18 +1056,14 @@ export function IndividualIdHarness({
         });
       }
     },
-    [localAnnotations, client, patchTransectCache]
+    [localAnnotations, client, patchTransectCache],
   );
 
   const handleDrag = useCallback(
-    (
-      candidateKey: string,
-      side: 'A' | 'B',
-      pos: { x: number; y: number }
-    ) => {
+    (candidateKey: string, side: 'A' | 'B', pos: { x: number; y: number }) => {
       if (!currentPairKey) return;
       const candidate = currentView?.candidates.find(
-        (c) => c.pairKey === candidateKey
+        (c) => c.pairKey === candidateKey,
       );
       if (!candidate) {
         // Informational (other-category) marker — keyed by annotation id.
@@ -1090,7 +1079,7 @@ export function IndividualIdHarness({
         working.setCandidatePosition(currentPairKey, candidateKey, side, pos);
       }
     },
-    [working, currentPairKey, currentView, persistAnnotationPosition]
+    [working, currentPairKey, currentView, persistAnnotationPosition],
   );
 
   /**
@@ -1101,11 +1090,7 @@ export function IndividualIdHarness({
    * resulting candidate as active without waiting for the round-trip.
    */
   const handlePlaceNew = useCallback(
-    async (
-      side: 'A' | 'B',
-      pos: { x: number; y: number },
-      newId: string
-    ) => {
+    async (side: 'A' | 'B', pos: { x: number; y: number }, newId: string) => {
       if (!currentPair || !categoryId) return;
       const setId =
         transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
@@ -1174,7 +1159,7 @@ export function IndividualIdHarness({
       projectCtx?.project,
       client,
       patchTransectCache,
-    ]
+    ],
   );
 
   // Deferred until the user confirms scope. null means no dialog open.
@@ -1222,7 +1207,7 @@ export function IndividualIdHarness({
           const chainMembers = localAnnotations.filter(
             (a) =>
               a.id !== annotationId &&
-              (a.objectId === chainKey || a.id === chainKey)
+              (a.objectId === chainKey || a.id === chainKey),
           );
           const imagesById = transect.data?.imagesById ?? {};
           const ageOf = (imageId: string) => {
@@ -1234,7 +1219,7 @@ export function IndividualIdHarness({
           };
           const oovAge = ageOf(target.imageId);
           const newer = chainMembers.filter((a) =>
-            isOlder(oovAge, ageOf(a.imageId))
+            isOlder(oovAge, ageOf(a.imageId)),
           );
           if (newer.length > 0) {
             let nearest = newer[0];
@@ -1256,15 +1241,13 @@ export function IndividualIdHarness({
       }
 
       const applyDeleteAndReRoot = (
-        prev: AnnotationType[]
+        prev: AnnotationType[],
       ): AnnotationType[] => {
         let next = prev.filter((a) => !idSet.has(a.id));
         if (reRootUpdates.length > 0) {
-          const patchById = new Map(
-            reRootUpdates.map((u) => [u.id, u.patch])
-          );
+          const patchById = new Map(reRootUpdates.map((u) => [u.id, u.patch]));
           next = next.map((a) =>
-            patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a
+            patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a,
           );
         }
         return next;
@@ -1282,17 +1265,15 @@ export function IndividualIdHarness({
 
       try {
         const results: any[] = await Promise.all(
-          ids.map((id) =>
-            client.models.Annotation.delete({ id } as any)
-          )
+          ids.map((id) => client.models.Annotation.delete({ id } as any)),
         );
         await Promise.all(
           reRootUpdates.map((u) =>
             client.models.Annotation.update({
               id: u.id,
               ...u.patch,
-            } as any)
-          )
+            } as any),
+          ),
         );
         // AppSync returns `data: null` (with no errors) when an owner/group
         // auth filter blocks the mutation. Surface so we notice.
@@ -1302,7 +1283,7 @@ export function IndividualIdHarness({
             // eslint-disable-next-line no-console
             console.warn(
               'Annotation.delete returned null — likely an authorization issue (you may not own this row).',
-              { id: ids[i] }
+              { id: ids[i] },
             );
           }
         }
@@ -1317,7 +1298,7 @@ export function IndividualIdHarness({
         }));
       }
     },
-    [client, localAnnotations, patchTransectCache, transect.data?.imagesById]
+    [client, localAnnotations, patchTransectCache, transect.data?.imagesById],
   );
 
   /**
@@ -1335,13 +1316,15 @@ export function IndividualIdHarness({
         setDeleteRequest({ annotationId, chainIds });
       }
     },
-    [localAnnotations, executeDelete]
+    [localAnnotations, executeDelete],
   );
 
   const confirmDeleteScope = (scope: 'single' | 'chain') => {
     if (!deleteRequest) return;
     const ids =
-      scope === 'single' ? [deleteRequest.annotationId] : deleteRequest.chainIds;
+      scope === 'single'
+        ? [deleteRequest.annotationId]
+        : deleteRequest.chainIds;
     void executeDelete(ids, scope);
     setDeleteRequest(null);
   };
@@ -1357,12 +1340,12 @@ export function IndividualIdHarness({
         };
       });
     },
-    [localAnnotations, transect.data?.imagesById]
+    [localAnnotations, transect.data?.imagesById],
   );
 
   const canSplitChain = useCallback(
     (annotationId: string) => buildSplitPlan(annotationId) !== null,
-    [buildSplitPlan]
+    [buildSplitPlan],
   );
 
   const handleSplitChain = useCallback(
@@ -1371,7 +1354,7 @@ export function IndividualIdHarness({
       if (!plan) return;
       setSplitRequest({ annotationId, plan });
     },
-    [buildSplitPlan]
+    [buildSplitPlan],
   );
 
   const executeSplitChain = useCallback(
@@ -1383,7 +1366,7 @@ export function IndividualIdHarness({
       const patchById = new Map(plan.updates.map((u) => [u.id, u.patch]));
       const applySplit = (prev: AnnotationType[]): AnnotationType[] =>
         prev.map((a) =>
-          patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a
+          patchById.has(a.id) ? { ...a, ...patchById.get(a.id)! } : a,
         );
 
       setLocalAnnotations(applySplit);
@@ -1399,8 +1382,8 @@ export function IndividualIdHarness({
       try {
         await Promise.all(
           plan.updates.map((u) =>
-            client.models.Annotation.update({ id: u.id, ...u.patch } as any)
-          )
+            client.models.Annotation.update({ id: u.id, ...u.patch } as any),
+          ),
         );
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -1413,7 +1396,7 @@ export function IndividualIdHarness({
         }));
       }
     },
-    [buildSplitPlan, client, localAnnotations, patchTransectCache]
+    [buildSplitPlan, client, localAnnotations, patchTransectCache],
   );
 
   const confirmSplitChain = () => {
@@ -1469,7 +1452,7 @@ export function IndividualIdHarness({
         });
       }
     },
-    [localAnnotations, client, patchTransectCache]
+    [localAnnotations, client, patchTransectCache],
   );
 
   /**
@@ -1484,7 +1467,7 @@ export function IndividualIdHarness({
       if (!currentPairKey) return;
       working.setCandidateObscured(currentPairKey, candidateKey, side, value);
     },
-    [working, currentPairKey]
+    [working, currentPairKey],
   );
 
   // ---- Change-label flow ----
@@ -1500,10 +1483,8 @@ export function IndividualIdHarness({
     transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
   const setCategories = useMemo(
     () =>
-      allCategories.filter(
-        (c) => (c as any).annotationSetId === setIdForModal
-      ),
-    [allCategories, setIdForModal]
+      allCategories.filter((c) => (c as any).annotationSetId === setIdForModal),
+    [allCategories, setIdForModal],
   );
 
   // categoryId → marker colour for the informational (other-category)
@@ -1527,19 +1508,19 @@ export function IndividualIdHarness({
         a.categoryId !== categoryId &&
         !isOov(a) &&
         (a.imageId === currentPair.image1Id ||
-          a.imageId === currentPair.image2Id)
+          a.imageId === currentPair.image2Id),
     );
   }, [localAnnotations, currentPair, categoryId]);
 
   const duplicateAnnotationIds = useMemo(
     () => findDuplicateSameImageChainAnnotationIds(localAnnotations),
-    [localAnnotations]
+    [localAnnotations],
   );
   const [conflictHighlightAnnotationIds, setConflictHighlightAnnotationIds] =
     useState<Set<string>>(() => new Set<string>());
   const clearConflictHighlights = useCallback(
     () => setConflictHighlightAnnotationIds(new Set<string>()),
-    []
+    [],
   );
 
   const [labelChange, setLabelChange] = useState<{
@@ -1559,7 +1540,7 @@ export function IndividualIdHarness({
   const buildChainIds = useCallback(
     (annotationId: string): string[] =>
       buildChainIdsFor(localAnnotations, annotationId),
-    [localAnnotations]
+    [localAnnotations],
   );
 
   const handleChangeLabel = useCallback(
@@ -1570,7 +1551,7 @@ export function IndividualIdHarness({
         chainIds: buildChainIds(annotationId),
       });
     },
-    [buildChainIds]
+    [buildChainIds],
   );
 
   const handleApplyLabelChange = useCallback(
@@ -1610,8 +1591,8 @@ export function IndividualIdHarness({
             client.models.Annotation.update({
               id: aid,
               categoryId: newCategoryId,
-            } as any)
-          )
+            } as any),
+          ),
         );
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -1630,7 +1611,7 @@ export function IndividualIdHarness({
         });
       }
     },
-    [labelChange, localAnnotations, client, patchTransectCache]
+    [labelChange, localAnnotations, client, patchTransectCache],
   );
 
   /**
@@ -1660,16 +1641,12 @@ export function IndividualIdHarness({
    * session source of truth; the disk cache rehydrates it on next load.
    */
   const commitActorLink = useCallback(
-    async (
-      actors: LinkActor[],
-      categoryId: string
-    ) => {
+    async (actors: LinkActor[], categoryId: string) => {
       if (actors.length === 0) return false;
       const nowIso = new Date().toISOString();
       const setId =
         transect.data?.category?.annotationSetId ?? annotationSetId ?? '';
-      const group =
-        (projectCtx?.project as any)?.organizationId ?? undefined;
+      const group = (projectCtx?.project as any)?.organizationId ?? undefined;
       const imagesById = transect.data?.imagesById ?? {};
       const ageOf = (imageId: string) => {
         const img: any = imagesById[imageId];
@@ -1702,18 +1679,18 @@ export function IndividualIdHarness({
       ]);
       if (sameImageConflicts.length > 0) {
         setConflictHighlightAnnotationIds(
-          new Set(sameImageConflicts.flatMap((c) => c.annotationIds))
+          new Set(sameImageConflicts.flatMap((c) => c.annotationIds)),
         );
         const details = sameImageConflicts
           .map(
             (c) =>
               `${c.imageId}: ${c.annotationIds
                 .map((id) => id.slice(0, 8))
-                .join(', ')}`
+                .join(', ')}`,
           )
           .join('; ');
         window.alert(
-          `Cannot link these annotations: that would put multiple annotations from the same image in one chain (${details}).`
+          `Cannot link these annotations: that would put multiple annotations from the same image in one chain (${details}).`,
         );
         return false;
       }
@@ -1730,8 +1707,7 @@ export function IndividualIdHarness({
       }
       const rootId = oldest.id;
 
-      const updates: Array<{ id: string; patch: Partial<AnnotationType> }> =
-        [];
+      const updates: Array<{ id: string; patch: Partial<AnnotationType> }> = [];
       const newRows: AnnotationType[] = [];
 
       for (const actor of actors) {
@@ -1788,7 +1764,7 @@ export function IndividualIdHarness({
       if (statsPairKey) {
         linksByPairRef.current.set(
           statsPairKey,
-          (linksByPairRef.current.get(statsPairKey) ?? 0) + 1
+          (linksByPairRef.current.get(statsPairKey) ?? 0) + 1,
         );
       }
 
@@ -1825,7 +1801,7 @@ export function IndividualIdHarness({
       // no rollback to sequence.
       void Promise.all([
         ...updates.map((u) =>
-          client.models.Annotation.update({ id: u.id, ...u.patch } as any)
+          client.models.Annotation.update({ id: u.id, ...u.patch } as any),
         ),
         ...newRows.map((row) => {
           const { createdAt: _c, updatedAt: _u, ...dbInput } = row as any;
@@ -1846,7 +1822,7 @@ export function IndividualIdHarness({
       localAnnotations,
       client,
       patchTransectCache,
-    ]
+    ],
   );
 
   /**
@@ -1858,7 +1834,7 @@ export function IndividualIdHarness({
     async (candidateKey: string) => {
       if (!currentPair || !currentPairKey || !currentView) return false;
       const candidate = currentView.candidates.find(
-        (c) => c.pairKey === candidateKey
+        (c) => c.pairKey === candidateKey,
       );
       if (!candidate) return false;
 
@@ -1904,7 +1880,7 @@ export function IndividualIdHarness({
       }
       return false;
     },
-    [currentPair, currentPairKey, currentView, working, commitActorLink]
+    [currentPair, currentPairKey, currentView, working, commitActorLink],
   );
 
   /**
@@ -1925,10 +1901,10 @@ export function IndividualIdHarness({
           { id: a.id, imageId: a.imageId, existing: a, candidatePos: null },
           { id: b.id, imageId: b.imageId, existing: b, candidatePos: null },
         ],
-        a.categoryId
+        a.categoryId,
       );
     },
-    [localAnnotations, commitActorLink]
+    [localAnnotations, commitActorLink],
   );
 
   /**
@@ -1942,7 +1918,7 @@ export function IndividualIdHarness({
     async (candidateKey: string, oovSide: 'A' | 'B') => {
       if (!currentPair || !currentView || !currentPairKey) return;
       const candidate = currentView.candidates.find(
-        (c) => c.pairKey === candidateKey
+        (c) => c.pairKey === candidateKey,
       );
       if (!candidate) return;
       const partner = oovSide === 'A' ? candidate.realB : candidate.realA;
@@ -1967,7 +1943,7 @@ export function IndividualIdHarness({
       const committed = await commitActorLink(actors, candidate.categoryId);
       if (committed) working.acceptCandidate(currentPairKey, candidateKey);
     },
-    [currentPair, currentView, currentPairKey, working, commitActorLink]
+    [currentPair, currentView, currentPairKey, working, commitActorLink],
   );
 
   // ---- Manual-link confirmation ----
@@ -1986,7 +1962,7 @@ export function IndividualIdHarness({
         clicked: clickedAnnotationId,
       });
     },
-    []
+    [],
   );
   const confirmManualLink = () => {
     if (pendingLink) handleManualLink(pendingLink.active, pendingLink.clicked);
@@ -1997,7 +1973,7 @@ export function IndividualIdHarness({
   // ---- Render states ----
   if ((!transectId && !chainObjectId) || !categoryId) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Missing <code>transectId</code> or <code>categoryId</code> in the URL.
       </div>
     );
@@ -2007,14 +1983,14 @@ export function IndividualIdHarness({
   }
   if (transect.error) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         Failed to load transect data: {String(transect.error)}
       </div>
     );
   }
   if (!pairs.length) {
     return (
-      <div className='p-4 text-light'>
+      <div className='p-6 text-light'>
         No registerable pairs in this transect for the selected label.
       </div>
     );
@@ -2068,10 +2044,7 @@ export function IndividualIdHarness({
   })();
 
   return (
-    <div
-      className='w-100 h-100 d-flex flex-column py-3'
-      style={{ minHeight: 0 }}
-    >
+    <div className='flex h-full w-full flex-col py-4' style={{ minHeight: 0 }}>
       {reunionMode && (
         <div
           style={{
@@ -2087,8 +2060,8 @@ export function IndividualIdHarness({
           }}
         >
           Reviewing reunions — {pairs.length}{' '}
-          {pairs.length === 1 ? 'image pair' : 'image pairs'} where chains
-          may rejoin
+          {pairs.length === 1 ? 'image pair' : 'image pairs'} where chains may
+          rejoin
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }}>
@@ -2177,11 +2150,12 @@ export function IndividualIdHarness({
           if (count > 1) {
             return (
               <>
-              <strong>Heads up:</strong> this annotation is linked to{' '}
-              {count - 1} other{count - 1 === 1 ? '' : 's'} of the same
-              individual. Changing the label will update <strong>all {count}</strong>{' '}
-              of them so the chain stays consistent. 
-            </>
+                <strong>Heads up:</strong> this annotation is linked to{' '}
+                {count - 1} other{count - 1 === 1 ? '' : 's'} of the same
+                individual. Changing the label will update{' '}
+                <strong>all {count}</strong> of them so the chain stays
+                consistent.
+              </>
             );
           }
         })()}

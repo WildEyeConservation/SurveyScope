@@ -1,16 +1,19 @@
+import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+import { ExternalLink, SearchX } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Form, Spinner } from 'react-bootstrap';
-import { ExternalLink } from 'lucide-react';
-import Select, { type MultiValue, type SingleValue } from 'react-select';
 import { useUsers } from '../../apiInterface';
 import { useSharedChainData } from '../shared/useSharedChainData';
-import { useActiveShares, ownerToUserId } from './useActiveShares';
+import { AnnotationCrop } from './AnnotationCrop';
+import { SelectSharePrompt } from './ChainShareResults';
+import { divergesCategory, divergesObscured } from './shareStats';
+import { ownerToUserId, useActiveShares } from './useActiveShares';
 import {
   foldFeedbackRows,
   useAllChainReviewFeedback,
 } from './useAllChainReviewFeedback';
-import { divergesCategory, divergesObscured } from './shareStats';
-import { AnnotationCrop } from './AnnotationCrop';
 
 type Option = { label: string; value: string };
 
@@ -30,21 +33,37 @@ interface Divergence {
  * Each row shows a crop, the baseline label, the per-reviewer change, and a
  * deep-link into the shared chain viewer focused on that chain.
  */
-export default function DisagreementExplorer() {
+const KINDS = [
+  { key: 'relabel', label: 'Relabels' },
+  { key: 'obscured', label: 'Obscured changes' },
+  { key: 'comment', label: 'Comments' },
+] as const;
+
+export default function DisagreementExplorer({
+  shareId,
+  onShareChange,
+}: {
+  shareId: string | undefined;
+  onShareChange: (shareId: string | undefined) => void;
+}) {
   const { users } = useUsers();
   const { data: shares, isLoading: sharesLoading } = useActiveShares();
 
-  const [shareId, setShareId] = useState<string | undefined>(undefined);
   const [selectedOwners, setSelectedOwners] = useState<string[]>([]);
-  const [kinds, setKinds] = useState({ relabel: true, obscured: true, comment: true });
+  const [kinds, setKinds] = useState({
+    relabel: true,
+    obscured: true,
+    comment: true,
+  });
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-  const { data: chainData, isLoading: chainLoading } = useSharedChainData(shareId);
+  const { data: chainData, isLoading: chainLoading } =
+    useSharedChainData(shareId);
   const { data: feedbackRows, isLoading: feedbackLoading } =
     useAllChainReviewFeedback(shareId);
   const feedback = useMemo(
     () => foldFeedbackRows(feedbackRows ?? []),
-    [feedbackRows]
+    [feedbackRows],
   );
 
   const userNameById = useMemo(() => {
@@ -55,7 +74,7 @@ export default function DisagreementExplorer() {
   const ownerLabel = useCallback(
     (owner: string) =>
       userNameById.get(ownerToUserId(owner)) ?? ownerToUserId(owner),
-    [userNameById]
+    [userNameById],
   );
 
   const shareOptions: Option[] = (shares ?? []).map((s) => ({
@@ -113,7 +132,8 @@ export default function DisagreementExplorer() {
     }> = [];
 
     for (const ann of annotations) {
-      if (categoryFilter !== 'all' && ann.categoryId !== categoryFilter) continue;
+      if (categoryFilter !== 'all' && ann.categoryId !== categoryFilter)
+        continue;
       const divergences: Divergence[] = [];
       for (const owner of selectedOwners) {
         const overlay = feedback.overlayByOwner.get(owner);
@@ -168,160 +188,166 @@ export default function DisagreementExplorer() {
   const busy = chainLoading || feedbackLoading;
   const shown = rows.slice(0, MAX_ROWS);
 
-  return (
-    <div style={{ width: '100%' }}>
-      <Card className='mb-3'>
-        <Card.Header>
-          <h4 className='mb-0'>Disagreement Explorer</h4>
-        </Card.Header>
-        <Card.Body>
-          <div className='d-flex flex-row flex-wrap gap-3 align-items-end'>
-            <Form.Group style={{ minWidth: 280, flex: 1 }}>
-              <Form.Label>Share</Form.Label>
-              <Select
-                value={shareOptions.find((o) => o.value === shareId) ?? null}
-                onChange={(v: SingleValue<Option>) => setShareId(v?.value)}
-                options={shareOptions}
-                className='text-black'
-                placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
-                isLoading={sharesLoading}
-                isClearable
-              />
-            </Form.Group>
-            <Form.Group style={{ minWidth: 280, flex: 1 }}>
-              <Form.Label>Reviewers</Form.Label>
-              <Select
-                isMulti
-                value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
-                onChange={(v: MultiValue<Option>) =>
-                  setSelectedOwners(v.map((o) => o.value))
-                }
-                options={ownerOptions}
-                className='text-black'
-                placeholder='All reviewers'
-                isDisabled={!shareId || ownerOptions.length === 0}
-              />
-            </Form.Group>
-            <Form.Group style={{ minWidth: 180 }}>
-              <Form.Label>Label</Form.Label>
-              <Select
-                value={categoryOptions.find((o) => o.value === categoryFilter) ?? null}
-                onChange={(v: SingleValue<Option>) =>
-                  setCategoryFilter(v?.value ?? 'all')
-                }
-                options={categoryOptions}
-                className='text-black'
-                isDisabled={!shareId}
-              />
-            </Form.Group>
-          </div>
-          <div className='d-flex flex-row gap-3 mt-2'>
-            {(['relabel', 'obscured', 'comment'] as const).map((k) => (
-              <Form.Check
-                key={k}
-                type='checkbox'
-                id={`kind-${k}`}
-                label={k}
-                checked={kinds[k]}
-                onChange={(e) =>
-                  setKinds((prev) => ({ ...prev, [k]: e.target.checked }))
-                }
-              />
-            ))}
-          </div>
-        </Card.Body>
-      </Card>
+  const pill = 'rounded-full px-2.5 py-0.5 text-sm';
 
-      {!shareId ? (
-        <p className='text-muted'>Select a share to explore disagreements.</p>
-      ) : busy ? (
-        <Spinner animation='border' />
+  return (
+    <div className='flex flex-col gap-4'>
+      <div className='flex flex-wrap items-end gap-2'>
+        <div className='min-w-72 flex-1'>
+          <Label className='mb-1'>Share</Label>
+          <Combobox
+            value={shareOptions.find((o) => o.value === shareId) ?? null}
+            onChange={(option) => onShareChange(option?.value)}
+            options={shareOptions}
+            placeholder={sharesLoading ? 'Loading shares…' : 'Select a share…'}
+            loading={sharesLoading}
+            clearable
+            name='Share'
+          />
+        </div>
+        <div className='min-w-72 flex-1'>
+          <Label className='mb-1'>Reviewers</Label>
+          <Combobox
+            multiple
+            value={ownerOptions.filter((o) => selectedOwners.includes(o.value))}
+            onChange={(options) =>
+              setSelectedOwners(options.map((o) => o.value))
+            }
+            options={ownerOptions}
+            placeholder='All reviewers'
+            disabled={!shareId || ownerOptions.length === 0}
+            name='Reviewers'
+          />
+        </div>
+        <div className='min-w-48'>
+          <Label className='mb-1'>Label</Label>
+          <Combobox
+            value={
+              categoryOptions.find((o) => o.value === categoryFilter) ?? null
+            }
+            onChange={(option) => setCategoryFilter(option?.value ?? 'all')}
+            options={categoryOptions}
+            disabled={!shareId}
+            name='Label'
+          />
+        </div>
+      </div>
+      <div className='flex flex-wrap items-center gap-2'>
+        <span className='text-sm text-muted-foreground'>Show</span>
+        {KINDS.map(({ key, label }) => (
+          <button
+            key={key}
+            type='button'
+            aria-pressed={kinds[key]}
+            onClick={() => setKinds((prev) => ({ ...prev, [key]: !prev[key] }))}
+            className={cn(
+              'border px-3 py-1 text-sm transition-colors',
+              kinds[key]
+                ? 'border-primary bg-primary/20'
+                : 'border-white/30 text-muted-foreground hover:bg-white/10',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+        {shareId && !busy && (
+          <span className='ml-auto text-sm text-muted-foreground'>
+            {rows.length.toLocaleString()} annotation
+            {rows.length === 1 ? '' : 's'} with disagreements
+            {rows.length > MAX_ROWS && `, showing the first ${MAX_ROWS}`}
+          </span>
+        )}
+      </div>
+
+      {!shareId || busy ? (
+        <SelectSharePrompt busy={!!shareId && busy} />
       ) : rows.length === 0 ? (
-        <p className='text-muted'>
-          No disagreements match the current filters.
-        </p>
+        <div className='flex flex-col items-center gap-2 border border-dark bg-[#6F7B89] py-10 text-muted-foreground'>
+          <SearchX size={28} className='opacity-70' />
+          No disagreements match these filters
+        </div>
       ) : (
-        <>
-          <p className='text-muted'>
-            {rows.length} annotation{rows.length === 1 ? '' : 's'} with divergences
-            {rows.length > MAX_ROWS && ` (showing first ${MAX_ROWS})`}.
-          </p>
-          <div className='d-flex flex-column gap-2'>
-            {shown.map((row) => (
-              <Card key={row.annId}>
-                <Card.Body className='d-flex flex-row gap-3'>
-                  <AnnotationCrop
-                    meta={chainData?.metaByAnnotationId[row.annId]}
-                    x={row.x}
-                    y={row.y}
-                    oov={row.oov}
-                    markerColor={catColorById.get(row.baselineCategoryId) ?? '#facc15'}
-                  />
-                  <div className='flex-grow-1'>
-                    <div className='d-flex flex-row align-items-center gap-2 mb-2'>
-                      <span>
-                        Baseline:{' '}
-                        <Badge
-                          style={{
-                            background:
-                              catColorById.get(row.baselineCategoryId) ?? '#888',
-                          }}
-                        >
-                          {catNameById.get(row.baselineCategoryId) ??
-                            row.baselineCategoryId}
-                        </Badge>
-                      </span>
-                      {row.oov ? (
-                        <Badge bg='secondary'>OOV</Badge>
-                      ) : row.baselineObscured ? (
-                        <Badge bg='dark'>Obscured</Badge>
-                      ) : (
-                        <Badge bg='light' text='dark'>
-                          Visible
-                        </Badge>
+        <div className='flex flex-col border border-dark'>
+          {shown.map((row) => (
+            <div
+              key={row.annId}
+              className='flex gap-4 border-b border-dark p-3 last:border-b-0 odd:bg-white/[0.03]'
+            >
+              <AnnotationCrop
+                meta={chainData?.metaByAnnotationId[row.annId]}
+                x={row.x}
+                y={row.y}
+                oov={row.oov}
+                markerColor={
+                  catColorById.get(row.baselineCategoryId) ?? '#facc15'
+                }
+              />
+              <div className='flex min-w-0 grow flex-col gap-2'>
+                <div className='flex flex-wrap items-center gap-2'>
+                  <span className='text-sm text-muted-foreground'>
+                    Baseline
+                  </span>
+                  <span
+                    className={cn(pill, 'text-white')}
+                    style={{
+                      background:
+                        catColorById.get(row.baselineCategoryId) ?? '#888',
+                    }}
+                  >
+                    {catNameById.get(row.baselineCategoryId) ??
+                      row.baselineCategoryId}
+                  </span>
+                  <span className={cn(pill, 'bg-white/15')}>
+                    {row.oov
+                      ? 'Out of view'
+                      : row.baselineObscured
+                        ? 'Obscured'
+                        : 'Visible'}
+                  </span>
+                  <Button asChild variant='ghost' className='ml-auto'>
+                    <a
+                      href={`/shared-chains/${shareId}?chain=${row.chainId}`}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                    >
+                      <ExternalLink size={16} />
+                      Open in viewer
+                    </a>
+                  </Button>
+                </div>
+                <div className='flex flex-col gap-1'>
+                  {row.divergences.map((d) => (
+                    <div
+                      key={d.owner}
+                      className='flex flex-wrap items-baseline gap-x-3 text-sm'
+                    >
+                      <strong>{d.ownerLabel}</strong>
+                      {d.relabel && (
+                        <span>
+                          {d.relabel.from} →{' '}
+                          <span className='text-warning'>{d.relabel.to}</span>
+                        </span>
                       )}
-                      <a
-                        href={`/shared-chains/${shareId}?chain=${row.chainId}`}
-                        target='_blank'
-                        rel='noopener noreferrer'
-                        className='ms-auto'
-                      >
-                        <Button size='sm' variant='outline-light'>
-                          <ExternalLink size={14} className='me-1' />
-                          Open in viewer
-                        </Button>
-                      </a>
+                      {d.obscured && (
+                        <span>
+                          {d.obscured.from ? 'Obscured' : 'Visible'} →{' '}
+                          <span className='text-warning'>
+                            {d.obscured.to ? 'obscured' : 'visible'}
+                          </span>
+                        </span>
+                      )}
+                      {d.comment && (
+                        <span className='text-muted-foreground italic'>
+                          “{d.comment}”
+                        </span>
+                      )}
                     </div>
-                    <div className='d-flex flex-column gap-1'>
-                      {row.divergences.map((d) => (
-                        <div key={d.owner} className='small'>
-                          <strong>{d.ownerLabel}</strong>
-                          {d.relabel && (
-                            <span className='ms-2'>
-                              relabel: {d.relabel.from} →{' '}
-                              <span className='text-warning'>{d.relabel.to}</span>
-                            </span>
-                          )}
-                          {d.obscured && (
-                            <span className='ms-2'>
-                              obscured: {d.obscured.from ? 'yes' : 'no'} →{' '}
-                              <span className='text-warning'>
-                                {d.obscured.to ? 'yes' : 'no'}
-                              </span>
-                            </span>
-                          )}
-                          {d.comment && (
-                            <span className='ms-2 fst-italic'>“{d.comment}”</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </Card.Body>
-              </Card>
-            ))}
-          </div>
-        </>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

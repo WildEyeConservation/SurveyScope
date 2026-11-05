@@ -1,11 +1,15 @@
-import { Button, Form } from 'react-bootstrap';
-import { Modal, Header, Title, Body, Footer } from '../Modal';
-import { useState, useEffect, useContext } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
-import Tooltip from 'react-bootstrap/Tooltip';
-import OverlayTrigger from 'react-bootstrap/OverlayTrigger';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
 
 type TestType = 'random' | 'interval';
+
+// Jobs before random testing starts.
+const RANDOM_DEADZONE = 10;
 
 export default function ConfigModal({
   show,
@@ -17,7 +21,6 @@ export default function ConfigModal({
   const [testInterval, setTestInterval] = useState<number>(0);
   const [testType, setTestType] = useState<TestType>('interval');
   const [testChance, setTestChance] = useState<number>(0);
-  const [deadzone, setDeadzone] = useState<number>(0);
   const [confirmation, setConfirmation] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const { client, showModal } = useContext(GlobalContext)!;
@@ -38,7 +41,6 @@ export default function ConfigModal({
         setTestInterval(config.interval!);
       } else {
         setTestChance(config.random!);
-        setDeadzone(config.deadzone!);
       }
 
       setConfirmation(config.postTestConfirmation!);
@@ -47,7 +49,6 @@ export default function ConfigModal({
       fetchTestConfig();
     } else {
       setTestInterval(0);
-      setDeadzone(0);
       setTestChance(0);
       setConfirmation(false);
     }
@@ -64,10 +65,6 @@ export default function ConfigModal({
         alert('Test chance must be between 0 and 100');
         return;
       }
-      if (deadzone < 10) {
-        alert('Deadzone must be greater than 10');
-        return;
-      }
     }
 
     setSaving(true);
@@ -76,7 +73,7 @@ export default function ConfigModal({
       projectId: survey.id,
       testType: testType,
       random: testType === 'random' ? testChance : undefined,
-      deadzone: testType === 'random' ? deadzone : undefined,
+      deadzone: testType === 'random' ? RANDOM_DEADZONE : undefined,
       interval: testType === 'interval' ? testInterval : undefined,
       postTestConfirmation: confirmation,
     });
@@ -91,10 +88,10 @@ export default function ConfigModal({
         <Title>Configure {survey.name} Tests</Title>
       </Header>
       <Body>
-        <Form className='p-3'>
-          <Form.Group className='mb-2'>
-            <Form.Label>Test type</Form.Label>
-            <Form.Select
+        <form className='p-4'>
+          <div className='mb-2'>
+            <Label>Test type</Label>
+            <NativeSelect
               value={testType}
               onChange={(e) =>
                 setTestType(e.target.value as 'random' | 'interval')
@@ -102,24 +99,14 @@ export default function ConfigModal({
             >
               <option value='random'>Random</option>
               <option value='interval'>Interval</option>
-            </Form.Select>
-          </Form.Group>
+            </NativeSelect>
+          </div>
           {testType === 'interval' && (
-            <Form.Group className='mb-2'>
-              <OverlayTrigger
-                placement='right-end'
-                overlay={
-                  <Tooltip>
-                    User will be tested if they haven't consecutively annotated
-                    in the amount of jobs specified. <br /> Note: Navigating to
-                    and annotating a previous job will not reset the counter.
-                  </Tooltip>
-                }
-                trigger={['hover', 'focus']}
-              >
-                <Form.Label>Test after * unannotated jobs</Form.Label>
-              </OverlayTrigger>
-              <Form.Control
+            <div className='mb-2'>
+              <Label>
+                Test after this many jobs in a row with no annotations
+              </Label>
+              <Input
                 type='number'
                 value={testInterval}
                 onChange={(e) =>
@@ -127,48 +114,32 @@ export default function ConfigModal({
                 }
                 min={10}
               />
-            </Form.Group>
+            </div>
           )}
           {testType === 'random' && (
-            <Form.Group className='mb-2'>
-              <OverlayTrigger
-                placement='right-end'
-                overlay={
-                  <Tooltip>
-                    After the amount of jobs specified in deadzone, each of the
-                    following jobs will have the specified probability of being
-                    a test.
-                  </Tooltip>
-                }
-                trigger={['hover', 'focus']}
-              >
-                <Form.Label>Deadzone</Form.Label>
-              </OverlayTrigger>
-              <Form.Control
-                type='number'
-                value={deadzone}
-                onChange={(e) => setDeadzone(parseInt(e.target.value || '10'))}
-                min={10}
-                className='mb-2'
-              />
-              <Form.Label>Test probability (%)</Form.Label>
-              <Form.Control
+            <div className='mb-2'>
+              <Label>Test probability (%)</Label>
+              <Input
                 type='number'
                 value={testChance}
                 onChange={(e) => setTestChance(parseInt(e.target.value || '0'))}
                 min={0}
                 max={100}
               />
-            </Form.Group>
+            </div>
           )}
-        </Form>
+        </form>
       </Body>
       <Footer>
+        <Button
+          variant='ghost'
+          className='mr-auto'
+          onClick={() => showModal(null)}
+        >
+          Cancel
+        </Button>
         <Button variant='primary' onClick={handleSave} disabled={saving}>
           Save
-        </Button>
-        <Button variant='dark' onClick={() => showModal(null)}>
-          Cancel
         </Button>
       </Footer>
     </Modal>

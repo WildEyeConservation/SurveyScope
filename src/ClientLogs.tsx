@@ -1,15 +1,18 @@
+import DataTable, { type DataColumn } from '@/components/DataTable';
+import { Button } from '@/components/ui/button';
+import { Combobox } from '@/components/ui/combobox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ArrowRight, Download, RefreshCw, UserRound } from 'lucide-react';
 import { useContext, useEffect, useMemo, useState } from 'react';
-import Select from 'react-select';
-import Form from 'react-bootstrap/Form';
-import Button from 'react-bootstrap/Button';
-import MyTable from './Table';
+import { escapeCsvValue } from '../shared/csv';
 import { GlobalContext } from './Context';
+import type { Schema } from './amplify/client-schema';
 import { useUsers } from './apiInterface';
 import { fetchAllPaginatedResults } from './utils';
-import type { Schema } from './amplify/client-schema';
-import { escapeCsvValue } from '../shared/csv';
 
 type Option = { label: string; value: string };
+type ClientLog = Schema['ClientLog']['type'];
 
 export default function ClientLogs() {
   const { client } = useContext(GlobalContext)!;
@@ -21,14 +24,14 @@ export default function ClientLogs() {
         label: `${u.name || u.id} (${u.email || ''})`,
         value: u.id,
       })),
-    [users]
+    [users],
   );
 
   const [selectedUser, setSelectedUser] = useState<Option | null>(null);
   const [start, setStart] = useState<string>('');
   const [end, setEnd] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = useState<Schema['ClientLog']['type'][]>([]);
+  const [logs, setLogs] = useState<ClientLog[]>([]);
 
   function exportFilteredLogsToCsv() {
     if (!filteredLogs.length) return;
@@ -49,7 +52,7 @@ export default function ClientLogs() {
     const rows = filteredLogs.map((log) => {
       const user = users.find((u) => u.id === log.userId);
       return [
-        new Date(log.createdAt as any).toISOString(),
+        new Date(log.createdAt).toISOString(),
         log.userId,
         user?.name || '',
         log.ipAddress || '',
@@ -100,7 +103,7 @@ export default function ClientLogs() {
             'createdAt',
           ],
           limit: 10000,
-        } as any
+        } as any,
       );
       setLogs(data as any);
     } finally {
@@ -121,123 +124,165 @@ export default function ClientLogs() {
     let result = logs;
     if (start) {
       const s = new Date(start).getTime();
-      result = result.filter(
-        (l) => new Date(l.createdAt as any).getTime() >= s
-      );
+      result = result.filter((l) => new Date(l.createdAt).getTime() >= s);
     }
     if (end) {
       const e = new Date(end).getTime();
-      result = result.filter(
-        (l) => new Date(l.createdAt as any).getTime() <= e
-      );
+      result = result.filter((l) => new Date(l.createdAt).getTime() <= e);
     }
     // newest first
     return [...result].sort(
       (a, b) =>
-        new Date(b.createdAt as any).getTime() -
-        new Date(a.createdAt as any).getTime()
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
   }, [logs, start, end]);
 
-  const tableHeadings = [
-    { content: 'Timestamp', sort: true },
-    { content: 'User', sort: true },
-    { content: 'IP', sort: true },
-    { content: 'Device', sort: true },
-    { content: 'OS', sort: true },
-    { content: 'Conn', sort: true },
-    { content: 'Downlink (Mb/s)', sort: true },
-    { content: 'RTT (ms)', sort: true },
-    { content: 'User Agent' },
-  ];
-
-  const tableData = filteredLogs.map((log) => {
-    const user = users.find((u) => u.id === log.userId);
-    return {
-      id: log.id,
-      rowData: [
-        new Date(log.createdAt as any).toLocaleString(),
-        user?.name || log.userId,
-        log.ipAddress || '',
-        log.deviceType || '',
-        log.os || '',
-        log.connectionType || '',
-        (log.downlink ?? '').toString(),
-        (log.rtt ?? '').toString(),
-        log.userAgent || '',
-      ],
-    };
-  });
+  const columns = useMemo<DataColumn<ClientLog>[]>(
+    () => [
+      {
+        id: 'timestamp',
+        header: 'Timestamp',
+        accessorFn: (log) => new Date(log.createdAt).getTime(),
+        cell: ({ row }) =>
+          new Date(row.original.createdAt).toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }),
+        meta: { className: 'whitespace-nowrap' },
+      },
+      {
+        id: 'ip',
+        header: 'IP',
+        accessorFn: (log) => log.ipAddress ?? '',
+        meta: { className: 'font-mono text-sm' },
+      },
+      {
+        id: 'device',
+        header: 'Device',
+        accessorFn: (log) => log.deviceType ?? '',
+        cell: ({ row }) =>
+          row.original.deviceType ? (
+            <span className='rounded-full bg-white/15 px-2 py-0.5 text-sm'>
+              {row.original.deviceType}
+            </span>
+          ) : null,
+      },
+      { id: 'os', header: 'OS', accessorFn: (log) => log.os ?? '' },
+      {
+        id: 'connection',
+        header: 'Conn',
+        accessorFn: (log) => log.connectionType ?? '',
+      },
+      {
+        id: 'downlink',
+        header: 'Downlink (Mb/s)',
+        accessorFn: (log) => log.downlink ?? -1,
+        cell: ({ row }) => row.original.downlink ?? '',
+        meta: { className: 'text-right tabular-nums' },
+      },
+      {
+        id: 'rtt',
+        header: 'RTT (ms)',
+        accessorFn: (log) => log.rtt ?? -1,
+        cell: ({ row }) => row.original.rtt ?? '',
+        meta: { className: 'text-right tabular-nums' },
+      },
+      {
+        id: 'userAgent',
+        header: 'User Agent',
+        accessorFn: (log) => log.userAgent ?? '',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div
+            className='max-w-80 truncate text-muted-foreground'
+            title={row.original.userAgent ?? ''}
+          >
+            {row.original.userAgent}
+          </div>
+        ),
+      },
+    ],
+    [],
+  );
 
   return (
-    <div className='mt-2'>
-      <h5>Client Logs</h5>
-      <div className='d-flex gap-2 align-items-end flex-wrap mb-3'>
-        <div style={{ minWidth: 300 }}>
-          <Form.Label className='mb-1'>User</Form.Label>
-          <Select
+    <div>
+      <div className='mb-4 flex items-center justify-between gap-2'>
+        <h5 className='mb-0'>Client Logs</h5>
+        <div className='flex gap-2'>
+          <Button
+            variant='outline-primary'
+            onClick={() => selectedUser && loadLogs(selectedUser.value)}
+            disabled={!selectedUser || loading}
+          >
+            <RefreshCw size={16} />
+            {loading ? 'Loading…' : 'Refresh'}
+          </Button>
+          <Button
+            variant='outline-success'
+            onClick={exportFilteredLogsToCsv}
+            disabled={!filteredLogs.length}
+          >
+            <Download size={16} />
+            Export CSV
+          </Button>
+        </div>
+      </div>
+      <div className='mb-4 flex flex-wrap items-end gap-2'>
+        <div className='min-w-72 flex-[1.4]'>
+          <Label className='mb-1'>User</Label>
+          <Combobox
             options={userOptions}
             value={selectedUser}
-            onChange={(opt) => setSelectedUser(opt as Option)}
+            onChange={(option) => setSelectedUser(option)}
             placeholder='Select a user...'
-            isClearable
-            className='text-black'
+            name='User'
+            clearable
           />
         </div>
-        <div>
-          <Form.Label className='mb-1'>Start</Form.Label>
-          <Form.Control
+        <div className='min-w-52 flex-1'>
+          <Label className='mb-1'>From</Label>
+          <Input
             type='datetime-local'
             value={start}
             onChange={(e) => setStart(e.target.value)}
           />
         </div>
-        <div>
-          <Form.Label className='mb-1'>End</Form.Label>
-          <Form.Control
+        <ArrowRight size={16} className='mb-3 text-muted-foreground' />
+        <div className='min-w-52 flex-1'>
+          <Label className='mb-1'>To</Label>
+          <Input
             type='datetime-local'
             value={end}
             onChange={(e) => setEnd(e.target.value)}
           />
         </div>
-        <div className='d-flex gap-2'>
+        {(start || end) && (
           <Button
-            variant='secondary'
+            variant='ghost'
             onClick={() => {
               setStart('');
               setEnd('');
             }}
           >
-            Clear Filters
+            Clear dates
           </Button>
-          <Button
-            variant='primary'
-            onClick={() => selectedUser && loadLogs(selectedUser.value)}
-            disabled={!selectedUser || loading}
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </Button>
-          <Button
-            variant='success'
-            onClick={exportFilteredLogsToCsv}
-            disabled={!filteredLogs.length}
-          >
-            Export CSV
-          </Button>
-        </div>
+        )}
       </div>
 
-      <MyTable
-        tableHeadings={tableHeadings as any}
-        tableData={tableData}
-        pagination={true}
-        itemsPerPage={10}
+      <DataTable
+        storageKey='client-logs'
+        columns={columns}
+        data={filteredLogs}
+        getRowId={(log) => log.id}
+        pageSize={10}
+        initialSorting={[{ id: 'timestamp', desc: true }]}
+        loading={loading}
+        emptyIcon={selectedUser ? undefined : UserRound}
         emptyMessage={
           selectedUser
-            ? loading
-              ? 'Loading…'
-              : 'No logs found for selection'
-            : 'Select a user to view logs'
+            ? 'No logs found for these dates'
+            : 'Select a user above to see their logs'
         }
       />
     </div>

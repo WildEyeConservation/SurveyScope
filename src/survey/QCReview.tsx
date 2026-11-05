@@ -1,20 +1,31 @@
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Form } from 'react-bootstrap';
-import { LoadingProgressCard } from './LoadingProgressCard';
-import { Schema } from '../amplify/client-schema';
-import { GlobalContext, UserContext } from '../Context';
-import { fetchAllPaginatedResults } from '../utils';
-import { loadRows } from '../rowChunks';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
-import { logAdminAction } from '../utils/adminActionLogger';
+import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
+import { GlobalContext, UserContext } from '../Context';
+import { ensureFalsePositiveCategory } from '../falsePositiveCategory';
+import { loadRows } from '../rowChunks';
+import { fetchAllPaginatedResults } from '../utils';
+import { logAdminAction } from '../utils/adminActionLogger';
+import { plural, useLaunchLabel } from './launchLabel';
+import {
+  AdvancedOptions,
+  Banner,
+  LaunchSummary,
+  SettingRow,
+} from './launchParts';
+import { LoadingProgressCard } from './LoadingProgressCard';
 import { pickZoomPreviewCandidates } from './zoomPreview';
 import ZoomSetting from './ZoomSetting';
 
 type LaunchHandler = {
   execute: (
     onProgress: (msg: string) => void,
-    onLaunchConfirmed: () => void
+    onLaunchConfirmed: () => void,
   ) => Promise<void>;
 };
 
@@ -61,30 +72,36 @@ export default function QCReview({
   // Data loading
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [allAnnotations, setAllAnnotations] = useState<
-    Array<{ id: string; categoryId: string; reviewCatId: string | null; owner: string | null }>
+    Array<{
+      id: string;
+      categoryId: string;
+      reviewCatId: string | null;
+      owner: string | null;
+    }>
   >([]);
   const [loading, setLoading] = useState(true);
-  const [loadStatus, setLoadStatus] = useState<LoadStatus>(
-    INITIAL_LOAD_STATUS
-  );
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>(INITIAL_LOAD_STATUS);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
 
   // Launch settings
   const [samplePercent, setSamplePercent] = useState<number>(10);
   const [batchSize, setBatchSize] = useState<number>(200);
-  const [hidden, setHidden] = useState(false);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   // Annotator filter
-  const [selectedAnnotatorIds, setSelectedAnnotatorIds] = useState<string[]>([]);
+  const [selectedAnnotatorIds, setSelectedAnnotatorIds] = useState<string[]>(
+    [],
+  );
 
   const { users } = useUsers();
   const userMap = useMemo(() => {
-    return users.reduce((acc, user) => {
-      acc[user.id] = user.name ?? user.email ?? user.id;
-      return acc;
-    }, {} as Record<string, string>);
+    return users.reduce(
+      (acc, user) => {
+        acc[user.id] = user.name ?? user.email ?? user.id;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
   }, [users]);
 
   // Categories that have annotations, with completion status
@@ -116,7 +133,9 @@ export default function QCReview({
   }, [allAnnotations, selectedCategoryId]);
 
   const totalCount = categoryAnnotations.length;
-  const unreviewedCount = categoryAnnotations.filter((a) => !a.reviewCatId).length;
+  const unreviewedCount = categoryAnnotations.filter(
+    (a) => !a.reviewCatId,
+  ).length;
 
   // Distinct annotators who have annotations in the selected category
   const annotatorOptions = useMemo(() => {
@@ -125,7 +144,7 @@ export default function QCReview({
       if (a.owner) ownerIds.add(a.owner);
     }
     return Array.from(ownerIds).sort((a, b) =>
-      (userMap[a] ?? a).localeCompare(userMap[b] ?? b)
+      (userMap[a] ?? a).localeCompare(userMap[b] ?? b),
     );
   }, [categoryAnnotations, userMap]);
 
@@ -160,7 +179,7 @@ export default function QCReview({
           },
           (count) => {
             if (mounted) setLoadStatus((s) => ({ ...s, categories: count }));
-          }
+          },
         ).then((r) => {
           if (mounted)
             setLoadStatus((s) => ({
@@ -176,7 +195,7 @@ export default function QCReview({
           annotationSet.id,
           (count) => {
             if (mounted) setLoadStatus((s) => ({ ...s, annotations: count }));
-          }
+          },
         ).then((r) => {
           if (mounted)
             setLoadStatus((s) => ({
@@ -197,7 +216,7 @@ export default function QCReview({
             id: c.id,
             name: c.name,
             shortcutKey: (c as any).shortcutKey ?? null,
-          }))
+          })),
         );
         setAllAnnotations(annotations);
       } catch (err) {
@@ -236,8 +255,10 @@ export default function QCReview({
   // Refs for stable launch handler
   const selectedCategoryIdRef = useRef(selectedCategoryId);
   const samplePercentRef = useRef(samplePercent);
+  const [jobName, setJobName] = useState('');
+  const jobNameRef = useRef(jobName);
+  jobNameRef.current = jobName;
   const batchSizeRef = useRef(batchSize);
-  const hiddenRef = useRef(hidden);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const selectedAnnotatorIdsRef = useRef(selectedAnnotatorIds);
@@ -252,9 +273,6 @@ export default function QCReview({
     batchSizeRef.current = batchSize;
   }, [batchSize]);
   useEffect(() => {
-    hiddenRef.current = hidden;
-  }, [hidden]);
-  useEffect(() => {
     selectedAnnotatorIdsRef.current = selectedAnnotatorIds;
   }, [selectedAnnotatorIds]);
 
@@ -263,7 +281,7 @@ export default function QCReview({
     setQCLaunchHandler({
       execute: async (
         onProgress: (msg: string) => void,
-        onLaunchConfirmed: () => void
+        onLaunchConfirmed: () => void,
       ) => {
         const categoryId = selectedCategoryIdRef.current;
         if (!categoryId) {
@@ -281,14 +299,23 @@ export default function QCReview({
           annotationSetId: annotationSet.id,
           categoryId,
           categoryName,
+          queueName: jobNameRef.current.trim() || undefined,
           samplePercent: samplePercentRef.current,
           batchSize: batchSizeRef.current,
-          hidden: hiddenRef.current,
+          hidden: false,
           zoom: zoomRef.current ?? null,
         };
         if (selectedAnnotatorIdsRef.current.length > 0) {
           payload.annotatorUserIds = selectedAnnotatorIdsRef.current;
         }
+
+        // Created here, before anyone reviews, so reviewers can't race to make it.
+        onProgress('Preparing the False Positive label...');
+        await ensureFalsePositiveCategory(client, {
+          projectId: project.id,
+          annotationSetId: annotationSet.id,
+          group: (project as { organizationId?: string }).organizationId,
+        });
 
         onProgress('Submitting QC review request...');
         await sendLaunchQCReviewRequest(client, payload);
@@ -299,7 +326,7 @@ export default function QCReview({
           user.userId,
           `Launched QC Review for category "${categoryName ?? categoryId}" in annotation set "${annotationSet.name}" (${samplePercentRef.current}% sample)`,
           project.id,
-          (project as any).organizationId
+          (project as any).organizationId,
         ).catch(console.error);
       },
     });
@@ -317,240 +344,165 @@ export default function QCReview({
     user.userId,
   ]);
 
-  const selectedCategory = availableCategories.find((c) => c.id === selectedCategoryId);
+  const selectedCategory = availableCategories.find(
+    (c) => c.id === selectedCategoryId,
+  );
+
+  const nothingLeft = !!selectedCategoryId && filteredUnreviewedCount === 0;
+  useLaunchLabel(
+    sampleCount ? `Launch ${plural(sampleCount, 'review')}` : null,
+    !loading && availableCategories.length === 0
+      ? 'There are no annotations to review yet'
+      : nothingLeft
+        ? 'Nothing left to review for this label'
+        : undefined,
+  );
 
   return (
-    <div className='px-3 pb-3 pt-1'>
-      <div className='d-flex flex-column gap-3 mt-2'>
-        {loading ? (
-          <LoadingProgressCard
-            title='Loading QC Review data…'
-            rows={[
-              {
-                label: 'Labels',
-                count: loadStatus.categories,
-                done: loadStatus.categoriesDone,
-              },
-              {
-                label: 'Annotations',
-                count: loadStatus.annotations,
-                done: loadStatus.annotationsDone,
-              },
-            ]}
-          />
-        ) : availableCategories.length === 0 ? (
-          <Alert variant='warning' className='mb-0'>
-            No labels with annotations found for this annotation set.
-          </Alert>
-        ) : (
-          <>
-            {/* Category selector */}
-            <Form.Group>
-              <Form.Label className='mb-0'>Label to review</Form.Label>
-              <span
-                className='text-muted d-block mb-1'
-                style={{ fontSize: '12px' }}
-              >
-                Select the label whose annotations should be reviewed.
-              </span>
-              <Form.Select
-                value={selectedCategoryId}
-                onChange={(e) => setSelectedCategoryId(e.target.value)}
-                disabled={launching}
-              >
-                <option value=''>Select a label...</option>
-                {availableCategories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}{cat.complete ? ' (complete)' : ''}
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+    <div className='flex flex-col gap-4 p-4'>
+      {loading ? (
+        <LoadingProgressCard
+          title='Loading annotations...'
+          rows={[
+            {
+              label: 'Labels',
+              count: loadStatus.categories,
+              done: loadStatus.categoriesDone,
+            },
+            {
+              label: 'Annotations',
+              count: loadStatus.annotations,
+              done: loadStatus.annotationsDone,
+            },
+          ]}
+        />
+      ) : availableCategories.length === 0 ? (
+        <Banner tone='warning'>
+          This annotation set has no annotations to review yet.
+        </Banner>
+      ) : (
+        <>
+          <div>
+            <Label className='mb-1'>Label to review</Label>
+            <NativeSelect
+              value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              disabled={launching}
+            >
+              <option value=''>Select a label...</option>
+              {availableCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                  {cat.complete ? ' (complete)' : ''}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
 
-            {/* Annotation count stats */}
-            {selectedCategoryId && (
-              <div
-                className='border border-dark shadow-sm p-2'
-                style={{ backgroundColor: '#697582' }}
-              >
-                <div className='text-white' style={{ fontSize: '12px' }}>
-                  <div>
-                    Total annotations for{' '}
-                    <strong>{selectedCategory?.name}</strong>:{' '}
-                    <strong>{totalCount}</strong>
-                  </div>
-                  <div>
-                    Not yet reviewed:{' '}
-                    <strong>{unreviewedCount}</strong>
-                    {selectedAnnotatorIds.length > 0 &&
-                      filteredUnreviewedCount !== unreviewedCount && (
-                        <span>
-                          {' '}
-                          (filtered: <strong>{filteredUnreviewedCount}</strong>)
-                        </span>
-                      )}
-                  </div>
-                  {sampleCount !== null && filteredUnreviewedCount !== null && filteredUnreviewedCount > 0 && (
-                    <div>
-                      Sample size ({samplePercent}%):{' '}
-                      <strong>{sampleCount}</strong>
-                    </div>
-                  )}
-                  {filteredUnreviewedCount === 0 && (
-                    <div className='mt-1 text-warning'>
-                      {selectedAnnotatorIds.length > 0
-                        ? 'No unreviewed annotations for the selected annotators.'
-                        : 'All annotations for this label have already been reviewed.'}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+          {selectedCategoryId &&
+            (nothingLeft ? (
+              <Banner tone='info'>
+                {selectedAnnotatorIds.length > 0
+                  ? 'The selected annotators have no unreviewed annotations for this label.'
+                  : `All ${plural(totalCount ?? 0, 'annotation')} for ${selectedCategory?.name} have been reviewed.`}
+              </Banner>
+            ) : (
+              <LaunchSummary value={(totalCount ?? 0).toLocaleString()}>
+                {selectedCategory?.name}{' '}
+                {totalCount === 1 ? 'annotation exists' : 'annotations exist'}
+                <br />
+                {selectedAnnotatorIds.length > 0
+                  ? `${(filteredUnreviewedCount ?? 0).toLocaleString()} from the selected annotators and ${unreviewedCount.toLocaleString()} overall haven't been reviewed yet`
+                  : `${unreviewedCount.toLocaleString()} haven't been reviewed yet`}
+              </LaunchSummary>
+            ))}
 
-            {/* Sample percentage */}
-            {selectedCategoryId &&
-              filteredUnreviewedCount !== null &&
-              filteredUnreviewedCount > 0 && (
-                <>
-                  <Form.Group>
-                    <Form.Label className='mb-0'>Sample size (%)</Form.Label>
-                    <span
-                      className='text-muted d-block mb-1'
-                      style={{ fontSize: '12px' }}
-                    >
-                      Percentage of unreviewed annotations to sample for review.
-                    </span>
-                    <Form.Control
+          {selectedCategoryId && !nothingLeft && (
+            <>
+              <div className='grid gap-3 sm:grid-cols-3'>
+                <div>
+                  <Label className='mb-1'>Sample size</Label>
+                  <div className='relative'>
+                    <Input
                       type='number'
                       min={1}
                       max={100}
                       step={1}
+                      className='pr-8'
                       value={samplePercent}
-                      onChange={(e) =>
-                        setSamplePercent(
-                          Number((e.target as HTMLInputElement).value)
-                        )
-                      }
+                      onChange={(e) => setSamplePercent(Number(e.target.value))}
                       disabled={launching}
                     />
-                  </Form.Group>
-
-                  <ZoomSetting
-                    mode='offset'
-                    zoom={zoom}
-                    onChange={setZoom}
-                    loadCandidates={async () =>
-                      pickZoomPreviewCandidates(categoryAnnotations)
-                    }
+                    <span className='pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#6c757d]'>
+                      %
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <Label className='mb-1'>Batch size</Label>
+                  <Input
+                    type='number'
+                    title='The number of reviews a user can pick up at a time'
+                    value={batchSize}
+                    onChange={(e) => setBatchSize(Number(e.target.value))}
                     disabled={launching}
                   />
+                </div>
+                <ZoomSetting
+                  mode='offset'
+                  zoom={zoom}
+                  onChange={setZoom}
+                  loadCandidates={async () =>
+                    pickZoomPreviewCandidates(categoryAnnotations)
+                  }
+                  disabled={launching}
+                />
+              </div>
+            </>
+          )}
 
-                  {/* Advanced options toggle */}
-                  <Form.Group>
-                    <Form.Switch
-                      label='Show Advanced Options'
-                      checked={showAdvancedOptions}
-                      onChange={() =>
-                        setShowAdvancedOptions(!showAdvancedOptions)
-                      }
-                      disabled={launching}
-                    />
-                  </Form.Group>
-
-                  {showAdvancedOptions && (
-                    <div
-                      className='d-flex flex-column gap-3 border border-dark shadow-sm p-2'
-                      style={{ backgroundColor: '#697582' }}
+          <AdvancedOptions disabled={launching}>
+            <SettingRow label='Job name' hint='Shown on the Jobs page'>
+              <Input
+                type='text'
+                aria-label='Job name'
+                placeholder={selectedCategory?.name || 'QC Review'}
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
+                disabled={launching}
+              />
+            </SettingRow>
+            {annotatorOptions.length > 1 && (
+              <SettingRow
+                label='Only review work by'
+                hint='Leave all unticked to include everyone.'
+              >
+                <div className='flex max-h-40 flex-col gap-1.5 overflow-y-auto border border-white/15 bg-white/[0.07] px-3 py-2 text-sm'>
+                  {annotatorOptions.map((ownerId) => (
+                    <label
+                      key={ownerId}
+                      className='mb-0 flex items-center gap-2'
                     >
-                      <Form.Group>
-                        <Form.Label className='mb-0'>Batch Size</Form.Label>
-                        <span
-                          className='text-muted d-block mb-1'
-                          style={{ fontSize: '12px' }}
-                        >
-                          The number of reviews a user can pick up at a time.
-                        </span>
-                        <Form.Control
-                          type='number'
-                          value={batchSize}
-                          onChange={(e) =>
-                            setBatchSize(
-                              Number((e.target as HTMLInputElement).value)
-                            )
-                          }
-                          disabled={launching}
-                        />
-                      </Form.Group>
-
-                      <Form.Group>
-                        <Form.Switch
-                          label='Hide Job From Non-Admin Workers'
-                          checked={hidden}
-                          onChange={() => setHidden(!hidden)}
-                          disabled={launching}
-                        />
-                        <span
-                          className='text-muted d-block'
-                          style={{ fontSize: '12px' }}
-                        >
-                          When enabled, only organisation admins and admins of
-                          this survey will see this job on the Jobs page.
-                        </span>
-                      </Form.Group>
-
-                      {annotatorOptions.length > 1 && (
-                        <Form.Group>
-                          <Form.Label className='mb-0'>
-                            Filter by Annotator
-                          </Form.Label>
-                          <span
-                            className='text-muted d-block mb-1'
-                            style={{ fontSize: '12px' }}
-                          >
-                            Only review annotations made by the selected
-                            annotators. Leave all unchecked to include everyone.
-                          </span>
-                          <div
-                            style={{
-                              maxHeight: '150px',
-                              overflowY: 'auto',
-                              backgroundColor: 'rgba(0,0,0,0.15)',
-                              borderRadius: '4px',
-                              padding: '6px 8px',
-                            }}
-                          >
-                            {annotatorOptions.map((ownerId) => (
-                              <Form.Check
-                                key={ownerId}
-                                type='checkbox'
-                                label={userMap[ownerId] ?? ownerId}
-                                checked={selectedAnnotatorIds.includes(ownerId)}
-                                disabled={launching}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedAnnotatorIds((prev) => [
-                                      ...prev,
-                                      ownerId,
-                                    ]);
-                                  } else {
-                                    setSelectedAnnotatorIds((prev) =>
-                                      prev.filter((id) => id !== ownerId)
-                                    );
-                                  }
-                                }}
-                                style={{ fontSize: '13px' }}
-                              />
-                            ))}
-                          </div>
-                        </Form.Group>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-          </>
-        )}
-      </div>
+                      <Checkbox
+                        checked={selectedAnnotatorIds.includes(ownerId)}
+                        disabled={launching}
+                        onCheckedChange={(c) =>
+                          setSelectedAnnotatorIds((prev) =>
+                            c === true
+                              ? [...prev, ownerId]
+                              : prev.filter((id) => id !== ownerId),
+                          )
+                        }
+                      />
+                      {userMap[ownerId] ?? ownerId}
+                    </label>
+                  ))}
+                </div>
+              </SettingRow>
+            )}
+          </AdvancedOptions>
+        </>
+      )}
     </div>
   );
 }
@@ -560,14 +512,21 @@ export default function QCReview({
 async function fetchAnnotationsByAnnotationSet(
   client: DataClient,
   annotationSetId: string,
-  onProgress?: (count: number) => void
-): Promise<Array<{ id: string; categoryId: string; reviewCatId: string | null; owner: string | null }>> {
+  onProgress?: (count: number) => void,
+): Promise<
+  Array<{
+    id: string;
+    categoryId: string;
+    reviewCatId: string | null;
+    owner: string | null;
+  }>
+> {
   const rows = await loadRows(
     client,
     'annotationsByAnnotationSetId',
     annotationSetId,
     ['categoryId', 'reviewCatId', 'owner'],
-    { onProgress }
+    { onProgress },
   );
   return rows.flatMap((row) =>
     row.categoryId
@@ -579,21 +538,24 @@ async function fetchAnnotationsByAnnotationSet(
             owner: row.owner,
           },
         ]
-      : []
+      : [],
   );
 }
 
 // Send the QC review launch request to the Lambda.
 async function sendLaunchQCReviewRequest(
   client: DataClient,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
 ) {
   const requestPayload = JSON.stringify(payload);
 
   try {
-    await (client as any).mutations.launchQCReview({
-      request: requestPayload,
-    }, { retry: false });
+    await (client as any).mutations.launchQCReview(
+      {
+        request: requestPayload,
+      },
+      { retry: false },
+    );
   } catch (error: any) {
     // Ignore timeout errors - the Lambda may still be processing.
     if (shouldIgnoreLaunchError(error)) {
@@ -613,6 +575,6 @@ export function shouldIgnoreLaunchError(error: any): boolean {
     }
   }
   return messages.some((msg) =>
-    /timed out|timeout|Task timed out|socket hang up/i.test(msg)
+    /timed out|timeout|Task timed out|socket hang up/i.test(msg),
   );
 }

@@ -1,12 +1,20 @@
-import { Modal, Body, Header, Footer, Title } from '../Modal';
-import MyTable from '../Table';
-import { useCallback, useContext, useEffect, useState } from 'react';
+import DataTable, { type DataColumn } from '@/components/DataTable';
+import { Alert } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { GlobalContext } from '../Context';
+import { Body, Footer, Header, Modal, Title } from '../Modal';
 import { fetchAllPaginatedResults } from '../utils';
 import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
-import Alert from 'react-bootstrap/Alert';
-import Button from 'react-bootstrap/Button';
-import LabeledToggleSwitch from '../LabeledToggleSwitch';
+
+type Level = 'none' | 'annotate' | 'admin';
+const LEVELS: { value: Level; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'annotate', label: 'Annotate' },
+  { value: 'admin', label: 'Admin' },
+];
 
 type Permission = {
   membershipId: string | null;
@@ -15,6 +23,9 @@ type Permission = {
   annotationAccess: boolean;
   isAdmin: boolean;
 };
+
+const levelOf = (p: Permission): Level =>
+  p.isAdmin ? 'admin' : p.annotationAccess ? 'annotate' : 'none';
 
 export default function ExceptionsModal({
   show,
@@ -31,9 +42,11 @@ export default function ExceptionsModal({
 
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [originalPermissions, setOriginalPermissions] = useState<Permission[]>(
-    []
+    [],
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [onlyWithAccess, setOnlyWithAccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [saveResult, setSaveResult] = useState<{
     variant: 'success' | 'danger';
@@ -52,11 +65,11 @@ export default function ExceptionsModal({
               eq: organization.id,
             },
           },
-        }
+        },
       );
 
       const validProjects = projects.filter(
-        (project) => project.status !== 'deleted'
+        (project) => project.status !== 'deleted',
       );
 
       if (validProjects.length > 0) {
@@ -65,12 +78,12 @@ export default function ExceptionsModal({
           {
             userId: user.id,
             selectionSet: ['id', 'projectId', 'isAdmin'],
-          }
+          },
         );
 
         const projectPermissions = validProjects.map((project) => {
           const membership = userProjectMemberships.find(
-            (m) => m.projectId === project.id
+            (m) => m.projectId === project.id,
           );
           return {
             projectName: project.name,
@@ -99,21 +112,11 @@ export default function ExceptionsModal({
     }
   }, [show, fetchProjects]);
 
-  const hasChanges = permissions.some(
-    (p) =>
-      !originalPermissions.some(
-        (op) =>
-          op.projectId === p.projectId &&
-          op.annotationAccess === p.annotationAccess &&
-          op.isAdmin === p.isAdmin
-      )
-  );
-
   const handleClose = () => {
     if (
       hasChanges &&
       !window.confirm(
-        'You have unsaved changes. Close without saving? Click Save first to apply them.'
+        'You have unsaved changes. Close without saving? Click Save first to apply them.',
       )
     ) {
       return;
@@ -121,50 +124,84 @@ export default function ExceptionsModal({
     onClose();
   };
 
-  const tableData = permissions.map((permission) => ({
-    id: permission.projectId,
-    rowData: [
-      permission.projectName,
-      <LabeledToggleSwitch
-        className='mb-0'
-        leftLabel='No'
-        rightLabel='Yes'
-        checked={permission.annotationAccess}
-        disabled={isSaving}
-        onChange={(checked) => {
-          if (permission.isAdmin) {
-            alert('Admins have unrestricted access');
-            return;
-          }
-          setSaveResult(null);
-          setPermissions(
-            permissions.map((p) =>
-              p.projectId === permission.projectId
-                ? { ...p, annotationAccess: checked }
-                : p
-            )
+  const setLevel = useCallback((projectId: string, level: Level) => {
+    setSaveResult(null);
+    setPermissions((current) =>
+      current.map((p) =>
+        p.projectId === projectId
+          ? {
+              ...p,
+              annotationAccess: level !== 'none',
+              isAdmin: level === 'admin',
+            }
+          : p,
+      ),
+    );
+  }, []);
+  const changeCount = permissions.filter(
+    (p) =>
+      !originalPermissions.some(
+        (op) =>
+          op.projectId === p.projectId &&
+          op.annotationAccess === p.annotationAccess &&
+          op.isAdmin === p.isAdmin,
+      ),
+  ).length;
+  const hasChanges = changeCount > 0;
+  const withAccess = permissions.filter((p) => p.annotationAccess).length;
+  const visible = permissions
+    .filter((p) => !onlyWithAccess || p.annotationAccess)
+    .filter((p) =>
+      p.projectName.toLowerCase().includes(search.trim().toLowerCase()),
+    );
+
+  const columns = useMemo<DataColumn<Permission>[]>(
+    () => [
+      {
+        accessorKey: 'projectName',
+        header: 'Survey',
+        meta: { className: 'max-w-80 truncate' },
+      },
+      {
+        id: 'access',
+        accessorFn: (row) => LEVELS.findIndex((l) => l.value === levelOf(row)),
+        header: 'Access',
+        // Sorting by access would move a row while it is being changed.
+        enableSorting: false,
+        meta: { className: 'w-px text-center' },
+        cell: ({ row }) => {
+          const permission = row.original;
+          return (
+            <div
+              role='radiogroup'
+              aria-label={`Access to ${permission.projectName}`}
+              className='inline-flex flex-none border border-white/30'
+            >
+              {LEVELS.map(({ value, label }) => (
+                <button
+                  key={value}
+                  type='button'
+                  role='radio'
+                  aria-checked={levelOf(permission) === value}
+                  disabled={isSaving}
+                  onClick={() => setLevel(permission.projectId, value)}
+                  className={cn(
+                    'px-2.5 py-1 transition-colors disabled:opacity-60',
+                    levelOf(permission) === value
+                      ? 'bg-primary text-white'
+                      : 'enabled:hover:bg-white/10',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           );
-        }}
-      />,
-      <LabeledToggleSwitch
-        className='mb-0'
-        leftLabel='No'
-        rightLabel='Yes'
-        checked={permission.isAdmin}
-        disabled={isSaving}
-        onChange={(checked) => {
-          setSaveResult(null);
-          setPermissions(
-            permissions.map((p) =>
-              p.projectId === permission.projectId
-                ? { ...p, isAdmin: checked, annotationAccess: true }
-                : p
-            )
-          );
-        }}
-      />,
+        },
+      },
     ],
-  }));
+    [isSaving, setLevel],
+  );
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -176,8 +213,8 @@ export default function ExceptionsModal({
           (op) =>
             op.projectId === p.projectId &&
             op.annotationAccess === p.annotationAccess &&
-            op.isAdmin === p.isAdmin
-        )
+            op.isAdmin === p.isAdmin,
+        ),
     );
 
     // Keep going past a failed survey so one rejection doesn't silently skip
@@ -196,7 +233,7 @@ export default function ExceptionsModal({
       } catch (err) {
         console.error(
           `Failed to save access to survey ${permission.projectId} for user ${user.id}`,
-          err
+          err,
         );
         failed.push(permission.projectName);
       }
@@ -215,7 +252,7 @@ export default function ExceptionsModal({
             variant: 'danger',
             message: `Could not save access for: ${failed.join(', ')}. Please try again.`,
           }
-        : { variant: 'success', message: 'Access saved.' }
+        : { variant: 'success', message: 'Access saved.' },
     );
     setIsSaving(false);
   };
@@ -223,35 +260,61 @@ export default function ExceptionsModal({
   return (
     <Modal show={show} strict={true} size='lg'>
       <Header>
-        <Title>
-          Permission Exceptions for {user.name} ({organization.name})
-        </Title>
+        <Title>Permission exceptions · {user.name}</Title>
       </Header>
       <Body>
-        <div className='p-3'>
-          <div className='text-muted mb-3' style={{ lineHeight: 1.2 }}>
-            <span style={{ fontSize: 16 }}>Instructions</span>
-            <br />
-            <span style={{ fontSize: 12 }}>
-              Select the surveys and the level of access you would like to give
-              the user for each survey.
-              <br />
-              This will override the default access level for the user for the
-              selected surveys.
-            </span>
+        <div className='flex flex-col gap-3 p-4'>
+          <span className='text-sm text-muted-foreground'>
+            Choose which of {organization.name}&apos;s surveys this person can
+            annotate or administer.
+          </span>
+          <div className='flex flex-wrap items-center gap-2'>
+            <Input
+              type='text'
+              placeholder='Search surveys'
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className='w-full sm:w-64'
+            />
+            <div
+              role='radiogroup'
+              aria-label='Surveys to show'
+              className='ml-auto inline-flex border border-white/30'
+            >
+              {[
+                { label: `All ${permissions.length}`, value: false },
+                { label: `With access ${withAccess}`, value: true },
+              ].map((option) => (
+                <button
+                  key={String(option.value)}
+                  type='button'
+                  role='radio'
+                  aria-checked={onlyWithAccess === option.value}
+                  onClick={() => setOnlyWithAccess(option.value)}
+                  className={cn(
+                    'px-3 py-1.5 leading-normal transition-colors',
+                    onlyWithAccess === option.value
+                      ? 'bg-primary text-white'
+                      : 'hover:bg-white/10',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <MyTable
-            tableHeadings={[
-              { content: 'Survey', sort: true },
-              { content: 'Annotation Access' },
-              { content: 'Admin' },
-            ]}
-            tableData={tableData}
-            pagination={true}
-            emptyMessage={isLoading ? 'Loading...' : 'No surveys found'}
+          <DataTable
+            storageKey='organization-exceptions'
+            columns={columns}
+            data={visible}
+            getRowId={(row) => row.projectId}
+            initialSorting={[{ id: 'projectName', desc: false }]}
+            loading={isLoading}
+            loadingMessage='Loading surveys...'
+            emptyMessage='No surveys found.'
           />
           {saveResult && (
-            <Alert variant={saveResult.variant} className='mt-3 mb-0'>
+            <Alert variant={saveResult.variant} className='mb-0'>
               {saveResult.message}
             </Alert>
           )}
@@ -259,14 +322,24 @@ export default function ExceptionsModal({
       </Body>
       <Footer>
         <Button
+          variant='ghost'
+          className='mr-auto'
+          onClick={handleClose}
+          disabled={isSaving}
+        >
+          {hasChanges ? 'Cancel' : 'Close'}
+        </Button>
+        {changeCount > 0 && (
+          <span className='text-xs text-muted-foreground'>
+            {changeCount} {changeCount === 1 ? 'change' : 'changes'}
+          </span>
+        )}
+        <Button
           variant='primary'
           onClick={handleSave}
           disabled={isSaving || !hasChanges}
         >
           {isSaving ? 'Saving...' : 'Save'}
-        </Button>
-        <Button variant='dark' onClick={handleClose} disabled={isSaving}>
-          Close
         </Button>
       </Footer>
     </Modal>

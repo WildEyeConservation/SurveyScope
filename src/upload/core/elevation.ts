@@ -7,9 +7,7 @@ const FETCH_TIMEOUT_MS = 30_000;
 export class ElevationService {
   private tiles = new Map<string, Promise<ArrayBuffer>>();
 
-  constructor(
-    private opts: { bucketName: string; region?: string }
-  ) {}
+  constructor(private opts: { bucketName: string; region?: string }) {}
 
   async getElevation(lat: number, lon: number): Promise<number | null> {
     if (isNaN(lat) || isNaN(lon)) return null;
@@ -81,7 +79,7 @@ export class ElevationService {
 export function computeElevationFromBuffer(
   buffer: ArrayBuffer,
   lat: number,
-  lon: number
+  lon: number,
 ): number {
   const latFloor = Math.floor(lat);
   const lonFloor = Math.floor(lon);

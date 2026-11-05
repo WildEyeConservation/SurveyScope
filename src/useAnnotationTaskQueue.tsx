@@ -1,24 +1,24 @@
-import { useEffect, useState, useContext, useCallback, useRef } from 'react';
-import { UserContext, ProjectContext, GlobalContext } from './Context';
 import {
-  ReceiveMessageCommand,
   DeleteMessageCommand,
+  ReceiveMessageCommand,
   type Message,
 } from '@aws-sdk/client-sqs';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { GlobalContext, ProjectContext, UserContext } from './Context';
+import type { BeforeNextDecision } from './TaskBuffer';
 import type { Schema } from './amplify/client-schema';
-import useTesting from './useTesting';
 import type {
   AnnotationTaskPayload,
   TaskAcknowledgement,
 } from './annotationTypes';
-import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
-import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
-import { decideTestCadence } from './testCadence';
-import type { BeforeNextDecision } from './TaskBuffer';
-import { tileLoadStats } from './storage/tileLoadStats';
-import { createLocationLeases } from './locationLeases';
 import { primeTask } from './annotator/prefetchTask';
+import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
+import { createLocationLeases } from './locationLeases';
+import { tileLoadStats } from './storage/tileLoadStats';
+import { decideTestCadence } from './testCadence';
 import { touchQueue } from './touchQueue';
+import useTesting from './useTesting';
+import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 
 const LOCATION_SELECTION = [
   'id',
@@ -100,7 +100,7 @@ export default function useAnnotationTaskQueue() {
           setZoom(update.zoom);
         }
       }),
-    [currentPM.projectId]
+    [currentPM.projectId],
   );
 
   useEffect(() => {
@@ -117,7 +117,7 @@ export default function useAnnotationTaskQueue() {
             if (!data) return;
             setBackupUrl(data.url ?? undefined);
             setBackupZoom(data.zoom ?? undefined);
-          }
+          },
         );
       }
     }
@@ -140,17 +140,26 @@ export default function useAnnotationTaskQueue() {
             'interval',
             'accuracy',
           ],
-        }
+        },
       );
 
       if (config?.projectId) {
         configRef.current = config;
 
+        // False-negative jobs show large tiles, so a small test box stands out.
+        const { data: queue } = currentPM.queueId
+          ? await client.models.Queue.get(
+              { id: currentPM.queueId },
+              { selectionSet: ['name'] },
+            )
+          : { data: null };
         const shouldTest =
-          myOrganizationHook.data?.find(
+          queue?.name !== 'False Negatives' &&
+          (myOrganizationHook.data?.find(
             (membership) =>
-              membership.organizationId === config.project.organizationId
-          )?.isTested ?? false;
+              membership.organizationId === config.project.organizationId,
+          )?.isTested ??
+            false);
         testUserRef.current = shouldTest;
       }
     }
@@ -162,14 +171,14 @@ export default function useAnnotationTaskQueue() {
 
   const prepareTask = useCallback(
     async (
-      message: AnnotationTaskMessage
+      message: AnnotationTaskMessage,
     ): Promise<AnnotationTaskPayload | null> => {
       const locationId = message.location?.id;
       if (!locationId) return null;
 
       const { data: location } = await client.models.Location.get(
         { id: locationId },
-        { selectionSet: LOCATION_SELECTION }
+        { selectionSet: LOCATION_SELECTION },
       );
       if (
         !location?.image ||
@@ -211,24 +220,24 @@ export default function useAnnotationTaskQueue() {
           setId: { eq: message.location.annotationSetId },
           selectionSet: ['x', 'y', 'source'] as const,
           limit: 10000,
-        }
+        },
       );
       const hasAnnotationWithinLocation = allAnnotations
         .filter(
           (annotation) =>
             !annotation.source ||
-            !String(annotation.source).includes('false-negative')
+            !String(annotation.source).includes('false-negative'),
         )
         .some((annotation) => isWithinLocationBounds(annotation, location));
 
       return hasAnnotationWithinLocation ? null : hydratedTask;
     },
-    [client]
+    [client],
   );
 
   const readyRef = useRef<AnnotationTaskPayload[]>([]);
   const [leases] = useState(() =>
-    createLocationLeases(VISIBILITY_TIMEOUT_S * 1000)
+    createLocationLeases(VISIBILITY_TIMEOUT_S * 1000),
   );
   const receivingRef = useRef<Promise<number> | null>(null);
 
@@ -237,7 +246,7 @@ export default function useAnnotationTaskQueue() {
       entity: Message,
       sourceUrl: string,
       queueZoom: number | undefined,
-      receiveMs: number
+      receiveMs: number,
     ): Promise<AnnotationTaskPayload | null> => {
       const body = JSON.parse(entity.Body!) as AnnotationTaskMessage;
       if (entity.MessageId) {
@@ -252,7 +261,7 @@ export default function useAnnotationTaskQueue() {
             new DeleteMessageCommand({
               QueueUrl: sourceUrl,
               ReceiptHandle: entity.ReceiptHandle,
-            })
+            }),
           );
           if (body.location?.id) {
             processedLocationsRef.current.add(body.location.id);
@@ -260,7 +269,7 @@ export default function useAnnotationTaskQueue() {
         } catch (error) {
           console.error(
             `Failed to acknowledge location ${body.location.id}`,
-            error
+            error,
           );
           throw error;
         }
@@ -298,7 +307,7 @@ export default function useAnnotationTaskQueue() {
       }
       void primeTask(
         client as unknown as Parameters<typeof primeTask>[0],
-        preparedTask.location
+        preparedTask.location,
       );
 
       return {
@@ -307,7 +316,7 @@ export default function useAnnotationTaskQueue() {
         revalidate: async () => Boolean(await prepareTask(body)),
       };
     },
-    [client, getSqsClient, prepareTask, leases]
+    [client, getSqsClient, prepareTask, leases],
   );
 
   const receiveBatch = useCallback(async (): Promise<number> => {
@@ -320,7 +329,7 @@ export default function useAnnotationTaskQueue() {
           MaxNumberOfMessages: RECEIVE_BATCH_SIZE,
           MessageAttributeNames: ['All'],
           VisibilityTimeout: VISIBILITY_TIMEOUT_S,
-        })
+        }),
       );
       return {
         messages: response.Messages ?? [],
@@ -340,19 +349,31 @@ export default function useAnnotationTaskQueue() {
 
     const tasks = await Promise.all(
       received.messages.map((entity) =>
-        prepareMessage(entity, source.url, source.zoom, received.receiveMs).catch(
-          (error: unknown) => {
-            console.error('Failed to prepare annotation task', error);
-            return null;
-          }
-        )
-      )
+        prepareMessage(
+          entity,
+          source.url,
+          source.zoom,
+          received.receiveMs,
+        ).catch((error: unknown) => {
+          console.error('Failed to prepare annotation task', error);
+          return null;
+        }),
+      ),
     );
     readyRef.current.push(
-      ...tasks.filter((task): task is AnnotationTaskPayload => task !== null)
+      ...tasks.filter((task): task is AnnotationTaskPayload => task !== null),
     );
     return received.messages.length;
-  }, [url, backupUrl, zoom, backupZoom, getSqsClient, prepareMessage, client, currentPM.backupQueueId]);
+  }, [
+    url,
+    backupUrl,
+    zoom,
+    backupZoom,
+    getSqsClient,
+    prepareMessage,
+    client,
+    currentPM.backupQueueId,
+  ]);
 
   const receive = useCallback(() => {
     receivingRef.current ??= receiveBatch().finally(() => {
@@ -383,8 +404,8 @@ export default function useAnnotationTaskQueue() {
     }
   }, [url, receive]);
 
-  const standbyTestFetcher = useCallback(
-    async (): Promise<AnnotationTaskPayload | null> => {
+  const standbyTestFetcher =
+    useCallback(async (): Promise<AnnotationTaskPayload | null> => {
       try {
         await testingSetupPromiseRef.current;
       } catch (error) {
@@ -403,15 +424,13 @@ export default function useAnnotationTaskQueue() {
       const testLocation = await testFetcher();
       if (!testLocation) return null;
       return prepareTask(testLocation as unknown as AnnotationTaskMessage);
-    },
-    [prepareTask, testFetcher]
-  );
+    }, [prepareTask, testFetcher]);
 
   const beforeNext = useCallback(
     async (
       completedTask: AnnotationTaskPayload & { id: string },
       completedIndex: number,
-      { standbyReady }: { standbyReady: boolean }
+      { standbyReady }: { standbyReady: boolean },
     ): Promise<BeforeNextDecision<AnnotationTaskPayload>> => {
       try {
         await testingSetupPromiseRef.current;
@@ -428,7 +447,7 @@ export default function useAnnotationTaskQueue() {
       }
 
       const userAnnotated = Object.values(currentAnnoCount).some(
-        (annotations) => annotations.length > 0
+        (annotations) => annotations.length > 0,
       );
       const decision = decideTestCadence({
         unannotatedJobs,
@@ -473,7 +492,7 @@ export default function useAnnotationTaskQueue() {
       setCurrentAnnoCount,
       setUnannotatedJobs,
       unannotatedJobs,
-    ]
+    ],
   );
 
   return {

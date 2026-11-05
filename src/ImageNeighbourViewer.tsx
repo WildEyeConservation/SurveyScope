@@ -1,27 +1,39 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  Alert,
-  Badge,
-  Button,
   Card,
-  Col,
-  Form,
-  Row,
-  Spinner,
-  Table,
-} from 'react-bootstrap';
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
+import { Table } from '@/components/ui/table';
 import * as maplibregl from 'maplibre-gl';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+import { inv } from 'mathjs';
 import { GlobalContext } from './Context';
 import {
-  makeProjection,
-  createImageMap,
   addImageTiles,
+  createImageMap,
   fitPxBounds,
+  makeProjection,
 } from './annotator/imageTiles';
-import { array2Matrix, makeTransform } from './utils';
-import { inv } from 'mathjs';
 import type { ImageNeighbourType, ImageType } from './schemaTypes';
+import { array2Matrix, makeTransform } from './utils';
 
 type ImageDisplayData = {
   image: ImageType;
@@ -69,11 +81,16 @@ const imageFileSelectionSet = ['id', 'type', 'key'] as const;
 
 function buildImageDisplayData(
   image: ImageType,
-  sourceKey: string | null
+  sourceKey: string | null,
 ): ImageDisplayData {
   const width = Number(image.width ?? 0);
   const height = Number(image.height ?? 0);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || !width || !height) {
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    !width ||
+    !height
+  ) {
     throw new Error(`Image ${image.id} is missing valid dimensions.`);
   }
 
@@ -98,7 +115,10 @@ function buildImageDisplayData(
         return trimmed;
       }
     }
-    if (typeof image.cameraSerial === 'string' && image.cameraSerial.trim().length) {
+    if (
+      typeof image.cameraSerial === 'string' &&
+      image.cameraSerial.trim().length
+    ) {
       return image.cameraSerial.trim();
     }
     if (typeof image.cameraId === 'string' && image.cameraId.trim().length) {
@@ -117,7 +137,7 @@ function buildImageDisplayData(
 
 function projectPolygon(
   sourcePolygon: [number, number][],
-  transform: ((coords: [number, number]) => [number, number]) | undefined
+  transform: ((coords: [number, number]) => [number, number]) | undefined,
 ): [number, number][] | null {
   if (!transform) {
     return null;
@@ -188,55 +208,53 @@ export default function ImageNeighbourViewer() {
           (async () => {
             const response = await client.models.Image.get(
               { id: idA },
-              { selectionSet: imageSelectionSet }
+              { selectionSet: imageSelectionSet },
             );
             if (!response?.data) {
               throw new Error(`Image ${idA} was not found.`);
             }
 
-            const filesResp =
-              await client.models.ImageFile.imagesByimageId(
-                { imageId: idA },
-                {
-                  limit: 25,
-                  selectionSet: imageFileSelectionSet,
-                }
-              );
+            const filesResp = await client.models.ImageFile.imagesByimageId(
+              { imageId: idA },
+              {
+                limit: 25,
+                selectionSet: imageFileSelectionSet,
+              },
+            );
             const files = filesResp?.data ?? [];
             const jpegFile =
               files.find((file: any) =>
-                (file.type ?? '').toLowerCase().includes('jpeg')
+                (file.type ?? '').toLowerCase().includes('jpeg'),
               ) || files[0];
             return buildImageDisplayData(
               response.data as ImageType,
-              jpegFile?.key ?? null
+              jpegFile?.key ?? null,
             );
           })(),
           (async () => {
             const response = await client.models.Image.get(
               { id: idB },
-              { selectionSet: imageSelectionSet }
+              { selectionSet: imageSelectionSet },
             );
             if (!response?.data) {
               throw new Error(`Image ${idB} was not found.`);
             }
 
-            const filesResp =
-              await client.models.ImageFile.imagesByimageId(
-                { imageId: idB },
-                {
-                  limit: 25,
-                  selectionSet: imageFileSelectionSet,
-                }
-              );
+            const filesResp = await client.models.ImageFile.imagesByimageId(
+              { imageId: idB },
+              {
+                limit: 25,
+                selectionSet: imageFileSelectionSet,
+              },
+            );
             const files = filesResp?.data ?? [];
             const jpegFile =
               files.find((file: any) =>
-                (file.type ?? '').toLowerCase().includes('jpeg')
+                (file.type ?? '').toLowerCase().includes('jpeg'),
               ) || files[0];
             return buildImageDisplayData(
               response.data as ImageType,
-              jpegFile?.key ?? null
+              jpegFile?.key ?? null,
             );
           })(),
         ]);
@@ -244,11 +262,11 @@ export default function ImageNeighbourViewer() {
         const [forwardResp, reverseResp] = await Promise.all([
           client.models.ImageNeighbour.get(
             { image1Id: idA, image2Id: idB },
-            { selectionSet: neighbourSelectionSet }
+            { selectionSet: neighbourSelectionSet },
           ),
           client.models.ImageNeighbour.get(
             { image1Id: idB, image2Id: idA },
-            { selectionSet: neighbourSelectionSet }
+            { selectionSet: neighbourSelectionSet },
           ),
         ]);
 
@@ -264,13 +282,13 @@ export default function ImageNeighbourViewer() {
         console.error(err);
         setComparison(null);
         setError(
-          err?.message ?? 'Unable to load the requested images or neighbours.'
+          err?.message ?? 'Unable to load the requested images or neighbours.',
         );
       } finally {
         setLoading(false);
       }
     },
-    [client]
+    [client],
   );
 
   const transformSummary: TransformSummary = useMemo(() => {
@@ -324,18 +342,12 @@ export default function ImageNeighbourViewer() {
 
   const overlayOnA = useMemo(() => {
     if (!comparison?.imageA || !comparison?.imageB) return null;
-    return projectPolygon(
-      comparison.imageB.pixelPolygon,
-      transformSummary.toA
-    );
+    return projectPolygon(comparison.imageB.pixelPolygon, transformSummary.toA);
   }, [comparison, transformSummary.toA]);
 
   const overlayOnB = useMemo(() => {
     if (!comparison?.imageA || !comparison?.imageB) return null;
-    return projectPolygon(
-      comparison.imageA.pixelPolygon,
-      transformSummary.toB
-    );
+    return projectPolygon(comparison.imageA.pixelPolygon, transformSummary.toB);
   }, [comparison, transformSummary.toB]);
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -344,35 +356,37 @@ export default function ImageNeighbourViewer() {
   };
 
   return (
-    <div className='w-100 p-3'>
-      <Card className='w-100'>
-        <Card.Header>
-          <Card.Title className='mb-0'>Image Neighbour Viewer</Card.Title>
-        </Card.Header>
-        <Card.Body>
-          <Form onSubmit={handleSubmit}>
-            <Row className='g-3 align-items-end'>
-              <Col md={5}>
-                <Form.Group controlId='imageA'>
-                  <Form.Label>Image ID A</Form.Label>
-                  <Form.Control
+    <div className='w-full p-4'>
+      <Card className='w-full'>
+        <CardHeader>
+          <CardTitle className='mb-0'>Image Neighbour Viewer</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit}>
+            <div className='-mx-2 flex flex-wrap items-end gap-y-4'>
+              <div className='w-full px-2 md:w-5/12'>
+                <div>
+                  <Label htmlFor='imageA'>Image ID A</Label>
+                  <Input
+                    id='imageA'
                     value={imageIdA}
                     onChange={(e) => setImageIdA(e.target.value)}
                     placeholder='e.g. 123e4567-e89b-12d3-a456-426614174000'
                   />
-                </Form.Group>
-              </Col>
-              <Col md={5}>
-                <Form.Group controlId='imageB'>
-                  <Form.Label>Image ID B</Form.Label>
-                  <Form.Control
+                </div>
+              </div>
+              <div className='w-full px-2 md:w-5/12'>
+                <div>
+                  <Label htmlFor='imageB'>Image ID B</Label>
+                  <Input
+                    id='imageB'
                     value={imageIdB}
                     onChange={(e) => setImageIdB(e.target.value)}
                     placeholder='e.g. 123e4567-e89b-12d3-a456-426614174001'
                   />
-                </Form.Group>
-              </Col>
-              <Col md={2} className='d-grid'>
+                </div>
+              </div>
+              <div className='grid w-full px-2 md:w-2/12'>
                 <Button
                   variant='primary'
                   type='submit'
@@ -380,26 +394,26 @@ export default function ImageNeighbourViewer() {
                 >
                   {loading ? (
                     <>
-                      <Spinner animation='border' size='sm' className='me-2' />
+                      <Spinner animation='border' size='sm' />
                       Loading
                     </>
                   ) : (
                     'Load pair'
                   )}
                 </Button>
-              </Col>
-            </Row>
-          </Form>
+              </div>
+            </div>
+          </form>
           {error && (
-            <Alert variant='danger' className='mt-3 mb-0'>
+            <Alert variant='danger' className='mt-4 mb-0'>
               {error}
             </Alert>
           )}
-        </Card.Body>
+        </CardContent>
       </Card>
 
       {comparison && (
-        <div className='d-flex flex-column gap-3 mt-3'>
+        <div className='mt-4 flex flex-col gap-4'>
           {!comparison.neighbours.forward && !comparison.neighbours.reverse && (
             <Alert variant='warning'>
               No ImageNeighbour records were found for this pair. The images are
@@ -408,14 +422,15 @@ export default function ImageNeighbourViewer() {
           )}
           {!comparison.neighbours.forward?.homography &&
             !comparison.neighbours.reverse?.homography &&
-            (comparison.neighbours.forward || comparison.neighbours.reverse) && (
+            (comparison.neighbours.forward ||
+              comparison.neighbours.reverse) && (
               <Alert variant='info'>
                 One or more neighbour records were found, but no homography was
                 stored for them.
               </Alert>
             )}
-          <Row className='g-3'>
-            <Col xs={12} xl={6}>
+          <div className='-mx-2 flex flex-wrap gap-y-4'>
+            <div className='w-full px-2 xl:w-1/2'>
               <ImagePanel
                 title='Image A'
                 data={comparison.imageA}
@@ -431,8 +446,8 @@ export default function ImageNeighbourViewer() {
                     : undefined
                 }
               />
-            </Col>
-            <Col xs={12} xl={6}>
+            </div>
+            <div className='w-full px-2 xl:w-1/2'>
               <ImagePanel
                 title='Image B'
                 data={comparison.imageB}
@@ -448,8 +463,8 @@ export default function ImageNeighbourViewer() {
                     : undefined
                 }
               />
-            </Col>
-          </Row>
+            </div>
+          </div>
           <NeighbourTable
             forward={comparison.neighbours.forward}
             reverse={comparison.neighbours.reverse}
@@ -544,10 +559,7 @@ function ImagePanel({
     };
 
     const endDrag = (event: PointerEvent) => {
-      if (
-        pointerState.dragging &&
-        pointerState.pointerId === event.pointerId
-      ) {
+      if (pointerState.dragging && pointerState.pointerId === event.pointerId) {
         pointerState.dragging = false;
         pointerState.pointerId = null;
         pointerState.last = null;
@@ -583,25 +595,22 @@ function ImagePanel({
   const width = Number(data.image.width ?? 0);
   const height = Number(data.image.height ?? 0);
   const timestampLabel = formatDate(
-    data.image.timestamp as string | number | Date | null | undefined
+    data.image.timestamp as string | number | Date | null | undefined,
   );
   const cameraName = data.cameraName;
 
   return (
-    <Card className='w-100 h-100'>
-      <Card.Header>
-        <Card.Title className='mb-0'>{title}</Card.Title>
-      </Card.Header>
-      <Card.Body
+    <Card className='h-full w-full'>
+      <CardHeader>
+        <CardTitle className='mb-0'>{title}</CardTitle>
+      </CardHeader>
+      <CardContent
         className='p-0'
         style={{ height: '520px', padding: '16px', overflow: 'hidden' }}
       >
-        <div
-          className='w-100 h-100 position-relative rounded'
-          style={{ overflow: 'hidden' }}
-        >
+        <div className='relative h-full w-full' style={{ overflow: 'hidden' }}>
           <div
-            className='w-100 h-100'
+            className='h-full w-full'
             style={{
               transform: `rotate(${rotation}deg)`,
               transformOrigin: 'center center',
@@ -619,8 +628,8 @@ function ImagePanel({
             />
           </div>
         </div>
-      </Card.Body>
-      <Card.Footer className='small text-muted d-flex flex-column gap-1'>
+      </CardContent>
+      <CardFooter className='flex flex-col gap-1 text-sm text-muted-foreground'>
         <div>
           <strong>ID:</strong> {data.image.id}
         </div>
@@ -640,29 +649,21 @@ function ImagePanel({
         )}
         {!data.sourceKey && (
           <div>
-            <Badge bg='warning' text='dark'>
+            <Badge variant='warning' className='text-black'>
               No JPEG tiles found for this image – showing overlays only.
             </Badge>
           </div>
         )}
-        <div className='mt-2 d-flex flex-column gap-2'>
-          <div className='d-flex align-items-center justify-content-between'>
+        <div className='mt-2 flex flex-col gap-2'>
+          <div className='flex items-center justify-between'>
             <strong className='me-2 mb-0'>Rotation</strong>
             <span>{rotation}°</span>
           </div>
-          <div className='d-flex gap-2'>
-            <Button
-              variant='outline-secondary'
-              size='sm'
-              onClick={rotateLeft}
-            >
+          <div className='flex gap-2'>
+            <Button variant='outline-secondary' size='sm' onClick={rotateLeft}>
               −90°
             </Button>
-            <Button
-              variant='outline-secondary'
-              size='sm'
-              onClick={rotateRight}
-            >
+            <Button variant='outline-secondary' size='sm' onClick={rotateRight}>
               +90°
             </Button>
             <Button
@@ -675,7 +676,7 @@ function ImagePanel({
             </Button>
           </div>
         </div>
-      </Card.Footer>
+      </CardFooter>
     </Card>
   );
 }
@@ -694,7 +695,11 @@ function NeighbourTable({
   const records = [
     forward && { id: 'forward', label: 'Image A → Image B', record: forward },
     reverse && { id: 'reverse', label: 'Image B → Image A', record: reverse },
-  ].filter(Boolean) as { id: string; label: string; record: ImageNeighbourType }[];
+  ].filter(Boolean) as {
+    id: string;
+    label: string;
+    record: ImageNeighbourType;
+  }[];
 
   const handleCopy = async (values?: number[] | null) => {
     if (!values?.length) return;
@@ -707,9 +712,9 @@ function NeighbourTable({
 
   return (
     <Card>
-      <Card.Header>
-        <Card.Title className='mb-0'>Neighbour records</Card.Title>
-      </Card.Header>
+      <CardHeader>
+        <CardTitle className='mb-0'>Neighbour records</CardTitle>
+      </CardHeader>
       <Table responsive className='mb-0'>
         <thead>
           <tr>
@@ -717,7 +722,7 @@ function NeighbourTable({
             <th scope='col'>Has homography</th>
             <th scope='col'>Updated</th>
             <th scope='col'>Created</th>
-            <th scope='col' className='text-end'>
+            <th scope='col' className='text-right'>
               Actions
             </th>
           </tr>
@@ -725,25 +730,21 @@ function NeighbourTable({
         <tbody>
           {records.map(({ id, label, record }) => {
             const hasHomography = Boolean(
-              record.homography && record.homography.length === 9
+              record.homography && record.homography.length === 9,
             );
             return (
               <tr key={id}>
                 <td>{label}</td>
                 <td>
                   {hasHomography ? (
-                    <Badge bg='success'>Yes</Badge>
+                    <Badge variant='success'>Yes</Badge>
                   ) : (
-                    <Badge bg='secondary'>No</Badge>
+                    <Badge variant='secondary'>No</Badge>
                   )}
                 </td>
-                <td>
-                  {formatDate(record.updatedAt) ?? '—'}
-                </td>
-                <td>
-                  {formatDate(record.createdAt) ?? '—'}
-                </td>
-                <td className='text-end'>
+                <td>{formatDate(record.updatedAt) ?? '—'}</td>
+                <td>{formatDate(record.createdAt) ?? '—'}</td>
+                <td className='text-right'>
                   <Button
                     size='sm'
                     variant='outline-secondary'
@@ -761,7 +762,6 @@ function NeighbourTable({
     </Card>
   );
 }
-
 
 function NeighbourMap({
   data,
@@ -789,13 +789,21 @@ function NeighbourMap({
       [...polygon, polygon[0]].map(([x, y]) => projection.px2lngLat(x, y));
 
     map.on('load', () => {
-      addImageTiles(map, data.sourceKey!, { id: data.image.id, width, height }, projection);
+      addImageTiles(
+        map,
+        data.sourceKey!,
+        { id: data.image.id, width, height },
+        projection,
+      );
 
       map.addSource('image-bounds', {
         type: 'geojson',
         data: {
           type: 'Feature',
-          geometry: { type: 'Polygon', coordinates: [toRing(data.pixelPolygon)] },
+          geometry: {
+            type: 'Polygon',
+            coordinates: [toRing(data.pixelPolygon)],
+          },
           properties: {},
         },
       });
@@ -838,10 +846,7 @@ function NeighbourMap({
             closeOnClick: false,
           });
           map.on('mousemove', 'projected-overlap-fill', (e) => {
-            popup
-              .setLngLat(e.lngLat)
-              .setText(overlayDescription)
-              .addTo(map);
+            popup.setLngLat(e.lngLat).setText(overlayDescription).addTo(map);
           });
           map.on('mouseleave', 'projected-overlap-fill', () => popup.remove());
         }
@@ -856,11 +861,17 @@ function NeighbourMap({
       map.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.sourceKey, data.image.id, overlay, overlayColor, overlayDescription]);
+  }, [
+    data.sourceKey,
+    data.image.id,
+    overlay,
+    overlayColor,
+    overlayDescription,
+  ]);
 
   if (!data.sourceKey) {
     return (
-      <div className='w-100 h-100 d-flex align-items-center justify-content-center text-muted'>
+      <div className='flex h-full w-full items-center justify-center text-muted-foreground'>
         No image file available
       </div>
     );

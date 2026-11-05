@@ -1,3 +1,22 @@
+import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { useQueries } from '@tanstack/react-query';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  PencilRuler,
+  Settings2,
+  Share2,
+} from 'lucide-react';
+import * as maplibregl from 'maplibre-gl';
 import {
   useCallback,
   useContext,
@@ -7,25 +26,21 @@ import {
   useState,
 } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
+import { useNavigate } from 'react-router-dom';
+import { isMarkedOutside } from '../annotationBoundary';
 import { GlobalContext } from '../Context';
-import type { CategoryType, ImageType } from '../schemaTypes';
-import * as maplibregl from 'maplibre-gl';
+import type { AnnotationType, CategoryType, ImageType } from '../schemaTypes';
+import { WaitingOverlay } from '../useAckOnTimeout';
+import { HelpModal } from './components/HelpModal';
+import { OovPanel } from './components/OovPanel';
 import {
   IndividualIdMap,
+  type MapInstanceCallback,
   type MapMarker,
   type MarkerKind,
-  type MapInstanceCallback,
 } from './IndividualIdMap';
-import type { AnnotationType } from '../schemaTypes';
 import type { MatchCandidate, NeighbourPair, PixelTransform } from './types';
-import { Button } from 'react-bootstrap';
-import { HelpCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { WaitingOverlay } from '../useAckOnTimeout';
-import { OovPanel } from './components/OovPanel';
-import { HelpModal } from './components/HelpModal';
 import { isOov } from './utils/identity';
-import { useQueries } from '@tanstack/react-query';
 import { imageSourceQuery } from './utils/imageSource';
 import { pairTilePoints } from './utils/tiles';
 
@@ -43,7 +58,7 @@ interface Props {
   onDrag: (
     candidateKey: string,
     side: 'A' | 'B',
-    pos: { x: number; y: number }
+    pos: { x: number; y: number },
   ) => void;
   /** Space press: commit the link and mark `accepted` when allowed. */
   onAccept: (candidateKey: string) => boolean | Promise<boolean>;
@@ -52,7 +67,7 @@ interface Props {
   onPlaceNew?: (
     side: 'A' | 'B',
     pos: { x: number; y: number },
-    newAnnotationId: string
+    newAnnotationId: string,
   ) => void;
   onDelete?: (annotationId: string) => void;
   onSplitChain?: (annotationId: string) => void;
@@ -63,7 +78,7 @@ interface Props {
   onSetProposedObscured?: (
     candidateKey: string,
     side: 'A' | 'B',
-    value: boolean
+    value: boolean,
   ) => void;
   /**
    * User clicked "Move to OOV" on a shadow whose candidate has a real
@@ -74,7 +89,7 @@ interface Props {
   /** Args: active candidate's real id opposite the click, then the ctrl-clicked real id. */
   onManualLinkRequest?: (
     activeAnnotationId: string,
-    clickedAnnotationId: string
+    clickedAnnotationId: string,
   ) => void;
   onAllAccepted?: () => void;
   /** Omit to hide the prev button + Ctrl+← shortcut (used by single-pair mode). */
@@ -213,7 +228,7 @@ export function IndividualIdMapPair(props: Props) {
 
   const activeCandidate = useMemo(
     () => candidates.find((c) => c.pairKey === activeKey) ?? null,
-    [candidates, activeKey]
+    [candidates, activeKey],
   );
 
   const sourceQueries = useQueries({
@@ -230,7 +245,10 @@ export function IndividualIdMapPair(props: Props) {
   const [markersHidden, setMarkersHidden] = useState(false);
 
   // secondary = real whose objectId points at another row's identity; primary otherwise.
-  function classify(real: AnnotationType | undefined, isShadow: boolean): MarkerKind {
+  function classify(
+    real: AnnotationType | undefined,
+    isShadow: boolean,
+  ): MarkerKind {
     if (isShadow || !real) return 'shadow';
     if (real.objectId && real.objectId !== real.id) return 'secondary';
     return 'primary';
@@ -243,7 +261,7 @@ export function IndividualIdMapPair(props: Props) {
       const params = new URLSearchParams({ chain: chainId });
       return `${chainViewerBaseHref}?${params.toString()}`;
     },
-    [chainViewerBaseHref]
+    [chainViewerBaseHref],
   );
 
   // Lookup for routing marker handlers — informational markers are keyed by
@@ -272,8 +290,9 @@ export function IndividualIdMapPair(props: Props) {
         identityKey: c.identityKey,
         active: c.pairKey === activeKey,
         obscured: c.realA ? !!c.realA.obscured : !!c.obscuredA,
+        outside: isMarkedOutside(c.realA),
         canMoveToOov: isShadow && !!partnerReal,
-        canSplitChain: c.realA ? canSplitChain?.(c.realA.id) ?? false : false,
+        canSplitChain: c.realA ? (canSplitChain?.(c.realA.id) ?? false) : false,
         duplicateChainMember: c.realA
           ? duplicateAnnotationIds.has(c.realA.id)
           : false,
@@ -281,8 +300,9 @@ export function IndividualIdMapPair(props: Props) {
           ? conflictHighlightAnnotationIds.has(c.realA.id)
           : false,
         chainViewerHref: chainViewerHrefFor(chainAnnotation),
-        infoTags: (c.realA as (AnnotationType & { infoTags?: string[] }) | undefined)
-          ?.infoTags,
+        infoTags: (
+          c.realA as (AnnotationType & { infoTags?: string[] }) | undefined
+        )?.infoTags,
       });
     }
     // Informational markers for annotations belonging to other categories.
@@ -300,6 +320,7 @@ export function IndividualIdMapPair(props: Props) {
         infoTags: (a as AnnotationType & { infoTags?: string[] }).infoTags,
         active: false,
         obscured: !!a.obscured,
+        outside: isMarkedOutside(a),
         foreign: true,
         canSplitChain: false,
         duplicateChainMember: duplicateAnnotationIds.has(a.id),
@@ -339,8 +360,9 @@ export function IndividualIdMapPair(props: Props) {
         identityKey: c.identityKey,
         active: c.pairKey === activeKey,
         obscured: c.realB ? !!c.realB.obscured : !!c.obscuredB,
+        outside: isMarkedOutside(c.realB),
         canMoveToOov: isShadow && !!partnerReal,
-        canSplitChain: c.realB ? canSplitChain?.(c.realB.id) ?? false : false,
+        canSplitChain: c.realB ? (canSplitChain?.(c.realB.id) ?? false) : false,
         duplicateChainMember: c.realB
           ? duplicateAnnotationIds.has(c.realB.id)
           : false,
@@ -348,8 +370,9 @@ export function IndividualIdMapPair(props: Props) {
           ? conflictHighlightAnnotationIds.has(c.realB.id)
           : false,
         chainViewerHref: chainViewerHrefFor(chainAnnotation),
-        infoTags: (c.realB as (AnnotationType & { infoTags?: string[] }) | undefined)
-          ?.infoTags,
+        infoTags: (
+          c.realB as (AnnotationType & { infoTags?: string[] }) | undefined
+        )?.infoTags,
       });
     }
     // Informational markers for annotations belonging to other categories.
@@ -367,6 +390,7 @@ export function IndividualIdMapPair(props: Props) {
         infoTags: (a as AnnotationType & { infoTags?: string[] }).infoTags,
         active: false,
         obscured: !!a.obscured,
+        outside: isMarkedOutside(a),
         foreign: true,
         canSplitChain: false,
         duplicateChainMember: duplicateAnnotationIds.has(a.id),
@@ -390,11 +414,11 @@ export function IndividualIdMapPair(props: Props) {
 
   const tilePointsA = useMemo(
     () => pairTilePoints(candidates, 'A', imageA.id, foreignAnnotations),
-    [candidates, imageA.id, foreignAnnotations]
+    [candidates, imageA.id, foreignAnnotations],
   );
   const tilePointsB = useMemo(
     () => pairTilePoints(candidates, 'B', imageB.id, foreignAnnotations),
-    [candidates, imageB.id, foreignAnnotations]
+    [candidates, imageB.id, foreignAnnotations],
   );
 
   const [imagesReady, setImagesReady] = useState(false);
@@ -412,8 +436,14 @@ export function IndividualIdMapPair(props: Props) {
   }, []);
   // Linking hotkeys wait for the imagery; pair navigation stays available.
   const interactive = visible && imagesReady;
-  const handleSideReadyA = useCallback(() => markSideReady('A'), [markSideReady]);
-  const handleSideReadyB = useCallback(() => markSideReady('B'), [markSideReady]);
+  const handleSideReadyA = useCallback(
+    () => markSideReady('A'),
+    [markSideReady],
+  );
+  const handleSideReadyB = useCallback(
+    () => markSideReady('B'),
+    [markSideReady],
+  );
 
   // Dragging a marker also focuses it — acting on any marker moves the
   // active state to that marker. Informational markers can't be focused, so
@@ -423,14 +453,14 @@ export function IndividualIdMapPair(props: Props) {
       if (!foreignById.has(candidateKey)) setActiveKey(candidateKey);
       onDrag(candidateKey, 'A', { x, y });
     },
-    [onDrag, foreignById]
+    [onDrag, foreignById],
   );
   const handleDragB = useCallback(
     (candidateKey: string, x: number, y: number) => {
       if (!foreignById.has(candidateKey)) setActiveKey(candidateKey);
       onDrag(candidateKey, 'B', { x, y });
     },
-    [onDrag, foreignById]
+    [onDrag, foreignById],
   );
 
   // Slave the other map via the homography on move/zoom; isSyncingRef breaks the feedback loop.
@@ -449,7 +479,7 @@ export function IndividualIdMapPair(props: Props) {
       mapsRef.current[0] = map ? { map, px2lngLat, lngLat2px } : null;
       if (wasNull !== (map === null)) setMapsTick((t) => t + 1);
     },
-    []
+    [],
   );
   const onMapInstance1: MapInstanceCallback = useCallback(
     (map, px2lngLat, lngLat2px) => {
@@ -457,7 +487,7 @@ export function IndividualIdMapPair(props: Props) {
       mapsRef.current[1] = map ? { map, px2lngLat, lngLat2px } : null;
       if (wasNull !== (map === null)) setMapsTick((t) => t + 1);
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -466,7 +496,10 @@ export function IndividualIdMapPair(props: Props) {
     if (!a || !b) return;
 
     // src=0 means A drives B (forward); src=1 means B drives A (backward).
-    const transforms: [PixelTransform, PixelTransform] = [pair.forward, pair.backward];
+    const transforms: [PixelTransform, PixelTransform] = [
+      pair.forward,
+      pair.backward,
+    ];
 
     const sync = (srcIdx: 0 | 1) => {
       if (isSyncingRef.current) return;
@@ -525,16 +558,16 @@ export function IndividualIdMapPair(props: Props) {
       // the user is working a cluster of nearby annotations (the new marker
       // is already on screen). A candidate far away — typically a different
       // herd — fails this check and the pan fires as before.
-      const aOutside =
-        !!(a && cand.posA &&
-          !a.map
-            .getBounds()
-            .contains(a.px2lngLat(cand.posA.x, cand.posA.y)));
-      const bOutside =
-        !!(b && cand.posB &&
-          !b.map
-            .getBounds()
-            .contains(b.px2lngLat(cand.posB.x, cand.posB.y)));
+      const aOutside = !!(
+        a &&
+        cand.posA &&
+        !a.map.getBounds().contains(a.px2lngLat(cand.posA.x, cand.posA.y))
+      );
+      const bOutside = !!(
+        b &&
+        cand.posB &&
+        !b.map.getBounds().contains(b.px2lngLat(cand.posB.x, cand.posB.y))
+      );
       if (!aOutside && !bOutside) return;
 
       // Suppress sync during the pan so B doesn't mid-animation jump off A's centre.
@@ -563,7 +596,7 @@ export function IndividualIdMapPair(props: Props) {
         focusPanTimeoutRef.current = null;
       }, 320);
     },
-    [candidates]
+    [candidates],
   );
 
   // Pan on active-candidate transitions; skip the first activation so initial framing wins.
@@ -602,14 +635,14 @@ export function IndividualIdMapPair(props: Props) {
       }
       setActiveKey(focusable[nextIdx]?.pairKey ?? null);
     },
-    [activeKey, candidates]
+    [activeKey, candidates],
   );
 
   const handleSpace = useCallback(async () => {
     if (!activeCandidate) {
       // Nothing focused → focus the first non-accepted, non-informational.
       const next = candidates.find(
-        (c) => c.status !== 'accepted' && !c.informational
+        (c) => c.status !== 'accepted' && !c.informational,
       );
       if (next) {
         setActiveKey(next.pairKey);
@@ -635,7 +668,7 @@ export function IndividualIdMapPair(props: Props) {
       // Advance focus within this pair; onAllAccepted is fired by the effect, not here (stale-read race).
       const linkable = candidates.filter((c) => !c.informational);
       const remaining = linkable.filter(
-        (c) => c.status !== 'accepted' && c.pairKey !== activeCandidate.pairKey
+        (c) => c.status !== 'accepted' && c.pairKey !== activeCandidate.pairKey,
       );
       if (remaining.length === 0) {
         setActiveKey(null);
@@ -692,9 +725,12 @@ export function IndividualIdMapPair(props: Props) {
     onClearConflictHighlights,
   ]);
 
-  useHotkeys('Space', handleSpace, { enabled: interactive, preventDefault: true }, [
+  useHotkeys(
+    'Space',
     handleSpace,
-  ]);
+    { enabled: interactive, preventDefault: true },
+    [handleSpace],
+  );
   useHotkeys('Escape', handleEscape, { enabled: interactive }, [handleEscape]);
   useHotkeys('ArrowRight', () => advanceFocus(1), { enabled: interactive }, [
     advanceFocus,
@@ -706,20 +742,20 @@ export function IndividualIdMapPair(props: Props) {
     'Ctrl+ArrowRight',
     () => onRequestNextPair?.(),
     { enabled: visible && !!onRequestNextPair },
-    [onRequestNextPair]
+    [onRequestNextPair],
   );
   useHotkeys(
     'Ctrl+ArrowLeft',
     () => onRequestPrevPair?.(),
     { enabled: visible && !!onRequestPrevPair },
-    [onRequestPrevPair]
+    [onRequestPrevPair],
   );
   // Hide markers while Tab is held; show them again on release.
   useHotkeys(
     'Tab',
     (e) => setMarkersHidden(e.type === 'keydown'),
     { enabled: interactive, keydown: true, keyup: true, preventDefault: true },
-    []
+    [],
   );
   // A keyup can be missed if focus leaves the window mid-hold, or if the
   // pair stops being visible — reset so markers don't stay stuck hidden.
@@ -742,7 +778,7 @@ export function IndividualIdMapPair(props: Props) {
       if (c?.informational) return;
       setActiveKey(candidateKey);
     },
-    [candidates, foreignById]
+    [candidates, foreignById],
   );
 
   // Empty-map click places a new annotation and makes it the active marker
@@ -761,21 +797,21 @@ export function IndividualIdMapPair(props: Props) {
       onPlaceNew(clickedSide, pos, newId);
       setActiveKey(newId);
     },
-    [activeKey, category, onPlaceNew, onUnfocus]
+    [activeKey, category, onPlaceNew, onUnfocus],
   );
 
   const handleMapClickA = useCallback(
     (x: number, y: number) => placeFromClick('A', { x, y }),
-    [placeFromClick]
+    [placeFromClick],
   );
   const handleMapClickB = useCallback(
     (x: number, y: number) => placeFromClick('B', { x, y }),
-    [placeFromClick]
+    [placeFromClick],
   );
 
   // Track which side initiated the hover so the other map shows a passive popup.
   const [hover, setHover] = useState<{ side: 'A' | 'B'; key: string } | null>(
-    null
+    null,
   );
   const handleHoverA = useCallback((key: string | null) => {
     setHover(key ? { side: 'A', key } : null);
@@ -796,7 +832,7 @@ export function IndividualIdMapPair(props: Props) {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realA) onDelete?.(c.realA.id);
     },
-    [candidates, onDelete, foreignById]
+    [candidates, onDelete, foreignById],
   );
   const handleDeleteB = useCallback(
     (candidateKey: string) => {
@@ -808,7 +844,7 @@ export function IndividualIdMapPair(props: Props) {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realB) onDelete?.(c.realB.id);
     },
-    [candidates, onDelete, foreignById]
+    [candidates, onDelete, foreignById],
   );
 
   const handleSplitChainA = useCallback(
@@ -817,7 +853,7 @@ export function IndividualIdMapPair(props: Props) {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realA) onSplitChain?.(c.realA.id);
     },
-    [candidates, onSplitChain, foreignById]
+    [candidates, onSplitChain, foreignById],
   );
   const handleSplitChainB = useCallback(
     (candidateKey: string) => {
@@ -825,7 +861,7 @@ export function IndividualIdMapPair(props: Props) {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realB) onSplitChain?.(c.realB.id);
     },
-    [candidates, onSplitChain, foreignById]
+    [candidates, onSplitChain, foreignById],
   );
 
   const handleChangeLabelA = useCallback(
@@ -838,7 +874,7 @@ export function IndividualIdMapPair(props: Props) {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realA) onChangeLabel?.(c.realA.id, c.realA.categoryId);
     },
-    [candidates, onChangeLabel, foreignById]
+    [candidates, onChangeLabel, foreignById],
   );
   const handleChangeLabelB = useCallback(
     (candidateKey: string) => {
@@ -850,7 +886,7 @@ export function IndividualIdMapPair(props: Props) {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realB) onChangeLabel?.(c.realB.id, c.realB.categoryId);
     },
-    [candidates, onChangeLabel, foreignById]
+    [candidates, onChangeLabel, foreignById],
   );
 
   const handleToggleObscuredA = useCallback(
@@ -866,7 +902,7 @@ export function IndividualIdMapPair(props: Props) {
       if (c.realA) onToggleObscured?.(c.realA.id);
       else onSetProposedObscured?.(c.pairKey, 'A', !c.obscuredA);
     },
-    [candidates, onToggleObscured, onSetProposedObscured, foreignById]
+    [candidates, onToggleObscured, onSetProposedObscured, foreignById],
   );
   const handleToggleObscuredB = useCallback(
     (candidateKey: string) => {
@@ -880,16 +916,16 @@ export function IndividualIdMapPair(props: Props) {
       if (c.realB) onToggleObscured?.(c.realB.id);
       else onSetProposedObscured?.(c.pairKey, 'B', !c.obscuredB);
     },
-    [candidates, onToggleObscured, onSetProposedObscured, foreignById]
+    [candidates, onToggleObscured, onSetProposedObscured, foreignById],
   );
 
   const handleMoveToOovA = useCallback(
     (candidateKey: string) => onMoveToOov?.(candidateKey, 'A'),
-    [onMoveToOov]
+    [onMoveToOov],
   );
   const handleMoveToOovB = useCallback(
     (candidateKey: string) => onMoveToOov?.(candidateKey, 'B'),
-    [onMoveToOov]
+    [onMoveToOov],
   );
 
   // Ctrl+click a real marker on the other image to link it with the active
@@ -905,7 +941,7 @@ export function IndividualIdMapPair(props: Props) {
       if (activeCandidate.realA && !activeCandidate.informational) return;
       onManualLinkRequest?.(activeCandidate.realB.id, clicked.realA.id);
     },
-    [activeCandidate, candidates, onManualLinkRequest]
+    [activeCandidate, candidates, onManualLinkRequest],
   );
   const handleCtrlClickB = useCallback(
     (candidateKey: string) => {
@@ -916,17 +952,17 @@ export function IndividualIdMapPair(props: Props) {
       if (activeCandidate.realB && !activeCandidate.informational) return;
       onManualLinkRequest?.(activeCandidate.realA.id, clicked.realB.id);
     },
-    [activeCandidate, candidates, onManualLinkRequest]
+    [activeCandidate, candidates, onManualLinkRequest],
   );
 
   // OOV candidates split by side; the partner (if any) renders normally on the other map.
   const oovCandidatesA = useMemo(
     () => candidates.filter((c) => c.oovSide === 'A'),
-    [candidates]
+    [candidates],
   );
   const oovCandidatesB = useMemo(
     () => candidates.filter((c) => c.oovSide === 'B'),
-    [candidates]
+    [candidates],
   );
 
   // Panel cards reuse the map-side ctrl-click handlers (identical geometry).
@@ -935,23 +971,23 @@ export function IndividualIdMapPair(props: Props) {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realA) onDelete?.(c.realA.id);
     },
-    [candidates, onDelete]
+    [candidates, onDelete],
   );
   const handleCardDeleteB = useCallback(
     (candidateKey: string) => {
       const c = candidates.find((cc) => cc.pairKey === candidateKey);
       if (c?.realB) onDelete?.(c.realB.id);
     },
-    [candidates, onDelete]
+    [candidates, onDelete],
   );
 
   const activeAnchorA = activeCandidate?.posA ?? null;
   const activeAnchorB = activeCandidate?.posB ?? null;
 
   return (
-    <div className='w-100 h-100 d-flex flex-column gap-2'>
+    <div className='flex h-full w-full flex-col gap-2'>
       <div
-        className='d-flex flex-row gap-2 w-100'
+        className='flex w-full flex-row gap-2'
         style={{ flex: 1, minHeight: 0, position: 'relative' }}
       >
         {!imagesReady && (
@@ -1045,13 +1081,10 @@ export function IndividualIdMapPair(props: Props) {
       </div>
       <PairToolbar
         // Counts exclude informational markers.
-        candidatesCount={
-          candidates.filter((c) => !c.informational).length
-        }
+        candidatesCount={candidates.filter((c) => !c.informational).length}
         acceptedCount={
-          candidates.filter(
-            (c) => c.status === 'accepted' && !c.informational
-          ).length
+          candidates.filter((c) => c.status === 'accepted' && !c.informational)
+            .length
         }
         onPrev={onRequestPrevPair}
         onNext={onRequestNextPair}
@@ -1095,7 +1128,7 @@ function PairToolbar({
 
   return (
     <div
-      className='d-flex flex-column gap-2 px-3 py-3'
+      className='flex flex-col gap-2 px-4 py-4'
       style={{
         background: '#4E5D6C',
         color: '#f8f9fa',
@@ -1103,8 +1136,8 @@ function PairToolbar({
         position: 'relative',
       }}
     >
-      <div className='d-flex flex-row align-items-center justify-content-between gap-2'>
-        <div className='d-flex flex-row gap-2 align-items-center'>
+      <div className='flex flex-row items-center justify-between gap-2'>
+        <div className='flex flex-row items-center gap-2'>
           <span
             style={{
               borderRight: '1px solid rgba(255, 255, 255, 0.25)',
@@ -1114,56 +1147,131 @@ function PairToolbar({
             }}
           >
             <Button
-              size='sm'
+              size='icon-sm'
               variant='info'
               onClick={() => setHelpOpen(true)}
               title='How ChainLinker works'
+              aria-label='How ChainLinker works'
             >
-              <HelpCircle size={16} style={{ verticalAlign: 'middle' }} />
+              <HelpCircle size={16} />
             </Button>
           </span>
           <Button
-            size='sm'
+            size='icon-sm'
             variant='outline-light'
             onClick={() => onCollapsedChange(!collapsed)}
             title={collapsed ? 'Expand' : 'Collapse'}
+            aria-label={collapsed ? 'Expand' : 'Collapse'}
           >
-            {collapsed ? '▴' : '▾'}
+            {collapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </Button>
           {onPrev && (
             <Button
+              size='icon-sm'
               onClick={onPrev}
               title='Previous image pair (Ctrl+←)'
-              size='sm'
+              aria-label='Previous image pair'
             >
-              ←
+              <ArrowLeft size={16} />
             </Button>
           )}
           {onNext && (
-            <Button size='sm' onClick={onNext} title='Next image pair (Ctrl+→)'>
-              →
+            <Button
+              size='icon-sm'
+              onClick={onNext}
+              title='Next image pair (Ctrl+→)'
+              aria-label='Next image pair'
+            >
+              <ArrowRight size={16} />
             </Button>
           )}
           {!collapsed && (
-            <span style={{ opacity: 0.85 }}>
-              {acceptedCount} / {candidatesCount} accepted
+            <span className='text-sm font-medium'>
+              {acceptedCount} of {candidatesCount}{' '}
+              {candidatesCount === 1 ? 'match' : 'matches'} accepted
             </span>
           )}
         </div>
-        <div className='d-flex flex-row gap-2 align-items-center'>
+        <div className='flex flex-row items-center gap-2'>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                size='icon-sm'
+                variant='outline-light'
+                title='Pairing settings'
+                aria-label='Pairing settings'
+              >
+                <Settings2 size={16} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              side='top'
+              align='end'
+              className='flex w-80 flex-col gap-2'
+            >
+              <label htmlFor='ii-leniency' className='mb-0 font-semibold'>
+                Pairing radius
+              </label>
+              <div className='flex items-center gap-2'>
+                <input
+                  id='ii-leniency'
+                  type='range'
+                  min={0}
+                  max={1000}
+                  step={10}
+                  value={leniency}
+                  onChange={(e) =>
+                    onLeniencyChange(parseInt(e.target.value, 10))
+                  }
+                  className='min-w-0 flex-1'
+                />
+                <input
+                  type='number'
+                  aria-label='Pairing radius in pixels'
+                  min={0}
+                  max={1000}
+                  step={1}
+                  value={leniency}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (Number.isNaN(n)) return;
+                    onLeniencyChange(Math.max(0, Math.min(1000, n)));
+                  }}
+                  style={{
+                    width: 64,
+                    background: '#3B4753',
+                    color: '#f8f9fa',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    padding: '2px 4px',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                />
+                <span className='text-xs'>px</span>
+              </div>
+              <p className='mb-0 text-xs text-muted-foreground'>
+                A match is only proposed when its partner projects within this
+                many image pixels. The active marker shows a ring at this
+                radius.
+              </p>
+            </PopoverContent>
+          </Popover>
           {editHomographyHref && (
             <Button
-              size='sm'
+              size='icon-sm'
               variant='outline-light'
               onClick={() => navigate(editHomographyHref)}
               title='Edit the homography for this image pair'
+              aria-label='Edit homography'
             >
-              Edit homography
+              <PencilRuler size={16} />
             </Button>
           )}
           <Button
-            size='sm'
+            size='icon-sm'
             variant='outline-light'
+            aria-label='Copy a link to this pair'
             onClick={async () => {
               // shareHref is a route path; expand to an absolute URL so the
               // clipboard payload is openable outside this tab.
@@ -1180,57 +1288,16 @@ function PairToolbar({
             }}
             title={shareCopied ? 'Link copied' : 'Copy a link to this pair'}
           >
-            {shareCopied ? 'Copied!' : 'Share'}
+            {shareCopied ? <Check size={16} /> : <Share2 size={16} />}
           </Button>
-          <Button size='sm' onClick={() => navigate('/jobs')}>
+          <Button
+            size='sm'
+            className='h-[31px]'
+            onClick={() => navigate('/jobs')}
+          >
             Save & Exit
           </Button>
         </div>
-      </div>
-      <div
-        className='ii-toolbar-centre d-flex flex-row gap-2 align-items-center'
-        title='Munkres only proposes a match if the projected distance to a partner is below this many image pixels. The active marker shows a ring at this radius.'
-      >
-        <label
-          htmlFor='ii-leniency'
-          style={{ opacity: 0.8, fontSize: 11, marginBottom: 0 }}
-        >
-          Pairing radius
-        </label>
-        <input
-          id='ii-leniency'
-          type='range'
-          min={0}
-          max={1000}
-          step={10}
-          value={leniency}
-          onChange={(e) => onLeniencyChange(parseInt(e.target.value, 10))}
-          className='ii-toolbar-slider'
-        />
-        <input
-          type='number'
-          aria-label='Pairing radius in pixels'
-          min={0}
-          max={1000}
-          step={1}
-          value={leniency}
-          onChange={(e) => {
-            const n = parseInt(e.target.value, 10);
-            if (Number.isNaN(n)) return;
-            onLeniencyChange(Math.max(0, Math.min(1000, n)));
-          }}
-          style={{
-            width: 60,
-            background: '#3B4753',
-            color: '#f8f9fa',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-            borderRadius: 4,
-            fontSize: 12,
-            padding: '2px 4px',
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        />
-        <span style={{ opacity: 0.85, fontSize: 11 }}>px</span>
       </div>
       <HelpModal show={helpOpen} onHide={() => setHelpOpen(false)} />
     </div>

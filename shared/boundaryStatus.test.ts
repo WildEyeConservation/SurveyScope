@@ -1,8 +1,10 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
+  chainsMarkedOutside,
   createBoundaryClassifier,
   createStratumAssigner,
+  isAnnotationOnEffort,
   isOnEffort,
   type LatLngRing,
 } from './boundaryStatus.ts';
@@ -83,6 +85,22 @@ test('missing status is on effort', () => {
   assert.equal(isOnEffort('inside'), true);
   assert.equal(isOnEffort('outside'), false);
   assert.equal(isOnEffort('excluded'), false);
+});
+
+test('a marked annotation is off effort on an inside image', () => {
+  assert.equal(isAnnotationOnEffort('inside', null), true);
+  assert.equal(isAnnotationOnEffort(null, true), false);
+  assert.equal(isAnnotationOnEffort('outside', false), false);
+});
+
+test('one marked annotation marks its whole chain', () => {
+  const chains = chainsMarkedOutside([
+    { id: 'a', objectId: 'a' },
+    { id: 'b', objectId: 'a', outsideBoundary: true },
+    { id: 'c', outsideBoundary: true },
+    { id: 'd', objectId: 'd', outsideBoundary: false },
+  ]);
+  assert.deepEqual([...chains].sort(), ['a', 'c']);
 });
 
 test('points on an edge or vertex count as inside it', () => {

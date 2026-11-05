@@ -52,14 +52,14 @@ test('a duplicate ID rejects when the existing row differs', async () => {
       expected,
       isGraphQLError,
     }),
-    /Failed to persist observation: The conditional request failed/
+    /Failed to persist observation: The conditional request failed/,
   );
 });
 
 test('a GraphQL error without a deterministic ID rejects', async () => {
   await assert.rejects(
     persistObservation({ create: duplicate, expected, isGraphQLError }),
-    /Failed to persist observation/
+    /Failed to persist observation/,
   );
 });
 
@@ -78,7 +78,7 @@ test('other errors propagate without a lookup', async () => {
       expected,
       isGraphQLError,
     }),
-    networkError
+    networkError,
   );
   assert.equal(lookups, 0);
 });

@@ -1,14 +1,21 @@
-import React, {
-  useState,
-  useRef,
-  useLayoutEffect,
-  useEffect,
-  useCallback,
-  useMemo,
-  ReactElement,
-} from 'react';
-import Dropdown from 'react-bootstrap/Dropdown';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
+import React, {
+  ReactElement,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import './Tabs.css';
 
 interface TabProps {
@@ -26,27 +33,14 @@ interface TabsProps {
   className?: string;
   sharedChild?: React.ReactNode;
   disableSwitching?: boolean;
+  // Hide inactive tabs instead of unmounting them, so they keep their state.
+  keepMounted?: boolean;
+  activeTab?: number;
 }
-
-const MoreToggle = React.forwardRef<
-  HTMLDivElement,
-  { onClick: (e: React.MouseEvent) => void; className?: string; children: React.ReactNode }
->(({ onClick, className, children }, ref) => (
-  <div
-    ref={ref}
-    className={className}
-    onClick={(e) => {
-      e.preventDefault();
-      onClick(e);
-    }}
-  >
-    {children}
-  </div>
-));
 
 export const Tab: React.FC<TabProps> = ({ children, className }) => {
   return (
-    <div className={`d-flex flex-column w-100 h-100 ${className ?? ''}`}>
+    <div className={`flex h-full w-full flex-col ${className ?? ''}`}>
       {children}
     </div>
   );
@@ -59,10 +53,13 @@ export const Tabs: React.FC<TabsProps> = ({
   className,
   sharedChild,
   disableSwitching = false,
+  keepMounted = false,
+  activeTab: controlledTab,
 }) => {
-  const [activeTab, setActiveTab] = useState(defaultTab);
+  const [internalTab, setActiveTab] = useState(defaultTab);
+  const activeTab = controlledTab ?? internalTab;
   const childrenArray = React.Children.toArray(
-    children
+    children,
   ) as ReactElement<TabProps>[];
 
   const [tabWidths, setTabWidths] = useState<number[]>([]);
@@ -150,29 +147,31 @@ export const Tabs: React.FC<TabsProps> = ({
   };
 
   return (
-    <div className={`w-100 h-100 d-flex flex-column ${className ?? ''}`}>
+    <div className={`flex h-full w-full flex-col ${className ?? ''}`}>
       <div
         ref={headerRef}
-        className='tabs-header border-bottom border-dark'
+        role='tablist'
+        className='tabs-header border-b border-dark'
       >
         {/* Hidden measurement row */}
         {tabWidths.length === 0 && (
-          <div ref={hiddenRowRef} className='tabs-measure-row' aria-hidden='true'>
+          <div
+            ref={hiddenRowRef}
+            className='tabs-measure-row'
+            aria-hidden='true'
+          >
             {childrenArray.map((child, i) => (
               <div
                 key={i}
                 ref={(el) => {
                   tabRefs.current[i] = el;
                 }}
-                className='tab-label py-2 px-3'
+                className='tab-label px-4! py-2!'
               >
                 {child.props.label}
               </div>
             ))}
-            <div
-              ref={moreRef}
-              className='tab-label py-2 px-3'
-            >
+            <div ref={moreRef} className='tab-label px-4! py-2!'>
               More <ChevronDown size={14} />
             </div>
           </div>
@@ -180,45 +179,65 @@ export const Tabs: React.FC<TabsProps> = ({
 
         {/* Visible tabs */}
         {visibleIndices.map((index) => (
-          <div
+          <button
             key={index}
-            className={`tab-label py-2 px-3 ${
-              activeTab === index ? 'bg-primary' : ''
+            type='button'
+            role='tab'
+            aria-selected={activeTab === index}
+            className={`tab-label px-4! py-2! ${
+              activeTab === index ? 'bg-primary!' : ''
             }`}
             onClick={() => handleTabClick(index)}
           >
             {childrenArray[index].props.label}
-          </div>
+          </button>
         ))}
 
         {/* More dropdown */}
         {overflowIndices.length > 0 && (
-          <Dropdown>
-            <Dropdown.Toggle
-              as={MoreToggle}
-              className={`tab-label tab-more-toggle py-2 px-3 ${
-                overflowIndices.includes(activeTab) ? 'bg-primary' : ''
-              }`}
-            >
-              More <ChevronDown size={14} style={{ verticalAlign: 'middle' }} />
-            </Dropdown.Toggle>
-            <Dropdown.Menu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <div
+                className={cn(
+                  'tab-label tab-more-toggle px-4! py-2!',
+                  overflowIndices.includes(activeTab) && 'bg-primary!',
+                )}
+              >
+                More{' '}
+                <ChevronDown size={14} style={{ verticalAlign: 'middle' }} />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='start'>
               {overflowIndices.map((index) => (
-                <Dropdown.Item
+                <DropdownMenuItem
                   key={index}
-                  active={activeTab === index}
-                  onClick={() => handleTabClick(index)}
+                  className={cn(
+                    activeTab === index && 'bg-primary! text-white!',
+                  )}
+                  onSelect={() => handleTabClick(index)}
                 >
                   {childrenArray[index].props.label}
-                </Dropdown.Item>
+                </DropdownMenuItem>
               ))}
-            </Dropdown.Menu>
-          </Dropdown>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
-      <div className='flex-grow-1 d-flex flex-column w-100 h-100'>
+      <div className='flex h-full w-full grow flex-col'>
         {sharedChild}
-        {childrenArray[activeTab]}
+        {keepMounted
+          ? childrenArray.map((child, index) => (
+              <div
+                key={index}
+                className={cn(
+                  'h-full w-full grow flex-col',
+                  index === activeTab ? 'flex' : 'hidden',
+                )}
+              >
+                {child}
+              </div>
+            ))
+          : childrenArray[activeTab]}
       </div>
     </div>
   );

@@ -1,4 +1,12 @@
-import { Modal, Button } from 'react-bootstrap';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   show: boolean;
@@ -33,34 +41,36 @@ export function PairCompleteDialog({
 }: Props) {
   const goBack = earlierIncompleteIndex !== undefined;
   return (
-    <Modal show={show} onHide={onStay} centered>
-      <Modal.Header closeButton>
-        <Modal.Title>Image pair complete</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        {goBack ? (
-          <>
-            All annotations on this image pair are now linked. New shadow
-            markers have appeared on image pair{' '}
-            <strong>{(earlierIncompleteIndex as number) + 1}</strong>, which
-            you have already worked on. Would you like to go back and resolve
-            it now?
-          </>
-        ) : (
-          <>
-            All annotations on this image pair are now linked, and no earlier
-            image pair needs attention. Move on to the next image pair?
-          </>
-        )}
-      </Modal.Body>
-      <Modal.Footer>
-        <Button variant='secondary' onClick={onStay}>
-          Stay here
-        </Button>
-        <Button variant='primary' onClick={onConfirm}>
-          {goBack ? 'Go back' : 'Next image pair'}
-        </Button>
-      </Modal.Footer>
-    </Modal>
+    <Dialog open={show} onOpenChange={(o) => !o && onStay()}>
+      <DialogContent centered>
+        <DialogHeader closeButton>
+          <DialogTitle>Image pair complete</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          {goBack ? (
+            <>
+              All annotations on this image pair are now linked. New shadow
+              markers have appeared on image pair{' '}
+              <strong>{(earlierIncompleteIndex as number) + 1}</strong>, which
+              you have already worked on. Would you like to go back and resolve
+              it now?
+            </>
+          ) : (
+            <>
+              All annotations on this image pair are now linked, and no earlier
+              image pair needs attention. Move on to the next image pair?
+            </>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant='secondary' onClick={onStay}>
+            Stay here
+          </Button>
+          <Button variant='primary' onClick={onConfirm}>
+            {goBack ? 'Go back' : 'Next image pair'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

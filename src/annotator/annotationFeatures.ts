@@ -3,10 +3,10 @@ import {
   names,
   uniqueNamesGenerator,
 } from 'unique-names-generator';
+import { OUTSIDE_SURVEY_AREA } from '../../shared/boundaryStatus';
+import { formatInfoTagsForDisplay } from '../infoTags';
 import type { ExtendedAnnotationType } from '../schemaTypes';
 import { isWithinLocationBounds } from '../utils';
-import { formatInfoTagsForDisplay } from '../infoTags';
-import { OUTSIDE_SURVEY_AREA } from '../../shared/boundaryStatus';
 
 export interface AnnotationBounds {
   x: number;
@@ -58,13 +58,13 @@ export function annotationObjectName(seed: string): string {
 export function buildAnnotationFeatureProperties(
   annotation: ExtendedAnnotationType,
   categoryColor: (categoryId: string) => string,
-  locationBounds?: AnnotationBounds
+  locationBounds?: AnnotationBounds,
 ): AnnotationFeatureProperties {
   const markerKind = annotation.shadow
     ? 'shadow'
     : annotation.objectId && annotation.objectId !== annotation.id
-    ? 'secondary'
-    : 'primary';
+      ? 'secondary'
+      : 'primary';
   const identityKey =
     annotation.objectId ?? annotation.proposedObjectId ?? annotation.id;
 
@@ -83,8 +83,8 @@ export function buildAnnotationFeatureProperties(
     icon: isFalseNegative(annotation)
       ? 'fn-marker'
       : markerKind === 'primary'
-      ? `identicon-${identityKey}`
-      : '',
+        ? `identicon-${identityKey}`
+        : '',
     statusIcon: annotation.obscured ? 'obscured-marker' : '',
   };
 }
@@ -116,7 +116,7 @@ export function buildAnnotationFeatureCollection({
         properties: buildAnnotationFeatureProperties(
           annotation,
           categoryColor,
-          locationBounds
+          locationBounds,
         ),
       };
     }),
@@ -128,7 +128,7 @@ export function buildAnnotationPopupLines(
   categoryName: (categoryId: string) => string,
   users: ReadonlyArray<{ id: string; name?: string | null }>,
   infoTags?: string[],
-  outside?: boolean
+  outside?: boolean,
 ): string[] {
   const lines = [`Label: ${categoryName(annotation.categoryId)}`];
   if (outside) lines.push(OUTSIDE_SURVEY_AREA);
@@ -139,14 +139,14 @@ export function buildAnnotationPopupLines(
   lines.push(
     `Created by: ${
       users.find((user) => user.id === annotation.owner)?.name ?? 'Unknown'
-    }`
+    }`,
   );
   if (annotation.createdAt) lines.push(`Created at: ${annotation.createdAt}`);
   if (annotation.objectId) {
     lines.push(`Name: ${annotationObjectName(annotation.objectId)}`);
   } else if (annotation.proposedObjectId) {
     lines.push(
-      `Proposed Name: ${annotationObjectName(annotation.proposedObjectId)}`
+      `Proposed Name: ${annotationObjectName(annotation.proposedObjectId)}`,
     );
   }
   return lines;

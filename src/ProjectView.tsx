@@ -1,11 +1,10 @@
-import { Project, Management } from './UserContext';
-import { Outlet } from 'react-router-dom';
-import { Schema } from './amplify/client-schema';
-import { UserContext, GlobalContext } from './Context';
 import { useContext, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { fetchAllPaginatedResults } from './utils';
+import { Outlet, useParams } from 'react-router-dom';
+import { Schema } from './amplify/client-schema';
 import { useCognitoGroups } from './cognitoGroups';
+import { GlobalContext, UserContext } from './Context';
+import { Management, Project } from './UserContext';
+import { fetchAllPaginatedResults } from './utils';
 
 export default function ProjectView() {
   const { user } = useContext(UserContext)!;
@@ -28,7 +27,7 @@ export default function ProjectView() {
         {
           userId: user.userId,
           filter: { projectId: { eq: surveyId } },
-        }
+        },
       );
       setCurrentPM(currentPM);
     };

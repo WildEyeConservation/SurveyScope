@@ -10,7 +10,7 @@ test('the heat radius doubles with each zoom level between its limits', () => {
     number,
     number,
     number,
-    number
+    number,
   ];
   assert.equal(lowPx, 8);
   assert.equal(highPx, 200);

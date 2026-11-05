@@ -101,6 +101,12 @@ export class SurveyAccumulator {
     string,
     Record<string, number>
   >();
+  private readonly primaries: Array<{
+    objectId: string;
+    categoryId: string;
+    key: string;
+  }> = [];
+  private readonly chainsMarkedOutside = new Set<string>();
   private readonly validation: ValidationCounts = {
     excludedImages: 0,
     outsideBoundary: 0,
@@ -111,6 +117,7 @@ export class SurveyAccumulator {
     missingTimestamp: 0,
     invalidCameraOptics: 0,
     annotationsForExcludedImages: 0,
+    annotationsMarkedOutside: 0,
   };
 
   constructor(options: SurveyAccumulatorOptions) {
@@ -247,6 +254,9 @@ export class SurveyAccumulator {
   }
 
   addAnnotation(annotation: AnnotationRecord): void {
+    if (annotation.outsideBoundary) {
+      this.chainsMarkedOutside.add(annotation.objectId ?? annotation.id);
+    }
     if (
       annotation.id !== annotation.objectId ||
       !this.selectedCategories.has(annotation.categoryId)
@@ -258,11 +268,25 @@ export class SurveyAccumulator {
       this.validation.annotationsForExcludedImages += 1;
       return;
     }
-    const key = cameraStripKey(strip.unitKey, strip.cameraId);
-    const counts = this.countsByCameraStrip.get(key) ?? {};
-    counts[annotation.categoryId] =
-      (counts[annotation.categoryId] ?? 0) + 1;
-    this.countsByCameraStrip.set(key, counts);
+    // Counted in calculate(), once every chain member has been seen.
+    this.primaries.push({
+      objectId: annotation.id,
+      categoryId: annotation.categoryId,
+      key: cameraStripKey(strip.unitKey, strip.cameraId),
+    });
+  }
+
+  private countPrimaries(): void {
+    for (const { objectId, categoryId, key } of this.primaries) {
+      if (this.chainsMarkedOutside.has(objectId)) {
+        this.validation.annotationsMarkedOutside += 1;
+        continue;
+      }
+      const counts = this.countsByCameraStrip.get(key) ?? {};
+      counts[categoryId] = (counts[categoryId] ?? 0) + 1;
+      this.countsByCameraStrip.set(key, counts);
+    }
+    this.primaries.length = 0;
   }
 
   calculate(): ComputationOutput {
@@ -281,6 +305,12 @@ export class SurveyAccumulator {
     if (invalidImages > 0) {
       warnings.push(
         `${invalidImages} images were excluded because required survey data was missing or invalid`
+      );
+    }
+    this.countPrimaries();
+    if (this.validation.annotationsMarkedOutside > 0) {
+      warnings.push(
+        `${this.validation.annotationsMarkedOutside} selected annotations marked outside the survey area were left out`
       );
     }
     if (this.validation.annotationsForExcludedImages > 0) {
