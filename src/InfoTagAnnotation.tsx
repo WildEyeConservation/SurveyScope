@@ -46,6 +46,7 @@ import {
   recordWorkflowTask,
   type RecordWorkflowTaskInput,
 } from './recordWorkflowTask';
+import { createSerialQueue } from './serialQueue';
 import { getTileBlob, imageTileContext } from './StorageLayer';
 import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
 import { useActiveTimeTracker } from './useActiveTimeTracker';
@@ -175,9 +176,11 @@ export default function InfoTagAnnotation({
     new Map<string, { x: number; y: number }>(),
   );
   const revisionsRef = useRef(new Map<string, number>());
-  const retryRef = useRef<(() => Promise<void>) | null>(null);
-  const savingRef = useRef(false);
+  const saveQueueRef = useRef(createSerialQueue());
+  const finishRequestedRef = useRef(false);
   const [saving, setSaving] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [exiting, setExiting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [markerPosition, setMarkerPosition] = useState({ x: 0, y: 0 });
@@ -193,7 +196,7 @@ export default function InfoTagAnnotation({
     enabled:
       visible &&
       !disabled &&
-      !saving &&
+      !finishing &&
       !loading &&
       imageReadyAt !== null &&
       !imageComplete,
@@ -497,6 +500,14 @@ export default function InfoTagAnnotation({
                     toLngLat(x0, y1),
                   ],
                 });
+                // Sharper levels stay on top, whichever download lands last.
+                const above = instance
+                  .getStyle()
+                  .layers.find(
+                    (layer) =>
+                      layer.id === LAYER_ANNOTATIONS ||
+                      Number(layer.id.split('-')[3]) > zoom,
+                  );
                 instance.addLayer(
                   {
                     id: `info-tag-layer-${zoom}-${row}-${column}`,
@@ -504,7 +515,7 @@ export default function InfoTagAnnotation({
                     source: sourceId,
                     paint: { 'raster-fade-duration': 0 },
                   },
-                  LAYER_ANNOTATIONS,
+                  above?.id ?? LAYER_ANNOTATIONS,
                 );
                 addedTiles += 1;
               })
@@ -696,14 +707,17 @@ export default function InfoTagAnnotation({
         toLngLat(0, image.height),
         toLngLat(image.width, 0),
       );
-      instance.fitBounds(imageBounds, { padding: 20, animate: false });
-      baseZoomRef.current = instance.getZoom();
+      // One move straight to the annotation, so no whole-image tiles load.
+      const fitZoom =
+        instance.cameraForBounds(imageBounds, { padding: 20 })?.zoom ??
+        instance.getZoom();
+      baseZoomRef.current = fitZoom;
       instance.jumpTo({
         center: toLngLat(
           firstTarget?.x ?? image.width / 2,
           firstTarget?.y ?? image.height / 2,
         ),
-        zoom: instance.getZoom() + zoomOffset,
+        zoom: fitZoom + zoomOffset,
       });
       setMap(instance);
       updateVisibleTiles(instance);
@@ -843,17 +857,29 @@ export default function InfoTagAnnotation({
     setQueueZoom,
   ]);
 
+  const drain = useCallback(async (): Promise<void> => {
+    setSaving(true);
+    try {
+      await saveQueueRef.current.drain();
+      setSaveError(null);
+    } catch (error) {
+      setSaveError((error as Error).message);
+      throw error;
+    } finally {
+      setSaving(saveQueueRef.current.busy);
+    }
+  }, []);
+
   const finishImage = useCallback(async (): Promise<void> => {
     if (finishedRef.current || disabled || !visible || !session) return;
+    finishRequestedRef.current = true;
     finishedRef.current = true;
-    savingRef.current = true;
-    setSaving(true);
+    setFinishing(true);
     setImageComplete(true);
-    retryRef.current = finishImage;
     try {
+      await drain();
       await session.complete();
       await ack?.();
-      retryRef.current = null;
       setSaveError(null);
       setReadyToAdvance(true);
     } catch (error) {
@@ -861,10 +887,9 @@ export default function InfoTagAnnotation({
       setImageComplete(false);
       setSaveError((error as Error).message);
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      setFinishing(false);
     }
-  }, [ack, disabled, session, visible]);
+  }, [ack, disabled, drain, session, visible]);
 
   useEffect(() => {
     if (!loading && !loadError && image && targets.length === 0 && !saveError) {
@@ -905,10 +930,10 @@ export default function InfoTagAnnotation({
       !currentTarget ||
       !session ||
       finishedRef.current ||
-      savingRef.current ||
+      finishing ||
       disabled ||
       !visible ||
-      retryRef.current
+      saveError
     )
       return;
     const target = currentTarget;
@@ -944,54 +969,46 @@ export default function InfoTagAnnotation({
       waitingAssignedRef.current = true;
     }
     // Retries reuse this exact operation. Undo creates a new operation/revision.
-    const input = {
-      annotationId: target.id,
-      expectedRevision: revisionsRef.current.get(target.id) ?? 0,
-      operationId: crypto.randomUUID(),
-      tagIds: [...after],
-      x: position.x,
-      y: position.y,
-    };
-    const run = async () => {
-      if (savingRef.current || disabled) return;
-      savingRef.current = true;
-      setSaving(true);
-      retryRef.current = run;
-      try {
-        const revision = await session.save(input);
-        revisionsRef.current.set(target.id, revision);
-        persistedTagIdsRef.current.set(target.id, after);
-        persistedPositionsRef.current.set(target.id, position);
-        setAnnotations((rows) =>
-          rows.map((row) =>
-            row.id === target.id ? { ...row, ...position } : row,
-          ),
-        );
-        setCompletedIds((ids) => new Set(ids).add(target.id));
-        await recordWorkflowTask(client, task!);
-        retryRef.current = null;
-        setSaveError(null);
-        if (currentIndex + 1 < targets.length)
-          setCurrentIndex((index) => index + 1);
-        else await finishImage();
-      } catch (error) {
-        setSaveError((error as Error).message);
-      } finally {
-        savingRef.current = false;
-        setSaving(false);
-      }
-    };
-    void run();
+    const operationId = crypto.randomUUID();
+    persistedTagIdsRef.current.set(target.id, after);
+    persistedPositionsRef.current.set(target.id, position);
+    setAnnotations((rows) =>
+      rows.map((row) => (row.id === target.id ? { ...row, ...position } : row)),
+    );
+    setCompletedIds((ids) => new Set(ids).add(target.id));
+    const statsTask = task;
+    saveQueueRef.current.push(async () => {
+      // Read when it runs: an earlier save of this annotation sets it.
+      const revision = await session.save({
+        annotationId: target.id,
+        expectedRevision: revisionsRef.current.get(target.id) ?? 0,
+        operationId,
+        tagIds: [...after],
+        x: position.x,
+        y: position.y,
+      });
+      revisionsRef.current.set(target.id, revision);
+      await recordWorkflowTask(client, statsTask);
+    });
+    if (currentIndex + 1 < targets.length) {
+      setCurrentIndex((index) => index + 1);
+      void drain().catch(() => {});
+    } else {
+      void finishImage();
+    }
   }, [
     activeTime,
     client,
     currentIndex,
     currentTarget,
     disabled,
+    drain,
     finishImage,
+    finishing,
     imageReadyAt,
     markerPosition,
     queueId,
+    saveError,
     selectedTagIds,
     session,
     targets.length,
@@ -999,20 +1016,24 @@ export default function InfoTagAnnotation({
   ]);
 
   const retrySave = useCallback(() => {
-    if (!disabled && !savingRef.current) void retryRef.current?.();
-  }, [disabled]);
+    if (disabled || saveQueueRef.current.busy || finishing) return;
+    if (finishRequestedRef.current) void finishImage();
+    else void drain().catch(() => {});
+  }, [disabled, drain, finishImage, finishing]);
 
   const undo = useCallback(() => {
-    if (disabled || savingRef.current || retryRef.current) return;
+    if (disabled || finishing || saveError) return;
     if (currentIndex > 0) {
       setCurrentIndex((index) => index - 1);
       return;
     }
-    prev?.();
-  }, [currentIndex, disabled, prev]);
+    void drain()
+      .then(() => prev?.())
+      .catch(() => {});
+  }, [currentIndex, disabled, drain, finishing, prev, saveError]);
 
   useEffect(() => {
-    if (!visible || disabled || saving || saveError) return;
+    if (!visible || disabled || finishing || saveError) return;
     const keyDown = (event: KeyboardEvent) => {
       if (
         event.repeat ||
@@ -1050,7 +1071,7 @@ export default function InfoTagAnnotation({
     disabled,
     infoTags,
     saveError,
-    saving,
+    finishing,
     toggleTag,
     undo,
     visible,
@@ -1077,7 +1098,7 @@ export default function InfoTagAnnotation({
     <div
       className='flex h-full w-full flex-col'
       style={{
-        pointerEvents: disabled || saving ? 'none' : undefined,
+        pointerEvents: disabled || finishing ? 'none' : undefined,
         opacity: disabled ? 0.65 : 1,
       }}
     >
@@ -1086,13 +1107,16 @@ export default function InfoTagAnnotation({
         style={{ backgroundColor: '#2b3e50', flexShrink: 0 }}
       >
         <div className='flex items-center gap-4'>
-          <Badge variant='info'>{currentCategory?.name ?? 'Info Tags'}</Badge>
+          <span className='flex items-center gap-2 text-sm'>
+            Tagging:
+            <Badge variant='info'>{currentCategory?.name ?? 'Info Tags'}</Badge>
+          </span>
           {currentTarget && (
             <Badge variant='secondary'>
               Annotation {currentIndex + 1} of {targets.length} on this image
             </Badge>
           )}
-          <span className='text-muted-foreground' style={{ fontSize: 12 }}>
+          <span className='text-xs text-muted-foreground opacity-70'>
             Press shortcut keys to toggle tags · Space to continue · Tip: Hold
             Tab to hide the marker
           </span>
@@ -1122,7 +1146,7 @@ export default function InfoTagAnnotation({
             variant='light'
             size='sm'
             onClick={retrySave}
-            disabled={saving || disabled}
+            disabled={saving || finishing || disabled}
           >
             Retry save
           </Button>
@@ -1245,7 +1269,7 @@ export default function InfoTagAnnotation({
                       key={tag.id}
                       variant={selectedTagIds.has(tag.id) ? 'info' : 'primary'}
                       className='flex items-center justify-between gap-2'
-                      disabled={saving || disabled || Boolean(saveError)}
+                      disabled={finishing || disabled || Boolean(saveError)}
                       onClick={() => toggleTag(tag.id)}
                     >
                       <span>{tag.name}</span>
@@ -1266,12 +1290,12 @@ export default function InfoTagAnnotation({
       >
         <Button
           className='flex items-center justify-center gap-1'
-          variant='primary'
+          variant='outline-primary'
           style={{ width: 160 }}
           onClick={undo}
           disabled={
             disabled ||
-            saving ||
+            finishing ||
             Boolean(saveError) ||
             (!prev && currentIndex === 0)
           }
@@ -1285,21 +1309,26 @@ export default function InfoTagAnnotation({
           onClick={commitAndAdvance}
           disabled={
             disabled ||
-            saving ||
+            finishing ||
             Boolean(saveError) ||
             !currentTarget ||
             imageComplete
           }
         >
-          {saving ? 'Saving…' : 'Continue (Space)'}
+          {finishing ? 'Saving…' : 'Continue (Space)'}
         </Button>
         <Button
-          variant='primary'
+          variant='outline-primary'
           style={{ width: 160 }}
-          disabled={saving}
-          onClick={() => navigate('/jobs')}
+          disabled={exiting || finishing}
+          onClick={() => {
+            setExiting(true);
+            drain()
+              .then(() => navigate('/jobs'))
+              .catch(() => setExiting(false));
+          }}
         >
-          Save &amp; Exit
+          {exiting ? 'Saving…' : 'Save & Exit'}
         </Button>
       </div>
     </div>
