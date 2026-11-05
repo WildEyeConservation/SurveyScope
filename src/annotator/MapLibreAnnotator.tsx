@@ -755,7 +755,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             height: '100%',
             borderRadius: embedded ? 0 : 10,
             overflow: 'hidden',
-            background: embedded ? '#1f2933' : '#ffffff',
+            background: '#ffffff',
             border: embedded ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           }}
         />

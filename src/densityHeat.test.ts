@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { heatIntensity, heatRadiusExpression } from './densityHeat';
+import { heatCells, heatIntensity, heatRadiusExpression } from './densityHeat';
 
 test('the heat radius doubles with each zoom level between its limits', () => {
   const [, , , low, lowPx, high, highPx] = heatRadiusExpression(5, -25) as [
@@ -34,4 +34,15 @@ test('a single herd does not set the colour scale for the whole survey', () => {
 
 test('empty input leaves the intensity unscaled', () => {
   assert.equal(heatIntensity([], 5), 1);
+});
+
+test('stacked points become one weighted cell at their mean position', () => {
+  const herd: [number, number][] = Array.from({ length: 100 }, (_, i) => [
+    20 + (i % 2) * 0.001,
+    -25,
+  ]);
+  const { features } = heatCells([...herd, [21, -25]], 5);
+  assert.equal(features.length, 2);
+  const cell = features.find((f) => f.properties.weight === 100)!;
+  assert.ok(Math.abs(cell.geometry.coordinates[0] - 20.0005) < 1e-9);
 });

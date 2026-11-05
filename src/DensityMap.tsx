@@ -36,6 +36,7 @@ import { GlobalContext } from './Context';
 import {
   DEFAULT_HEAT_RADIUS_KM,
   HEAT_COLOR_RAMP,
+  heatCells,
   heatIntensity,
   heatRadiusExpression,
 } from './densityHeat';
@@ -104,7 +105,7 @@ interface DensityMapProps {
 // ---------------------------------------------------------------------------
 
 const SRC_ANNOTATIONS = 'annotations';
-// Unclustered, so the heatmap shows density rather than one blob per cluster.
+// Small weighted cells rather than clusters, so the heatmap shows density.
 const SRC_HEAT = 'annotations-unclustered';
 const SRC_IMAGES = 'images';
 const SRC_STRATA = 'strata';
@@ -725,6 +726,7 @@ export default function DensityMap({
         source: SRC_HEAT,
         layout: { visibility: 'none' },
         paint: {
+          'heatmap-weight': ['get', 'weight'],
           'heatmap-color': HEAT_COLOR_RAMP,
           'heatmap-opacity': 0.8,
         },
@@ -958,9 +960,9 @@ export default function DensityMap({
   useEffect(() => {
     if (!mapLoaded) return;
     (mapRef.current?.getSource(SRC_HEAT) as maplibregl.GeoJSONSource)?.setData(
-      annotationsFC,
+      heatCells(heatPoints, heatRadiusKm),
     );
-  }, [mapLoaded, annotationsFC]);
+  }, [mapLoaded, heatPoints, heatRadiusKm]);
 
   useEffect(() => {
     if (!mapLoaded || !heatScale) return;

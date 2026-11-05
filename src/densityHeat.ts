@@ -34,6 +34,35 @@ export function heatRadiusExpression(
   ];
 }
 
+// Weighted cells prevent visible square kernel cut-offs in dense clusters.
+export function heatCells(
+  points: [number, number][],
+  radiusKm: number,
+): GeoJSON.FeatureCollection<GeoJSON.Point, { weight: number }> {
+  const cell = (radiusKm * 1000) / 6;
+  const cellLat = cell / METERS_PER_DEGREE_LAT;
+  const sums = new Map<string, [number, number, number]>();
+  for (const [lng, lat] of points) {
+    const cellLng =
+      cell / (METERS_PER_DEGREE_LNG * Math.cos((lat * Math.PI) / 180));
+    const key = `${Math.floor(lng / cellLng)},${Math.floor(lat / cellLat)}`;
+    const sum = sums.get(key);
+    if (sum) {
+      sum[0] += lng;
+      sum[1] += lat;
+      sum[2]++;
+    } else sums.set(key, [lng, lat, 1]);
+  }
+  return {
+    type: 'FeatureCollection',
+    features: [...sums.values()].map(([lng, lat, n]) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lng / n, lat / n] },
+      properties: { weight: n },
+    })),
+  };
+}
+
 // Scales the kernel sums so the colour ramp spans the survey's own densities.
 export function heatIntensity(
   points: [number, number][],
