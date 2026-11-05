@@ -93,7 +93,8 @@ export default function DefineStrata({
         setSaved({
           area: next,
           strata,
-          baseline: carried,
+          // With no saved rows, the default stratum still needs saving.
+          baseline: strata.length ? carried : [],
         });
         setNamed(carried);
         setPending(boundaryRecomputePending(project));
@@ -224,6 +225,11 @@ export default function DefineStrata({
           <Spinner animation='border' size='sm' />
           Moving images and transects into the saved strata
         </span>
+      )}
+      {saved && !saved.strata.length && named.length > 0 && (
+        <div className='alert alert-warning mb-0 p-2' style={{ fontSize: 12 }}>
+          These strata are not saved yet. Save to use them in results.
+        </div>
       )}
       {legacyReset && (
         <Alert variant='warning' className='mb-0 p-2' style={{ fontSize: 12 }}>
