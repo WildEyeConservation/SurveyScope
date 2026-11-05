@@ -7,6 +7,7 @@ import { DataClient } from '../../amplify/shared/data-schema.generated';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
 import { GlobalContext, UserContext } from '../Context';
+import { ensureFalsePositiveCategory } from '../falsePositiveCategory';
 import { loadRows } from '../rowChunks';
 import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
@@ -307,6 +308,14 @@ export default function QCReview({
         if (selectedAnnotatorIdsRef.current.length > 0) {
           payload.annotatorUserIds = selectedAnnotatorIdsRef.current;
         }
+
+        // Created here, before anyone reviews, so reviewers can't race to make it.
+        onProgress('Preparing the False Positive label...');
+        await ensureFalsePositiveCategory(client, {
+          projectId: project.id,
+          annotationSetId: annotationSet.id,
+          group: (project as { organizationId?: string }).organizationId,
+        });
 
         onProgress('Submitting QC review request...');
         await sendLaunchQCReviewRequest(client, payload);

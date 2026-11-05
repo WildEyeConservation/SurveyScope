@@ -27,6 +27,10 @@ import { getTileBlob, imageTileContext } from './StorageLayer';
 import { applyActiveMarkerStyle } from './activeMarkerStyle';
 import type { Schema } from './amplify/client-schema';
 import {
+  ensureFalsePositiveCategory,
+  isFalsePositiveName,
+} from './falsePositiveCategory';
+import {
   fetchInfoTagDataForSet,
   formatInfoTagsForDisplay,
   infoTagNamesFor,
@@ -200,8 +204,7 @@ export default function QCAnnotationReview({
 
   // ── False Positive logic ──
   const existingFpCategory = useMemo(
-    () =>
-      categories.find((c) => c.name.trim().toLowerCase() === 'false positive'),
+    () => categories.find((c) => isFalsePositiveName(c.name)),
     [categories],
   );
   const fpHotkey = existingFpCategory ? existingFpCategory.shortcutKey : '+';
@@ -946,25 +949,22 @@ export default function QCAnnotationReview({
       }
       if (creatingFp) return;
       setCreatingFp(true);
+      // Older jobs may lack this category.
       try {
-        const { data } = await client.models.Category.create({
+        const fp = await ensureFalsePositiveCategory(client, {
           projectId,
           annotationSetId,
-          name: 'False Positive',
-          shortcutKey: '+',
-          color: '#888888',
           group,
         });
-        if (data) {
-          fpCatId = data.id;
-          setCategories((prev) => [
-            ...prev,
-            { id: data.id, name: 'False Positive', shortcutKey: '+' },
-          ]);
-        } else {
-          setCreatingFp(false);
-          return;
-        }
+        fpCatId = fp.id;
+        setCategories((prev) =>
+          prev.some((c) => c.id === fp.id)
+            ? prev
+            : [
+                ...prev,
+                { id: fp.id, name: fp.name, shortcutKey: fp.shortcutKey },
+              ],
+        );
       } catch (err) {
         console.error('Failed to create False Positive category', err);
         setCreatingFp(false);
