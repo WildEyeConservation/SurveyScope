@@ -407,16 +407,13 @@ export default function QCReview({
                   : `All ${plural(totalCount ?? 0, 'annotation')} for ${selectedCategory?.name} have been reviewed.`}
               </Banner>
             ) : (
-              <LaunchSummary value={sampleCount?.toLocaleString() ?? '—'}>
-                {sampleCount === 1 ? 'annotation' : 'annotations'} sampled (
-                {samplePercent}% of{' '}
-                {(filteredUnreviewedCount ?? 0).toLocaleString()} not yet
-                reviewed)
+              <LaunchSummary value={(totalCount ?? 0).toLocaleString()}>
+                {selectedCategory?.name}{' '}
+                {totalCount === 1 ? 'annotation exists' : 'annotations exist'}
                 <br />
-                {plural(totalCount ?? 0, 'annotation')} of{' '}
-                {selectedCategory?.name} in total
-                {selectedAnnotatorIds.length > 0 &&
-                  `, ${unreviewedCount.toLocaleString()} unreviewed by anyone`}
+                {selectedAnnotatorIds.length > 0
+                  ? `${(filteredUnreviewedCount ?? 0).toLocaleString()} from the selected annotators and ${unreviewedCount.toLocaleString()} overall haven't been reviewed yet`
+                  : `${unreviewedCount.toLocaleString()} haven't been reviewed yet`}
               </LaunchSummary>
             ))}
 
