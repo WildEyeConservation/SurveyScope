@@ -440,7 +440,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
           <div
             className={`flex flex-col ${
               legendCollapsed ? 'items-stretch' : 'items-center'
-            } h-full w-full gap-4`}
+            } h-full w-full min-w-0 gap-4`}
             style={{
               maxWidth: legendCollapsed ? 'none' : '1024px',
               flex: legendCollapsed ? 1 : undefined,
