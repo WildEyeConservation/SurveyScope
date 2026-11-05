@@ -2229,6 +2229,7 @@ export function FileUploadCore({
               organizationId,
               trimMarginM
             );
+            await resplitStrata(client, projectId, surveyArea, organizationId);
             await recomputeBoundaryStatus(client, projectId);
           }
         } else if (areaDirty) {
