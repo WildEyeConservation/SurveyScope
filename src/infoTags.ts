@@ -1,5 +1,6 @@
 import pLimit from 'p-limit';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
+import { isMarkedOutside, outsideBoundaryFields } from './annotationBoundary';
 import { loadRows } from './rowChunks';
 import { fetchAllPaginatedResults } from './utils';
 
@@ -177,6 +178,7 @@ export type ImageAnnotationRow = {
   y: number;
   infoTaggedBy: string | null;
   tagIds: string[];
+  outsideBoundary?: boolean;
 };
 
 // The tag links ride along with the annotations of the image being worked on.
@@ -206,7 +208,8 @@ export async function fetchImageAnnotationsWithTags(
           'infoTaggedBy',
           'infoTags.annotationId',
           'infoTags.infoTagId',
-        ] as const,
+          ...outsideBoundaryFields<'id'>(),
+        ],
         limit: 10000,
         nextToken,
       },
@@ -230,6 +233,7 @@ export async function fetchImageAnnotationsWithTags(
         y: annotation.y,
         infoTaggedBy: annotation.infoTaggedBy ?? null,
         tagIds: infoTagIdsFromLinks(annotation.infoTags),
+        outsideBoundary: isMarkedOutside(annotation),
       });
     }
     nextToken = result.nextToken;

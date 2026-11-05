@@ -22,7 +22,10 @@ import {
   SearchCheck,
   Undo2,
 } from 'lucide-react';
-import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../shared/boundaryStatus';
+import {
+  isAnnotationOnEffort,
+  OUTSIDE_SURVEY_AREA,
+} from '../shared/boundaryStatus';
 import {
   MAX_INFO_TAGS_PER_ANNOTATION,
   type InfoTagResponse,
@@ -278,6 +281,17 @@ export default function InfoTagAnnotation({
     };
   }, [annotationSetId, client, imageId]);
 
+  // Claim snapshots don't carry the flag.
+  const markedOutsideIds = useMemo(
+    () =>
+      new Set(
+        preloadedAnnotations
+          .filter((row) => row.outsideBoundary)
+          .map((row) => row.id),
+      ),
+    [preloadedAnnotations],
+  );
+
   useEffect(() => {
     if (!image) return;
     // A claim may arrive before or after preloading. Apply it to the annotation
@@ -417,7 +431,10 @@ export default function InfoTagAnnotation({
               ? 'pending'
               : 'context',
           infoTags: JSON.stringify(namesForAnnotation(annotation.id)),
-          outside: !isOnEffort(image?.boundaryStatus),
+          outside: !isAnnotationOnEffort(
+            image?.boundaryStatus,
+            markedOutsideIds.has(annotation.id),
+          ),
         },
         geometry: {
           type: 'Point',
@@ -431,6 +448,7 @@ export default function InfoTagAnnotation({
     completedIds,
     image,
     map,
+    markedOutsideIds,
     namesForAnnotation,
     targets,
     toLngLat,

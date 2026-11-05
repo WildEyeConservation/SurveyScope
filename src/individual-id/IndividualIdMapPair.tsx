@@ -27,6 +27,7 @@ import {
 } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useNavigate } from 'react-router-dom';
+import { isMarkedOutside } from '../annotationBoundary';
 import { GlobalContext } from '../Context';
 import type { AnnotationType, CategoryType, ImageType } from '../schemaTypes';
 import { WaitingOverlay } from '../useAckOnTimeout';
@@ -289,6 +290,7 @@ export function IndividualIdMapPair(props: Props) {
         identityKey: c.identityKey,
         active: c.pairKey === activeKey,
         obscured: c.realA ? !!c.realA.obscured : !!c.obscuredA,
+        outside: isMarkedOutside(c.realA),
         canMoveToOov: isShadow && !!partnerReal,
         canSplitChain: c.realA ? (canSplitChain?.(c.realA.id) ?? false) : false,
         duplicateChainMember: c.realA
@@ -318,6 +320,7 @@ export function IndividualIdMapPair(props: Props) {
         infoTags: (a as AnnotationType & { infoTags?: string[] }).infoTags,
         active: false,
         obscured: !!a.obscured,
+        outside: isMarkedOutside(a),
         foreign: true,
         canSplitChain: false,
         duplicateChainMember: duplicateAnnotationIds.has(a.id),
@@ -357,6 +360,7 @@ export function IndividualIdMapPair(props: Props) {
         identityKey: c.identityKey,
         active: c.pairKey === activeKey,
         obscured: c.realB ? !!c.realB.obscured : !!c.obscuredB,
+        outside: isMarkedOutside(c.realB),
         canMoveToOov: isShadow && !!partnerReal,
         canSplitChain: c.realB ? (canSplitChain?.(c.realB.id) ?? false) : false,
         duplicateChainMember: c.realB
@@ -386,6 +390,7 @@ export function IndividualIdMapPair(props: Props) {
         infoTags: (a as AnnotationType & { infoTags?: string[] }).infoTags,
         active: false,
         obscured: !!a.obscured,
+        outside: isMarkedOutside(a),
         foreign: true,
         canSplitChain: false,
         duplicateChainMember: duplicateAnnotationIds.has(a.id),

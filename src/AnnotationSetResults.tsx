@@ -16,7 +16,9 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  chainsMarkedOutside,
   createStratumAssigner,
+  isAnnotationOnEffort,
   isOnEffort,
   type BoundaryStatus,
   type LatLngRing,
@@ -26,6 +28,7 @@ import {
   hasDistanceInputs,
   perpendicularDistance,
 } from '../shared/distanceSampling';
+import { outsideBoundaryFields } from './annotationBoundary';
 import { useUsers } from './apiInterface';
 import { GlobalContext } from './Context.tsx';
 import GenerateJollyResults from './GenerateJollyResults.tsx';
@@ -151,6 +154,7 @@ export default function AnnotationSetResults({
               'reviewCatId',
               'reviewedBy',
               'infoTaggedBy',
+              ...outsideBoundaryFields<'outsideBoundary'>(),
             ],
             {
               onProgress: (count) => {
@@ -242,10 +246,19 @@ export default function AnnotationSetResults({
 
     for (const rows of annotationSetsResult) {
       a += rows.length;
-      const annotations = rows.map((anno) => ({
-        ...anno,
-        image: imageById.get(anno.imageId ?? '') ?? NO_IMAGE,
-      }));
+      const markedChains = chainsMarkedOutside(rows);
+      const annotations = rows.map((anno) => {
+        const image = imageById.get(anno.imageId ?? '') ?? NO_IMAGE;
+        const marked = markedChains.has(anno.objectId ?? anno.id);
+        return {
+          ...anno,
+          image,
+          onEffort: isAnnotationOnEffort(
+            image.boundaryStatus as BoundaryStatus | null,
+            marked,
+          ),
+        };
+      });
 
       const fileName = `SurveyScope-${survey.name}-${annotationSets[i].name}`;
       const exportType = exportFromJSON.types.csv;
@@ -264,12 +277,8 @@ export default function AnnotationSetResults({
               category: categoryMap[anno.categoryId ?? ''] || 'Unknown',
               image: anno.image.originalPath || 'Unknown',
               transect: anno.image.transectId || 'Unknown',
-              stratum: stratumName(anno.image),
-              surveyArea: isOnEffort(
-                anno.image.boundaryStatus as BoundaryStatus | null,
-              )
-                ? 'inside'
-                : 'outside',
+              stratum: anno.onEffort ? stratumName(anno.image) : 'None',
+              surveyArea: anno.onEffort ? 'inside' : 'outside',
               timestamp: anno.image.timestamp,
               latitude: anno.image.latitude,
               longitude: anno.image.longitude,

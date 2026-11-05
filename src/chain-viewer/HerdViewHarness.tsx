@@ -26,6 +26,7 @@ import { buildHerdRuns } from './utils/herdRuns';
 
 import './ChainViewer.css';
 
+import { outsideBoundaryFields } from '../annotationBoundary';
 import { fetchInfoTagDataForSet, infoTagNamesFor } from '../infoTags';
 
 interface Props {
@@ -41,6 +42,7 @@ type ChainAnnotationRow = {
   categoryId: string;
   obscured?: boolean | null;
   oov?: boolean | null;
+  outsideBoundary?: boolean | null;
 };
 
 type GraphQLResponse = {
@@ -98,7 +100,16 @@ export function HerdViewHarness({ annotationSetId }: Props) {
             client,
             'annotationsByAnnotationSetId',
             annotationSetId,
-            ['x', 'y', 'imageId', 'objectId', 'categoryId', 'obscured', 'oov'],
+            [
+              'x',
+              'y',
+              'imageId',
+              'objectId',
+              'categoryId',
+              'obscured',
+              'oov',
+              ...outsideBoundaryFields<'outsideBoundary'>(),
+            ],
             {
               onProgress: (count) => {
                 if (!cancelled) setFetchCount(count);
@@ -127,6 +138,7 @@ export function HerdViewHarness({ annotationSetId }: Props) {
             categoryId: a.categoryId,
             obscured: !!a.obscured,
             oov: !!a.oov,
+            outsideBoundary: !!a.outsideBoundary,
             imageTimestamp: timestamps.get(a.imageId) ?? null,
             infoTags: tagsDefined
               ? infoTagNamesFor(infoTagData, a.id)

@@ -297,6 +297,8 @@ const schema = a
         y: a.integer().required(),
         obscured: a.boolean(),
         oov: a.boolean(),
+        // Outside the survey area even when its image is inside.
+        outsideBoundary: a.boolean(),
         objectId: a.id(),
         object: a.belongsTo('Object', 'objectId'),
         reviewCatId: a.string(),

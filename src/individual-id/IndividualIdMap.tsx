@@ -62,6 +62,8 @@ export interface MapMarker {
    * toggle label.
    */
   obscured: boolean;
+  /** Marked outside the survey area on its own. */
+  outside?: boolean;
   /**
    * True for an informational marker belonging to a *different* category
    * than the workflow's. Rendered like a normal marker (own colour,
@@ -717,7 +719,7 @@ export function IndividualIdMap({
         ${kindLabel}
       </div>
       ${
-        outsideRef.current
+        outsideRef.current || data.outside
           ? `<div style="font-size:10px;margin-top:3px;font-weight:700">${OUTSIDE_SURVEY_AREA}</div>`
           : ''
       }

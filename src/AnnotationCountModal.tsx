@@ -5,7 +5,12 @@ import { cn } from '@/lib/utils';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { Body, Footer, Header, Modal, Title } from './Modal';
 
-import { isOnEffort, type BoundaryStatus } from '../shared/boundaryStatus';
+import {
+  chainsMarkedOutside,
+  isOnEffort,
+  type BoundaryStatus,
+} from '../shared/boundaryStatus';
+import { outsideBoundaryFields } from './annotationBoundary';
 import { GlobalContext } from './Context';
 import { loadProjectImages } from './projectImages';
 import { loadRows } from './rowChunks';
@@ -59,7 +64,13 @@ const AnnotationCountModal: React.FC<Props> = ({
         client,
         'annotationsByAnnotationSetId',
         setId,
-        ['categoryId', 'objectId', 'source', 'imageId'],
+        [
+          'categoryId',
+          'objectId',
+          'source',
+          'imageId',
+          ...outsideBoundaryFields<'outsideBoundary'>(),
+        ],
         { signal, onProgress: setLoaded },
       ),
       loadRows(client, 'categoriesByProjectId', projectId, ['name'], {
@@ -94,9 +105,14 @@ const AnnotationCountModal: React.FC<Props> = ({
             ]),
           ),
         );
+        const markedChains = chainsMarkedOutside(rows);
         setAnnotations(
           rows
-            .filter((a) => !outside.has(a.imageId ?? ''))
+            .filter(
+              (a) =>
+                !outside.has(a.imageId ?? '') &&
+                !markedChains.has(a.objectId ?? a.id),
+            )
             .map((a) => ({
               id: a.id,
               objectId: a.objectId,

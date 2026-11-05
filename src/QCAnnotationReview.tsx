@@ -21,11 +21,14 @@ import {
   SearchCheck,
   Undo2,
 } from 'lucide-react';
-import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../shared/boundaryStatus';
-import { GlobalContext, UserContext } from './Context';
-import { getTileBlob, imageTileContext } from './StorageLayer';
+import {
+  isAnnotationOnEffort,
+  OUTSIDE_SURVEY_AREA,
+} from '../shared/boundaryStatus';
 import { applyActiveMarkerStyle } from './activeMarkerStyle';
 import type { Schema } from './amplify/client-schema';
+import { isMarkedOutside, outsideBoundaryFields } from './annotationBoundary';
+import { GlobalContext, UserContext } from './Context';
 import {
   ensureFalsePositiveCategory,
   isFalsePositiveName,
@@ -37,6 +40,7 @@ import {
 } from './infoTags';
 import { recordWorkflowTask } from './recordWorkflowTask';
 import { reviewWorkflowTask } from './reviewWorkflowTask';
+import { getTileBlob, imageTileContext } from './StorageLayer';
 import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
 import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
 
@@ -143,6 +147,7 @@ export default function QCAnnotationReview({
       y: number;
       categoryId: string;
       reviewed: boolean;
+      outsideBoundary: boolean;
       infoTags: string[];
     }>
   >([]);
@@ -237,7 +242,14 @@ export default function QCAnnotationReview({
         },
         {
           limit: 10000,
-          selectionSet: ['id', 'x', 'y', 'categoryId', 'reviewedBy'],
+          selectionSet: [
+            'id',
+            'x',
+            'y',
+            'categoryId',
+            'reviewedBy',
+            ...outsideBoundaryFields<'id'>(),
+          ],
         },
       ),
       fetchInfoTagDataForSet(client, annotation.annotationSetId),
@@ -253,6 +265,7 @@ export default function QCAnnotationReview({
             y: a.y,
             categoryId: a.categoryId,
             reviewed: !!a.reviewedBy,
+            outsideBoundary: isMarkedOutside(a),
             infoTags: infoTagNamesFor(infoTagData, a.id),
           })),
       );
@@ -348,7 +361,10 @@ export default function QCAnnotationReview({
             categories.find((c) => c.id === a.categoryId)?.name ?? 'Unknown',
           reviewed: a.reviewed,
           infoTags: JSON.stringify(a.infoTags),
-          outside: !isOnEffort(image?.boundaryStatus),
+          outside: !isAnnotationOnEffort(
+            image?.boundaryStatus,
+            a.outsideBoundary,
+          ),
         },
         geometry: {
           type: 'Point',

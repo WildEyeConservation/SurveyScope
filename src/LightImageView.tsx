@@ -5,6 +5,7 @@ import {
   OUTSIDE_SURVEY_AREA,
   type BoundaryStatus,
 } from '../shared/boundaryStatus';
+import { outsideBoundaryFields } from './annotationBoundary';
 import { buildAnnotationFeatureProperties } from './annotator/annotationFeatures';
 import MapLibreLightViewer, {
   LightAnnotation,
@@ -24,6 +25,7 @@ type AnnotationItem = {
   categoryId: string;
   source?: string | null;
   obscured?: boolean | null;
+  outsideBoundary?: boolean | null;
   category: { id: string; name: string } | null;
 };
 
@@ -91,9 +93,10 @@ export default function LightImageView({
             'categoryId',
             'source',
             'obscured',
+            ...outsideBoundaryFields(),
             'category.id',
             'category.name',
-          ] as const,
+          ],
           limit: 10000,
         },
       )) as AnnotationItem[];
@@ -164,7 +167,7 @@ export default function LightImageView({
           y: a.y,
           popupLines: [
             `Label: ${a.category?.name || 'Unknown'}`,
-            ...(outside ? [OUTSIDE_SURVEY_AREA] : []),
+            ...(outside || a.outsideBoundary ? [OUTSIDE_SURVEY_AREA] : []),
             `Sighting: ${isPrimary ? 'Primary' : 'Secondary'}`,
             ...(infoTags?.length
               ? [`Info tags: ${formatInfoTagsForDisplay(infoTags)}`]

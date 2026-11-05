@@ -12,6 +12,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { isHotkeyPressed, useHotkeys } from 'react-hotkeys-hook';
 import { isOnEffort } from '../../shared/boundaryStatus';
+import { canMarkOutsideBoundary, isMarkedOutside } from '../annotationBoundary';
 import type { AnnotationImage, AnnotationLocation } from '../annotationTypes';
 import ChangeCategoryModal from '../ChangeCategoryModal';
 import { ImageContext, ManagementContext, ProjectContext } from '../Context';
@@ -446,7 +447,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             categoryName,
             allUsers,
             infoTagsRef.current?.get(annotation.id),
-            outsideRef.current,
+            outsideRef.current || isMarkedOutside(annotation),
           );
           lines.forEach((text) => {
             const row = document.createElement('div');
@@ -545,6 +546,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         const items = buildAnnotationMenuItems({
           annotation,
           readonly: properties.readonly,
+          canMarkOutside: canMarkOutsideBoundary() && !outsideRef.current,
           onDelete: annotationsHook.delete,
           onUpdate: annotationsHook.update,
           onChangeCategory: setCategoryModalAnnotation,
