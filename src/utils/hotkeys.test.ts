@@ -117,4 +117,7 @@ test('shortcuts render readably', () => {
   assert.equal(formatShortcutKey('space'), 'Space');
   assert.equal(formatShortcutKey('shift+8'), 'Shift+8');
   assert.equal(formatShortcutKey(null), '');
+  assert.equal(formatShortcutKey('+'), '+');
+  assert.equal(formatShortcutKey('shift++'), 'Shift++');
+  assert.equal(formatShortcutKey('#'), '#');
 });

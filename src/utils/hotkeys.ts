@@ -189,18 +189,18 @@ export function formatShortcutKey(
   shortcutKey: string | null | undefined,
 ): string {
   if (!shortcutKey) return '';
-  const parts = splitCombo(shortcutKey.trim().toLowerCase()).map(mapKeyName);
+  const raw = splitCombo(shortcutKey.trim().toLowerCase());
+  const parts = raw.map(mapKeyName);
   const mods = MODIFIERS.filter((m) => parts.includes(m)).map(
     (m) => DISPLAY_MODIFIERS[m],
   );
-  const keys = parts
-    .filter((k) => k !== '' && !isModifier(k))
-    .map(
-      (k) =>
-        DISPLAY_KEYS[k] ??
-        (k.length === 1
-          ? k.toUpperCase()
-          : k.charAt(0).toUpperCase() + k.slice(1)),
-    );
+  const keys = raw
+    .filter((_, i) => parts[i] !== '' && !isModifier(parts[i]))
+    // Show a typed character as stored: '+' maps to 'bracketright' internally.
+    .map((r) => {
+      const k = mapKeyName(r);
+      if (r.length === 1) return r.toUpperCase();
+      return DISPLAY_KEYS[k] ?? k.charAt(0).toUpperCase() + k.slice(1);
+    });
   return [...mods, ...keys].join('+');
 }
