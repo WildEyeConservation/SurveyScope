@@ -335,7 +335,7 @@ export default function ProcessImages({
                         </span>
                       )}
                     </div>
-                    <div className='w-44 shrink-0 text-right'>
+                    <div className='flex min-w-44 shrink-0 justify-end'>
                       {done && !retry ? (
                         <span className='inline-flex items-center gap-1 text-sm text-success'>
                           <CheckIcon className='size-4' />
