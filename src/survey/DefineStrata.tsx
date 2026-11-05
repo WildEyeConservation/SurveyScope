@@ -227,9 +227,9 @@ export default function DefineStrata({
         </span>
       )}
       {saved && !saved.strata.length && named.length > 0 && (
-        <div className='alert alert-warning mb-0 p-2' style={{ fontSize: 12 }}>
+        <Alert variant='warning' className='mb-0 p-2' style={{ fontSize: 12 }}>
           These strata are not saved yet. Save to use them in results.
-        </div>
+        </Alert>
       )}
       {legacyReset && (
         <Alert variant='warning' className='mb-0 p-2' style={{ fontSize: 12 }}>
