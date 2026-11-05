@@ -3,11 +3,38 @@ import { Input } from '@/components/ui/input';
 import { FormText, Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import { useContext, useState } from 'react';
+import { useContext, useMemo, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { Body, Footer, Header, Modal, Title } from '../Modal';
 import { Schema } from '../amplify/client-schema';
 import LabelEditor from './LabelEditor';
+
+function bigrams(text: string) {
+  const clean = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  const pairs = new Map<string, number>();
+  for (let i = 0; i < clean.length - 1; i++) {
+    const pair = clean.slice(i, i + 2);
+    pairs.set(pair, (pairs.get(pair) ?? 0) + 1);
+  }
+  return pairs;
+}
+
+// Dice coefficient over character pairs: 1 for identical names, 0 for none shared.
+function nameSimilarity(a: string, b: string) {
+  const x = bigrams(a);
+  const y = bigrams(b);
+  let shared = 0;
+  let total = 0;
+  for (const [pair, count] of x) {
+    shared += Math.min(count, y.get(pair) ?? 0);
+    total += count;
+  }
+  for (const count of y.values()) total += count;
+  return total ? (2 * shared) / total : 0;
+}
 
 export default function AddAnnotationSetModal({
   show,
@@ -41,6 +68,22 @@ export default function AddAnnotationSetModal({
     Schema['Category']['type'][]
   >([]);
   const [loadingLabels, setLoadingLabels] = useState(false);
+
+  const rankedProjects = useMemo(() => {
+    const score = new Map(
+      allProjects.map((p) => [
+        p.id,
+        p.id === project.id
+          ? Infinity
+          : nameSimilarity(p.name ?? '', project.name ?? ''),
+      ]),
+    );
+    return [...allProjects].sort(
+      (a, b) =>
+        score.get(b.id)! - score.get(a.id)! ||
+        (a.name ?? '').localeCompare(b.name ?? ''),
+    );
+  }, [allProjects, project.id, project.name]);
 
   async function handleSave() {
     if (!name.trim()) return;
@@ -135,9 +178,9 @@ export default function AddAnnotationSetModal({
                 }}
               >
                 <option value=''>Survey</option>
-                {allProjects.map((p) => (
+                {rankedProjects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {p.id === project.id ? `${p.name} (this survey)` : p.name}
                   </option>
                 ))}
               </NativeSelect>
