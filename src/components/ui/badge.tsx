@@ -1,31 +1,8 @@
 import { cn } from '@/lib/utils';
-import { cva, type VariantProps } from 'class-variance-authority';
+import { type VariantProps } from 'class-variance-authority';
 import { Slot } from 'radix-ui';
 import * as React from 'react';
-
-const badgeVariants = cva(
-  'inline-flex w-fit shrink-0 items-center justify-center gap-1 px-[0.65em] py-[0.35em] text-center align-baseline text-[0.75em] leading-none font-bold whitespace-nowrap text-white [&>svg]:pointer-events-none',
-  {
-    variants: {
-      variant: {
-        default: 'bg-primary',
-        primary: 'bg-primary',
-        secondary: 'bg-secondary',
-        success: 'bg-success',
-        info: 'bg-info',
-        warning: 'bg-warning',
-        danger: 'bg-danger',
-        destructive: 'bg-danger',
-        light: 'bg-light',
-        dark: 'bg-dark',
-        outline: 'border border-border bg-transparent text-foreground',
-      },
-    },
-    defaultVariants: {
-      variant: 'primary',
-    },
-  },
-);
+import { badgeVariants } from './badge-variants';
 
 type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>['variant']>;
 
@@ -38,7 +15,7 @@ const Badge = React.forwardRef(function Badge(
     ...props
   }: React.ComponentProps<'span'> &
     VariantProps<typeof badgeVariants> & { asChild?: boolean; pill?: boolean },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'span'>>,
 ) {
   const Comp = asChild ? Slot.Root : 'span';
 
@@ -57,4 +34,4 @@ const Badge = React.forwardRef(function Badge(
   );
 });
 
-export { Badge, badgeVariants, type BadgeVariant };
+export { Badge, type BadgeVariant };

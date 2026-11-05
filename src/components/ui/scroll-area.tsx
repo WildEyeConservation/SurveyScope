@@ -8,7 +8,7 @@ const ScrollArea = React.forwardRef(function ScrollArea(
     children,
     ...props
   }: React.ComponentProps<typeof ScrollAreaPrimitive.Root>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof ScrollAreaPrimitive.Root>>,
 ) {
   return (
     <ScrollAreaPrimitive.Root
@@ -35,7 +35,9 @@ const ScrollBar = React.forwardRef(function ScrollBar(
     orientation = 'vertical',
     ...props
   }: React.ComponentProps<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>
+  >,
 ) {
   return (
     <ScrollAreaPrimitive.ScrollAreaScrollbar

@@ -11,7 +11,7 @@ const Separator = React.forwardRef(function Separator(
     decorative = true,
     ...props
   }: React.ComponentProps<typeof SeparatorPrimitive.Root>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SeparatorPrimitive.Root>>,
 ) {
   return (
     <SeparatorPrimitive.Root

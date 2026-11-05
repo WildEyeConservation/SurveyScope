@@ -21,7 +21,9 @@ function DropdownMenuPortal({
 
 const DropdownMenuTrigger = React.forwardRef(function DropdownMenuTrigger(
   { ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.Trigger>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.Trigger
@@ -38,7 +40,9 @@ const DropdownMenuContent = React.forwardRef(function DropdownMenuContent(
     sideOffset = 4,
     ...props
   }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.Content>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.Portal>
@@ -58,7 +62,9 @@ const DropdownMenuContent = React.forwardRef(function DropdownMenuContent(
 
 const DropdownMenuGroup = React.forwardRef(function DropdownMenuGroup(
   { ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Group>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.Group>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.Group
@@ -79,7 +85,9 @@ const DropdownMenuItem = React.forwardRef(function DropdownMenuItem(
     inset?: boolean;
     variant?: 'default' | 'destructive';
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.Item>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.Item
@@ -104,7 +112,9 @@ const DropdownMenuCheckboxItem = React.forwardRef(
       checked,
       ...props
     }: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>,
-    ref: React.ForwardedRef<any>,
+    ref: React.ForwardedRef<
+      React.ComponentRef<typeof DropdownMenuPrimitive.CheckboxItem>
+    >,
   ) {
     return (
       <DropdownMenuPrimitive.CheckboxItem
@@ -130,7 +140,9 @@ const DropdownMenuCheckboxItem = React.forwardRef(
 
 const DropdownMenuRadioGroup = React.forwardRef(function DropdownMenuRadioGroup(
   { ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.RadioGroup>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.RadioGroup
@@ -147,7 +159,9 @@ const DropdownMenuRadioItem = React.forwardRef(function DropdownMenuRadioItem(
     children,
     ...props
   }: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.RadioItem>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.RadioItem
@@ -177,7 +191,9 @@ const DropdownMenuLabel = React.forwardRef(function DropdownMenuLabel(
   }: React.ComponentProps<typeof DropdownMenuPrimitive.Label> & {
     inset?: boolean;
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.Label>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.Label
@@ -198,7 +214,9 @@ const DropdownMenuSeparator = React.forwardRef(function DropdownMenuSeparator(
     className,
     ...props
   }: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.Separator>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.Separator
@@ -212,7 +230,7 @@ const DropdownMenuSeparator = React.forwardRef(function DropdownMenuSeparator(
 
 const DropdownMenuShortcut = React.forwardRef(function DropdownMenuShortcut(
   { className, ...props }: React.ComponentProps<'span'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'span'>>,
 ) {
   return (
     <span
@@ -242,7 +260,9 @@ const DropdownMenuSubTrigger = React.forwardRef(function DropdownMenuSubTrigger(
   }: React.ComponentProps<typeof DropdownMenuPrimitive.SubTrigger> & {
     inset?: boolean;
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.SubTrigger>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.SubTrigger
@@ -266,7 +286,9 @@ const DropdownMenuSubContent = React.forwardRef(function DropdownMenuSubContent(
     className,
     ...props
   }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DropdownMenuPrimitive.SubContent>
+  >,
 ) {
   return (
     <DropdownMenuPrimitive.SubContent

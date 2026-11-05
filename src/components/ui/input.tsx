@@ -1,16 +1,6 @@
 import { cn } from '@/lib/utils';
 import * as React from 'react';
-
-const fieldBase =
-  'block w-full min-w-0 border border-input bg-field leading-normal text-field-foreground transition-[border-color,box-shadow] outline-none placeholder:text-[#6c757d] focus:border-[#efb48c] focus:ring-[0.25rem] focus:ring-primary/25 disabled:cursor-not-allowed disabled:bg-[#ebebeb] disabled:text-secondary read-only:focus:ring-0 aria-invalid:border-danger aria-invalid:focus:ring-danger/25';
-
-const fieldSizes = {
-  sm: 'px-2 py-1 text-sm',
-  default: 'px-3 py-1.5 text-base',
-  lg: 'px-4 py-2 text-xl',
-};
-
-type FieldSize = keyof typeof fieldSizes;
+import { fieldBase, fieldSizes, type FieldSize } from './field';
 
 const fileSizes = {
   sm: 'file:-my-1 file:-ml-2 file:mr-2 file:px-2 file:py-1',
@@ -29,7 +19,7 @@ const Input = React.forwardRef(function Input(
     size?: FieldSize;
     htmlSize?: number;
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'input'>>,
 ) {
   return (
     <input
@@ -51,4 +41,4 @@ const Input = React.forwardRef(function Input(
   );
 });
 
-export { fieldBase, fieldSizes, Input, type FieldSize };
+export { Input };

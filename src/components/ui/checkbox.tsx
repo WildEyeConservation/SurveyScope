@@ -5,7 +5,7 @@ import * as React from 'react';
 
 const Checkbox = React.forwardRef(function Checkbox(
   { className, ...props }: React.ComponentProps<typeof CheckboxPrimitive.Root>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof CheckboxPrimitive.Root>>,
 ) {
   return (
     <CheckboxPrimitive.Root

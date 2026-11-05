@@ -3,7 +3,7 @@ import * as React from 'react';
 
 const Skeleton = React.forwardRef(function Skeleton(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div

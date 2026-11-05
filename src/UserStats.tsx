@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
-import { fieldBase, fieldSizes } from '@/components/ui/input';
+import { fieldBase, fieldSizes } from '@/components/ui/field';
 import {
   Popover,
   PopoverContent,

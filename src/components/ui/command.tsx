@@ -15,7 +15,7 @@ import {
 
 const Command = React.forwardRef(function Command(
   { className, ...props }: React.ComponentProps<typeof CommandPrimitive>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof CommandPrimitive>>,
 ) {
   return (
     <CommandPrimitive
@@ -63,7 +63,7 @@ function CommandDialog({
 
 const CommandInput = React.forwardRef(function CommandInput(
   { className, ...props }: React.ComponentProps<typeof CommandPrimitive.Input>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof CommandPrimitive.Input>>,
 ) {
   return (
     <div
@@ -86,7 +86,7 @@ const CommandInput = React.forwardRef(function CommandInput(
 
 const CommandList = React.forwardRef(function CommandList(
   { className, ...props }: React.ComponentProps<typeof CommandPrimitive.List>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof CommandPrimitive.List>>,
 ) {
   return (
     <CommandPrimitive.List
@@ -103,7 +103,7 @@ const CommandList = React.forwardRef(function CommandList(
 
 const CommandEmpty = React.forwardRef(function CommandEmpty(
   { ...props }: React.ComponentProps<typeof CommandPrimitive.Empty>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof CommandPrimitive.Empty>>,
 ) {
   return (
     <CommandPrimitive.Empty
@@ -117,7 +117,7 @@ const CommandEmpty = React.forwardRef(function CommandEmpty(
 
 const CommandGroup = React.forwardRef(function CommandGroup(
   { className, ...props }: React.ComponentProps<typeof CommandPrimitive.Group>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof CommandPrimitive.Group>>,
 ) {
   return (
     <CommandPrimitive.Group
@@ -137,7 +137,9 @@ const CommandSeparator = React.forwardRef(function CommandSeparator(
     className,
     ...props
   }: React.ComponentProps<typeof CommandPrimitive.Separator>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof CommandPrimitive.Separator>
+  >,
 ) {
   return (
     <CommandPrimitive.Separator
@@ -151,7 +153,7 @@ const CommandSeparator = React.forwardRef(function CommandSeparator(
 
 const CommandItem = React.forwardRef(function CommandItem(
   { className, ...props }: React.ComponentProps<typeof CommandPrimitive.Item>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof CommandPrimitive.Item>>,
 ) {
   return (
     <CommandPrimitive.Item
@@ -168,7 +170,7 @@ const CommandItem = React.forwardRef(function CommandItem(
 
 const CommandShortcut = React.forwardRef(function CommandShortcut(
   { className, ...props }: React.ComponentProps<'span'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'span'>>,
 ) {
   return (
     <span

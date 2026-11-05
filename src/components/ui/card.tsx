@@ -3,7 +3,7 @@ import * as React from 'react';
 
 const Card = React.forwardRef(function Card(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -20,7 +20,7 @@ const Card = React.forwardRef(function Card(
 
 const CardHeader = React.forwardRef(function CardHeader(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -37,7 +37,7 @@ const CardHeader = React.forwardRef(function CardHeader(
 
 const CardTitle = React.forwardRef(function CardTitle(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -51,7 +51,7 @@ const CardTitle = React.forwardRef(function CardTitle(
 
 const CardDescription = React.forwardRef(function CardDescription(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -65,7 +65,7 @@ const CardDescription = React.forwardRef(function CardDescription(
 
 const CardAction = React.forwardRef(function CardAction(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -79,7 +79,7 @@ const CardAction = React.forwardRef(function CardAction(
 
 const CardContent = React.forwardRef(function CardContent(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -93,7 +93,7 @@ const CardContent = React.forwardRef(function CardContent(
 
 const CardFooter = React.forwardRef(function CardFooter(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div

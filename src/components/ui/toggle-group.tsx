@@ -5,7 +5,7 @@ import { type VariantProps } from 'class-variance-authority';
 import { ToggleGroup as ToggleGroupPrimitive } from 'radix-ui';
 import * as React from 'react';
 
-import { toggleVariants } from '@/components/ui/toggle';
+import { toggleVariants } from '@/components/ui/toggle-variants';
 
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants> & {
@@ -29,7 +29,7 @@ const ToggleGroup = React.forwardRef(function ToggleGroup(
     VariantProps<typeof toggleVariants> & {
       spacing?: number;
     },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof ToggleGroupPrimitive.Root>>,
 ) {
   return (
     <ToggleGroupPrimitive.Root
@@ -61,7 +61,7 @@ const ToggleGroupItem = React.forwardRef(function ToggleGroupItem(
     ...props
   }: React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
     VariantProps<typeof toggleVariants>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof ToggleGroupPrimitive.Item>>,
 ) {
   const context = React.useContext(ToggleGroupContext);
 

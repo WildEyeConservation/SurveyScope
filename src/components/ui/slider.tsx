@@ -13,7 +13,7 @@ const Slider = React.forwardRef(function Slider(
     max = 100,
     ...props
   }: React.ComponentProps<typeof SliderPrimitive.Root>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SliderPrimitive.Root>>,
 ) {
   const _values = React.useMemo(
     () =>

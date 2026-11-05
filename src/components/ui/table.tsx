@@ -21,7 +21,7 @@ const Table = React.forwardRef(function Table(
     variant?: 'dark';
     responsive?: boolean;
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'table'>>,
 ) {
   const table = (
     <table
@@ -50,7 +50,7 @@ const Table = React.forwardRef(function Table(
 
 const TableHeader = React.forwardRef(function TableHeader(
   { className, ...props }: React.ComponentProps<'thead'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'thead'>>,
 ) {
   return (
     <thead
@@ -64,7 +64,7 @@ const TableHeader = React.forwardRef(function TableHeader(
 
 const TableBody = React.forwardRef(function TableBody(
   { className, ...props }: React.ComponentProps<'tbody'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'tbody'>>,
 ) {
   return (
     <tbody data-slot='table-body' className={className} ref={ref} {...props} />
@@ -73,7 +73,7 @@ const TableBody = React.forwardRef(function TableBody(
 
 const TableFooter = React.forwardRef(function TableFooter(
   { className, ...props }: React.ComponentProps<'tfoot'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'tfoot'>>,
 ) {
   return (
     <tfoot
@@ -87,7 +87,7 @@ const TableFooter = React.forwardRef(function TableFooter(
 
 const TableRow = React.forwardRef(function TableRow(
   { className, ...props }: React.ComponentProps<'tr'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'tr'>>,
 ) {
   return (
     <tr data-slot='table-row' className={className} ref={ref} {...props} />
@@ -96,7 +96,7 @@ const TableRow = React.forwardRef(function TableRow(
 
 const TableHead = React.forwardRef(function TableHead(
   { className, ...props }: React.ComponentProps<'th'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'th'>>,
 ) {
   return (
     <th
@@ -110,7 +110,7 @@ const TableHead = React.forwardRef(function TableHead(
 
 const TableCell = React.forwardRef(function TableCell(
   { className, ...props }: React.ComponentProps<'td'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'td'>>,
 ) {
   return (
     <td data-slot='table-cell' className={className} ref={ref} {...props} />
@@ -119,7 +119,7 @@ const TableCell = React.forwardRef(function TableCell(
 
 const TableCaption = React.forwardRef(function TableCaption(
   { className, ...props }: React.ComponentProps<'caption'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'caption'>>,
 ) {
   return (
     <caption

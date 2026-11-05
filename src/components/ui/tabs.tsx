@@ -8,7 +8,7 @@ const Tabs = React.forwardRef(function Tabs(
     orientation = 'horizontal',
     ...props
   }: React.ComponentProps<typeof TabsPrimitive.Root>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof TabsPrimitive.Root>>,
 ) {
   return (
     <TabsPrimitive.Root
@@ -24,7 +24,7 @@ const Tabs = React.forwardRef(function Tabs(
 
 const TabsList = React.forwardRef(function TabsList(
   { className, ...props }: React.ComponentProps<typeof TabsPrimitive.List>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof TabsPrimitive.List>>,
 ) {
   return (
     <TabsPrimitive.List
@@ -38,7 +38,7 @@ const TabsList = React.forwardRef(function TabsList(
 
 const TabsTrigger = React.forwardRef(function TabsTrigger(
   { className, ...props }: React.ComponentProps<typeof TabsPrimitive.Trigger>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof TabsPrimitive.Trigger>>,
 ) {
   return (
     <TabsPrimitive.Trigger
@@ -55,7 +55,7 @@ const TabsTrigger = React.forwardRef(function TabsTrigger(
 
 const TabsContent = React.forwardRef(function TabsContent(
   { className, ...props }: React.ComponentProps<typeof TabsPrimitive.Content>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof TabsPrimitive.Content>>,
 ) {
   return (
     <TabsPrimitive.Content

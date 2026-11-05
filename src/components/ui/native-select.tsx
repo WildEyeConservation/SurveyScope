@@ -1,4 +1,4 @@
-import { fieldBase, type FieldSize } from '@/components/ui/input';
+import { fieldBase, type FieldSize } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 
@@ -16,7 +16,7 @@ const NativeSelect = React.forwardRef(function NativeSelect(
     size = 'default',
     ...props
   }: Omit<React.ComponentProps<'select'>, 'size'> & { size?: FieldSize },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'select'>>,
 ) {
   return (
     <select
@@ -38,14 +38,14 @@ const NativeSelect = React.forwardRef(function NativeSelect(
 
 const NativeSelectOption = React.forwardRef(function NativeSelectOption(
   props: React.ComponentProps<'option'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'option'>>,
 ) {
   return <option data-slot='native-select-option' ref={ref} {...props} />;
 });
 
 const NativeSelectOptGroup = React.forwardRef(function NativeSelectOptGroup(
   props: React.ComponentProps<'optgroup'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'optgroup'>>,
 ) {
   return <optgroup data-slot='native-select-optgroup' ref={ref} {...props} />;
 });

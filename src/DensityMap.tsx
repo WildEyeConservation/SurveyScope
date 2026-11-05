@@ -12,7 +12,7 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './survey/surveyMap.css';
 
-import { buttonVariants } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button-variants';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';

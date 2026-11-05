@@ -8,7 +8,8 @@ import {
 } from 'react';
 // import moment from 'moment'
 // import {MD5,enc} from 'crypto-js'
-import { Alert, alertVariants } from '@/components/ui/alert';
+import { Alert } from '@/components/ui/alert';
+import { alertVariants } from '@/components/ui/alert-variants';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox } from '@/components/ui/combobox';
@@ -196,7 +197,6 @@ interface FilesUploadBaseProps {
   summaryDetails?: ChecklistLine[];
   /** Opens a wizard step from its checklist card; 'none' is the parent's own step. */
   onEditStep?: (step: UploadWizardStep) => void;
-  /** Signals when every checklist card is ticked. */
   setChecklistComplete?: (complete: boolean) => void;
 }
 
@@ -283,7 +283,6 @@ const MODEL_OPTIONS: ModelOption[] = [
   { label: 'Manual (images may be processed later)', value: 'manual' },
 ];
 
-// Display order and wording for the model step.
 const MODEL_CHOICES: { value: string; name: string; description?: string }[] = [
   { value: 'owl-d', name: 'OWL-D', description: 'Overhead Wildlife Locator' },
   { value: 'scoutbot', name: 'ScoutBot' },

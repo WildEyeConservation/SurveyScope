@@ -4,7 +4,7 @@ import * as React from 'react';
 
 const Label = React.forwardRef(function Label(
   { className, ...props }: React.ComponentProps<typeof LabelPrimitive.Root>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof LabelPrimitive.Root>>,
 ) {
   return (
     <LabelPrimitive.Root
@@ -21,7 +21,7 @@ const Label = React.forwardRef(function Label(
 
 const FormText = React.forwardRef(function FormText(
   { className, ...props }: React.ComponentProps<'small'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'small'>>,
 ) {
   return (
     <small

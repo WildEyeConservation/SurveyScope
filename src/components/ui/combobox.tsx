@@ -6,7 +6,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { fieldBase, type FieldSize } from '@/components/ui/input';
+import { fieldBase, type FieldSize } from '@/components/ui/field';
 import {
   Popover,
   PopoverContent,
@@ -60,11 +60,6 @@ type MultiComboboxProps = BaseComboboxProps & {
 
 export type ComboboxProps = SingleComboboxProps | MultiComboboxProps;
 
-/**
- * Searchable select built from the app's shadcn Popover + Command primitives.
- * Replaces react-select: supports single and multi selection, a clear button,
- * per-chip removal, disabled state and an async-loading message.
- */
 export function Combobox(props: ComboboxProps) {
   const {
     options,

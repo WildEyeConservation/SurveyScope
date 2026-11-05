@@ -1,30 +1,8 @@
 import { cn } from '@/lib/utils';
-import { cva, type VariantProps } from 'class-variance-authority';
+import { type VariantProps } from 'class-variance-authority';
 import { XIcon } from 'lucide-react';
 import * as React from 'react';
-
-const alertVariants = cva(
-  'relative mb-4 w-full p-4 text-white [&_a]:text-white [&_a]:underline',
-  {
-    variants: {
-      variant: {
-        default: 'bg-primary',
-        primary: 'bg-primary',
-        secondary: 'bg-secondary',
-        success: 'bg-success',
-        info: 'bg-info',
-        warning: 'bg-warning text-[#212529] [&_a]:text-[#212529]',
-        danger: 'bg-danger',
-        destructive: 'bg-danger',
-        light: 'bg-light',
-        dark: 'bg-dark',
-      },
-    },
-    defaultVariants: {
-      variant: 'primary',
-    },
-  },
-);
+import { alertVariants } from './alert-variants';
 
 type AlertVariant = NonNullable<VariantProps<typeof alertVariants>['variant']>;
 
@@ -37,7 +15,7 @@ const Alert = React.forwardRef(function Alert(
     ...props
   }: React.ComponentProps<'div'> &
     VariantProps<typeof alertVariants> & { onClose?: () => void },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -64,7 +42,7 @@ const Alert = React.forwardRef(function Alert(
 
 const AlertTitle = React.forwardRef(function AlertTitle(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -81,7 +59,7 @@ const AlertTitle = React.forwardRef(function AlertTitle(
 
 const AlertDescription = React.forwardRef(function AlertDescription(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -93,10 +71,4 @@ const AlertDescription = React.forwardRef(function AlertDescription(
   );
 });
 
-export {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-  alertVariants,
-  type AlertVariant,
-};
+export { Alert, AlertDescription, AlertTitle, type AlertVariant };

@@ -13,7 +13,7 @@ function Dialog({
 
 const DialogTrigger = React.forwardRef(function DialogTrigger(
   { ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof DialogPrimitive.Trigger>>,
 ) {
   return (
     <DialogPrimitive.Trigger data-slot='dialog-trigger' ref={ref} {...props} />
@@ -28,7 +28,7 @@ function DialogPortal({
 
 const DialogClose = React.forwardRef(function DialogClose(
   { ...props }: React.ComponentProps<typeof DialogPrimitive.Close>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof DialogPrimitive.Close>>,
 ) {
   return (
     <DialogPrimitive.Close data-slot='dialog-close' ref={ref} {...props} />
@@ -37,7 +37,7 @@ const DialogClose = React.forwardRef(function DialogClose(
 
 const DialogOverlay = React.forwardRef(function DialogOverlay(
   { className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof DialogPrimitive.Overlay>>,
 ) {
   return (
     <DialogPrimitive.Overlay
@@ -89,7 +89,7 @@ const DialogContent = React.forwardRef(function DialogContent(
     keyboard?: boolean;
     showCloseButton?: boolean;
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof DialogPrimitive.Content>>,
 ) {
   return (
     <DialogPortal data-slot='dialog-portal'>
@@ -168,7 +168,7 @@ const DialogHeader = React.forwardRef(function DialogHeader(
     children,
     ...props
   }: React.ComponentProps<'div'> & { closeButton?: boolean },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -195,7 +195,7 @@ const DialogHeader = React.forwardRef(function DialogHeader(
 
 const DialogBody = React.forwardRef(function DialogBody(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -209,7 +209,7 @@ const DialogBody = React.forwardRef(function DialogBody(
 
 const DialogFooter = React.forwardRef(function DialogFooter(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -226,7 +226,7 @@ const DialogFooter = React.forwardRef(function DialogFooter(
 
 const DialogTitle = React.forwardRef(function DialogTitle(
   { className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof DialogPrimitive.Title>>,
 ) {
   return (
     <DialogPrimitive.Title
@@ -246,7 +246,9 @@ const DialogDescription = React.forwardRef(function DialogDescription(
     className,
     ...props
   }: React.ComponentProps<typeof DialogPrimitive.Description>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof DialogPrimitive.Description>
+  >,
 ) {
   return (
     <DialogPrimitive.Description

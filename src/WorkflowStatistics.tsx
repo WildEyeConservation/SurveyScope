@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
-import { fieldBase, fieldSizes } from '@/components/ui/input';
+import { fieldBase, fieldSizes } from '@/components/ui/field';
 import {
   Popover,
   PopoverContent,

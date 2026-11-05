@@ -74,19 +74,20 @@ function CustomModal({
 }: CustomModalProps) {
   const [showHelp, setShowHelp] = useState(false);
 
-  let modalHeader: ReactElement<any> | null = null;
+  let modalHeader: ReactElement<React.ComponentProps<typeof Header>> | null =
+    null;
   let modalFooter: ReactElement | null = null;
   const modalBodyChildren: React.ReactNode[] = [];
 
   React.Children.forEach(children, (child) => {
     if (!React.isValidElement(child)) return;
     if (child.type === Header) {
-      modalHeader = child;
+      modalHeader = child as ReactElement<React.ComponentProps<typeof Header>>;
     } else if (child.type === Footer) {
       modalFooter = child;
     } else if (child.type === Body) {
       React.Children.forEach(
-        (child as ReactElement<any>).props.children,
+        (child as ReactElement<{ children?: React.ReactNode }>).props.children,
         (bodyChild) => {
           if (React.isValidElement(bodyChild))
             modalBodyChildren.push(bodyChild);
@@ -97,7 +98,9 @@ function CustomModal({
     }
   });
 
-  const header = modalHeader as ReactElement<any> | null;
+  const header = modalHeader as ReactElement<
+    React.ComponentProps<typeof Header>
+  > | null;
   const blockOutside = strict || backdrop === 'static';
   const blockEscape = strict || keyboard === false;
 

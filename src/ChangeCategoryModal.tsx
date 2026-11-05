@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { fieldBase, fieldSizes } from '@/components/ui/input';
+import { fieldBase, fieldSizes } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, Search, X } from 'lucide-react';
 import React, {

@@ -4,7 +4,7 @@ import * as React from 'react';
 
 const Switch = React.forwardRef(function Switch(
   { className, ...props }: React.ComponentProps<typeof SwitchPrimitive.Root>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SwitchPrimitive.Root>>,
 ) {
   return (
     <SwitchPrimitive.Root

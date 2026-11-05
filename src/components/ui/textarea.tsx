@@ -1,4 +1,4 @@
-import { fieldBase, fieldSizes, type FieldSize } from '@/components/ui/input';
+import { fieldBase, fieldSizes, type FieldSize } from '@/components/ui/field';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 
@@ -8,7 +8,7 @@ const Textarea = React.forwardRef(function Textarea(
     size = 'default',
     ...props
   }: React.ComponentProps<'textarea'> & { size?: FieldSize },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'textarea'>>,
 ) {
   return (
     <textarea

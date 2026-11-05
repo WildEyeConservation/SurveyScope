@@ -11,7 +11,7 @@ function Select({
 
 const SelectGroup = React.forwardRef(function SelectGroup(
   { ...props }: React.ComponentProps<typeof SelectPrimitive.Group>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SelectPrimitive.Group>>,
 ) {
   return (
     <SelectPrimitive.Group data-slot='select-group' ref={ref} {...props} />
@@ -20,7 +20,7 @@ const SelectGroup = React.forwardRef(function SelectGroup(
 
 const SelectValue = React.forwardRef(function SelectValue(
   { ...props }: React.ComponentProps<typeof SelectPrimitive.Value>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SelectPrimitive.Value>>,
 ) {
   return (
     <SelectPrimitive.Value data-slot='select-value' ref={ref} {...props} />
@@ -36,7 +36,7 @@ const SelectTrigger = React.forwardRef(function SelectTrigger(
   }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
     size?: 'sm' | 'default';
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SelectPrimitive.Trigger>>,
 ) {
   return (
     <SelectPrimitive.Trigger
@@ -65,7 +65,7 @@ const SelectContent = React.forwardRef(function SelectContent(
     align = 'center',
     ...props
   }: React.ComponentProps<typeof SelectPrimitive.Content>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SelectPrimitive.Content>>,
 ) {
   return (
     <SelectPrimitive.Portal>
@@ -100,7 +100,7 @@ const SelectContent = React.forwardRef(function SelectContent(
 
 const SelectLabel = React.forwardRef(function SelectLabel(
   { className, ...props }: React.ComponentProps<typeof SelectPrimitive.Label>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SelectPrimitive.Label>>,
 ) {
   return (
     <SelectPrimitive.Label
@@ -118,7 +118,7 @@ const SelectItem = React.forwardRef(function SelectItem(
     children,
     ...props
   }: React.ComponentProps<typeof SelectPrimitive.Item>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SelectPrimitive.Item>>,
 ) {
   return (
     <SelectPrimitive.Item
@@ -148,7 +148,7 @@ const SelectSeparator = React.forwardRef(function SelectSeparator(
     className,
     ...props
   }: React.ComponentProps<typeof SelectPrimitive.Separator>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SelectPrimitive.Separator>>,
 ) {
   return (
     <SelectPrimitive.Separator
@@ -165,7 +165,9 @@ const SelectScrollUpButton = React.forwardRef(function SelectScrollUpButton(
     className,
     ...props
   }: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof SelectPrimitive.ScrollUpButton>
+  >,
 ) {
   return (
     <SelectPrimitive.ScrollUpButton
@@ -187,7 +189,9 @@ const SelectScrollDownButton = React.forwardRef(function SelectScrollDownButton(
     className,
     ...props
   }: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof SelectPrimitive.ScrollDownButton>
+  >,
 ) {
   return (
     <SelectPrimitive.ScrollDownButton

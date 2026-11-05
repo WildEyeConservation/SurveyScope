@@ -25,7 +25,7 @@ function Tooltip({
 
 const TooltipTrigger = React.forwardRef(function TooltipTrigger(
   { ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof TooltipPrimitive.Trigger>>,
 ) {
   return (
     <TooltipPrimitive.Trigger
@@ -43,7 +43,7 @@ const TooltipContent = React.forwardRef(function TooltipContent(
     children,
     ...props
   }: React.ComponentProps<typeof TooltipPrimitive.Content>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof TooltipPrimitive.Content>>,
 ) {
   return (
     <TooltipPrimitive.Portal>

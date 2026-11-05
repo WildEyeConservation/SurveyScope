@@ -24,7 +24,7 @@ const Spinner = React.forwardRef(function Spinner(
     animation?: 'border' | 'grow';
     variant?: keyof typeof spinnerColors;
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'span'>>,
 ) {
   return (
     <span

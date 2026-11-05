@@ -10,7 +10,7 @@ function Popover({
 
 const PopoverTrigger = React.forwardRef(function PopoverTrigger(
   { ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof PopoverPrimitive.Trigger>>,
 ) {
   return (
     <PopoverPrimitive.Trigger
@@ -28,7 +28,7 @@ const PopoverContent = React.forwardRef(function PopoverContent(
     sideOffset = 4,
     ...props
   }: React.ComponentProps<typeof PopoverPrimitive.Content>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof PopoverPrimitive.Content>>,
 ) {
   return (
     <PopoverPrimitive.Portal>
@@ -49,7 +49,7 @@ const PopoverContent = React.forwardRef(function PopoverContent(
 
 const PopoverAnchor = React.forwardRef(function PopoverAnchor(
   { ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof PopoverPrimitive.Anchor>>,
 ) {
   return (
     <PopoverPrimitive.Anchor data-slot='popover-anchor' ref={ref} {...props} />
@@ -58,7 +58,7 @@ const PopoverAnchor = React.forwardRef(function PopoverAnchor(
 
 const PopoverHeader = React.forwardRef(function PopoverHeader(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -72,7 +72,7 @@ const PopoverHeader = React.forwardRef(function PopoverHeader(
 
 const PopoverTitle = React.forwardRef(function PopoverTitle(
   { className, ...props }: React.ComponentProps<'h2'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'h2'>>,
 ) {
   return (
     <div
@@ -86,7 +86,7 @@ const PopoverTitle = React.forwardRef(function PopoverTitle(
 
 const PopoverDescription = React.forwardRef(function PopoverDescription(
   { className, ...props }: React.ComponentProps<'p'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'p'>>,
 ) {
   return (
     <p

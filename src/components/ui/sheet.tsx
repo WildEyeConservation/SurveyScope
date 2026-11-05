@@ -11,7 +11,7 @@ function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
 
 const SheetTrigger = React.forwardRef(function SheetTrigger(
   { ...props }: React.ComponentProps<typeof SheetPrimitive.Trigger>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SheetPrimitive.Trigger>>,
 ) {
   return (
     <SheetPrimitive.Trigger data-slot='sheet-trigger' ref={ref} {...props} />
@@ -20,7 +20,7 @@ const SheetTrigger = React.forwardRef(function SheetTrigger(
 
 const SheetClose = React.forwardRef(function SheetClose(
   { ...props }: React.ComponentProps<typeof SheetPrimitive.Close>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SheetPrimitive.Close>>,
 ) {
   return <SheetPrimitive.Close data-slot='sheet-close' ref={ref} {...props} />;
 });
@@ -33,7 +33,7 @@ function SheetPortal({
 
 const SheetOverlay = React.forwardRef(function SheetOverlay(
   { className, ...props }: React.ComponentProps<typeof SheetPrimitive.Overlay>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SheetPrimitive.Overlay>>,
 ) {
   return (
     <SheetPrimitive.Overlay
@@ -59,7 +59,7 @@ const SheetContent = React.forwardRef(function SheetContent(
     side?: 'top' | 'right' | 'bottom' | 'left';
     showCloseButton?: boolean;
   },
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SheetPrimitive.Content>>,
 ) {
   return (
     <SheetPortal>
@@ -95,7 +95,7 @@ const SheetContent = React.forwardRef(function SheetContent(
 
 const SheetHeader = React.forwardRef(function SheetHeader(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -109,7 +109,7 @@ const SheetHeader = React.forwardRef(function SheetHeader(
 
 const SheetFooter = React.forwardRef(function SheetFooter(
   { className, ...props }: React.ComponentProps<'div'>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<'div'>>,
 ) {
   return (
     <div
@@ -123,7 +123,7 @@ const SheetFooter = React.forwardRef(function SheetFooter(
 
 const SheetTitle = React.forwardRef(function SheetTitle(
   { className, ...props }: React.ComponentProps<typeof SheetPrimitive.Title>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<React.ComponentRef<typeof SheetPrimitive.Title>>,
 ) {
   return (
     <SheetPrimitive.Title
@@ -140,7 +140,9 @@ const SheetDescription = React.forwardRef(function SheetDescription(
     className,
     ...props
   }: React.ComponentProps<typeof SheetPrimitive.Description>,
-  ref: React.ForwardedRef<any>,
+  ref: React.ForwardedRef<
+    React.ComponentRef<typeof SheetPrimitive.Description>
+  >,
 ) {
   return (
     <SheetPrimitive.Description
