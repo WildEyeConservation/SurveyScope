@@ -13,7 +13,7 @@ export const TRACK_MAX_SPEED_METERS_PER_SECOND = 100;
 
 export type TimedImage = {
   id: string;
-  timestamp: number | null | undefined;
+  timestamp?: number | null;
   latitude?: number | null;
   longitude?: number | null;
   cameraId?: string | null;
@@ -169,4 +169,13 @@ export function detectTransects(images: TimedImage[]): TransectAssignment[] {
     assignments.push({ id: img.id, transectIndex: best.index });
   }
   return assignments;
+}
+
+// Input order breaks timestamp ties, so callers that must agree sort first.
+export function detectTransectsById(
+  images: TimedImage[],
+): TransectAssignment[] {
+  return detectTransects(
+    [...images].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+  );
 }
