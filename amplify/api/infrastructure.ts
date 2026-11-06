@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { Duration, Names, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -147,7 +147,8 @@ export function installApi(props: {
   });
 
   const events = new appsync.EventApi(stack, 'DataEvents', {
-    apiName: `${stack.stackName}-data-events`.slice(0, 50),
+    // Resolved at synth; the 50-character limit can't be applied to a stack-name token.
+    apiName: `${Names.uniqueResourceName(stack, { maxLength: 38 })}-data-events`,
     authorizationConfig: {
       authProviders: [
         {
