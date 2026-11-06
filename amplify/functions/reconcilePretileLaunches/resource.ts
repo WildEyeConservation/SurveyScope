@@ -2,6 +2,7 @@ import { defineFunction } from '@aws-amplify/backend';
 
 export const reconcilePretileLaunches = defineFunction({
   name: 'reconcilePretileLaunches',
+  resourceGroupName: 'scheduled',
   entry: './handler.ts',
   runtime: 24,
   schedule: 'every 5m',

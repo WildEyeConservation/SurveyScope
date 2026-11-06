@@ -1,9 +1,9 @@
 import { Amplify } from 'aws-amplify';
-import { generateClient } from 'aws-amplify/api';
 import pLimit from 'p-limit';
 import type { DataClient } from '../amplify/shared/data-schema.generated';
 import outputs from '../amplify_outputs.json';
-import { Schema } from './amplify/client-schema'; // Path to your backend resource definition
+import { OPERATIONS_SCHEMA } from '../shared/operations';
+import { cancelApiRequest, httpModel, httpOperation } from './api/httpClient';
 import {
   splitCallOptions,
   startCancellable,
@@ -11,19 +11,26 @@ import {
 } from './clientCancellation';
 Amplify.configure(outputs);
 
-/* Here we generate a graphQL client with the Amplify API module, and then we wrap the client methods
-to limit the number of concurrent requests to the GraphQL API, as well as to check for errors.
+// TanStack Query requires errors to be thrown.
 
-The amplify GraphQL client reports errors in a separate errors field of the response, but TanStack Query
-expects the errors to be thrown as exceptions, so we need to wrap the client in a way that throws exceptions
-for error responses from the server.
-
-The pLimit module is used to limit the number of concurrent requests to the GraphQL API. 
-*/
-
-const rawClient = generateClient<Schema>({
-  authMode: 'userPool',
-});
+const introspection = outputs.data.model_introspection as unknown as Parameters<
+  typeof httpModel
+>[1];
+const operations = (type: 'query' | 'mutation', names: object | undefined) =>
+  Object.fromEntries(
+    Object.keys(names ?? {}).map((name) => [name, httpOperation(type, name)]),
+  );
+const rawClient = {
+  models: Object.fromEntries(
+    Object.keys(introspection.models).map((model) => [
+      model,
+      httpModel(model, introspection),
+    ]),
+  ),
+  queries: operations('query', OPERATIONS_SCHEMA.queries),
+  mutations: operations('mutation', OPERATIONS_SCHEMA.mutations),
+  cancel: cancelApiRequest,
+};
 const client = rawClient as unknown as DataClient;
 
 // Create a pLimit instance with a concurrency limit (adjust as needed)

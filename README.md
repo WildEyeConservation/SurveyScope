@@ -74,3 +74,21 @@ Amplify Gen2’s type system can break in larger/complex schemas (see the upstre
 
 - Issue: https://github.com/aws-amplify/amplify-data/issues/424
 - Workaround/solution comment: https://github.com/aws-amplify/amplify-data/issues/424#issuecomment-3304528163
+
+### 9. CloudFormation Stack Limits
+CloudFormation caps every stack, nested ones included, at 500 resources, 200 outputs, 200 parameters and a 1 MB template. Synth fails once any stack passes 90% of a limit (`amplify/stackLimits.ts`), naming the stack. To stay clear of them:
+
+- Give new Lambdas a `resourceGroupName` (`launchers`, `scheduled`, or a new group) instead of the default `function` group.
+- Leave `reportClientError`, `inviteUserToOrganization`, `updateUserStats` and `handleS3Upload` in `function`: tables and the sharp layer are created in their stack, and moving them would replace those resources.
+- Put new CDK infrastructure in its own stack with `backend.createStack`.
+- Only add relationship fields the app traverses. Each adds three resources to the relationship stack and a DynamoDB index on the child table.
+- Give new models `.disableOperations(['subscriptions'])`. The browser gets live updates from the AppSync Events API, published from DynamoDB streams; add the model to `shared/dataChannels.ts` if it needs them.
+- The API router and its publisher are in the `api` group, which reads from `data`. Nothing in `data` may refer back to `api`, or the stacks form a cycle.
+
+### 10. Data Access
+The browser reaches data only through the HTTP API in `amplify/api/`. AppSync is limited to sysadmins and backend functions. Every request is checked against the caller's current organisation and survey memberships, so:
+
+- A new model needs a policy in `amplify/api/policies.ts`. Without one, the router refuses it.
+- A new operation the browser calls goes in `shared/operations.ts` (its arguments and return type) and `amplify/api/operations.ts` (who may call it, and the Lambda that runs it). The router invokes the Lambda directly, so it is not added to the AppSync schema and its handler Lambda must be listed in `defineBackend`.
+- Only operations that other Lambdas or containers call over GraphQL belong in the AppSync schema.
+- New AppSync rules should be `allow.group('sysadmin')` only. Organisation access comes from the membership tables, not Cognito groups.

@@ -1,11 +1,5 @@
 import { Badge } from '@/components/ui/badge';
 import {
-  ChangeMessageVisibilityCommand,
-  DeleteMessageCommand,
-  GetQueueAttributesCommand,
-  ReceiveMessageCommand,
-} from '@aws-sdk/client-sqs';
-import {
   useCallback,
   useContext,
   useEffect,
@@ -14,6 +8,12 @@ import {
   useState,
 } from 'react';
 import { useParams } from 'react-router-dom';
+import {
+  ackTask,
+  queueDepths,
+  receiveTask,
+  setTaskVisibility,
+} from './api/tasks';
 import ClaimedInfoTagImage from './ClaimedInfoTagImage';
 import { GlobalContext, UserContext } from './Context';
 import { createInfoTagDelivery } from './infoTagDelivery';
@@ -38,7 +38,7 @@ type InfoTagTaskPayload = {
 export default function InfoTagTask() {
   useUnsavedWorkGuard();
   const { queueId } = useParams<{ queueId: string }>();
-  const { getSqsClient, myMembershipHook } = useContext(UserContext)!;
+  const { myMembershipHook } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
@@ -147,34 +147,22 @@ export default function InfoTagTask() {
         continue;
       }
       try {
-        const sqsClient = await getSqsClient();
-        const response = await sqsClient.send(
-          new ReceiveMessageCommand({
-            QueueUrl: queueUrl,
-            MaxNumberOfMessages: 1,
-            VisibilityTimeout: VISIBILITY_TIMEOUT_SECONDS,
-          }),
+        const received = await receiveTask(
+          queueId!,
+          VISIBILITY_TIMEOUT_SECONDS,
         );
-        const entity = response.Messages?.[0];
-        if (!entity) {
+        if (!received) {
           await new Promise((resolve) => window.setTimeout(resolve, 5000));
           continue;
         }
-        const changeVisibility = async (seconds: number) => {
-          const currentClient = await getSqsClient();
-          await currentClient.send(
-            new ChangeMessageVisibilityCommand({
-              QueueUrl: queueUrl,
-              ReceiptHandle: entity.ReceiptHandle,
-              VisibilityTimeout: seconds,
-            }),
-          );
-        };
+        const { leaseId } = received;
+        const changeVisibility = (seconds: number) =>
+          setTaskVisibility(leaseId, seconds).then(() => undefined);
         if (!mountedRef.current) {
           await changeVisibility(0);
           break;
         }
-        const body = JSON.parse(entity.Body!);
+        const body = JSON.parse(received.body);
         const imageId = body.imageId as string;
         if (!imageId || typeof imageId !== 'string')
           throw new Error('Invalid Info Tags message');
@@ -199,15 +187,7 @@ export default function InfoTagTask() {
           heartbeatTimersRef.current.delete(heartbeat);
         };
         const delivery = createInfoTagDelivery({
-          remove: async () => {
-            const currentClient = await getSqsClient();
-            await currentClient.send(
-              new DeleteMessageCommand({
-                QueueUrl: queueUrl,
-                ReceiptHandle: entity.ReceiptHandle,
-              }),
-            );
-          },
+          remove: () => ackTask(leaseId).then(() => undefined),
           visibility: changeVisibility,
           stopHeartbeat,
           onSettled: () => {
@@ -224,23 +204,15 @@ export default function InfoTagTask() {
       }
     }
     throw new Error('Info Tags session closed');
-  }, [getSqsClient, queueUrl]);
+  }, [queueId, queueUrl]);
 
   const [imagesRemaining, setImagesRemaining] = useState('Unknown');
   useEffect(() => {
     if (!queueUrl) return;
     const update = async () => {
       try {
-        const sqsClient = await getSqsClient();
-        const result = await sqsClient.send(
-          new GetQueueAttributesCommand({
-            QueueUrl: queueUrl,
-            AttributeNames: ['ApproximateNumberOfMessages'],
-          }),
-        );
-        setImagesRemaining(
-          result.Attributes?.ApproximateNumberOfMessages ?? 'Unknown',
-        );
+        const depths = await queueDepths([queueId!]);
+        setImagesRemaining(depths[queueId!] ?? 'Unknown');
       } catch {
         // Status is best effort.
       }
@@ -248,7 +220,7 @@ export default function InfoTagTask() {
     update();
     const timer = window.setInterval(update, 10000);
     return () => window.clearInterval(timer);
-  }, [getSqsClient, queueUrl]);
+  }, [queueId, queueUrl]);
 
   const adminMemberships = useMemo(
     () =>

@@ -2,6 +2,7 @@ import { defineFunction } from '@aws-amplify/backend';
 
 export const findAndRequeueMissingLocations = defineFunction({
   name: 'findAndRequeueMissingLocations',
+  resourceGroupName: 'scheduled',
   schedule: 'every 15m',
   timeoutSeconds: 900,  // 15 minutes to handle large location sets
   entry: './handler.ts',

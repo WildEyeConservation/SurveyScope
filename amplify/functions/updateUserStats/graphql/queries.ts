@@ -357,37 +357,6 @@ export const categoryCountsByLocationIdAndAnnotationSetId = /* GraphQL */ `query
   APITypes.CategoryCountsByLocationIdAndAnnotationSetIdQueryVariables,
   APITypes.CategoryCountsByLocationIdAndAnnotationSetIdQuery
 >;
-export const categoryCountsByTestResultId = /* GraphQL */ `query CategoryCountsByTestResultId(
-  $filter: ModelTestResultCategoryCountFilterInput
-  $limit: Int
-  $nextToken: String
-  $sortDirection: ModelSortDirection
-  $testResultId: ID!
-) {
-  categoryCountsByTestResultId(
-    filter: $filter
-    limit: $limit
-    nextToken: $nextToken
-    sortDirection: $sortDirection
-    testResultId: $testResultId
-  ) {
-    items {
-      categoryName
-      createdAt
-      testCount
-      testResultId
-      updatedAt
-      userCount
-      __typename
-    }
-    nextToken
-    __typename
-  }
-}
-` as GeneratedQuery<
-  APITypes.CategoryCountsByTestResultIdQueryVariables,
-  APITypes.CategoryCountsByTestResultIdQuery
->;
 export const clientLogsByUserId = /* GraphQL */ `query ClientLogsByUserId(
   $filter: ModelClientLogFilterInput
   $limit: Int
@@ -465,38 +434,10 @@ export const getAnnotation = /* GraphQL */ `query GetAnnotation($id: ID!) {
       __typename
     }
     imageId
-    object {
-      categoryId
-      createdAt
-      id
-      projectId
-      updatedAt
-      __typename
-    }
     objectId
     obscured
     owner
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
-    set {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     setId
     source
     updatedAt
@@ -511,29 +452,9 @@ export const getAnnotation = /* GraphQL */ `query GetAnnotation($id: ID!) {
 >;
 export const getAnnotationSet = /* GraphQL */ `query GetAnnotationSet($id: ID!) {
   getAnnotationSet(id: $id) {
-    annotations {
-      nextToken
-      __typename
-    }
-    categories {
-      nextToken
-      __typename
-    }
     createdAt
     id
-    jollyResultsMemberships {
-      nextToken
-      __typename
-    }
-    locationAnnotationCounts {
-      nextToken
-      __typename
-    }
     name
-    observations {
-      nextToken
-      __typename
-    }
     project {
       createdAt
       createdBy
@@ -547,18 +468,6 @@ export const getAnnotationSet = /* GraphQL */ `query GetAnnotationSet($id: ID!) 
     }
     projectId
     register
-    tasks {
-      nextToken
-      __typename
-    }
-    testPresetLocations {
-      nextToken
-      __typename
-    }
-    testResults {
-      nextToken
-      __typename
-    }
     updatedAt
     __typename
   }
@@ -577,17 +486,6 @@ export const getCamera = /* GraphQL */ `query GetCamera($id: ID!) {
       __typename
     }
     name
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     sensorWidthMm
     tiltDegrees
@@ -601,17 +499,6 @@ export const getCameraOverlap = /* GraphQL */ `query GetCameraOverlap($cameraAId
     cameraAId
     cameraBId
     createdAt
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     updatedAt
     __typename
@@ -624,15 +511,6 @@ export const getCameraOverlap = /* GraphQL */ `query GetCameraOverlap($cameraAId
 export const getCategory = /* GraphQL */ `query GetCategory($id: ID!) {
   getCategory(id: $id) {
     annotationCount
-    annotationSet {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     annotationSetId
     annotations {
       nextToken
@@ -646,10 +524,6 @@ export const getCategory = /* GraphQL */ `query GetCategory($id: ID!) {
       __typename
     }
     name
-    objects {
-      nextToken
-      __typename
-    }
     projectId
     shortcutKey
     updatedAt
@@ -726,17 +600,6 @@ export const getImage = /* GraphQL */ `query GetImage($id: ID!) {
     }
     originalPath
     pitch
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     rightNeighbours {
       nextToken
@@ -744,14 +607,6 @@ export const getImage = /* GraphQL */ `query GetImage($id: ID!) {
     }
     roll
     timestamp
-    transect {
-      createdAt
-      id
-      projectId
-      stratumId
-      updatedAt
-      __typename
-    }
     transectId
     updatedAt
     width
@@ -760,17 +615,6 @@ export const getImage = /* GraphQL */ `query GetImage($id: ID!) {
   }
 }
 ` as GeneratedQuery<APITypes.GetImageQueryVariables, APITypes.GetImageQuery>;
-export const getImageCounts = /* GraphQL */ `query GetImageCounts($imageSetId: String!, $nextToken: String) {
-  getImageCounts(imageSetId: $imageSetId, nextToken: $nextToken) {
-    count
-    nextToken
-    __typename
-  }
-}
-` as GeneratedQuery<
-  APITypes.GetImageCountsQueryVariables,
-  APITypes.GetImageCountsQuery
->;
 export const getImageFile = /* GraphQL */ `query GetImageFile($id: ID!) {
   getImageFile(id: $id) {
     createdAt
@@ -801,17 +645,6 @@ export const getImageFile = /* GraphQL */ `query GetImageFile($id: ID!) {
     imageId
     key
     path
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     type
     updatedAt
@@ -887,10 +720,6 @@ export const getImageSet = /* GraphQL */ `query GetImageSet($id: ID!) {
     createdAt
     id
     imageCount
-    images {
-      nextToken
-      __typename
-    }
     name
     project {
       createdAt
@@ -940,15 +769,6 @@ export const getImageSetMembership = /* GraphQL */ `query GetImageSetMembership(
       __typename
     }
     imageId
-    imageSet {
-      createdAt
-      id
-      imageCount
-      name
-      projectId
-      updatedAt
-      __typename
-    }
     imageSetId
     updatedAt
     __typename
@@ -1002,28 +822,8 @@ export const getJollyResultsMembership = /* GraphQL */ `query GetJollyResultsMem
     surveyId: $surveyId
     userId: $userId
   ) {
-    annotationSet {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     annotationSetId
     createdAt
-    survey {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     surveyId
     updatedAt
     userId
@@ -1036,10 +836,6 @@ export const getJollyResultsMembership = /* GraphQL */ `query GetJollyResultsMem
 >;
 export const getLocation = /* GraphQL */ `query GetLocation($id: ID!) {
   getLocation(id: $id) {
-    annotationCounts {
-      nextToken
-      __typename
-    }
     confidence
     createdAt
     height
@@ -1072,38 +868,10 @@ export const getLocation = /* GraphQL */ `query GetLocation($id: ID!) {
       nextToken
       __typename
     }
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
-    set {
-      createdAt
-      id
-      locationCount
-      name
-      projectId
-      updatedAt
-      __typename
-    }
     setId
-    sets {
-      nextToken
-      __typename
-    }
     source
     testPresets {
-      nextToken
-      __typename
-    }
-    testResults {
       nextToken
       __typename
     }
@@ -1128,15 +896,6 @@ export const getLocationAnnotationCount = /* GraphQL */ `query GetLocationAnnota
     categoryId: $categoryId
     locationId: $locationId
   ) {
-    annotationSet {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     annotationSetId
     category {
       annotationCount
@@ -1153,21 +912,6 @@ export const getLocationAnnotationCount = /* GraphQL */ `query GetLocationAnnota
     categoryId
     count
     createdAt
-    location {
-      confidence
-      createdAt
-      height
-      id
-      imageId
-      projectId
-      setId
-      source
-      updatedAt
-      width
-      x
-      y
-      __typename
-    }
     locationId
     updatedAt
     __typename
@@ -1182,31 +926,12 @@ export const getLocationSet = /* GraphQL */ `query GetLocationSet($id: ID!) {
     createdAt
     id
     locationCount
-    locations {
-      nextToken
-      __typename
-    }
     memberships {
       nextToken
       __typename
     }
     name
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
-    tasks {
-      nextToken
-      __typename
-    }
     updatedAt
     __typename
   }
@@ -1219,21 +944,6 @@ export const getLocationSetMembership = /* GraphQL */ `query GetLocationSetMembe
   getLocationSetMembership(id: $id) {
     createdAt
     id
-    location {
-      confidence
-      createdAt
-      height
-      id
-      imageId
-      projectId
-      setId
-      source
-      updatedAt
-      width
-      x
-      y
-      __typename
-    }
     locationId
     locationSet {
       createdAt
@@ -1255,36 +965,9 @@ export const getLocationSetMembership = /* GraphQL */ `query GetLocationSetMembe
 >;
 export const getObject = /* GraphQL */ `query GetObject($id: ID!) {
   getObject(id: $id) {
-    annotations {
-      nextToken
-      __typename
-    }
-    category {
-      annotationCount
-      annotationSetId
-      color
-      createdAt
-      id
-      name
-      projectId
-      shortcutKey
-      updatedAt
-      __typename
-    }
     categoryId
     createdAt
     id
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     updatedAt
     __typename
@@ -1294,15 +977,6 @@ export const getObject = /* GraphQL */ `query GetObject($id: ID!) {
 export const getObservation = /* GraphQL */ `query GetObservation($id: ID!) {
   getObservation(id: $id) {
     annotationCount
-    annotationSet {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     annotationSetId
     createdAt
     id
@@ -1324,17 +998,6 @@ export const getObservation = /* GraphQL */ `query GetObservation($id: ID!) {
     }
     locationId
     owner
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     timeTaken
     updatedAt
@@ -1351,20 +1014,12 @@ export const getOrganization = /* GraphQL */ `query GetOrganization($id: ID!) {
     createdAt
     description
     id
-    invites {
-      nextToken
-      __typename
-    }
     memberships {
       nextToken
       __typename
     }
     name
     projects {
-      nextToken
-      __typename
-    }
-    testPresets {
       nextToken
       __typename
     }
@@ -1381,14 +1036,6 @@ export const getOrganizationInvite = /* GraphQL */ `query GetOrganizationInvite(
     createdAt
     id
     invitedBy
-    organization {
-      createdAt
-      description
-      id
-      name
-      updatedAt
-      __typename
-    }
     organizationId
     status
     updatedAt
@@ -1445,59 +1092,15 @@ export const getProject = /* GraphQL */ `query GetProject($id: ID!) {
       nextToken
       __typename
     }
-    annotations {
-      nextToken
-      __typename
-    }
-    cameraOverlaps {
-      nextToken
-      __typename
-    }
-    cameras {
-      nextToken
-      __typename
-    }
     createdAt
     createdBy
     hidden
     id
-    imageFiles {
-      nextToken
-      __typename
-    }
     imageSets {
       nextToken
       __typename
     }
-    images {
-      nextToken
-      __typename
-    }
-    jollyResultsMemberships {
-      nextToken
-      __typename
-    }
-    locationSets {
-      nextToken
-      __typename
-    }
-    locations {
-      nextToken
-      __typename
-    }
-    members {
-      nextToken
-      __typename
-    }
     name
-    objects {
-      nextToken
-      __typename
-    }
-    observations {
-      nextToken
-      __typename
-    }
     organization {
       createdAt
       description
@@ -1511,23 +1114,7 @@ export const getProject = /* GraphQL */ `query GetProject($id: ID!) {
       nextToken
       __typename
     }
-    shapefile {
-      coordinates
-      createdAt
-      id
-      projectId
-      updatedAt
-      __typename
-    }
-    shapefileExclusions {
-      nextToken
-      __typename
-    }
     status
-    strata {
-      nextToken
-      __typename
-    }
     testConfig {
       accuracy
       createdAt
@@ -1538,14 +1125,6 @@ export const getProject = /* GraphQL */ `query GetProject($id: ID!) {
       random
       testType
       updatedAt
-      __typename
-    }
-    testResults {
-      nextToken
-      __typename
-    }
-    transects {
-      nextToken
       __typename
     }
     updatedAt
@@ -1576,10 +1155,6 @@ export const getProjectTestConfig = /* GraphQL */ `query GetProjectTestConfig($p
     }
     projectId
     random
-    testPresetProjects {
-      nextToken
-      __typename
-    }
     testType
     updatedAt
     __typename
@@ -1593,10 +1168,6 @@ export const getQueue = /* GraphQL */ `query GetQueue($id: ID!) {
   getQueue(id: $id) {
     observedCount
     approximateSize
-    backupUsers {
-      nextToken
-      __typename
-    }
     batchSize
     createdAt
     hidden
@@ -1618,10 +1189,6 @@ export const getQueue = /* GraphQL */ `query GetQueue($id: ID!) {
     totalBatches
     updatedAt
     url
-    users {
-      nextToken
-      __typename
-    }
     zoom
     observedCount
     __typename
@@ -1650,17 +1217,6 @@ export const getShapefile = /* GraphQL */ `query GetShapefile($id: ID!) {
     coordinates
     createdAt
     id
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     updatedAt
     __typename
@@ -1675,17 +1231,6 @@ export const getShapefileExclusions = /* GraphQL */ `query GetShapefileExclusion
     coordinates
     createdAt
     id
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     updatedAt
     __typename
@@ -1703,22 +1248,7 @@ export const getStratum = /* GraphQL */ `query GetStratum($id: ID!) {
     createdAt
     id
     name
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
-    transects {
-      nextToken
-      __typename
-    }
     updatedAt
     __typename
   }
@@ -1729,27 +1259,9 @@ export const getStratum = /* GraphQL */ `query GetStratum($id: ID!) {
 >;
 export const getTasksOnAnnotationSet = /* GraphQL */ `query GetTasksOnAnnotationSet($id: ID!) {
   getTasksOnAnnotationSet(id: $id) {
-    annotationSet {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     annotationSetId
     createdAt
     id
-    locationSet {
-      createdAt
-      id
-      locationCount
-      name
-      projectId
-      updatedAt
-      __typename
-    }
     locationSetId
     updatedAt
     __typename
@@ -1763,24 +1275,8 @@ export const getTestPreset = /* GraphQL */ `query GetTestPreset($id: ID!) {
   getTestPreset(id: $id) {
     createdAt
     id
-    locations {
-      nextToken
-      __typename
-    }
     name
-    organization {
-      createdAt
-      description
-      id
-      name
-      updatedAt
-      __typename
-    }
     organizationId
-    projects {
-      nextToken
-      __typename
-    }
     testResults {
       nextToken
       __typename
@@ -1803,15 +1299,6 @@ export const getTestPresetLocation = /* GraphQL */ `query GetTestPresetLocation(
     locationId: $locationId
     testPresetId: $testPresetId
   ) {
-    annotationSet {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     annotationSetId
     createdAt
     location {
@@ -1830,14 +1317,6 @@ export const getTestPresetLocation = /* GraphQL */ `query GetTestPresetLocation(
       __typename
     }
     locationId
-    testPreset {
-      createdAt
-      id
-      name
-      organizationId
-      updatedAt
-      __typename
-    }
     testPresetId
     updatedAt
     __typename
@@ -1850,27 +1329,7 @@ export const getTestPresetLocation = /* GraphQL */ `query GetTestPresetLocation(
 export const getTestPresetProject = /* GraphQL */ `query GetTestPresetProject($projectId: ID!, $testPresetId: ID!) {
   getTestPresetProject(projectId: $projectId, testPresetId: $testPresetId) {
     createdAt
-    projectConfig {
-      accuracy
-      createdAt
-      deadzone
-      interval
-      postTestConfirmation
-      projectId
-      random
-      testType
-      updatedAt
-      __typename
-    }
     projectId
-    testPreset {
-      createdAt
-      id
-      name
-      organizationId
-      updatedAt
-      __typename
-    }
     testPresetId
     updatedAt
     __typename
@@ -1882,15 +1341,6 @@ export const getTestPresetProject = /* GraphQL */ `query GetTestPresetProject($p
 >;
 export const getTestResult = /* GraphQL */ `query GetTestResult($id: ID!) {
   getTestResult(id: $id) {
-    annotationSet {
-      createdAt
-      id
-      name
-      projectId
-      register
-      updatedAt
-      __typename
-    }
     annotationSetId
     categoryCounts {
       nextToken
@@ -1898,34 +1348,8 @@ export const getTestResult = /* GraphQL */ `query GetTestResult($id: ID!) {
     }
     createdAt
     id
-    location {
-      confidence
-      createdAt
-      height
-      id
-      imageId
-      projectId
-      setId
-      source
-      updatedAt
-      width
-      x
-      y
-      __typename
-    }
     locationId
     passedOnTotal
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
     testAnimals
     testPreset {
@@ -1983,33 +1407,7 @@ export const getTransect = /* GraphQL */ `query GetTransect($id: ID!) {
   getTransect(id: $id) {
     createdAt
     id
-    images {
-      nextToken
-      __typename
-    }
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
-    stratum {
-      area
-      baselineLength
-      coordinates
-      createdAt
-      id
-      name
-      projectId
-      updatedAt
-      __typename
-    }
     stratumId
     updatedAt
     __typename
@@ -2021,52 +1419,11 @@ export const getTransect = /* GraphQL */ `query GetTransect($id: ID!) {
 >;
 export const getUserProjectMembership = /* GraphQL */ `query GetUserProjectMembership($id: ID!) {
   getUserProjectMembership(id: $id) {
-    backupQueue {
-      approximateSize
-      batchSize
-      createdAt
-      hidden
-      id
-      name
-      projectId
-      tag
-      totalBatches
-      updatedAt
-      url
-      zoom
-      __typename
-    }
     backupQueueId
     createdAt
     id
     isAdmin
-    project {
-      createdAt
-      createdBy
-      hidden
-      id
-      name
-      organizationId
-      status
-      updatedAt
-      __typename
-    }
     projectId
-    queue {
-      approximateSize
-      batchSize
-      createdAt
-      hidden
-      id
-      name
-      projectId
-      tag
-      totalBatches
-      updatedAt
-      url
-      zoom
-      __typename
-    }
     queueId
     updatedAt
     userId
@@ -2342,46 +1699,6 @@ export const imagesByimageId = /* GraphQL */ `query ImagesByimageId(
   APITypes.ImagesByimageIdQueryVariables,
   APITypes.ImagesByimageIdQuery
 >;
-export const jollyResultsByStratumId = /* GraphQL */ `query JollyResultsByStratumId(
-  $filter: ModelJollyResultFilterInput
-  $limit: Int
-  $nextToken: String
-  $sortDirection: ModelSortDirection
-  $stratumId: ID!
-) {
-  jollyResultsByStratumId(
-    filter: $filter
-    limit: $limit
-    nextToken: $nextToken
-    sortDirection: $sortDirection
-    stratumId: $stratumId
-  ) {
-    items {
-      animals
-      annotationSetId
-      areaSurveyed
-      categoryId
-      createdAt
-      density
-      estimate
-      lowerBound95
-      numSamples
-      standardError
-      stratumId
-      surveyId
-      updatedAt
-      upperBound95
-      variance
-      __typename
-    }
-    nextToken
-    __typename
-  }
-}
-` as GeneratedQuery<
-  APITypes.JollyResultsByStratumIdQueryVariables,
-  APITypes.JollyResultsByStratumIdQuery
->;
 export const jollyResultsBySurveyId = /* GraphQL */ `query JollyResultsBySurveyId(
   $filter: ModelJollyResultFilterInput
   $limit: Int
@@ -2617,13 +1934,6 @@ export const listClientLogs = /* GraphQL */ `query ListClientLogs(
 ` as GeneratedQuery<
   APITypes.ListClientLogsQueryVariables,
   APITypes.ListClientLogsQuery
->;
-export const listGroupsForUser = /* GraphQL */ `query ListGroupsForUser($nextToken: String, $userId: String!) {
-  listGroupsForUser(nextToken: $nextToken, userId: $userId)
-}
-` as GeneratedQuery<
-  APITypes.ListGroupsForUserQueryVariables,
-  APITypes.ListGroupsForUserQuery
 >;
 export const listImageFiles = /* GraphQL */ `query ListImageFiles(
   $filter: ModelImageFileFilterInput
@@ -3571,20 +2881,6 @@ export const listUserStats = /* GraphQL */ `query ListUserStats(
   APITypes.ListUserStatsQueryVariables,
   APITypes.ListUserStatsQuery
 >;
-export const listUsers = /* GraphQL */ `query ListUsers($nextToken: String) {
-  listUsers(nextToken: $nextToken) {
-    NextToken
-    Users {
-      email
-      id
-      isAdmin
-      name
-      __typename
-    }
-    __typename
-  }
-}
-` as GeneratedQuery<APITypes.ListUsersQueryVariables, APITypes.ListUsersQuery>;
 export const locationSetsByAnnotationSetId = /* GraphQL */ `query LocationSetsByAnnotationSetId(
   $annotationSetId: ID!
   $filter: ModelTasksOnAnnotationSetFilterInput
@@ -3823,36 +3119,6 @@ export const membershipsByOrganizationId = /* GraphQL */ `query MembershipsByOrg
 ` as GeneratedQuery<
   APITypes.MembershipsByOrganizationIdQueryVariables,
   APITypes.MembershipsByOrganizationIdQuery
->;
-export const objectsByCategoryId = /* GraphQL */ `query ObjectsByCategoryId(
-  $categoryId: ID!
-  $filter: ModelObjectFilterInput
-  $limit: Int
-  $nextToken: String
-  $sortDirection: ModelSortDirection
-) {
-  objectsByCategoryId(
-    categoryId: $categoryId
-    filter: $filter
-    limit: $limit
-    nextToken: $nextToken
-    sortDirection: $sortDirection
-  ) {
-    items {
-      categoryId
-      createdAt
-      id
-      projectId
-      updatedAt
-      __typename
-    }
-    nextToken
-    __typename
-  }
-}
-` as GeneratedQuery<
-  APITypes.ObjectsByCategoryIdQueryVariables,
-  APITypes.ObjectsByCategoryIdQuery
 >;
 export const observationsByAnnotationSetId = /* GraphQL */ `query ObservationsByAnnotationSetId(
   $annotationSetId: ID!
@@ -4189,36 +3455,6 @@ export const strataByProjectId = /* GraphQL */ `query StrataByProjectId(
   APITypes.StrataByProjectIdQueryVariables,
   APITypes.StrataByProjectIdQuery
 >;
-export const testPresetsByLocationId = /* GraphQL */ `query TestPresetsByLocationId(
-  $filter: ModelTestPresetLocationFilterInput
-  $limit: Int
-  $locationId: ID!
-  $nextToken: String
-  $sortDirection: ModelSortDirection
-) {
-  testPresetsByLocationId(
-    filter: $filter
-    limit: $limit
-    locationId: $locationId
-    nextToken: $nextToken
-    sortDirection: $sortDirection
-  ) {
-    items {
-      annotationSetId
-      createdAt
-      locationId
-      testPresetId
-      updatedAt
-      __typename
-    }
-    nextToken
-    __typename
-  }
-}
-` as GeneratedQuery<
-  APITypes.TestPresetsByLocationIdQueryVariables,
-  APITypes.TestPresetsByLocationIdQuery
->;
 export const testPresetsByName = /* GraphQL */ `query TestPresetsByName(
   $filter: ModelTestPresetFilterInput
   $limit: Int
@@ -4307,42 +3543,6 @@ export const testPresetsByProjectId = /* GraphQL */ `query TestPresetsByProjectI
 ` as GeneratedQuery<
   APITypes.TestPresetsByProjectIdQueryVariables,
   APITypes.TestPresetsByProjectIdQuery
->;
-export const testResultsByTestPresetId = /* GraphQL */ `query TestResultsByTestPresetId(
-  $filter: ModelTestResultFilterInput
-  $limit: Int
-  $nextToken: String
-  $sortDirection: ModelSortDirection
-  $testPresetId: ID!
-) {
-  testResultsByTestPresetId(
-    filter: $filter
-    limit: $limit
-    nextToken: $nextToken
-    sortDirection: $sortDirection
-    testPresetId: $testPresetId
-  ) {
-    items {
-      annotationSetId
-      createdAt
-      id
-      locationId
-      passedOnTotal
-      projectId
-      testAnimals
-      testPresetId
-      totalMissedAnimals
-      updatedAt
-      userId
-      __typename
-    }
-    nextToken
-    __typename
-  }
-}
-` as GeneratedQuery<
-  APITypes.TestResultsByTestPresetIdQueryVariables,
-  APITypes.TestResultsByTestPresetIdQuery
 >;
 export const testResultsByUserId = /* GraphQL */ `query TestResultsByUserId(
   $filter: ModelTestResultFilterInput

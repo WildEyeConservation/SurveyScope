@@ -99,6 +99,17 @@ export default function WorkflowStatistics() {
   const { cognitoGroups, myMembershipHook, myOrganizationHook } =
     useContext(UserContext)!;
   const { users: allUsers } = useUsers();
+  const administers = useCallback(
+    (project: ProjectOption) =>
+      cognitoGroups.includes('sysadmin') ||
+      myOrganizationHook.data.some(
+        (m) => m.organizationId === project.organizationId && m.isAdmin,
+      ) ||
+      myMembershipHook.data.some(
+        (m) => m.projectId === project.id && m.isAdmin,
+      ),
+    [cognitoGroups, myMembershipHook.data, myOrganizationHook.data],
+  );
 
   const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [organizationNames, setOrganizationNames] = useState<
@@ -154,9 +165,11 @@ export default function WorkflowStatistics() {
         ]);
         if (cancelled) return;
         setProjects(
-          [...allProjects].sort((left, right) =>
-            (left.name ?? '').localeCompare(right.name ?? ''),
-          ),
+          allProjects
+            .filter(administers)
+            .sort((left, right) =>
+              (left.name ?? '').localeCompare(right.name ?? ''),
+            ),
         );
         setOrganizationNames(
           Object.fromEntries(
@@ -181,7 +194,7 @@ export default function WorkflowStatistics() {
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, administers]);
 
   const projectOptions = useMemo(
     () =>

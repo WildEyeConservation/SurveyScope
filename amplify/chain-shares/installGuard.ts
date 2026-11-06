@@ -9,7 +9,6 @@ export const GUARDED_MUTATIONS = [
   'createChainReviewFeedback',
   'updateChainReviewFeedback',
   'deleteChainReviewFeedback',
-  'addUserToGroup',
 ] as const;
 
 /** Add share validation only; leave original annotation mutations untouched. */
@@ -37,9 +36,6 @@ export function installMutationGuard(
         name: `${fieldName}Guard`,
         functionVersion: '2018-05-29',
         requestMappingTemplate: `#if($util.authType() == "IAM Authorization")
-  #return($ctx.prev.result)
-#end
-#if($ctx.info.fieldName == "addUserToGroup" && !$ctx.args.groupName.startsWith("chainshare-"))
   #return($ctx.prev.result)
 #end
 #set($input = $util.defaultIfNull($ctx.args.input, $ctx.args))

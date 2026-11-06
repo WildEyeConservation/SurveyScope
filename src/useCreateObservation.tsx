@@ -147,30 +147,32 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           });
         }
 
-        await persistObservation({
-          create: () => client.models.Observation.create(input),
-          getExisting: observationId
-            ? () =>
-                client.models.Observation.get(
-                  { id: observationId },
-                  {
-                    selectionSet: [
-                      'id',
-                      'annotationSetId',
-                      'locationId',
-                      'queueId',
-                    ],
-                  },
-                )
-            : undefined,
-          expected: {
-            annotationSetId: persistedAnnotationSetId,
-            locationId: id,
-            queueId: queueId || undefined,
-          },
-          isGraphQLError: (error): error is GraphQLError =>
-            error instanceof GraphQLError,
-        });
+        // A test's answers are graded from the screen, not stored as an observation.
+        if (!isTest)
+          await persistObservation({
+            create: () => client.models.Observation.create(input),
+            getExisting: observationId
+              ? () =>
+                  client.models.Observation.get(
+                    { id: observationId },
+                    {
+                      selectionSet: [
+                        'id',
+                        'annotationSetId',
+                        'locationId',
+                        'queueId',
+                      ],
+                    },
+                  )
+              : undefined,
+            expected: {
+              annotationSetId: persistedAnnotationSetId,
+              locationId: id,
+              queueId: queueId || undefined,
+            },
+            isGraphQLError: (error): error is GraphQLError =>
+              error instanceof GraphQLError,
+          });
 
         // observedCount is bumped by the updateUserStats DynamoDB stream handler
         // when the Observation row lands; don't also increment from the client.

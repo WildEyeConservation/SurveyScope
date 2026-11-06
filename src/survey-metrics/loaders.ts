@@ -1,11 +1,11 @@
-import { generateClient } from 'aws-amplify/api';
 import pLimit from 'p-limit';
+import outputs from '../../amplify_outputs.json';
 import {
   ROW_SOURCES,
   type FieldOf,
   type RowSourceName,
 } from '../../shared/rowSources';
-import { graphqlErrorMessage } from '../reportClientErrorCore';
+import { limitedClient as client } from '../limitedClient';
 import { forEachRowChunk, loadRows, streamRows } from '../rowChunks';
 import type {
   AnnotationRow,
@@ -26,12 +26,9 @@ import type {
   TaskRow,
 } from './types';
 
-const client = generateClient({ authMode: 'userPool' });
 const limit = pLimit(8);
 
 const PAGE_SIZE = 10000;
-const MAX_ATTEMPTS = 5;
-const NEIGHBOUR_BATCH = 40;
 const NEIGHBOUR_WORKERS = 6;
 
 export const DETECTORS = [
@@ -76,91 +73,58 @@ function throwIfAborted(signal: AbortSignal) {
   if (signal.aborted) throw new AbortError();
 }
 
-function isDeterministic(message: string): boolean {
-  return /validation|unauthori[sz]ed|not authori[sz]ed|FieldUndefined|UnknownType/i.test(
-    message,
+type Introspection = {
+  models: Record<
+    string,
+    { attributes?: { type: string; properties?: { queryField?: string } }[] }
+  >;
+};
+type ListOperation = (
+  input: Record<string, unknown>,
+  options: Record<string, unknown>,
+) => Promise<{ data: unknown[]; nextToken?: string | null }>;
+
+function listOperation(field: string): ListOperation {
+  const models = (outputs.data.model_introspection as unknown as Introspection)
+    .models;
+  const model = Object.keys(models).find((name) =>
+    models[name].attributes?.some(
+      (a) => a.type === 'key' && a.properties?.queryField === field,
+    ),
   );
-}
-
-async function runQuery<T>(
-  query: string,
-  variables: Record<string, unknown>,
-  signal: AbortSignal,
-): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    throwIfAborted(signal);
-    try {
-      const result = await limit(() => {
-        throwIfAborted(signal);
-        return client.graphql({ query, variables }) as Promise<{
-          data?: T;
-          errors?: unknown[];
-        }>;
-      });
-      // A partial page would silently under-report, so any error fails it.
-      if (result.errors?.length) throw result;
-      if (!result.data) throw new Error('GraphQL response missing data');
-      return result.data;
-    } catch (error) {
-      if (error instanceof AbortError) throw error;
-      const message = graphqlErrorMessage(error);
-      if (attempt >= MAX_ATTEMPTS || isDeterministic(message)) {
-        throw new Error(message);
-      }
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(500 * 2 ** attempt, 15000)),
-      );
-    }
-  }
-}
-
-type Page<Row> = { items: Row[]; nextToken?: string | null };
-
-function listQuery(
-  field: string,
-  args: Record<string, string>,
-  fields: string,
-) {
-  const declared = Object.entries(args)
-    .map(([name, type]) => `$${name}: ${type}`)
-    .join(', ');
-  const passed = Object.keys(args)
-    .map((name) => `${name}: $${name}`)
-    .join(', ');
-  return `query SurveyMetrics_${field}($limit: Int, $nextToken: String, ${declared}) {
-    ${field}(limit: $limit, nextToken: $nextToken, ${passed}) {
-      items { ${fields} }
-      nextToken
-    }
-  }`;
+  if (!model) throw new Error(`Unknown query ${field}`);
+  return (
+    client.models as unknown as Record<string, Record<string, ListOperation>>
+  )[model][field];
 }
 
 async function forEachPage<Row>(
   field: string,
-  args: Record<string, string>,
   fields: string,
   variables: Record<string, unknown>,
   signal: AbortSignal,
   onPage: (rows: Row[]) => void,
   startToken?: string,
 ): Promise<void> {
-  const query = listQuery(field, args, fields);
+  const list = listOperation(field);
   let nextToken: string | null | undefined = startToken;
   do {
-    const data: Record<string, Page<Row>> = await runQuery(
-      query,
-      { ...variables, limit: PAGE_SIZE, nextToken },
-      signal,
+    throwIfAborted(signal);
+    const page = await limit(() =>
+      list(variables, {
+        limit: PAGE_SIZE,
+        nextToken,
+        selectionSet: fields.split(' '),
+        signal,
+      }),
     );
-    const page = data[field];
-    onPage(page.items);
+    onPage(page.data as Row[]);
     nextToken = page.nextToken;
   } while (nextToken);
 }
 
 async function fetchAll<Row>(
   field: string,
-  args: Record<string, string>,
   fields: string,
   variables: Record<string, unknown>,
   signal: AbortSignal,
@@ -170,7 +134,6 @@ async function fetchAll<Row>(
   const rows: Row[] = [];
   await forEachPage<Row>(
     field,
-    args,
     fields,
     variables,
     signal,
@@ -192,11 +155,8 @@ function counted(ctx: LoadContext, total?: number) {
   };
 }
 
-const BY_PROJECT = { projectId: 'ID!' };
-
 function loadChunked<S extends RowSourceName>(
   source: S,
-  args: Record<string, string>,
   fields: readonly FieldOf<S>[],
   scopeId: string,
   ctx: LoadContext,
@@ -210,7 +170,6 @@ function loadChunked<S extends RowSourceName>(
     fallback: () =>
       fetchAll(
         source,
-        args,
         fields.join(' '),
         variables,
         ctx.signal,
@@ -223,22 +182,21 @@ export async function loadProject(
   projectId: string,
   ctx: LoadContext,
 ): Promise<ProjectRow> {
-  const data = await runQuery<{ getProject: ProjectRow | null }>(
-    `query SurveyMetrics_getProject($id: ID!) {
-      getProject(id: $id) { id name status createdAt organizationId }
-    }`,
+  const { data } = await client.models.Project.get(
     { id: projectId },
-    ctx.signal,
+    {
+      selectionSet: ['id', 'name', 'status', 'createdAt', 'organizationId'],
+      signal: ctx.signal,
+    },
   );
-  if (!data.getProject) throw new Error(`No survey with id ${projectId}`);
+  if (!data) throw new Error(`No survey with id ${projectId}`);
   ctx.onProgress(1, 1);
-  return data.getProject;
+  return data as ProjectRow;
 }
 
 export function loadImageSets(projectId: string, ctx: LoadContext) {
   return fetchAll<ImageSetRow>(
     'imageSetsByProjectId',
-    BY_PROJECT,
     'id name imageCount',
     { projectId },
     ctx.signal,
@@ -249,7 +207,6 @@ export function loadImageSets(projectId: string, ctx: LoadContext) {
 export function loadAnnotationSets(projectId: string, ctx: LoadContext) {
   return fetchAll<AnnotationSetRow>(
     'annotationSetsByProjectId',
-    BY_PROJECT,
     'id name register createdAt',
     { projectId },
     ctx.signal,
@@ -260,7 +217,6 @@ export function loadAnnotationSets(projectId: string, ctx: LoadContext) {
 export function loadLocationSets(projectId: string, ctx: LoadContext) {
   return fetchAll<LocationSetRow>(
     'locationSetsByProjectId',
-    BY_PROJECT,
     'id name description locationCount createdAt',
     { projectId },
     ctx.signal,
@@ -271,7 +227,6 @@ export function loadLocationSets(projectId: string, ctx: LoadContext) {
 export function loadQueues(projectId: string, ctx: LoadContext) {
   return fetchAll<QueueRow>(
     'queuesByProjectId',
-    BY_PROJECT,
     'id name tag annotationSetId locationSetId confidenceThreshold launchedCount observedCount approximateSize requeuesCompleted lastObservationAt createdAt',
     { projectId },
     ctx.signal,
@@ -285,25 +240,29 @@ export async function loadRegistration(
 ): Promise<RegistrationRows> {
   const onRows = counted(ctx);
   const [progress, buckets] = await Promise.all([
-    runQuery<{ getRegistrationProgress: RegistrationProgressRow | null }>(
-      `query SurveyMetrics_getRegistrationProgress($projectId: ID!) {
-        getRegistrationProgress(projectId: $projectId) {
-          pairsCreated pairsProcessed pendingCount lastKickoffAt lastChangeAt cleanupState
-        }
-      }`,
+    client.models.RegistrationProgress.get(
       { projectId },
-      ctx.signal,
+      {
+        selectionSet: [
+          'pairsCreated',
+          'pairsProcessed',
+          'pendingCount',
+          'lastKickoffAt',
+          'lastChangeAt',
+          'cleanupState',
+        ],
+        signal: ctx.signal,
+      },
     ),
     fetchAll<RegistrationBucketRow>(
       'registrationBucketStatsByProjectId',
-      BY_PROJECT,
       'cameraPairKey bucketIndex successCount',
       { projectId },
       ctx.signal,
       onRows,
     ),
   ]);
-  return { progress: progress.getRegistrationProgress, buckets };
+  return { progress: progress.data as RegistrationProgressRow | null, buckets };
 }
 
 export function loadImages(
@@ -313,7 +272,6 @@ export function loadImages(
 ) {
   return loadChunked(
     'imagesByProjectId',
-    BY_PROJECT,
     ['id', 'width', 'height', 'timestamp', 'originalPath', 'cameraId'],
     projectId,
     ctx,
@@ -331,20 +289,6 @@ type RawNeighbour = Omit<
   registrationProcessedAt: string | null;
   registrationFailedAt: string | null;
 };
-
-function neighbourBatchQuery(size: number) {
-  const declared: string[] = [];
-  const fields: string[] = [];
-  for (let i = 0; i < size; i++) {
-    declared.push(`$i${i}: ID!`);
-    fields.push(
-      `n${i}: imageNeighboursByImage1key(image1Id: $i${i}, limit: ${PAGE_SIZE}) { items { ${NEIGHBOUR_FIELDS} } nextToken }`,
-    );
-  }
-  return `query SurveyMetrics_neighbours(${declared.join(
-    ', ',
-  )}) { ${fields.join(' ')} }`;
-}
 
 function neighbourCollector(imageIds: string[] = []) {
   const rows: NeighbourRow[] = [];
@@ -416,39 +360,19 @@ async function loadNeighboursByImage(
   let scanned = 0;
   ctx.onProgress(0, imageIds.length);
 
-  const batches: string[][] = [];
-  for (let i = 0; i < imageIds.length; i += NEIGHBOUR_BATCH) {
-    batches.push(imageIds.slice(i, i + NEIGHBOUR_BATCH));
-  }
-
   // A small worker pool keeps the shared request queue free for other loads.
   let next = 0;
   const worker = async () => {
-    while (next < batches.length) {
-      const batch = batches[next++];
-      const variables: Record<string, string> = {};
-      batch.forEach((id, index) => (variables[`i${index}`] = id));
-      const data = await runQuery<Record<string, Page<RawNeighbour>>>(
-        neighbourBatchQuery(batch.length),
-        variables,
+    while (next < imageIds.length) {
+      const image1Id = imageIds[next++];
+      await forEachPage<RawNeighbour>(
+        'imageNeighboursByImage1key',
+        NEIGHBOUR_FIELDS,
+        { image1Id },
         ctx.signal,
+        (rows) => rows.forEach(add),
       );
-      for (let index = 0; index < batch.length; index++) {
-        const page = data[`n${index}`];
-        page.items.forEach(add);
-        if (page.nextToken) {
-          await forEachPage<RawNeighbour>(
-            'imageNeighboursByImage1key',
-            { image1Id: 'ID!' },
-            NEIGHBOUR_FIELDS,
-            { image1Id: batch[index] },
-            ctx.signal,
-            (rest) => rest.forEach(add),
-            page.nextToken,
-          );
-        }
-      }
-      scanned += batch.length;
+      scanned += 1;
       ctx.onProgress(scanned, imageIds.length);
     }
   };
@@ -459,7 +383,6 @@ async function loadNeighboursByImage(
 export function loadProcessedBy(projectId: string, ctx: LoadContext) {
   return loadChunked(
     'processedByProjectIdAndSource',
-    BY_PROJECT,
     ['imageId', 'source'],
     projectId,
     ctx,
@@ -503,7 +426,6 @@ export async function scanDetectorLocations(
           fallback: (onPage) =>
             forEachPage(
               'locationsByProjectIdAndSource',
-              { ...BY_PROJECT, source: 'ModelStringKeyConditionInput' },
               fields.join(' '),
               { projectId, source: { beginsWith: detector.prefix } },
               ctx.signal,
@@ -519,7 +441,6 @@ export async function scanDetectorLocations(
 export function loadAnnotations(setId: string, ctx: LoadContext) {
   return loadChunked(
     'annotationsByAnnotationSetId',
-    { setId: 'ID!' },
     [
       'id',
       'imageId',
@@ -543,7 +464,6 @@ export function loadAnnotations(setId: string, ctx: LoadContext) {
 export function loadObservations(setId: string, ctx: LoadContext) {
   return loadChunked(
     'observationsByAnnotationSetId',
-    { annotationSetId: 'ID!' },
     ['locationId', 'owner', 'source', 'createdAt'],
     setId,
     ctx,
@@ -553,7 +473,6 @@ export function loadObservations(setId: string, ctx: LoadContext) {
 export function loadCategories(setId: string, ctx: LoadContext) {
   return loadChunked(
     'categoriesByAnnotationSetId',
-    { annotationSetId: 'ID!' },
     ['id', 'name'],
     setId,
     ctx,
@@ -563,7 +482,6 @@ export function loadCategories(setId: string, ctx: LoadContext) {
 export function loadTasks(setId: string, ctx: LoadContext) {
   return fetchAll<TaskRow>(
     'locationSetsByAnnotationSetId',
-    { annotationSetId: 'ID!' },
     'locationSetId createdAt',
     { annotationSetId: setId },
     ctx.signal,

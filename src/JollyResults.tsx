@@ -11,6 +11,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { neutraliseCsvRows } from '../shared/csv';
 import { Schema } from './amplify/client-schema';
+import { resultsLink, shareResults } from './api/results';
 import { useUsers } from './apiInterface';
 import { GlobalContext, UserContext } from './Context.tsx';
 import DensityMap from './DensityMap.tsx';
@@ -19,13 +20,10 @@ import { Tab, Tabs } from './Tabs';
 import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
 import { fetchAllPaginatedResults } from './utils.tsx';
-import { createToken, verifyToken } from './utils/jwt';
 // @ts-ignore
 import * as jStat from 'jstat';
 import { useNavigate } from 'react-router-dom';
 
-// New links are off until link creation moves to the backend.
-const SHARING_AVAILABLE = false;
 const LINK_DURATIONS = [
   { label: '1 day', days: 1 },
   { label: '1 week', days: 7 },
@@ -127,47 +125,20 @@ export default function JollyResults() {
       return;
     }
 
-    //if token exists and is not valid, delete it
-    if (currentToken) {
-      await client.models.ResultSharingToken.delete({
-        surveyId,
-        annotationSetId,
-      });
-    }
-
-    const payload = {
-      type: 'jolly',
-      surveyId,
-      annotationSetId,
-    };
-
-    const { data: secret } = await client.mutations.getJwtSecret();
-
-    if (!secret) {
+    let shared;
+    try {
+      shared = await shareResults(surveyId!, annotationSetId!, expiration);
+    } catch (error) {
+      console.error('Error generating link', error);
       alert('Error generating link');
+      setIsCopying(false);
       return;
     }
 
-    const token = await createToken(
-      payload,
-      DateTime.fromMillis(expiration).toJSDate(),
-      secret,
-    );
+    setCurrentToken(shared.token);
+    setTokenExpiry(new Date(shared.expiresAt));
 
-    const { data: surveyProject } = await client.models.Project.get({
-      id: surveyId,
-    });
-    await client.models.ResultSharingToken.create({
-      surveyId,
-      annotationSetId,
-      jwt: token,
-      group: surveyProject?.organizationId,
-    });
-
-    setCurrentToken(token);
-    setTokenExpiry(DateTime.fromMillis(expiration).toJSDate());
-
-    handleCopyLink(token);
+    handleCopyLink(shared.token);
     setIsCopying(false);
   }
 
@@ -397,22 +368,13 @@ export default function JollyResults() {
 
           setResults(resultsWithStratumName);
 
-          const { data: sharingLink } =
-            await client.models.ResultSharingToken.get({
-              surveyId,
-              annotationSetId,
-            });
+          const sharingLink = isProjectAdmin
+            ? await resultsLink(surveyId, annotationSetId)
+            : null;
 
           if (sharingLink) {
-            const { data: secret } = await client.mutations.getJwtSecret();
-            if (!secret) {
-              console.error('Error getting JWT secret');
-              return;
-            }
-            setCurrentToken(sharingLink.jwt);
-            const { exp } = await verifyToken(sharingLink.jwt, secret);
-            if (exp != null)
-              setTokenExpiry(DateTime.fromMillis(exp * 1000).toJSDate());
+            setCurrentToken(sharingLink.token);
+            setTokenExpiry(new Date(sharingLink.expiresAt));
           }
         }
       } catch (error) {
@@ -425,7 +387,7 @@ export default function JollyResults() {
     return () => {
       mounted = false;
     };
-  }, [client, surveyId, annotationSetId]);
+  }, [client, surveyId, annotationSetId, isProjectAdmin]);
 
   if (!surveyId || !annotationSetId) {
     return <p>Missing survey or annotation set id.</p>;
@@ -581,7 +543,6 @@ export default function JollyResults() {
                           type='button'
                           role='radio'
                           aria-checked={selected}
-                          disabled={!SHARING_AVAILABLE}
                           onClick={() => {
                             setLinkDays(days);
                             setExpiration(
@@ -603,15 +564,10 @@ export default function JollyResults() {
                   <Button
                     variant='primary'
                     onClick={handleShare}
-                    disabled={!SHARING_AVAILABLE || isCopying}
+                    disabled={isCopying}
                   >
                     {isCopying ? 'Copying...' : 'Copy link'}
                   </Button>
-                  {!SHARING_AVAILABLE && (
-                    <span className='text-xs text-muted-foreground'>
-                      New links are temporarily unavailable.
-                    </span>
-                  )}
                 </div>
                 {resultsMemberships.length > 0 && (
                   <DataTable

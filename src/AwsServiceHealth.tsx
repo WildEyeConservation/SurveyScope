@@ -262,8 +262,10 @@ export default function AwsServiceHealth() {
     }
     return Object.entries(custom)
       .filter(
-        ([key, value]) =>
-          /queueurl$/i.test(key) && typeof value === 'string' && value.length,
+        (entry): entry is [string, string] =>
+          /queueurl$/i.test(entry[0]) &&
+          typeof entry[1] === 'string' &&
+          entry[1].length > 0,
       )
       .map(([key, value]) => ({
         id: `system-${key}`,

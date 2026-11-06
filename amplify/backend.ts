@@ -7,14 +7,23 @@ import { updateAdminStats } from './functions/updateAdminStats/resource';
 import { ROW_SOURCES, SCOPE_MODELS } from '../shared/rowSources';
 import { chainMutationGuard } from './functions/chainMutationGuard/resource';
 import { installMutationGuard } from './chain-shares/installGuard';
-import { installSubscriptionGroupAuth } from './data/subscriptionGroupAuth';
+import { guardStackLimits } from './stackLimits';
 import { revokeChainShare } from './functions/revokeChainShare/resource';
 import { reportClientError } from './functions/reportClientError/resource';
 import { workflowFiles } from './storage/workflowFiles/resource';
 import { defineBackend } from '@aws-amplify/backend';
+import { api, dataEvents } from './api/resource';
+import { installApi } from './api/infrastructure';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { addUserToGroup } from './functions/add-user-to-group/resource';
+import { createGroup } from './data/create-group/resource';
+import { listUsers } from './data/list-users/resource';
+import { listGroupsForUser } from './data/list-groups-for-user/resource';
+import { removeUserFromGroup } from './data/remove-user-from-group/resource';
+import { createChainShare } from './functions/createChainShare/resource';
+import { deleteProject } from './functions/deleteProject/resource';
+import { updateProjectMemberships } from './functions/updateProjectMemberships/resource';
 import { ArnFormat, Aspects, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -87,7 +96,6 @@ import {
   SqsEventSource,
 } from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as appsync from 'aws-cdk-lib/aws-appsync';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as sfnTasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -99,7 +107,17 @@ import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 const backend = defineBackend({
   auth,
   data,
+  api,
+  dataEvents,
   addUserToGroup,
+  // Reached only through the API router, which invokes them directly.
+  createGroup,
+  listUsers,
+  listGroupsForUser,
+  removeUserFromGroup,
+  createChainShare,
+  deleteProject,
+  updateProjectMemberships,
   outputBucket,
   inputBucket,
   generateTile,
@@ -371,19 +389,6 @@ const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('Chain
 installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
   backend.data.resources.graphqlApi.apiId, guardSource);
 
-// Imported by name: referencing the Project nested stack's table creates a dependency cycle.
-const subscriptionProjectTable = dynamodb.Table.fromTableName(
-  backend.data.stack, 'SubscriptionProjectTable',
-  `Project-${backend.data.resources.graphqlApi.apiId}-NONE`);
-const subscriptionProjectSource = new appsync.DynamoDbDataSource(
-  backend.data.stack, 'SubscriptionProjectLookup', {
-    api: backend.data.resources.graphqlApi,
-    table: subscriptionProjectTable,
-    readOnlyAccess: true,
-  });
-installSubscriptionGroupAuth(backend.data.resources.cfnResources.cfnResolvers,
-  backend.data.resources.graphqlApi.apiId, subscriptionProjectSource);
-
 // Newer data constructs default tables to AWS-owned keys; keep the existing KMS encryption.
 for (const table of Object.values(backend.data.resources.cfnResources.amplifyDynamoDbTables)) {
   table.sseSpecification = { sseEnabled: true };
@@ -435,8 +440,9 @@ Aspects.of(Stack.of(backend.outputBucket.resources.bucket)).add({
 });
 
 const userPoolClient = backend.auth.resources.cfnResources.cfnUserPoolClient;
-userPoolClient.accessTokenValidity = 24 * 60;
-userPoolClient.idTokenValidity = 24 * 60;
+// Short-lived so a removed sysadmin or reviewer group stops working soon.
+userPoolClient.accessTokenValidity = 60;
+userPoolClient.idTokenValidity = 60;
 userPoolClient.tokenValidityUnits = {
   accessToken: 'minutes',
   idToken: 'minutes',
@@ -834,13 +840,11 @@ const groupEcsListPolicy = new iam.PolicyStatement({
   resources: ['*'],
 });
 
-authenticatedRole.addToPrincipalPolicy(sqsAnnotatorStatement);
 authenticatedRole.addToPrincipalPolicy(generalBucketPolicy);
 
 // Group roles replace the authenticated Identity Pool role.
 Object.values(backend.auth.resources.groups).forEach(({ role }) => {
   role.addToPrincipalPolicy(generalBucketPolicy);
-  role.addToPrincipalPolicy(sqsAnnotatorStatement);
 });
 
 // Only sysadmins keep direct S3 access; everyone else goes through the
@@ -851,6 +855,7 @@ sysadminRole.addToPrincipalPolicy(groupS3ObjectsPolicy);
 sysadminRole.addToPrincipalPolicy(groupS3OutputsReadPolicy);
 sysadminRole.addToPrincipalPolicy(groupS3LaunchPayloadsPolicy);
 sysadminRole.addToPrincipalPolicy(groupS3QueueManifestsPolicy);
+sysadminRole.addToPrincipalPolicy(sqsAnnotatorStatement);
 sysadminRole.addToPrincipalPolicy(sqsSysadminStatement);
 sysadminRole.addToPrincipalPolicy(groupEcsListPolicy);
 
@@ -2904,6 +2909,15 @@ backend.launchIndividualId.addEnvironment(
 
 const generalBucketName = 'surveyscope';
 
+const surveyScopeApi = installApi({
+  router: backend.api.resources.lambda,
+  publisher: backend.dataEvents.resources.lambda,
+  userPool: backend.auth.resources.userPool,
+  userPoolClient: backend.auth.resources.userPoolClient,
+  tables: backend.data.resources.tables,
+  graphqlApi: backend.data.resources.graphqlApi,
+});
+
 backend.addOutput({
   custom: {
     lightglueTaskQueueUrl: lightglueQueueUrl ?? '',
@@ -2913,5 +2927,13 @@ backend.addOutput({
     owlDDetectorTaskQueueUrl: owlDDetectorQueueUrl ?? '',
     elephantDetectorTaskQueueUrl: elephantDetectorQueueUrl ?? '',
     generalBucketName: generalBucketName,
+    apiUrl: surveyScopeApi.apiUrl,
+    events: {
+      url: surveyScopeApi.eventsUrl,
+      aws_region: Stack.of(backend.api.resources.lambda).region,
+      default_authorization_type: 'AMAZON_COGNITO_USER_POOLS',
+    },
   },
 });
+
+guardStackLimits(backend.stack);
