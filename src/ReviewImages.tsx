@@ -7,7 +7,6 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { BoundaryStatus } from '../shared/boundaryStatus';
 import AnnotationWorkspace from './AnnotationWorkspace';
-import { isFalseNegative } from './annotator/annotationFeatures';
 import { prefetchTask } from './annotator/prefetchTask';
 import { GlobalContext, ProjectContext } from './Context';
 import {
@@ -155,8 +154,7 @@ export default function ReviewImages({
   const pointsByImage = useMemo(() => {
     const out = new Map<string, Point[]>();
     for (const a of annotationsQuery.data?.annotations ?? []) {
-      if (!a.imageId || a.x == null || a.y == null || isFalseNegative(a))
-        continue;
+      if (!a.imageId || a.x == null || a.y == null) continue;
       const points = out.get(a.imageId) ?? [];
       points.push({ x: a.x, y: a.y });
       out.set(a.imageId, points);

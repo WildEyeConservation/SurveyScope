@@ -412,8 +412,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       observationSource={source}
       allowOutside={allowOutside}
       categories={filteredCategories}
-      // Browsing hides them whatever the user's job, as ReviewImages frames.
-      hideFnAnnotations={embedded || !isFalseNegativesJob}
+      // Browsing shows every sighting, whatever the user's job.
+      hideFnAnnotations={!embedded && !isFalseNegativesJob}
       showMapLegend={embedded || legendCollapsed}
       infoTags={infoTagsByAnnotation}
       embedded={embedded}
