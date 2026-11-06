@@ -34,6 +34,7 @@ export function ImageContextFromHook({
 }) {
   const [annoCount, setAnnoCount] = useState(0);
   const lastAnnotationTimeRef = useRef<number>(0);
+  const deletedIdsRef = useRef(new Set<string>());
   const { client } = useContext(GlobalContext);
   const [startLoadingTimestamp, _] = useState<number>(Date.now());
   const [visibleTimestamp, setVisibleTimestamp] = useState<number | undefined>(
@@ -291,6 +292,7 @@ export function ImageContextFromHook({
   const _delete = useCallback(
     (annotation: Schema['Annotation']['type']) => {
       setAnnoCount((old) => old - 1);
+      deletedIdsRef.current.add(annotation.id);
       setCurrentAnnoCount((old) => {
         const newCount = { ...old };
         newCount[annotation.categoryId] = (
@@ -313,6 +315,7 @@ export function ImageContextFromHook({
           delete: _delete as AnnotationsHook['delete'],
         },
         annoCount,
+        deletedAnnotationIds: deletedIdsRef.current,
         startLoadingTimestamp,
         visibleTimestamp,
         fullyLoadedTimestamp,

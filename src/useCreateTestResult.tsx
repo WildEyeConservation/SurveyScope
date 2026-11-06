@@ -1,8 +1,9 @@
-import { useCallback, useContext } from 'react';
+import { useCallback, useContext, useRef } from 'react';
 import { Schema } from './amplify/client-schema';
-import { GlobalContext, ProjectContext, UserContext } from './Context';
+import { GlobalContext, ImageContext, ProjectContext } from './Context';
 import { hasModelField } from './modelFields';
-import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
+import { countTestAnnotations, type TestAnnotation } from './testScoring';
+import { fetchAllPaginatedResults } from './utils';
 
 interface UseCreateTestResultProps {
   locationId?: string;
@@ -14,15 +15,7 @@ interface UseCreateTestResultProps {
   labelNames?: string[];
 }
 
-/*
-Scores a completed test task: compares the user's annotations (tracked in
-currentAnnoCount) against the expected per-category counts stored for the test
-location, and records a TestResult plus per-category counts. If the user
-already completed this test in the session (e.g. paged back to it), the
-existing result is updated instead of creating a duplicate.
-
-Only name-linked labels contribute to per-label accuracy; totals include all labels.
-*/
+// Only name-linked labels contribute to per-label accuracy; totals include all labels.
 export default function useCreateTestResult({
   locationId,
   annotationSetId,
@@ -32,28 +25,14 @@ export default function useCreateTestResult({
 }: UseCreateTestResultProps) {
   const { project, categoriesHook, currentPM } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
-  const {
-    currentAnnoCount,
-    setCurrentAnnoCount,
-    sessionTestsResults,
-    setSessionTestsResults,
-  } = useContext(UserContext)!;
+  const { annotationsHook, deletedAnnotationIds } = useContext(ImageContext)!;
   const annotationSetToUse = testSetId ?? annotationSetId;
+  // Scoring runs after the user has paged on, so it reads the latest local state.
+  const localAnnotationsRef = useRef(annotationsHook.data);
+  localAnnotationsRef.current = annotationsHook.data;
+  const testResultIdRef = useRef<string>();
 
   return useCallback(async () => {
-    //check if the user already completed this test (in the case where the user accidentally skips over the animal and navigates back to the test)
-    const existingTestResult = sessionTestsResults.find(
-      (result) =>
-        result.locationId === locationId &&
-        result.annotationSetId === annotationSetToUse,
-    );
-
-    const userAnnotations = Object.entries(currentAnnoCount).filter(
-      ([, annotations]) => annotations.length > 0,
-    );
-
-    setCurrentAnnoCount({});
-
     const surveyCategories = categoriesHook.data?.reduce(
       (acc, c) => ({ ...acc, [c.id]: c.name.toLowerCase() }),
       {} as Record<string, string>,
@@ -85,22 +64,25 @@ export default function useCreateTestResult({
       return;
     }
 
-    // Filter annotations to those within the test location and count them per category
-    const annotationCounts: { [key: string]: number } = {};
-    for (const [categoryId, annotations] of userAnnotations) {
-      for (const annotation of annotations) {
-        if (isWithinLocationBounds(annotation, location)) {
-          annotationCounts[surveyCategories[categoryId]] =
-            (annotationCounts[surveyCategories[categoryId]] || 0) + 1;
-        }
-      }
-    }
+    // Local rows cover writes still in flight; stored rows cover earlier visits.
+    const stored = (await fetchAllPaginatedResults(
+      client.models.Annotation.annotationsByAnnotationSetId,
+      {
+        setId: annotationSetToUse!,
+        selectionSet: ['id', 'x', 'y', 'categoryId'],
+      },
+    )) as TestAnnotation[];
+    const local = localAnnotationsRef.current.filter(
+      (a) => a.setId === annotationSetToUse,
+    );
+    const annotationCounts = countTestAnnotations(
+      { local, stored, deletedIds: deletedAnnotationIds },
+      location,
+      surveyCategories ?? {},
+    );
 
-    const userAnnotationsEntries = Object.entries(annotationCounts);
-
-    // Total count of annotations
-    const totalUserCounts = userAnnotationsEntries.reduce(
-      (acc, [, count]) => acc + count,
+    const totalUserCounts = Object.values(annotationCounts).reduce(
+      (acc, count) => acc + count,
       0,
     );
     const totalTestCounts = categoryCounts.reduce(
@@ -112,12 +94,12 @@ export default function useCreateTestResult({
       hasModelField('TestResult', 'labelsLinked') ? { labelsLinked: true } : {}
     ) as object;
 
+    const existingId = testResultIdRef.current;
     let testResult: Schema['TestResult']['type'];
-    if (existingTestResult) {
-      //update the test result
+    if (existingId) {
       const { data: updatedTestResult } = await client.models.TestResult.update(
         {
-          id: existingTestResult.id,
+          id: existingId,
           testAnimals: totalTestCounts,
           totalMissedAnimals: totalTestCounts - totalUserCounts,
           // Placeholder to satisfy current schema; not used for reporting
@@ -147,6 +129,7 @@ export default function useCreateTestResult({
       console.error('Failed to create TestResult');
       return;
     }
+    testResultIdRef.current = testResult.id;
 
     const jobLabels = new Set(labelNames?.map((name) => name.toLowerCase()));
     const linked = categoryCounts.filter(
@@ -159,7 +142,7 @@ export default function useCreateTestResult({
         userCount: annotationCounts[c.category.name.toLowerCase()] ?? 0,
         testCount: c.count ?? 0,
       };
-      const { data: updated } = existingTestResult
+      const { data: updated } = existingId
         ? await client.models.TestResultCategoryCount.update(counts)
         : { data: null };
       if (!updated) {
@@ -169,24 +152,10 @@ export default function useCreateTestResult({
         });
       }
     }
-
-    if (!existingTestResult) {
-      setSessionTestsResults((prev) => [
-        ...prev,
-        {
-          id: testResult.id,
-          locationId: locationId!,
-          annotationSetId: annotationSetToUse!,
-        },
-      ]);
-    }
   }, [
-    sessionTestsResults,
-    setSessionTestsResults,
-    currentAnnoCount,
-    setCurrentAnnoCount,
     categoriesHook.data,
     client,
+    deletedAnnotationIds,
     currentPM.userId,
     project,
     locationId,
