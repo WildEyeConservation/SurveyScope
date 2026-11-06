@@ -331,9 +331,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   }, [sourceKey, image.id]);
 
   // ── Initial view ──
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
+  const fitInitialView = (map: maplibregl.Map) => {
     if (zoom != null) {
       map.jumpTo({
         center: px2lngLat(
@@ -356,46 +354,29 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         : image.height;
       fitPxBounds(map, projection, left, top, right, bottom);
     }
+  };
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || embedded) return;
+    fitInitialView(map);
     // Reapply when a default changes while this buffered workspace is already
     // mounted. Other inputs are fixed for the lifetime of this map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, zoom]);
 
-  // The hook reports [] until its query has loaded.
-  const annotationsLoaded = !!(
-    annotationsHook as { meta?: { isSuccess?: boolean } }
-  ).meta?.isSuccess;
-  const fittedToAnnotationsRef = useRef(false);
+  const embeddedFittedRef = useRef(false);
   useEffect(() => {
     const map = mapRef.current;
-    if (!embedded || !map || !mapReady || fittedToAnnotationsRef.current)
-      return;
+    if (!mapReady) embeddedFittedRef.current = false;
+    if (!embedded || !map || !mapReady || embeddedFittedRef.current) return;
     // A hidden tab has no size to fit to; retry once it is shown.
-    if (!annotationsLoaded || !visible || !map.getContainer().clientWidth)
-      return;
-    fittedToAnnotationsRef.current = true;
-    if (annotations.length === 0) return;
-    const xs = annotations.map((a) => a.x);
-    const ys = annotations.map((a) => a.y);
-    const minSide = Math.min(image.width, image.height) / 4;
-    const pad = (lo: number, hi: number) => {
-      const span = Math.max(hi - lo, minSide);
-      const mid = (lo + hi) / 2;
-      return [mid - span * 0.6, mid + span * 0.6];
-    };
-    const [left, right] = pad(Math.min(...xs), Math.max(...xs));
-    const [top, bottom] = pad(Math.min(...ys), Math.max(...ys));
+    if (!visible || !map.getContainer().clientWidth) return;
+    embeddedFittedRef.current = true;
     map.resize();
-    fitPxBounds(map, projection, left, top, right, bottom);
-  }, [
-    embedded,
-    mapReady,
-    visible,
-    annotations,
-    annotationsLoaded,
-    image,
-    projection,
-  ]);
+    fitInitialView(map);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, mapReady, visible]);
 
   // ── Annotation data sync ──
   useEffect(() => {

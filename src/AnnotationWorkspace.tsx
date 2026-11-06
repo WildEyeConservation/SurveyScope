@@ -397,7 +397,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       stats={stats}
       visible={visible}
       location={location}
-      zoom={defaultZoom ?? undefined}
+      // Embedded viewers frame their own location; a saved zoom would refit it.
+      zoom={embedded ? undefined : (defaultZoom ?? undefined)}
       viewBoundsScale={viewBoundsScale}
       prev={prev}
       next={next}
@@ -411,7 +412,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       observationSource={source}
       allowOutside={allowOutside}
       categories={filteredCategories}
-      hideFnAnnotations={!isFalseNegativesJob}
+      // Browsing hides them whatever the user's job, as ReviewImages frames.
+      hideFnAnnotations={embedded || !isFalseNegativesJob}
       showMapLegend={embedded || legendCollapsed}
       infoTags={infoTagsByAnnotation}
       embedded={embedded}

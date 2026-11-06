@@ -14,6 +14,7 @@ export function viewTiles(input: {
   image: { width: number; height: number };
   location: { x: number; y: number; width: number; height: number };
   zoom?: number | null;
+  viewBoundsScale?: number;
   viewport: { width: number; height: number };
 }): ViewTile[] {
   const { image, location, zoom, viewport } = input;
@@ -23,7 +24,7 @@ export function viewTiles(input: {
   if (zoom != null) {
     scale = (WORLD_SIZE_AT_ZOOM_0 * 2 ** (zoom - 1)) / n;
   } else {
-    const s = DEFAULT_VIEW_BOUNDS_SCALE;
+    const s = input.viewBoundsScale ?? DEFAULT_VIEW_BOUNDS_SCALE;
     scale = Math.min(
       viewport.width / (2 * location.width * s),
       viewport.height / (2 * location.height * s),
