@@ -1,11 +1,7 @@
 import { Badge } from '@/components/ui/badge';
-import {
-  DeleteMessageCommand,
-  GetQueueAttributesCommand,
-  ReceiveMessageCommand,
-} from '@aws-sdk/client-sqs';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { ackTask, queueDepths, receiveTask } from './api/tasks';
 import { GlobalContext, UserContext } from './Context';
 import QCAnnotationReview from './QCAnnotationReview';
 import { TaskBuffer } from './TaskBuffer';
@@ -13,15 +9,9 @@ import { touchQueue } from './touchQueue';
 import useUnsavedWorkGuard from './useUnsavedWorkGuard';
 import { fetchAllPaginatedResults } from './utils';
 
-/**
- * QC Review Task — SQS-driven task buffer for annotation QC review.
- *
- * Tailored for QC review messages whose body shape is
- * `{ annotation: {...}, queueId: string }`.
- */
 export default function QCReviewTask() {
   const { queueId } = useParams<{ queueId: string }>();
-  const { getSqsClient, myMembershipHook } = useContext(UserContext)!;
+  const { myMembershipHook } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
@@ -85,32 +75,18 @@ export default function QCReviewTask() {
         continue;
       }
 
-      const sqsClient = await getSqsClient();
-      const response = await sqsClient.send(
-        new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          MaxNumberOfMessages: 1,
-          MessageAttributeNames: ['All'],
-          VisibilityTimeout: 600,
-        }),
-      );
+      const received = await receiveTask(queueId!);
 
-      if (response.Messages) {
-        const entity = response.Messages[0];
-        const body = JSON.parse(entity.Body!);
+      if (received) {
+        const { leaseId } = received;
+        const body = JSON.parse(received.body);
         body.message_id = crypto.randomUUID();
 
         // Deduplication by annotation ID.
         const annotationId = body.annotation?.id;
         if (annotationId && processedRef.current.has(annotationId)) {
           try {
-            const sqsClient2 = await getSqsClient();
-            await sqsClient2.send(
-              new DeleteMessageCommand({
-                QueueUrl: queueUrl,
-                ReceiptHandle: entity.ReceiptHandle,
-              }),
-            );
+            await ackTask(leaseId);
           } catch {
             // ignore
           }
@@ -120,18 +96,9 @@ export default function QCReviewTask() {
 
         body.ack = async () => {
           try {
-            const sqsClient2 = await getSqsClient();
-            await sqsClient2.send(
-              new DeleteMessageCommand({
-                QueueUrl: queueUrl,
-                ReceiptHandle: entity.ReceiptHandle,
-              }),
-            );
+            await ackTask(leaseId);
           } catch (err) {
-            console.error(
-              `QC ack failed for annotation ${annotationId} with receipthandle ${entity.ReceiptHandle}`,
-              err,
-            );
+            console.error(`QC ack failed for annotation ${annotationId}`, err);
             // The caller must know the message is still on the queue, so the
             // annotation is not recorded as handled below.
             throw err;
@@ -152,25 +119,16 @@ export default function QCReviewTask() {
         await new Promise((r) => setTimeout(r, 5000));
       }
     }
-  }, [queueUrl, getSqsClient]);
+  }, [queueUrl, queueId]);
 
-  // Poll SQS for approximate remaining messages.
   const [jobsRemaining, setJobsRemaining] = useState<string>('Unknown');
 
   useEffect(() => {
     if (!queueUrl) return;
     const updateJobs = async () => {
       try {
-        const sqsClient = await getSqsClient();
-        const result = await sqsClient.send(
-          new GetQueueAttributesCommand({
-            QueueUrl: queueUrl,
-            AttributeNames: ['ApproximateNumberOfMessages'],
-          }),
-        );
-        setJobsRemaining(
-          result.Attributes?.ApproximateNumberOfMessages || 'Unknown',
-        );
+        const depths = await queueDepths([queueId!]);
+        setJobsRemaining(depths[queueId!] || 'Unknown');
       } catch {
         // ignore polling errors
       }
@@ -178,7 +136,7 @@ export default function QCReviewTask() {
     updateJobs();
     const interval = setInterval(updateJobs, 10000);
     return () => clearInterval(interval);
-  }, [queueUrl, getSqsClient]);
+  }, [queueUrl, queueId]);
 
   return (
     <div

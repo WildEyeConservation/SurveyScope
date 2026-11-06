@@ -155,7 +155,12 @@ export default function UserStats() {
         const setIdConditions = selectedSets.map((set) => ({
           setId: { eq: set.value },
         }));
-        const filter = { or: setIdConditions };
+        const filter = {
+          and: [
+            { projectId: { eq: selectedProjectId } },
+            { or: setIdConditions },
+          ],
+        };
 
         const fetched = await fetchAllPaginatedResults<UserStatsType>(
           client.models.UserStats.list,
@@ -179,7 +184,9 @@ export default function UserStats() {
     // creates rows atomically in DynamoDB and emits a key-only AppSync update,
     // so the first live event for a new row can be an update.
     subs.push(
-      client.models.UserStats.onUpdate().subscribe({
+      client.models.UserStats.onUpdate({
+        filter: { projectId: { eq: selectedProjectId } },
+      }).subscribe({
         next: (updatedItem) => {
           if (
             !cancelled &&

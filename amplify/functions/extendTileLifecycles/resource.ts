@@ -2,6 +2,7 @@ import { defineFunction } from '@aws-amplify/backend';
 
 export const extendTileLifecycles = defineFunction({
   name: 'extendTileLifecycles',
+  resourceGroupName: 'scheduled',
   entry: './handler.ts',
   runtime: 24,
   schedule: 'every day',

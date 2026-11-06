@@ -67,6 +67,8 @@ export interface OptimisticOptions<T> {
   // this, so a subscription event missed while offline doesn't leave the
   // (localStorage-persisted) list stale indefinitely.
   staleTime?: number;
+  // Keep writes in this client only, e.g. the throwaway answers of a test.
+  local?: boolean;
 }
 
 export function useOptimisticUpdates<T, ModelKey extends keyof DataModels>(
@@ -185,8 +187,9 @@ export function useOptimisticUpdates<T, ModelKey extends keyof DataModels>(
     );
   };
 
+  const keepLocal = async (item: T) => ({ data: item });
   const createMutation = useMutation({
-    mutationFn: model.create,
+    mutationFn: options?.local ? keepLocal : model.create,
     onMutate: async (newItem: any) => {
       newItem.id ||= crypto.randomUUID(); // If the item does not have an id, generate a random UUID for it.
       await queryClient.cancelQueries({ queryKey });
@@ -212,7 +215,7 @@ export function useOptimisticUpdates<T, ModelKey extends keyof DataModels>(
   });
 
   const updateMutation = useMutation({
-    mutationFn: model.update,
+    mutationFn: options?.local ? keepLocal : model.update,
     onMutate: async (updatedItem: T) => {
       await queryClient.cancelQueries({ queryKey });
       const previousItems = queryClient.getQueryData<T[]>(queryKey);
@@ -240,7 +243,7 @@ export function useOptimisticUpdates<T, ModelKey extends keyof DataModels>(
   });
 
   const deleteMutation = useMutation({
-    mutationFn: model.delete,
+    mutationFn: options?.local ? keepLocal : model.delete,
     onMutate: async (deletedItem: T) => {
       await queryClient.cancelQueries({ queryKey });
       const previousItems = queryClient.getQueryData<T[]>(queryKey);

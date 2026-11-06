@@ -1,10 +1,8 @@
-import { generateClient } from 'aws-amplify/api';
+import { apiRequest, cancelApiRequest } from '../api/httpClient';
 import { startCancellable } from '../clientCancellation';
 import { runWithClientLimit } from '../limitedClient';
 
 export * from './operations';
-
-const client = generateClient({ authMode: 'userPool' });
 
 export async function storageOperation<T>(
   query: string,
@@ -14,15 +12,20 @@ export async function storageOperation<T>(
 ): Promise<T> {
   const result = (await runWithClientLimit(() =>
     startCancellable(
-      () => client.graphql({ query, variables }) as Promise<unknown>,
+      () =>
+        apiRequest('/operation', {
+          type: query.trimStart().startsWith('mutation') ? 'mutation' : 'query',
+          name: field,
+          args: variables,
+        }),
       signal,
-      (request) => client.cancel(request),
+      cancelApiRequest,
     ),
-  )) as { data?: Record<string, unknown>; errors?: { message: string }[] };
+  )) as { data?: unknown; errors?: { message: string }[] };
   if (result.errors?.length) {
     throw new Error(result.errors.map((e) => e.message).join('; '));
   }
-  const value = result.data?.[field];
+  const value = result.data;
   if (value == null) throw new Error(`No result from ${field}`);
   return (typeof value === 'string' ? JSON.parse(value) : value) as T;
 }

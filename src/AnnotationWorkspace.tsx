@@ -340,6 +340,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         { limit: 10000, nextToken },
       ),
     subscriptionFilter,
+    { local: isTest },
   ) as unknown as AnnotationsHook;
   const stats = useImageStats(annotationsHook);
 

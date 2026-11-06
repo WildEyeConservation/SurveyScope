@@ -1,6 +1,7 @@
 import { imageAccess } from './imageAccess/resource';
 import { infoTagWork } from '../functions/infoTagWork/resource';
 import { workflowFiles } from './workflowFiles/resource';
+import { api } from '../api/resource';
 import { defineStorage } from "@aws-amplify/backend"
 import { generateTile } from "./generateTile/resource"
 import { handleS3Upload } from "./handleS3Upload/resource"
@@ -42,6 +43,7 @@ export const outputBucket = defineStorage({
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     'launch-payloads/*': [
+      allow.resource(api).to(['read', 'write', 'delete']),
       allow.resource(workflowFiles).to(['write']),
       allow.resource(launchAnnotationSet).to(['read', 'delete']),
       allow.resource(launchFalseNegatives).to(['read', 'delete']),
@@ -63,6 +65,7 @@ export const outputBucket = defineStorage({
     ],
     // Queue manifests for requeue detection
     'queue-manifests/*': [
+      allow.resource(api).to(['read', 'write', 'delete']),
       allow.resource(workflowFiles).to(['write']),
       allow.resource(launchAnnotationSet).to(['read', 'write']),
       allow.resource(launchQCReview).to(['write']),

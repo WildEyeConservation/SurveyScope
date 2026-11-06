@@ -6,16 +6,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  GetQueueAttributesCommand,
-  type GetQueueAttributesCommandInput,
-} from '@aws-sdk/client-sqs';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalContext, UserContext } from '../Context';
 import PageHeader from '../PageHeader';
 import { Schema } from '../amplify/client-schema';
+import { queueDepths } from '../api/tasks';
 import IndividualIdProgress from '../individual-id/IndividualIdProgress';
 import ProjectProgress from './ProjectProgress';
 
@@ -41,11 +38,8 @@ type Project = {
 };
 
 export default function Jobs() {
-  const {
-    myMembershipHook: userProjectMembershipHook,
-    myOrganizationHook,
-    getSqsClient,
-  } = useContext(UserContext)!;
+  const { myMembershipHook: userProjectMembershipHook, myOrganizationHook } =
+    useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
   const navigate = useNavigate();
 
@@ -269,28 +263,19 @@ export default function Jobs() {
     async function getJobsRemaining() {
       if (cancelled) return;
 
-      const queueUrls = validProjects.flatMap((project) =>
-        project.queues.map((queue) => queue.url || ''),
+      const queues = validProjects.flatMap((project) =>
+        project.queues.filter((queue) => queue.url),
       );
-
-      const jobsRemaining = (
-        await Promise.all(
-          queueUrls.map(async (queueUrl) => {
-            const params: GetQueueAttributesCommandInput = {
-              QueueUrl: queueUrl,
-              AttributeNames: ['ApproximateNumberOfMessages'],
-            };
-            const sqsClient = await getSqsClient();
-            const result = await sqsClient.send(
-              new GetQueueAttributesCommand(params),
-            );
-            return {
-              [queueUrl]:
-                result.Attributes?.ApproximateNumberOfMessages || 'Unknown',
-            };
-          }),
-        )
-      ).reduce((acc, curr) => ({ ...acc, ...curr }), {});
+      const depths: Record<string, string> = {};
+      for (let i = 0; i < queues.length; i += 100) {
+        Object.assign(
+          depths,
+          await queueDepths(queues.slice(i, i + 100).map((q) => q.id)),
+        );
+      }
+      const jobsRemaining = Object.fromEntries(
+        queues.map((queue) => [queue.url!, depths[queue.id] ?? 'Unknown']),
+      );
 
       if (cancelled) return;
 

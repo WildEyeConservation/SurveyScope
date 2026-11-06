@@ -1,8 +1,3 @@
-import {
-  DeleteMessageCommand,
-  ReceiveMessageCommand,
-  type Message,
-} from '@aws-sdk/client-sqs';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { GlobalContext, ProjectContext, UserContext } from './Context';
 import type { BeforeNextDecision } from './TaskBuffer';
@@ -12,6 +7,7 @@ import type {
   TaskAcknowledgement,
 } from './annotationTypes';
 import { primeTask } from './annotator/prefetchTask';
+import { ackTask, receiveTasks, type ReceivedTask } from './api/tasks';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
@@ -61,17 +57,14 @@ interface AnnotationTaskMessage {
   taskTag?: string;
 }
 
-/*
-Owns the annotation-task source: queue selection, optional test insertion,
-deduplication, location hydration, skip filtering, visible-time revalidation,
-and SQS acknowledgement.
-*/
 export default function useAnnotationTaskQueue() {
   const { currentPM } = useContext(ProjectContext)!;
-  const { getSqsClient, myOrganizationHook } = useContext(UserContext)!;
+  const { myOrganizationHook } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
-  const [url, setUrl] = useState<string | undefined>(undefined);
-  const [backupUrl, setBackupUrl] = useState<string | undefined>(undefined);
+  const [queueId, setQueueId] = useState<string | undefined>(undefined);
+  const [backupQueueId, setBackupQueueId] = useState<string | undefined>(
+    undefined,
+  );
   const [zoom, setZoom] = useState<number | undefined>(undefined);
   const [backupZoom, setBackupZoom] = useState<number | undefined>(undefined);
   // Use ref instead of state to prevent fetcher reference churn on every new location
@@ -108,14 +101,14 @@ export default function useAnnotationTaskQueue() {
       touchQueue(client, currentPM.queueId);
       client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
         if (!data) return;
-        setUrl(data.url ?? undefined);
+        setQueueId(data.url ? data.id : undefined);
         setZoom(data.zoom ?? undefined);
       });
       if (currentPM.backupQueueId) {
         client.models.Queue.get({ id: currentPM.backupQueueId }).then(
           ({ data }) => {
             if (!data) return;
-            setBackupUrl(data.url ?? undefined);
+            setBackupQueueId(data.url ? data.id : undefined);
             setBackupZoom(data.zoom ?? undefined);
           },
         );
@@ -243,26 +236,16 @@ export default function useAnnotationTaskQueue() {
 
   const prepareMessage = useCallback(
     async (
-      entity: Message,
-      sourceUrl: string,
+      received: ReceivedTask,
       queueZoom: number | undefined,
       receiveMs: number,
     ): Promise<AnnotationTaskPayload | null> => {
-      const body = JSON.parse(entity.Body!) as AnnotationTaskMessage;
-      if (entity.MessageId) {
-        body.observationId = `queue-message:${entity.MessageId}`;
-      }
+      const body = JSON.parse(received.body) as AnnotationTaskMessage;
+      body.observationId = `queue-message:${received.messageId}`;
       body.zoom = queueZoom;
       const ack = async () => {
         try {
-          // Re-resolve the client: the ack can fire long after the receive.
-          const ackClient = await getSqsClient();
-          await ackClient.send(
-            new DeleteMessageCommand({
-              QueueUrl: sourceUrl,
-              ReceiptHandle: entity.ReceiptHandle,
-            }),
-          );
+          await ackTask(received.leaseId);
           if (body.location?.id) {
             processedLocationsRef.current.add(body.location.id);
           }
@@ -316,64 +299,43 @@ export default function useAnnotationTaskQueue() {
         revalidate: async () => Boolean(await prepareTask(body)),
       };
     },
-    [client, getSqsClient, prepareTask, leases],
+    [client, prepareTask, leases],
   );
 
   const receiveBatch = useCallback(async (): Promise<number> => {
-    const sqsClient = await getSqsClient();
-    const receive = async (queueUrl: string) => {
+    const receive = async (id: string) => {
       const startedAt = performance.now();
-      const response = await sqsClient.send(
-        new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          MaxNumberOfMessages: RECEIVE_BATCH_SIZE,
-          MessageAttributeNames: ['All'],
-          VisibilityTimeout: VISIBILITY_TIMEOUT_S,
-        }),
+      const messages = await receiveTasks(
+        id,
+        RECEIVE_BATCH_SIZE,
+        VISIBILITY_TIMEOUT_S,
       );
-      return {
-        messages: response.Messages ?? [],
-        receiveMs: performance.now() - startedAt,
-      };
+      return { messages, receiveMs: performance.now() - startedAt };
     };
 
-    let source = { url: url!, zoom };
-    let received = await receive(url!);
-    if (received.messages.length === 0 && backupUrl) {
-      source = { url: backupUrl, zoom: backupZoom };
-      received = await receive(backupUrl);
-      if (received.messages.length > 0 && currentPM.backupQueueId) {
-        touchQueue(client, currentPM.backupQueueId);
-      }
+    let sourceZoom = zoom;
+    let received = await receive(queueId!);
+    if (received.messages.length === 0 && backupQueueId) {
+      sourceZoom = backupZoom;
+      received = await receive(backupQueueId);
+      if (received.messages.length > 0) touchQueue(client, backupQueueId);
     }
 
     const tasks = await Promise.all(
-      received.messages.map((entity) =>
-        prepareMessage(
-          entity,
-          source.url,
-          source.zoom,
-          received.receiveMs,
-        ).catch((error: unknown) => {
-          console.error('Failed to prepare annotation task', error);
-          return null;
-        }),
+      received.messages.map((message) =>
+        prepareMessage(message, sourceZoom, received.receiveMs).catch(
+          (error: unknown) => {
+            console.error('Failed to prepare annotation task', error);
+            return null;
+          },
+        ),
       ),
     );
     readyRef.current.push(
       ...tasks.filter((task): task is AnnotationTaskPayload => task !== null),
     );
     return received.messages.length;
-  }, [
-    url,
-    backupUrl,
-    zoom,
-    backupZoom,
-    getSqsClient,
-    prepareMessage,
-    client,
-    currentPM.backupQueueId,
-  ]);
+  }, [queueId, backupQueueId, zoom, backupZoom, prepareMessage, client]);
 
   const receive = useCallback(() => {
     receivingRef.current ??= receiveBatch().finally(() => {
@@ -386,14 +348,14 @@ export default function useAnnotationTaskQueue() {
     for (;;) {
       const ready = readyRef.current.shift();
       if (ready) {
-        if (url && readyRef.current.length <= RECEIVE_AHEAD) {
+        if (queueId && readyRef.current.length <= RECEIVE_AHEAD) {
           receive().catch((error: unknown) => {
             console.error('Receiving tasks ahead failed', error);
           });
         }
         return ready;
       }
-      if (!url) {
+      if (!queueId) {
         await sleep(5000);
         continue;
       }
@@ -402,7 +364,7 @@ export default function useAnnotationTaskQueue() {
       if (readyRef.current.length > 0) continue;
       await sleep(received === 0 ? 5000 : 1000);
     }
-  }, [url, receive]);
+  }, [queueId, receive]);
 
   const standbyTestFetcher =
     useCallback(async (): Promise<AnnotationTaskPayload | null> => {
@@ -496,7 +458,7 @@ export default function useAnnotationTaskQueue() {
   );
 
   return {
-    fetcher: url ? fetcher : undefined,
+    fetcher: queueId ? fetcher : undefined,
     standbyTestFetcher,
     beforeNext,
   };

@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { startTest } from './api/tasks';
 import { GlobalContext, ProjectContext } from './Context';
 import type { Identifiable } from './TaskBuffer';
 import { fetchAllPaginatedResults } from './utils';
@@ -199,6 +200,13 @@ export default function useTesting() {
       console.warn('No location found for testing');
     }
 
+    await startTest({
+      projectId: project.id,
+      testPresetId: location.testPresetId,
+      locationId: location.locationId,
+      annotationSetId: location.annotationSetId,
+    });
+
     const id = crypto.randomUUID();
     const body = {
       id: id,
@@ -218,7 +226,7 @@ export default function useTesting() {
       isTest: true,
     };
     return body;
-  }, [getTestLocation, zoom]);
+  }, [getTestLocation, zoom, project.id]);
 
   const fetchWhenReady = useCallback(async (): Promise<Identifiable | null> => {
     await setupPromiseRef.current;

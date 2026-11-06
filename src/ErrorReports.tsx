@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { generateClient } from 'aws-amplify/api';
 import {
   ArrowRight,
   Download,
@@ -21,37 +20,9 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { escapeCsvValue } from '../shared/csv';
+import { apiRequest } from './api/httpClient';
 import { useUsers } from './apiInterface';
 import { graphqlErrorMessage } from './reportClientErrorCore';
-
-const client = generateClient({ authMode: 'userPool' });
-
-const listClientErrorReportsQuery = /* GraphQL */ `
-  query ListClientErrorReports($limit: Int, $nextToken: String) {
-    listClientErrorReports(limit: $limit, nextToken: $nextToken) {
-      items {
-        id
-        message
-        stack
-        status
-        url
-        userAgent
-        userId
-        userEmail
-        createdAt
-      }
-      nextToken
-    }
-  }
-`;
-
-const deleteClientErrorReportMutation = /* GraphQL */ `
-  mutation DeleteClientErrorReport($input: DeleteClientErrorReportInput!) {
-    deleteClientErrorReport(input: $input) {
-      id
-    }
-  }
-`;
 
 type ErrorReport = {
   id: string;
@@ -65,33 +36,32 @@ type ErrorReport = {
   createdAt: string;
 };
 
-async function runGraphql<T>(
-  query: string,
-  variables: Record<string, unknown>,
-): Promise<T> {
-  try {
-    const result = (await client.graphql({ query, variables })) as {
-      data?: T;
-    };
-    if (!result.data) throw new Error('GraphQL response missing data');
-    return result.data;
-  } catch (error) {
-    throw new Error(graphqlErrorMessage(error));
-  }
+async function reportsRequest<T>(
+  op: string,
+  args: unknown[],
+): Promise<{ data: T; nextToken?: string | null }> {
+  const result = (await apiRequest('/data', {
+    model: 'ClientErrorReport',
+    op,
+    args,
+  })) as {
+    data: T;
+    nextToken?: string | null;
+    errors?: unknown[];
+  };
+  if (result.errors?.length) throw result;
+  return result;
 }
 
 async function fetchAllReports(): Promise<ErrorReport[]> {
   const reports: ErrorReport[] = [];
   let nextToken: string | null | undefined;
   do {
-    const data = await runGraphql<{
-      listClientErrorReports: {
-        items: ErrorReport[];
-        nextToken?: string | null;
-      };
-    }>(listClientErrorReportsQuery, { limit: 1000, nextToken });
-    reports.push(...data.listClientErrorReports.items);
-    nextToken = data.listClientErrorReports.nextToken;
+    const page = await reportsRequest<ErrorReport[]>('list', [
+      { limit: 1000, nextToken },
+    ]);
+    reports.push(...page.data);
+    nextToken = page.nextToken;
   } while (nextToken);
   return reports;
 }
@@ -222,9 +192,7 @@ export default function ErrorReports() {
   async function deleteReport(report: ErrorReport) {
     setDeleting(true);
     try {
-      await runGraphql(deleteClientErrorReportMutation, {
-        input: { id: report.id },
-      });
+      await reportsRequest('delete', [{ id: report.id }]);
       setReports((current) => current.filter((r) => r.id !== report.id));
       setSelected(null);
     } catch (error) {

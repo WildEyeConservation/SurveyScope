@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { OPERATIONS_SCHEMA } from './shared/operations';
 
 /* -------------------------------------------------------------------------- */
 /*                               Type Definitions                             */
@@ -175,12 +176,6 @@ introspection.models.InfoTag = {
     name: scalarField('name', 'String', true),
     color: scalarField('color', 'String'),
     shortcutKey: scalarField('shortcutKey', 'String'),
-    annotations: modelField(
-      'annotations',
-      'AnnotationInfoTag',
-      { connectionType: 'HAS_MANY', associatedWith: ['infoTagId'] },
-      true
-    ),
     group: scalarField('group', 'String'),
     ...timestamps
   },
@@ -205,10 +200,6 @@ introspection.models.AnnotationInfoTag = {
       targetNames: ['annotationId']
     }),
     infoTagId: scalarField('infoTagId', 'ID', true),
-    infoTag: modelField('infoTag', 'InfoTag', {
-      connectionType: 'BELONGS_TO',
-      targetNames: ['infoTagId']
-    }),
     annotationSetId: scalarField('annotationSetId', 'ID', true),
     projectId: scalarField('projectId', 'ID', true),
     group: scalarField('group', 'String'),
@@ -226,19 +217,11 @@ introspection.models.AnnotationInfoTag = {
   }
 };
 
-introspection.mutations = introspection.mutations ?? {};
-introspection.mutations.launchInfoTags = {
-  name: 'launchInfoTags',
-  isArray: false,
-  type: 'AWSJSON',
-  isRequired: false,
-  arguments: {
-    request: scalarField('request', 'String', true)
-  }
-};
-introspection.mutations.infoTagWork = {
-  name: 'infoTagWork', isArray: false, type: 'AWSJSON', isRequired: false,
-  arguments: { request: scalarField('request', 'String', true) },
+introspection.queries = { ...OPERATIONS_SCHEMA.queries };
+introspection.mutations = { ...OPERATIONS_SCHEMA.mutations };
+introspection.nonModels = {
+  ...introspection.nonModels,
+  ...(OPERATIONS_SCHEMA.nonModels as IntrospectionData['nonModels']),
 };
 
 /* -------------------------------------------------------------------------- */

@@ -1,17 +1,13 @@
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import {
-  GetQueueAttributesCommand,
-  type GetQueueAttributesCommandInput,
-} from '@aws-sdk/client-sqs';
 import { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { queueDepths } from './api/tasks';
 import { GlobalContext, ProjectContext, UserContext } from './Context';
 
 export function JobsRemaining() {
   const { client } = useContext(GlobalContext)!;
   const {
-    getSqsClient,
     jobsCompleted: sessionJobsCompleted,
     setJobsCompleted: setSessionJobsCompleted,
   } = useContext(UserContext)!;
@@ -27,7 +23,7 @@ export function JobsRemaining() {
     if (currentPM.queueId) {
       client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
         if (!data) return;
-        setUrl(data.url ?? undefined);
+        setUrl(data.url ? data.id : undefined);
         if (data.batchSize) {
           setBatchSize(data.batchSize);
         }
@@ -35,7 +31,7 @@ export function JobsRemaining() {
       if (currentPM.backupQueueId) {
         client.models.Queue.get({ id: currentPM.backupQueueId }).then(
           ({ data }) => {
-            setBackupUrl(data?.url ?? undefined);
+            setBackupUrl(data?.url ? data.id : undefined);
           },
         );
       }
@@ -44,17 +40,8 @@ export function JobsRemaining() {
 
   useEffect(() => {
     if (url) {
-      const getNumberofMessages = async (url: string) => {
-        const params: GetQueueAttributesCommandInput = {
-          QueueUrl: url,
-          AttributeNames: ['ApproximateNumberOfMessages'],
-        };
-        const sqsClient = await getSqsClient();
-        const result = await sqsClient.send(
-          new GetQueueAttributesCommand(params),
-        );
-        return result.Attributes?.ApproximateNumberOfMessages || 'Unknown';
-      };
+      const getNumberofMessages = async (queueId: string) =>
+        (await queueDepths([queueId]))[queueId] || 'Unknown';
 
       const updateJobs = async () => {
         let jobsR = await getNumberofMessages(url);
@@ -76,7 +63,7 @@ export function JobsRemaining() {
         clearInterval(interval);
       };
     }
-  }, [url, backupUrl, getSqsClient]);
+  }, [url, backupUrl]);
 
   useEffect(() => {
     if (

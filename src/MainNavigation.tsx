@@ -4,12 +4,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Menu } from 'lucide-react';
 import { useContext, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { GlobalContext, UserContext } from './Context.tsx';
+import { redeemResultsLink } from './api/results';
+import { UserContext } from './Context.tsx';
 import { ProgressIndicators } from './ProgressIndicators.jsx';
 import UploadProgress from './upload/UploadProgress.tsx';
 import Notifications from './user/Notifications.tsx';
 import Settings from './user/Settings.tsx';
-import { verifyToken } from './utils/jwt.ts';
 
 export default function MainNavigation({ signOut }: { signOut: () => void }) {
   const {
@@ -19,11 +19,9 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
     myMembershipHook: myProjectsHook,
     isAnnotatePath,
     setIsAnnotatePath,
-    user,
   } = useContext(UserContext)!;
   const queryClient = useQueryClient();
 
-  const { client } = useContext(GlobalContext)!;
   const [, setCheckingToken] = useState(false);
 
   const location = useLocation();
@@ -69,50 +67,19 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
         if (token) {
           localStorage.removeItem('jwt');
 
-          const { data: secret } = await client.mutations.getJwtSecret();
-          if (!secret) {
-            console.error('Error getting JWT secret');
+          let granted;
+          try {
+            granted = await redeemResultsLink(token);
+          } catch {
+            alert('Results link is invalid or has expired');
             return;
           }
 
-          const payload = (await verifyToken(token, secret)) as {
-            type: string;
-            surveyId: string;
-            annotationSetId: string;
-            exp: number;
-          };
+          queryClient.invalidateQueries({
+            queryKey: ['JollyResultsMembership'],
+          });
 
-          if (payload.exp < Date.now() / 1000) {
-            alert('Results link expired');
-            return;
-          }
-
-          if (payload.type === 'jolly') {
-            const { data: jollyResultsMembership } =
-              await client.models.JollyResultsMembership.get({
-                surveyId: payload.surveyId,
-                annotationSetId: payload.annotationSetId,
-                userId: user.userId,
-              });
-
-            if (!jollyResultsMembership) {
-              const { data: surveyProject } = await client.models.Project.get({
-                id: payload.surveyId,
-              });
-              await client.models.JollyResultsMembership.create({
-                surveyId: payload.surveyId,
-                annotationSetId: payload.annotationSetId,
-                userId: user.userId,
-                group: surveyProject?.organizationId,
-              });
-            }
-
-            queryClient.invalidateQueries({
-              queryKey: ['JollyResultsMembership'],
-            });
-
-            navigate(`/jolly/${payload.surveyId}/${payload.annotationSetId}`);
-          }
+          navigate(`/jolly/${granted.surveyId}/${granted.annotationSetId}`);
         }
       } catch (error) {
         console.error(error);

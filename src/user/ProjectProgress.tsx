@@ -1,8 +1,8 @@
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
-import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
 import { useContext, useEffect, useRef, useState } from 'react';
-import { GlobalContext, UserContext } from '../Context';
+import { queueDepths } from '../api/tasks';
+import { GlobalContext } from '../Context';
 import { plural } from '../survey/launchLabel';
 
 type ProjectProgressProps = {
@@ -15,7 +15,6 @@ export default function ProjectProgress({
   onScanningChange,
 }: ProjectProgressProps) {
   const { client } = useContext(GlobalContext)!;
-  const { getSqsClient } = useContext(UserContext)!;
   const [isLoading, setIsLoading] = useState(true);
   const [queueInfo, setQueueInfo] = useState<{
     url: string;
@@ -30,9 +29,6 @@ export default function ProjectProgress({
   const [jobsRemaining, setJobsRemaining] = useState<number>(0);
 
   const prevScanningRef = useRef<boolean>(false);
-  // Read through a ref so a new client function doesn't restart polling.
-  const getSqsClientRef = useRef(getSqsClient);
-  getSqsClientRef.current = getSqsClient;
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -44,6 +40,7 @@ export default function ProjectProgress({
           { id: projectId },
           {
             selectionSet: [
+              'queues.id',
               'queues.url',
               'queues.tag',
               'queues.batchSize',
@@ -64,6 +61,7 @@ export default function ProjectProgress({
 
       const q = projectData.queues[0];
       const url = q.url || '';
+      const queueId = q.id;
       const batchSize = q.batchSize || 0;
       const totalBatches = q.totalBatches || 0;
       const launchedCount = q.launchedCount ?? null;
@@ -83,17 +81,9 @@ export default function ProjectProgress({
       setIsLoading(false);
 
       async function updateJobsRemaining() {
-        const sqsClient = await getSqsClientRef.current();
-        const params = {
-          QueueUrl: url,
-          AttributeNames: ['ApproximateNumberOfMessages'] as any[],
-        };
-        const attrs = await sqsClient.send(
-          new GetQueueAttributesCommand(params),
-        );
+        const num = (await queueDepths([queueId]))[queueId];
         if (cancelled) return;
-        const num = attrs.Attributes?.ApproximateNumberOfMessages;
-        setJobsRemaining(num ? Number(num) : 0);
+        setJobsRemaining(num && num !== 'Unknown' ? Number(num) : 0);
       }
 
       updateJobsRemaining();

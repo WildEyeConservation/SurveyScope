@@ -1,13 +1,9 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DeleteMessageCommand,
-  GetQueueAttributesCommand,
-  ReceiveMessageCommand,
-} from '@aws-sdk/client-sqs';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { GlobalContext, UserContext } from '../Context';
+import { ackTask, queueDepths, receiveTask } from '../api/tasks';
+import { GlobalContext } from '../Context';
 import { touchQueue } from '../touchQueue';
 import {
   HomographyWorkbenchWorker,
@@ -17,7 +13,6 @@ import type { Point } from './ManualHomographyEditor';
 
 export default function HomographyTask() {
   const { queueId } = useParams<{ queueId: string }>();
-  const { getSqsClient } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
   const navigate = useNavigate();
 
@@ -55,31 +50,17 @@ export default function HomographyTask() {
     try {
       let attempts = 0;
       while (attempts < 3) {
-        const sqsClient = await getSqsClient();
-        const response = await sqsClient.send(
-          new ReceiveMessageCommand({
-            QueueUrl: queueUrl,
-            MaxNumberOfMessages: 1,
-            MessageAttributeNames: ['All'],
-            VisibilityTimeout: 600,
-          }),
-        );
+        const received = await receiveTask(queueId!);
 
-        if (response.Messages && response.Messages.length > 0) {
-          const entity = response.Messages[0];
-          const body = JSON.parse(entity.Body!);
+        if (received) {
+          const { leaseId } = received;
+          const body = JSON.parse(received.body);
           const pairKey = body.pairKey;
 
           // Deduplication
           if (pairKey && processedRef.current.has(pairKey)) {
             try {
-              const sqsClient2 = await getSqsClient();
-              await sqsClient2.send(
-                new DeleteMessageCommand({
-                  QueueUrl: queueUrl,
-                  ReceiptHandle: entity.ReceiptHandle,
-                }),
-              );
+              await ackTask(leaseId);
             } catch {
               /* ignore */
             }
@@ -89,13 +70,7 @@ export default function HomographyTask() {
 
           body.ack = async () => {
             try {
-              const sqsClient2 = await getSqsClient();
-              await sqsClient2.send(
-                new DeleteMessageCommand({
-                  QueueUrl: queueUrl,
-                  ReceiptHandle: entity.ReceiptHandle,
-                }),
-              );
+              await ackTask(leaseId);
               if (pairKey) processedRef.current.add(pairKey);
             } catch (error) {
               console.log(`Homography ack failed for pair ${pairKey}`);
@@ -118,12 +93,12 @@ export default function HomographyTask() {
       // Exhausted dedup attempts — treat as effectively empty for this client
       setQueueEmpty(true);
     } catch (error) {
-      console.error('Error fetching from SQS', error);
+      console.error('Error fetching homography work', error);
     }
 
     isFetchingRef.current = false;
     setIsFetching(false);
-  }, [queueUrl, getSqsClient]);
+  }, [queueUrl, queueId]);
 
   // Keep a ref to latest fetchNext so callbacks always invoke the current version
   const fetchNextRef = useRef(fetchNext);
@@ -138,21 +113,13 @@ export default function HomographyTask() {
     }
   }, [queueUrl, buffer.length]);
 
-  // Poll SQS for approximate remaining messages
   const [jobsRemaining, setJobsRemaining] = useState<string>('Unknown');
 
   useEffect(() => {
     if (!queueUrl) return;
     const updateJobs = async () => {
       try {
-        const sqsClient = await getSqsClient();
-        const result = await sqsClient.send(
-          new GetQueueAttributesCommand({
-            QueueUrl: queueUrl,
-            AttributeNames: ['ApproximateNumberOfMessages'],
-          }),
-        );
-        const count = result.Attributes?.ApproximateNumberOfMessages;
+        const count = (await queueDepths([queueId!]))[queueId!];
         setJobsRemaining(count || 'Unknown');
         if (count === '0') setQueueEmpty(true);
       } catch {
@@ -162,7 +129,7 @@ export default function HomographyTask() {
     updateJobs();
     const interval = setInterval(updateJobs, 10000);
     return () => clearInterval(interval);
-  }, [queueUrl, getSqsClient]);
+  }, [queueUrl, queueId]);
 
   // Navigate back after queue is empty and no items in buffer
   const [countdown, setCountdown] = useState<number | null>(null);
