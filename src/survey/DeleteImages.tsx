@@ -317,6 +317,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
   const drawingRef = useRef(false);
+  const drawFinishedAtRef = useRef(0);
 
   // Fetch images with GPS coordinates
   const fetchImages = useCallback(async (): Promise<ImageData[]> => {
@@ -565,6 +566,8 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       // Click a marker to select it; Shift or Ctrl/⌘-click toggles it.
       map.on('click', (e) => {
         if (drawingRef.current) return; // drawing mode owns map clicks
+        // The click that closes the lasso arrives after 'finish'.
+        if (performance.now() - drawFinishedAtRef.current < 500) return;
         const [feature] = map.queryRenderedFeatures(e.point, {
           layers: [LYR_IMAGES],
         });
@@ -629,6 +632,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             /* map torn down; ignore */
           }
           drawingRef.current = false;
+          drawFinishedAtRef.current = performance.now();
           setDrawing(false);
           map.getCanvas().style.cursor = '';
         }
