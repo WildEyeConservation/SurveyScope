@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { BoundaryStatus } from '../shared/boundaryStatus';
 import AnnotationWorkspace from './AnnotationWorkspace';
+import { prefetchTask } from './annotator/prefetchTask';
 import { GlobalContext, ProjectContext } from './Context';
 import {
   extractUserIdFromOwner,
@@ -30,6 +31,34 @@ const fileName = (path: string | null | undefined, id: string) =>
 
 const formatTime = (timestamp: number) =>
   timestamp ? new Date(timestamp * 1000).toLocaleTimeString() : '';
+
+// With this scale the location box is exactly the area shown.
+const VIEW_BOUNDS_SCALE = 0.5;
+const WARM_AHEAD = 3;
+const WARM_BEHIND = 1;
+const WARM_DELAY_MS = 300;
+
+type Point = { x: number; y: number };
+
+// Frames the image's sightings, so the first tiles fetched are the ones shown.
+function viewBox(image: { width: number; height: number }, points: Point[]) {
+  if (points.length === 0)
+    return {
+      x: image.width / 2,
+      y: image.height / 2,
+      width: image.width,
+      height: image.height,
+    };
+  const minSide = Math.min(image.width, image.height) / 4;
+  const axis = (values: number[]) => {
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    return { mid: (lo + hi) / 2, size: Math.max(hi - lo, minSide) * 1.2 };
+  };
+  const xs = axis(points.map((p) => p.x));
+  const ys = axis(points.map((p) => p.y));
+  return { x: xs.mid, y: ys.mid, width: xs.size, height: ys.size };
+}
 
 export default function ReviewImages({
   surveyId,
@@ -122,8 +151,60 @@ export default function ReviewImages({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotationsQuery.data, imagesById, filterKey, infoTagSig, sort]);
 
+  const pointsByImage = useMemo(() => {
+    const out = new Map<string, Point[]>();
+    for (const a of annotationsQuery.data?.annotations ?? []) {
+      if (!a.imageId || a.x == null || a.y == null) continue;
+      const points = out.get(a.imageId) ?? [];
+      points.push({ x: a.x, y: a.y });
+      out.set(a.imageId, points);
+    }
+    return out;
+  }, [annotationsQuery.data]);
+
   const index = rows.findIndex((row) => row.id === selectedImageId);
   const selected = selectedImageId ? imagesById.get(selectedImageId) : null;
+  const selectedBox = useMemo(
+    () =>
+      selected?.width && selected.height
+        ? viewBox(
+            { width: selected.width, height: selected.height },
+            pointsByImage.get(selected.id) ?? [],
+          )
+        : null,
+    [selected, pointsByImage],
+  );
+
+  useEffect(() => {
+    if (!visible || index < 0) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const neighbours = [
+        ...Array.from({ length: WARM_AHEAD }, (_, i) => index + 1 + i),
+        ...Array.from({ length: WARM_BEHIND }, (_, i) => index - 1 - i),
+      ];
+      for (const i of neighbours) {
+        const image = rows[i] && imagesById.get(rows[i].id);
+        if (!image?.width || !image.height) continue;
+        const size = { width: image.width, height: image.height };
+        void prefetchTask(
+          client as unknown as Parameters<typeof prefetchTask>[0],
+          {
+            location: {
+              image: { id: image.id, ...size },
+              ...viewBox(size, pointsByImage.get(image.id) ?? []),
+            },
+            viewBoundsScale: VIEW_BOUNDS_SCALE,
+          },
+          controller.signal,
+        );
+      }
+    }, WARM_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [client, visible, index, rows, imagesById, pointsByImage]);
 
   useEffect(() => {
     if (rows.length && (!selectedImageId || !imagesById.has(selectedImageId)))
@@ -274,11 +355,12 @@ export default function ReviewImages({
       </GridTable>
 
       <div className='relative min-w-0 grow overflow-hidden border border-white/15'>
-        {selected?.width && selected.height ? (
+        {selected?.width && selected.height && selectedBox ? (
           <AnnotationWorkspace
             key={selected.id}
             embedded
             visible={visible}
+            viewBoundsScale={VIEW_BOUNDS_SCALE}
             next={index < rows.length - 1 ? () => step(1) : undefined}
             prev={index > 0 ? () => step(-1) : undefined}
             hideZoomSetting
@@ -293,10 +375,7 @@ export default function ReviewImages({
                   selected.boundaryStatus as BoundaryStatus | null,
               },
               annotationSetId,
-              x: selected.width / 2,
-              y: selected.height / 2,
-              width: selected.width,
-              height: selected.height,
+              ...selectedBox,
             }}
           />
         ) : (

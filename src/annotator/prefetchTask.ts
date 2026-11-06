@@ -5,7 +5,7 @@ import {
 } from '../StorageLayer';
 import type { AnnotationTaskPayload } from '../annotationTypes';
 import { tileLoadStats } from '../storage/tileLoadStats';
-import { makeLimiter } from '../storage/tilePackReader';
+import { isAbort, makeLimiter } from '../storage/tilePackReader';
 import { loadImageFiles, sourceKeyOf } from './useImageFileSource';
 import { viewTiles } from './viewTiles';
 
@@ -27,19 +27,25 @@ const warming = makeLimiter(1);
 
 export function prefetchTask(
   client: Client,
-  task: Pick<AnnotationTaskPayload, 'location' | 'zoom'>,
+  task: {
+    location: Omit<AnnotationTaskPayload['location'], 'annotationSetId'>;
+    zoom?: number | null;
+    viewBoundsScale?: number;
+  },
+  signal?: AbortSignal,
 ): Promise<void> {
   return warming
     .run(async () => {
       const { image, id: taskId } = task.location;
       if (taskId) tileLoadStats.markPrefetched(taskId);
       const key = sourceKeyOf(await loadImageFiles(client, image.id, taskId));
-      if (!key) return;
+      if (!key || signal?.aborted) return;
       const context = imageTileContext(image, taskId);
       const tiles = viewTiles({
         image,
         location: task.location,
         zoom: task.zoom,
+        viewBoundsScale: task.viewBoundsScale,
         viewport: currentViewport(),
       });
       await Promise.all(
@@ -47,8 +53,9 @@ export function prefetchTask(
           getTileBlob(`slippymaps/${key}/${z}/${row}/${col}.png`, context),
         ),
       );
-    })
+    }, signal)
     .catch((error: unknown) => {
+      if (isAbort(error)) return;
       console.warn('Prefetching a task failed', error);
     });
 }

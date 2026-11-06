@@ -66,6 +66,8 @@ export function setAnnotationsQuery(
           'objectId',
           'source',
           'owner',
+          'x',
+          'y',
         ]),
         loadRows(client, 'categoriesByProjectId', surveyId, ['name']),
       ]);
@@ -97,6 +99,8 @@ type ViewerAnnotation = {
   objectId?: string | null;
   source?: string | null;
   owner?: string | null;
+  x?: number | null;
+  y?: number | null;
 };
 
 type SetAnnotations = Awaited<
@@ -142,6 +146,8 @@ export function useSyncViewerEdits(categoryNames: Map<string, string>): void {
                 objectId: a.objectId ?? null,
                 source: a.source ?? null,
                 owner: a.owner ?? null,
+                x: a.x ?? null,
+                y: a.y ?? null,
                 setId: scope.setId,
                 category: a.categoryId
                   ? {
