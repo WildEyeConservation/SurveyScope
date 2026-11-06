@@ -62,6 +62,7 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   const { project } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
   const completionRef = useRef<Promise<void> | null>(null);
+  const rescoreRef = useRef<Promise<void> | null>(null);
   const loadMetricsRef = useRef<ReturnType<typeof tileLoadStats.take>>();
   const plannedRef = useRef(false);
 
@@ -75,7 +76,16 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
 
   const newAck = useCallback(
     (submittedAt?: number): Promise<void> => {
-      if (completionRef.current) return completionRef.current;
+      if (completionRef.current) {
+        if (!isTest) return completionRef.current;
+        // The user came back to the test, so its annotations may have changed.
+        const rescore = Promise.all([
+          completionRef.current,
+          rescoreRef.current?.catch(() => {}),
+        ]).then(() => createTestResult());
+        rescoreRef.current = rescore;
+        return rescore;
+      }
 
       const completion = (async () => {
         // The SQS ack is deliberately delayed after the user pages past (see
