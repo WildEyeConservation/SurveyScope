@@ -51,6 +51,12 @@ import { revokeChainShare } from '../functions/revokeChainShare/resource';
 import { reportClientError } from '../functions/reportClientError/resource';
 import { expireInactiveQueues } from '../functions/expireInactiveQueues/resource';
 
+// One deploy may create ~2,500 resources, so a fresh environment starts without mutations.
+const DISABLED_OPERATIONS =
+  process.env.AMPLIFY_FIRST_DEPLOY === 'true'
+    ? (['subscriptions', 'mutations'] as const)
+    : (['subscriptions'] as const);
+
 export const schema = a
   .schema({
     Project: a
@@ -79,7 +85,7 @@ export const schema = a
         boundaryRecomputeLeaseUntil: a.datetime(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')]),
     Category: a
       .model({
@@ -96,7 +102,7 @@ export const schema = a
         ),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('annotationSetId').queryField('categoriesByAnnotationSetId'),
@@ -112,7 +118,7 @@ export const schema = a
         shortcutKey: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('annotationSetId').queryField('infoTagsByAnnotationSetId'),
@@ -127,7 +133,7 @@ export const schema = a
         projectId: a.id().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['annotationId', 'infoTagId'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -169,7 +175,7 @@ export const schema = a
         // Position relative to the survey area; a missing value counts as inside.
         boundaryStatus: a.enum(['inside', 'outside', 'excluded']),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('imagesByProjectId'),
@@ -187,7 +193,7 @@ export const schema = a
         type: a.string().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('imageId').queryField('imagesByimageId'),
@@ -201,7 +207,7 @@ export const schema = a
         projectId: a.id().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['imageId', 'source'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -218,7 +224,7 @@ export const schema = a
         register: a.boolean().default(false),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('annotationSetsByProjectId'),
@@ -249,7 +255,7 @@ export const schema = a
         // Declared so it can sort an index; still filled in automatically.
         createdAt: a.datetime().required(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('setId').queryField('annotationsByAnnotationSetId'),
@@ -271,7 +277,7 @@ export const schema = a
         count: a.integer().default(0),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['locationId', 'categoryId', 'annotationSetId'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -285,7 +291,7 @@ export const schema = a
         categoryId: a.id().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')]),
     Location: a
       .model({
@@ -303,7 +309,7 @@ export const schema = a
         testPresets: a.hasMany('TestPresetLocation', 'locationId'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('imageId')
@@ -334,7 +340,7 @@ export const schema = a
         queueId: a.id(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('locationId').queryField('observationsByLocationId'),
@@ -352,7 +358,7 @@ export const schema = a
         locationCount: a.integer().default(0),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('locationSetsByProjectId'),
@@ -364,7 +370,7 @@ export const schema = a
         locationSet: a.belongsTo('LocationSet', 'locationSetId'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')]),
     ImageSetMembership: a
       .model({
@@ -373,7 +379,7 @@ export const schema = a
         image: a.belongsTo('Image', 'imageId'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('imageSetId').queryField('imageSetMembershipsByImageSetId'),
@@ -386,7 +392,7 @@ export const schema = a
         imageCount: a.integer().default(0),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('imageSetsByProjectId'),
@@ -400,7 +406,7 @@ export const schema = a
         backupQueueId: a.id(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('userProjectMembershipsByProjectId'),
@@ -425,7 +431,7 @@ export const schema = a
         registrationFailedAt: a.datetime(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .identifier(['image1Id', 'image2Id'])
       .secondaryIndexes((index) => [
@@ -448,7 +454,7 @@ export const schema = a
         cleanupState: a.string().default('pending'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['projectId'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -464,7 +470,7 @@ export const schema = a
         successCount: a.integer().default(0),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['projectId', 'bucketKey'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -499,7 +505,7 @@ export const schema = a
         cancelAfter: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('queuesByProjectId'),
@@ -520,7 +526,7 @@ export const schema = a
         waitingTime: a.float(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['projectId', 'userId', 'date', 'setId'])
       .authorization((allow) => [allow.group('sysadmin')]),
     TasksOnAnnotationSet: a
@@ -529,7 +535,7 @@ export const schema = a
         locationSetId: a.id().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('annotationSetId').queryField('locationSetsByAnnotationSetId'),
@@ -546,7 +552,7 @@ export const schema = a
         accuracy: a.integer().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .identifier(['projectId']),
     TestPresetProject: a
@@ -555,7 +561,7 @@ export const schema = a
         projectId: a.id().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .identifier(['testPresetId', 'projectId'])
       .secondaryIndexes((index) => [
@@ -570,7 +576,7 @@ export const schema = a
         testResults: a.hasMany('TestResult', 'testPresetId'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('organizationId').queryField('testPresetsByOrganizationId'),
@@ -586,7 +592,7 @@ export const schema = a
         sourceLocationId: a.id(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .identifier(['testPresetId', 'locationId', 'annotationSetId'])
       .secondaryIndexes((index) => [
@@ -608,7 +614,7 @@ export const schema = a
         categoryCounts: a.hasMany('TestResultCategoryCount', 'testResultId'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('userId').queryField('testResultsByUserId'),
@@ -622,7 +628,7 @@ export const schema = a
         testCount: a.integer().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .identifier(['testResultId', 'categoryName']),
     Shapefile: a
@@ -633,7 +639,7 @@ export const schema = a
         marginM: a.float(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('shapefilesByProjectId'),
@@ -645,7 +651,7 @@ export const schema = a
         coordinates: a.float().array(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('shapefileExclusionsByProjectId'),
@@ -662,7 +668,7 @@ export const schema = a
         images: a.hasMany('Image', 'cameraId'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('camerasByProjectId'),
@@ -674,7 +680,7 @@ export const schema = a
         cameraBId: a.id().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .identifier(['cameraAId', 'cameraBId'])
       .secondaryIndexes((index) => [
@@ -686,7 +692,7 @@ export const schema = a
         stratumId: a.id().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('transectsByProjectId'),
@@ -702,7 +708,7 @@ export const schema = a
         offEffort: a.boolean(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('strataByProjectId'),
@@ -723,7 +729,7 @@ export const schema = a
         pretileManifestS3Key: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('individualIdJobsByProjectId'),
@@ -742,7 +748,7 @@ export const schema = a
         lastActiveAt: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('jobId').queryField('individualIdTransectsByJobId'),
@@ -765,7 +771,7 @@ export const schema = a
         upperBound95: a.float().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['surveyId', 'stratumId', 'annotationSetId', 'categoryId'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -781,7 +787,7 @@ export const schema = a
         userId: a.string().required(),
         userEmail: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')]),
     Organization: a
       .model({
@@ -791,7 +797,7 @@ export const schema = a
         projects: a.hasMany('Project', 'organizationId'),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')]),
     OrganizationMembership: a
       .model({
@@ -802,7 +808,7 @@ export const schema = a
         isTested: a.boolean().default(false),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['organizationId', 'userId'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -818,7 +824,7 @@ export const schema = a
         organizationName: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('username').queryField('organizationInvitesByUsername'),
@@ -831,7 +837,7 @@ export const schema = a
         owner: a.string(),
         status: a.string().default('pending'),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('status').queryField('organizationRegistrationsByStatus'),
@@ -843,7 +849,7 @@ export const schema = a
         jwt: a.string().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['surveyId', 'annotationSetId'])
       .authorization((allow) => [allow.group('sysadmin')]),
     JollyResultsMembership: a
@@ -853,7 +859,7 @@ export const schema = a
         userId: a.string().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['surveyId', 'annotationSetId', 'userId'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -875,7 +881,7 @@ export const schema = a
         createdBy: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .identifier(['shareId'])
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
@@ -896,7 +902,7 @@ export const schema = a
         infoTags: a.string().array(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('shareId').queryField('sharedChainAnnotationsByShareId'),
@@ -916,7 +922,7 @@ export const schema = a
         sourceKey: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('shareId').queryField('sharedChainImagesByShareId'),
@@ -934,7 +940,7 @@ export const schema = a
         source: a.string().required(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('shareId').queryField('sharedChainLocationsByShareId'),
@@ -949,7 +955,7 @@ export const schema = a
         skipped: a.boolean().default(false),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('shareId').queryField('sharedChainNeighboursByShareId'),
@@ -963,7 +969,7 @@ export const schema = a
         shortcutKey: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('shareId').queryField('sharedChainCategoriesByShareId'),
@@ -981,7 +987,7 @@ export const schema = a
         comment: a.string(),
         owner: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('shareId').sortKeys(['owner']).queryField('chainReviewFeedbackByShareId'),
@@ -999,7 +1005,7 @@ export const schema = a
         owner: a.string(),
         createdAt: a.datetime().required(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('userId').queryField('clientLogsByUserId'),
@@ -1014,7 +1020,7 @@ export const schema = a
         projectId: a.id(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('projectId').queryField('adminActionLogsByProjectId'),
@@ -1034,7 +1040,7 @@ export const schema = a
         errorMessage: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('status').queryField('tilingTasksByStatus'),
@@ -1052,7 +1058,7 @@ export const schema = a
         errorMessage: a.string(),
         group: a.string(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
       .secondaryIndexes((index) => [
         index('tilingTaskId')
@@ -1122,7 +1128,7 @@ export const schema = a
         name: a.string().required(),
         version: a.string().required(),
       })
-      .disableOperations(['subscriptions'])
+      .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
   })
   .authorization((allow) => [

@@ -386,8 +386,10 @@ guardFunction.addToRolePolicy(new iam.PolicyStatement({
   resources: [backend.auth.resources.userPool.userPoolArn],
 }));
 const guardSource = backend.data.resources.graphqlApi.addLambdaDataSource('ChainMutationGuard', guardFunction);
-installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
-  backend.data.resources.graphqlApi.apiId, guardSource);
+if (process.env.AMPLIFY_FIRST_DEPLOY !== 'true') {
+  installMutationGuard(backend.data.resources.cfnResources.cfnResolvers,
+    backend.data.resources.graphqlApi.apiId, guardSource);
+}
 
 // Newer data constructs default tables to AWS-owned keys; keep the existing KMS encryption.
 for (const table of Object.values(backend.data.resources.cfnResources.amplifyDynamoDbTables)) {

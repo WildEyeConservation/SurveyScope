@@ -84,6 +84,7 @@ CloudFormation caps every stack, nested ones included, at 500 resources, 200 out
 - Only add relationship fields the app traverses. Each adds three resources to the relationship stack and a DynamoDB index on the child table.
 - Give new models `.disableOperations(['subscriptions'])`. The browser gets live updates from the AppSync Events API, published from DynamoDB streams; add the model to `shared/dataChannels.ts` if it needs them.
 - The API router and its publisher are in the `api` group, which reads from `data`. Nothing in `data` may refer back to `api`, or the stacks form a cycle.
+- One deploy may create at most about 2,500 resources across all nested stacks, so a fresh environment (a sandbox or a new branch) is created in two steps: first with `AMPLIFY_FIRST_DEPLOY=true`, which leaves out model mutations, then again without it.
 
 ### 10. Data Access
 The browser reaches data only through the HTTP API in `amplify/api/`. AppSync is limited to sysadmins and backend functions. Every request is checked against the caller's current organisation and survey memberships, so:
@@ -92,3 +93,19 @@ The browser reaches data only through the HTTP API in `amplify/api/`. AppSync is
 - A new operation the browser calls goes in `shared/operations.ts` (its arguments and return type) and `amplify/api/operations.ts` (who may call it, and the Lambda that runs it). The router invokes the Lambda directly, so it is not added to the AppSync schema and its handler Lambda must be listed in `defineBackend`.
 - Only operations that other Lambdas or containers call over GraphQL belong in the AppSync schema.
 - New AppSync rules should be `allow.group('sysadmin')` only. Organisation access comes from the membership tables, not Cognito groups.
+
+### 11. Sandbox Deploys
+`npx ampx sandbox` always runs a hotswap check before it updates the stack, and on this backend that check can stall for half an hour or more. If it does, stop it and deploy the same stack with CDK directly, using the same environment variables:
+
+```bash
+npx cdk deploy --all --method=direct --require-approval never \
+  --app "npx tsx amplify/backend.ts" \
+  -c amplify-backend-namespace=<package.json name> \
+  -c amplify-backend-name=<sandbox identifier> \
+  -c amplify-backend-type=sandbox
+npx ampx generate outputs --stack <sandbox stack name>
+```
+
+- The namespace is the `name` field of `package.json` exactly as written, not the shortened form in the stack name.
+- `ampx` can exit with code 0 even when the deploy failed, so check its output.
+- A failed first deploy leaves the stack in `ROLLBACK_COMPLETE`. Delete it before trying again.
