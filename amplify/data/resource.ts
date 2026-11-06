@@ -216,6 +216,8 @@ const schema = a
         tiledAt: a.datetime(),
         // Position relative to the survey area; a missing value counts as inside.
         boundaryStatus: a.enum(['inside', 'outside', 'excluded']),
+        // Set by hand; recomputes keep it instead of classifying the image.
+        boundaryOverride: a.enum(['inside', 'outside']),
       })
       .authorization((allow) => [allow.group('sysadmin'), allow.groupDefinedIn('group')])
       .secondaryIndexes((index) => [
