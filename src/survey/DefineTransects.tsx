@@ -55,6 +55,7 @@ import {
 import BoundaryRecomputeGate from './BoundaryRecomputeGate';
 import { Kbd, MapButton } from './mapControls';
 import { LIGHT_THEME, MAP_CONTROLS, MAP_DIVIDER } from './mapTheme';
+import { spreadOverlapping } from './spreadOverlapping';
 import {
   runSurveySave,
   surveySaveSettled,
@@ -197,36 +198,10 @@ function DefineTransectsEditor({
     return result;
   }, [segmentedImages, strata]);
 
-  // Jitter duplicate coordinates slightly so overlapping markers are visible
-  const adjustedPositions = useMemo(() => {
-    const byCoordKey: Record<string, SegmentedImage[]> = {};
-    const adjusted: Record<string, { latitude: number; longitude: number }> =
-      {};
-    segmentedImages.forEach((img) => {
-      const key = `${img.latitude},${img.longitude}`;
-      (byCoordKey[key] = byCoordKey[key] || []).push(img);
-    });
-    Object.values(byCoordKey).forEach((group) => {
-      if (group.length === 1) {
-        const img = group[0];
-        adjusted[img.id] = { latitude: img.latitude, longitude: img.longitude };
-        return;
-      }
-      // Spread duplicates around a small circle (~5m radius)
-      group.forEach((img, index) => {
-        const latRad = (img.latitude * Math.PI) / 180;
-        const radiusDeg = 0.00005;
-        const angle = (2 * Math.PI * index) / group.length;
-        adjusted[img.id] = {
-          latitude: img.latitude + radiusDeg * Math.sin(angle),
-          longitude:
-            img.longitude +
-            (radiusDeg * Math.cos(angle)) / Math.max(Math.cos(latRad), 1e-6),
-        };
-      });
-    });
-    return adjusted;
-  }, [segmentedImages]);
+  const adjustedPositions = useMemo(
+    () => spreadOverlapping(segmentedImages),
+    [segmentedImages],
+  );
 
   // Refs so the once-registered map handlers always read current values.
   const segmentedImagesRef = useRef(segmentedImages);

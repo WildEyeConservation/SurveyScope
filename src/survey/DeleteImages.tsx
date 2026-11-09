@@ -43,6 +43,7 @@ import {
   boundaryRecomputePending,
   recomputeBoundaryStatus,
 } from '../utils/shapefileUtils';
+import { spreadOverlapping } from './spreadOverlapping';
 import { runSurveySave } from './surveySaves';
 import {
   clearJollyResults,
@@ -346,6 +347,9 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   // Latest values for the once-registered map event handlers to read.
   const imagesRef = useRef(images);
   imagesRef.current = images;
+  const positions = useMemo(() => spreadOverlapping(images), [images]);
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
   const drawingRef = useRef(false);
@@ -548,14 +552,20 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   const imagesFC = useMemo<FeatureCollection>(
     () => ({
       type: 'FeatureCollection',
-      features: images.map((img) => ({
-        type: 'Feature',
-        id: img.id,
-        properties: { id: img.id, color: img.color },
-        geometry: { type: 'Point', coordinates: [img.longitude, img.latitude] },
-      })),
+      features: images.map((img) => {
+        const pos = positions[img.id] ?? img;
+        return {
+          type: 'Feature',
+          id: img.id,
+          properties: { id: img.id, color: img.color },
+          geometry: {
+            type: 'Point',
+            coordinates: [pos.longitude, pos.latitude],
+          },
+        };
+      }),
     }),
-    [images],
+    [images, positions],
   );
 
   // -----------------------------------------------------------------------
@@ -670,9 +680,10 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           if (feature && (feature.geometry as any)?.type === 'Polygon') {
             const newSelected = new Set<string>();
             for (const img of imagesRef.current) {
+              const pos = positionsRef.current[img.id] ?? img;
               if (
                 booleanPointInPolygon(
-                  [img.longitude, img.latitude],
+                  [pos.longitude, pos.latitude],
                   feature as any,
                 )
               ) {
