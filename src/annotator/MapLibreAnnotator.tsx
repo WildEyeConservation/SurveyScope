@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 
+import { Spinner } from '@/components/ui/spinner';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { isHotkeyPressed, useHotkeys } from 'react-hotkeys-hook';
@@ -269,6 +270,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     const unregisterMarkerImages = registerAnnotationMarkerImages(map);
 
     map.on('load', () => {
+      // Frame first so the only tiles requested are the ones shown.
+      if (map.getContainer().clientWidth) {
+        map.resize();
+        fitInitialView(map);
+        if (embedded) embeddedFittedRef.current = true;
+      }
       addImageTiles(map, sourceKey, image, projection, location?.id);
 
       // Location rectangle (task bounds)
@@ -371,7 +378,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     if (!mapReady) embeddedFittedRef.current = false;
     if (!embedded || !map || !mapReady || embeddedFittedRef.current) return;
     // A hidden tab has no size to fit to; retry once it is shown.
-    if (!visible || !map.getContainer().clientWidth) return;
+    if (!map.getContainer().clientWidth) return;
     embeddedFittedRef.current = true;
     map.resize();
     fitInitialView(map);
@@ -740,6 +747,16 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             border: embedded ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           }}
         />
+
+        {embedded && visible && !fullyLoaded && (
+          <div
+            className='absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground'
+            style={{ visibility: 'visible' }}
+          >
+            <Spinner size='sm' />
+            Loading image...
+          </div>
+        )}
 
         <ImageFileStatusOverlay
           loading={imageFilesLoading}

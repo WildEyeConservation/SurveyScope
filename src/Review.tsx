@@ -39,10 +39,6 @@ export function Review({ showAnnotationSetDropdown = true }) {
   const [selectedUsers, setSelectedUsers] = useState<Option[]>([]);
   const [tab, setTab] = useState<'images' | 'map'>('map');
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
-  const openImage = useCallback((imageId: string) => {
-    setSelectedImageId(imageId);
-    setTab('images');
-  }, []);
   const [selectedAnnotationSet, setSelectedAnnotationSet] =
     useState<string>('');
   const [primaryOnly, setPrimaryOnly] = useState(false);
@@ -513,7 +509,6 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     onTransectsLoaded={handleTransectsLoaded}
                     primaryOnly={primaryOnly}
                     editable
-                    onOpenImage={openImage}
                   />
                 </div>
               </Tab>
