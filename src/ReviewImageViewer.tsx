@@ -21,6 +21,8 @@ export default function ReviewImageViewer({
   counts,
   onStep,
   visible,
+  bearing,
+  onBearingChange,
 }: {
   image: ViewerImage;
   annotationSetId: string;
@@ -30,6 +32,8 @@ export default function ReviewImageViewer({
   counts: ViewerCount[];
   onStep: (delta: number) => void;
   visible: boolean;
+  bearing?: number;
+  onBearingChange?: (bearing: number) => void;
 }) {
   const { width, height } = image;
   const box = useMemo(
@@ -52,6 +56,8 @@ export default function ReviewImageViewer({
           hideZoomSetting
           hideNavButtons
           allowOutside
+          bearing={bearing}
+          onBearingChange={onBearingChange}
           location={{
             image: {
               id: image.id,

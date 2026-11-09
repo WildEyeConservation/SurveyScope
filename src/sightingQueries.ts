@@ -11,7 +11,7 @@ const STALE_TIME = 30 * 60 * 1000;
 
 export function surveyGeoQuery(client: DataClient, surveyId: string) {
   return {
-    queryKey: ['densitymap', 'survey-geo-v3', surveyId],
+    queryKey: ['densitymap', 'survey-geo-v4', surveyId],
     staleTime: STALE_TIME,
     // Too large for localStorage.
     meta: { persist: false },
@@ -26,6 +26,7 @@ export function surveyGeoQuery(client: DataClient, surveyId: string) {
           'height',
           'originalPath',
           'boundaryStatus',
+          'cameraId',
         ]),
         fetchAllPaginatedResults<Outline & { name: string | null }>(
           client.models.Stratum.strataByProjectId,

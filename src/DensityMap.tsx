@@ -18,20 +18,23 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { useQueries } from '@tanstack/react-query';
-import { pointOnFeature } from '@turf/turf';
+import { booleanPointInPolygon, pointOnFeature } from '@turf/turf';
 import {
+  LassoIcon,
   Maximize2Icon,
   Minimize2Icon,
   MinusIcon,
   PlusIcon,
   ScanIcon,
 } from 'lucide-react';
+import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
+import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import {
   adjectives,
   names,
   uniqueNamesGenerator,
 } from 'unique-names-generator';
-import { GlobalContext, ProjectContext } from './Context';
+import { GlobalContext, ProjectContext, UserContext } from './Context';
 import {
   DEFAULT_HEAT_RADIUS_KM,
   HEAT_COLOR_RAMP,
@@ -41,6 +44,10 @@ import {
 } from './densityHeat';
 import ImageViewerModal from './ImageViewerModal';
 import { formatInfoTagsForDisplay } from './infoTags';
+import type { OverlapImage } from './overlapReview/layout';
+import OverlapReviewModal, {
+  type SightingDot,
+} from './overlapReview/OverlapReviewModal';
 import ReviewImageModal from './ReviewImageModal';
 import ReviewImageStage, { type StageSlot } from './ReviewImageStage';
 import { type Point, warmImage } from './reviewImageView';
@@ -49,7 +56,7 @@ import {
   setAnnotationsQuery,
   surveyGeoQuery,
 } from './sightingQueries';
-import { MapButton } from './survey/mapControls';
+import { Kbd, MapButton } from './survey/mapControls';
 import { LIGHT_THEME, MAP_CONTROLS } from './survey/mapTheme';
 import { BASE_STYLE } from './survey/surveyMapStyle';
 import { strataColors } from './survey/transectStrata';
@@ -212,6 +219,9 @@ export default function DensityMap({
 }: DensityMapProps) {
   const { client } = useContext(GlobalContext)!;
   const projectCategories = useContext(ProjectContext)?.categoriesHook.data;
+  const isSysadmin =
+    !!useContext(UserContext)?.cognitoGroups.includes('sysadmin');
+  const canReviewOverlap = editable && isSysadmin;
 
   // Normalise the legacy single-source props into the `sources` shape.
   const effectiveSources = useMemo<DensitySource[]>(() => {
@@ -256,6 +266,13 @@ export default function DensityMap({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+
+  const drawRef = useRef<TerraDraw | null>(null);
+  const drawingRef = useRef(false);
+  const drawFinishedAtRef = useRef(0);
+  const [drawing, setDrawing] = useState(false);
+  const [overlapIds, setOverlapIds] = useState<string[] | null>(null);
+  const [overlapOpen, setOverlapOpen] = useState(false);
 
   // -----------------------------------------------------------------------
   // Data fetching — one cached query per survey (images + strata + exclusions)
@@ -490,6 +507,8 @@ export default function DensityMap({
             imageId: a.imageId,
             setId: a.setId ?? q.data.annotationSetId,
             categoryName: a.category.name,
+            x: a.x,
+            y: a.y,
             infoTags: formatInfoTagsForDisplay(tagNames),
           },
         });
@@ -717,6 +736,108 @@ export default function DensityMap({
   };
   const warmViewerRef = useRef(warmViewer);
   warmViewerRef.current = warmViewer;
+
+  const stopDraw = () => {
+    try {
+      drawRef.current?.clear();
+      drawRef.current?.stop();
+    } catch {
+      /* map torn down */
+    }
+    drawingRef.current = false;
+    setDrawing(false);
+    const canvas = mapRef.current?.getCanvas();
+    if (canvas) canvas.style.cursor = '';
+  };
+  const stopDrawRef = useRef(stopDraw);
+  stopDrawRef.current = stopDraw;
+
+  const startDraw = () => {
+    const draw = drawRef.current;
+    if (!draw) return;
+    draw.start();
+    draw.setMode('polygon');
+    drawingRef.current = true;
+    setDrawing(true);
+    mapRef.current!.getCanvas().style.cursor = 'crosshair';
+  };
+
+  const lasso = (polygon: GeoJSON.Feature<GeoJSON.Polygon>) => {
+    const ids = imagesFC.features
+      .filter((f) =>
+        booleanPointInPolygon(
+          (f.geometry as GeoJSON.Point).coordinates,
+          polygon,
+        ),
+      )
+      .map((f) => f.properties!.imageId as string);
+    if (!ids.length) return;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    setOverlapIds(ids);
+    setOverlapOpen(true);
+  };
+  const lassoRef = useRef(lasso);
+  lassoRef.current = lasso;
+
+  useEffect(() => {
+    if (!drawing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') stopDrawRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawing]);
+
+  const overlapImages = useMemo<OverlapImage[]>(
+    () =>
+      (overlapIds ?? []).flatMap((id) => {
+        const meta = imageMetaById.get(id);
+        const place = imageById.get(id);
+        if (!meta?.width || !meta.height || !place) return [];
+        return [
+          {
+            id,
+            cameraId: meta.cameraId ?? null,
+            transectId: place.transectId,
+            lat: place.lat,
+            lng: place.lng,
+            timestamp: place.timestamp,
+            width: meta.width,
+            height: meta.height,
+            originalPath: meta.originalPath,
+            boundaryStatus: meta.boundaryStatus,
+          },
+        ];
+      }),
+    [overlapIds, imageMetaById, imageById],
+  );
+  const overlapSightings = useMemo(() => {
+    const out = new Map<string, SightingDot[]>();
+    if (!overlapOpen) return out;
+    for (const f of annotationsFC.features) {
+      const p = f.properties as {
+        imageId: string;
+        setId: string;
+        categoryName: string;
+        x: number | null;
+        y: number | null;
+      };
+      if (p.x == null || p.y == null) continue;
+      const dots = out.get(p.imageId) ?? [];
+      dots.push({
+        x: p.x,
+        y: p.y,
+        label: p.categoryName,
+        color:
+          projectCategories?.find(
+            (c) => c.annotationSetId === p.setId && c.name === p.categoryName,
+          )?.color ?? '#ff8c00',
+      });
+      out.set(p.imageId, dots);
+    }
+    return out;
+  }, [overlapOpen, annotationsFC, projectCategories]);
+  const closeOverlap = useCallback(() => setOverlapOpen(false), []);
 
   const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(
     null,
@@ -1007,6 +1128,9 @@ export default function DensityMap({
         return undefined;
       };
       map.on('click', (e) => {
+        if (drawingRef.current) return;
+        // The click that closes the lasso arrives after 'finish'.
+        if (performance.now() - drawFinishedAtRef.current < 500) return;
         const f = topFeature(e.point, [
           LYR_CLUSTERS,
           LYR_POINTS,
@@ -1040,6 +1164,7 @@ export default function DensityMap({
         hoverKey = '';
       };
       map.on('mousemove', (e) => {
+        if (drawingRef.current) return;
         const p = topFeature(e.point, [LYR_POINTS, LYR_IMAGES])?.properties;
         if (!p?.imageId) {
           if (hoverKey) endHover();
@@ -1063,12 +1188,26 @@ export default function DensityMap({
         LYR_STRATA_LINE,
       ]) {
         map.on('mouseenter', lyr, () => {
-          map.getCanvas().style.cursor = 'pointer';
+          if (!drawingRef.current) map.getCanvas().style.cursor = 'pointer';
         });
         map.on('mouseleave', lyr, () => {
-          map.getCanvas().style.cursor = '';
+          if (!drawingRef.current) map.getCanvas().style.cursor = '';
         });
       }
+
+      const draw = new TerraDraw({
+        adapter: new TerraDrawMapLibreGLAdapter({ map }),
+        modes: [new TerraDrawPolygonMode({ pointerDistance: 12 })],
+      });
+      draw.on('finish', (id) => {
+        const feature = draw.getSnapshot().find((f) => f.id === id);
+        if (feature?.geometry.type === 'Polygon') {
+          lassoRef.current(feature as GeoJSON.Feature<GeoJSON.Polygon>);
+        }
+        stopDrawRef.current();
+        drawFinishedAtRef.current = performance.now();
+      });
+      drawRef.current = draw;
 
       setMapLoaded(true);
     });
@@ -1076,6 +1215,12 @@ export default function DensityMap({
     return () => {
       resizeObserver.disconnect();
       setMapLoaded(false);
+      try {
+        drawRef.current?.stop();
+      } catch {
+        /* map torn down */
+      }
+      drawRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -1340,6 +1485,37 @@ export default function DensityMap({
         />
       </div>
 
+      {canReviewOverlap && (
+        <div
+          className={cn(
+            'absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2',
+            MAP_CONTROLS,
+          )}
+        >
+          <MapButton
+            tipSide='top'
+            label='Draw around images to review overlapping transects'
+            active={drawing}
+            disabled={!mapLoaded || loading}
+            onClick={drawing ? stopDraw : startDraw}
+          >
+            <LassoIcon className='size-4' />
+          </MapButton>
+        </div>
+      )}
+      {drawing && (
+        <div
+          className={cn(
+            'absolute bottom-16 left-1/2 z-10 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-3 border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
+            MAP_CONTROLS,
+          )}
+        >
+          Click to draw around the images to review · click the first point to
+          finish
+          <Kbd>Esc cancel</Kbd>
+        </div>
+      )}
+
       {/* Partial data would give a misleading map. */}
       {(loading || !mapLoaded) && (
         <div className='absolute inset-0 z-30 flex items-center justify-center bg-black/20'>
@@ -1372,6 +1548,18 @@ export default function DensityMap({
             Select an annotation set to begin.
           </div>
         </div>
+      )}
+
+      {canReviewOverlap && (
+        <OverlapReviewModal
+          show={overlapOpen}
+          onClose={closeOverlap}
+          surveyIds={uniqueSurveyIds}
+          images={overlapImages}
+          transects={transectInfo.lookup}
+          sightings={overlapSightings}
+          annotationSetId={primarySetId}
+        />
       )}
 
       {editable ? (

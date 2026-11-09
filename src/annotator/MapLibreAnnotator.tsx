@@ -108,6 +108,8 @@ export interface MapLibreAnnotatorProps {
   infoTags?: Map<string, string[]>;
   /** Fill the container with no frame or task outline. */
   embedded?: boolean;
+  bearing?: number;
+  onBearingChange?: (bearing: number) => void;
 }
 
 export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
@@ -130,7 +132,13 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     showMapLegend,
     infoTags,
     embedded,
+    bearing,
+    onBearingChange,
   } = props;
+  const bearingRef = useRef(bearing);
+  bearingRef.current = bearing;
+  const onBearingChangeRef = useRef(onBearingChange);
+  onBearingChangeRef.current = onBearingChange;
 
   const {
     annotationsHook,
@@ -257,6 +265,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
 
     const map = createImageMap(containerRef.current, projection);
     mapRef.current = map;
+    if (bearingRef.current) map.setBearing(bearingRef.current);
+    map.on('rotateend', () => onBearingChangeRef.current?.(map.getBearing()));
     map.setZoomSnap(1);
     map.addControl(
       new maplibregl.NavigationControl({
@@ -384,6 +394,13 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     fitInitialView(map);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [embedded, mapReady, visible]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || bearing == null) return;
+    if (Math.abs(map.getBearing() - bearing) % 360 > 0.5)
+      map.setBearing(bearing);
+  }, [mapReady, bearing]);
 
   // ── Annotation data sync ──
   useEffect(() => {
