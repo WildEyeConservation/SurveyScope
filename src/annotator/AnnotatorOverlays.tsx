@@ -60,7 +60,16 @@ export function AnnotationLegendOverlay({
   return (
     <div
       className={forceVisible ? 'block' : 'block md:hidden'}
-      style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 5 }}
+      style={{
+        position: 'absolute',
+        bottom: 10,
+        right: 10,
+        zIndex: 5,
+        maxHeight: 'calc(100% - 20px)',
+        overflowY: 'auto',
+        borderRadius: 6,
+        boxShadow: '0 1px 5px rgba(0,0,0,0.4)',
+      }}
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
     >
@@ -68,8 +77,6 @@ export function AnnotationLegendOverlay({
         style={{
           background: 'white',
           color: '#333',
-          borderRadius: 6,
-          boxShadow: '0 1px 5px rgba(0,0,0,0.4)',
           padding: expanded ? 4 : '6px 10px',
           fontSize: 14,
         }}

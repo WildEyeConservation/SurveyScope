@@ -31,6 +31,7 @@ export function prefetchTask(
     location: Omit<AnnotationTaskPayload['location'], 'annotationSetId'>;
     zoom?: number | null;
     viewBoundsScale?: number;
+    viewport?: { width: number; height: number };
   },
   signal?: AbortSignal,
 ): Promise<void> {
@@ -46,7 +47,7 @@ export function prefetchTask(
         location: task.location,
         zoom: task.zoom,
         viewBoundsScale: task.viewBoundsScale,
-        viewport: currentViewport(),
+        viewport: task.viewport ?? currentViewport(),
       });
       await Promise.all(
         tiles.map(({ z, row, col }) =>

@@ -3,12 +3,17 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { BoundaryStatus } from '../shared/boundaryStatus';
-import AnnotationWorkspace from './AnnotationWorkspace';
-import { prefetchTask } from './annotator/prefetchTask';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { GlobalContext, ProjectContext } from './Context';
+import ReviewImageStage, { type StageSlot } from './ReviewImageStage';
+import { fileName, formatTime, type Point } from './reviewImageView';
 import {
   extractUserIdFromOwner,
   setAnnotationsQuery,
@@ -18,6 +23,8 @@ import { useInfoTagData } from './useInfoTags';
 
 type SortMode = 'time' | 'count';
 
+const NO_POINTS: Point[] = [];
+
 type ImageRow = {
   id: string;
   name: string;
@@ -25,40 +32,6 @@ type ImageRow = {
   total: number;
   counts: { categoryId: string; count: number }[];
 };
-
-const fileName = (path: string | null | undefined, id: string) =>
-  path?.split(/[\\/]/).pop() || id;
-
-const formatTime = (timestamp: number) =>
-  timestamp ? new Date(timestamp * 1000).toLocaleTimeString() : '';
-
-// With this scale the location box is exactly the area shown.
-const VIEW_BOUNDS_SCALE = 0.5;
-const WARM_AHEAD = 3;
-const WARM_BEHIND = 1;
-const WARM_DELAY_MS = 300;
-
-type Point = { x: number; y: number };
-
-// Frames the image's sightings, so the first tiles fetched are the ones shown.
-function viewBox(image: { width: number; height: number }, points: Point[]) {
-  if (points.length === 0)
-    return {
-      x: image.width / 2,
-      y: image.height / 2,
-      width: image.width,
-      height: image.height,
-    };
-  const minSide = Math.min(image.width, image.height) / 4;
-  const axis = (values: number[]) => {
-    const lo = Math.min(...values);
-    const hi = Math.max(...values);
-    return { mid: (lo + hi) / 2, size: Math.max(hi - lo, minSide) * 1.2 };
-  };
-  const xs = axis(points.map((p) => p.x));
-  const ys = axis(points.map((p) => p.y));
-  return { x: xs.mid, y: ys.mid, width: xs.size, height: ys.size };
-}
 
 export default function ReviewImages({
   surveyId,
@@ -164,47 +137,31 @@ export default function ReviewImages({
 
   const index = rows.findIndex((row) => row.id === selectedImageId);
   const selected = selectedImageId ? imagesById.get(selectedImageId) : null;
-  const selectedBox = useMemo(
-    () =>
-      selected?.width && selected.height
-        ? viewBox(
-            { width: selected.width, height: selected.height },
-            pointsByImage.get(selected.id) ?? [],
-          )
-        : null,
-    [selected, pointsByImage],
+  const rowIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  const rowById = useMemo(
+    () => new Map(rows.map((row) => [row.id, row])),
+    [rows],
   );
-
-  useEffect(() => {
-    if (!visible || index < 0) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      const neighbours = [
-        ...Array.from({ length: WARM_AHEAD }, (_, i) => index + 1 + i),
-        ...Array.from({ length: WARM_BEHIND }, (_, i) => index - 1 - i),
-      ];
-      for (const i of neighbours) {
-        const image = rows[i] && imagesById.get(rows[i].id);
-        if (!image?.width || !image.height) continue;
-        const size = { width: image.width, height: image.height };
-        void prefetchTask(
-          client as unknown as Parameters<typeof prefetchTask>[0],
-          {
-            location: {
-              image: { id: image.id, ...size },
-              ...viewBox(size, pointsByImage.get(image.id) ?? []),
-            },
-            viewBoundsScale: VIEW_BOUNDS_SCALE,
-          },
-          controller.signal,
-        );
-      }
-    }, WARM_DELAY_MS);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [client, visible, index, rows, imagesById, pointsByImage]);
+  const lookup = useCallback(
+    (id: string): StageSlot | null => {
+      const image = imagesById.get(id);
+      if (!image) return null;
+      return {
+        image,
+        points: pointsByImage.get(id) ?? NO_POINTS,
+        counts: (rowById.get(id)?.counts ?? []).map(({ categoryId, count }) => {
+          const category = categoryById.get(categoryId);
+          return {
+            key: categoryId,
+            label: category?.name ?? 'Unknown',
+            color: category?.color ?? '#adb5bd',
+            count,
+          };
+        }),
+      };
+    },
+    [imagesById, pointsByImage, rowById, categoryById],
+  );
 
   useEffect(() => {
     if (rows.length && (!selectedImageId || !imagesById.has(selectedImageId)))
@@ -355,87 +312,26 @@ export default function ReviewImages({
       </GridTable>
 
       <div className='relative min-w-0 grow overflow-hidden border border-white/15'>
-        {selected?.width && selected.height && selectedBox ? (
-          <AnnotationWorkspace
-            key={selected.id}
-            embedded
+        {selected ? (
+          <ReviewImageStage
+            ids={rowIds}
+            currentId={selected.id}
+            lookup={lookup}
+            annotationSetId={annotationSetId}
             visible={visible}
-            viewBoundsScale={VIEW_BOUNDS_SCALE}
-            next={index < rows.length - 1 ? () => step(1) : undefined}
-            prev={index > 0 ? () => step(-1) : undefined}
-            hideZoomSetting
-            hideNavButtons
-            allowOutside
-            location={{
-              image: {
-                id: selected.id,
-                width: selected.width,
-                height: selected.height,
-                boundaryStatus:
-                  selected.boundaryStatus as BoundaryStatus | null,
-              },
-              annotationSetId,
-              ...selectedBox,
-            }}
+            buffer={visible}
+            onStep={step}
           />
         ) : (
-          !loading && (
-            <div className='flex h-full items-center justify-center text-muted-foreground'>
-              No image selected.
-            </div>
-          )
-        )}
-
-        {selected && (
-          <div className='absolute top-2.5 left-1/2 z-10 flex max-w-[60%] -translate-x-1/2 items-center gap-2 bg-white px-1.5 py-1 text-sm text-[#212529] shadow-lg'>
-            <button
-              type='button'
-              aria-label='Previous image'
-              disabled={index <= 0}
-              onClick={() => step(-1)}
-              className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
-            >
-              <ChevronLeft className='size-4' />
-            </button>
-            <span className='min-w-0 truncate'>
-              <strong>{fileName(selected.originalPath, selected.id)}</strong>
-              <span className='text-[#6c757d]'>
-                {selected.timestamp
-                  ? ` · ${formatTime(selected.timestamp)}`
-                  : ''}
-                {index >= 0 &&
-                  ` · ${index + 1} of ${rows.length.toLocaleString()}`}
-              </span>
-            </span>
-            <button
-              type='button'
-              aria-label='Next image'
-              disabled={index < 0 || index >= rows.length - 1}
-              onClick={() => step(1)}
-              className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
-            >
-              <ChevronRight className='size-4' />
-            </button>
-          </div>
-        )}
-
-        {index >= 0 && (
-          <div className='absolute top-2.5 right-2.5 z-10 flex max-w-56 flex-col gap-1 bg-white px-3 py-2 text-sm text-[#212529] shadow-lg'>
-            <span className='text-[10px] font-semibold tracking-wider text-[#6c757d] uppercase'>
-              This image
-            </span>
-            {rows[index].counts.map(({ categoryId, count }) => {
-              const category = categoryById.get(categoryId);
-              return (
-                <span key={categoryId} className='flex items-baseline gap-2'>
-                  <span
-                    className='size-2.5 flex-none'
-                    style={{ backgroundColor: category?.color ?? '#adb5bd' }}
-                  />
-                  {count} {category?.name ?? 'Unknown'}
-                </span>
-              );
-            })}
+          <div className='flex h-full items-center justify-center gap-2 text-sm text-muted-foreground'>
+            {loading ? (
+              <>
+                <Spinner size='sm' />
+                Loading images...
+              </>
+            ) : (
+              'No image selected.'
+            )}
           </div>
         )}
       </div>

@@ -31,8 +31,7 @@ import {
   names,
   uniqueNamesGenerator,
 } from 'unique-names-generator';
-import AnnotationViewerModal from './AnnotationViewerModal';
-import { GlobalContext } from './Context';
+import { GlobalContext, ProjectContext } from './Context';
 import {
   DEFAULT_HEAT_RADIUS_KM,
   HEAT_COLOR_RAMP,
@@ -42,6 +41,9 @@ import {
 } from './densityHeat';
 import ImageViewerModal from './ImageViewerModal';
 import { formatInfoTagsForDisplay } from './infoTags';
+import ReviewImageModal from './ReviewImageModal';
+import ReviewImageStage, { type StageSlot } from './ReviewImageStage';
+import { type Point, warmImage } from './reviewImageView';
 import {
   extractUserIdFromOwner,
   setAnnotationsQuery,
@@ -96,13 +98,15 @@ interface DensityMapProps {
   ) => void;
   highlightedStratumId?: string | null;
   onStratumHover?: (stratumId: string | null) => void;
-  /** Opens images elsewhere instead of in the viewer pop-up. */
-  onOpenImage?: (imageId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
+const NO_POINTS: Point[] = [];
+// About human visual reaction time.
+const HOVER_INTENT_MS = 250;
 
 const SRC_ANNOTATIONS = 'annotations';
 // Small weighted cells rather than clusters, so the heatmap shows density.
@@ -205,9 +209,9 @@ export default function DensityMap({
   onTransectsLoaded,
   highlightedStratumId = null,
   onStratumHover,
-  onOpenImage,
 }: DensityMapProps) {
   const { client } = useContext(GlobalContext)!;
+  const projectCategories = useContext(ProjectContext)?.categoriesHook.data;
 
   // Normalise the legacy single-source props into the `sources` shape.
   const effectiveSources = useMemo<DensitySource[]>(() => {
@@ -247,6 +251,7 @@ export default function DensityMap({
   const [viewerImageId, setViewerImageId] = useState<string | null>(null);
   const [viewerSetId, setViewerSetId] = useState<string>(primarySetId);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -506,6 +511,89 @@ export default function DensityMap({
     infoTagSig,
   ]);
 
+  const imageMetaById = useMemo(
+    () =>
+      new Map(
+        surveyQueries
+          .flatMap((q) => q.data?.images ?? [])
+          .map((i) => [i.id, i]),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [surveyDataSig],
+  );
+  const pointsBySetImage = useMemo(() => {
+    const out = new Map<string, Point[]>();
+    for (const q of annotationQueries) {
+      if (!q.data) continue;
+      for (const a of q.data.annotations) {
+        if (!a.imageId || a.x == null || a.y == null) continue;
+        const key = `${a.setId ?? q.data.annotationSetId}:${a.imageId}`;
+        const points = out.get(key) ?? [];
+        points.push({ x: a.x, y: a.y });
+        out.set(key, points);
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotationDataSig]);
+
+  const sightingCounts = useMemo(() => {
+    const out = new Map<string, Map<string, Map<string, number>>>();
+    for (const f of annotationsFC.features) {
+      const { setId, imageId, categoryName } = f.properties as {
+        setId: string;
+        imageId: string;
+        categoryName: string;
+      };
+      const images = out.get(setId) ?? new Map<string, Map<string, number>>();
+      const counts = images.get(imageId) ?? new Map<string, number>();
+      counts.set(categoryName, (counts.get(categoryName) ?? 0) + 1);
+      images.set(imageId, counts);
+      out.set(setId, images);
+    }
+    return out;
+  }, [annotationsFC]);
+
+  const reviewSetId = viewerSetId || primarySetId;
+  const reviewIds = useMemo(() => {
+    const ids = new Set(sightingCounts.get(reviewSetId)?.keys());
+    if (viewerImageId) ids.add(viewerImageId);
+    return [...ids].sort(
+      (a, b) =>
+        (imageById.get(a)?.timestamp ?? 0) - (imageById.get(b)?.timestamp ?? 0),
+    );
+  }, [sightingCounts, reviewSetId, viewerImageId, imageById]);
+  const reviewLookup = useCallback(
+    (id: string): StageSlot | null => {
+      const image = imageMetaById.get(id);
+      if (!image) return null;
+      const colorOf = (name: string) =>
+        projectCategories?.find(
+          (c) => c.annotationSetId === reviewSetId && c.name === name,
+        )?.color ?? '#adb5bd';
+      const counts = sightingCounts.get(reviewSetId)?.get(id);
+      return {
+        image,
+        points: pointsBySetImage.get(`${reviewSetId}:${id}`) ?? NO_POINTS,
+        counts: [...(counts ?? [])]
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, count]) => ({
+            key: name,
+            label: name,
+            color: colorOf(name),
+            count,
+          })),
+      };
+    },
+    [
+      imageMetaById,
+      pointsBySetImage,
+      sightingCounts,
+      reviewSetId,
+      projectCategories,
+    ],
+  );
+
   // Image points GeoJSON, coloured by transect (per survey) and transect-filtered.
   const imagesFC = useMemo<FeatureCollection>(() => {
     const transectIdSet = new Set(transectIds);
@@ -595,24 +683,40 @@ export default function DensityMap({
   // -----------------------------------------------------------------------
   const openViewer = (imageId: string, setId?: string) => {
     if (document.fullscreenElement) document.exitFullscreen?.();
-    // The Images tab only shows the primary set; overlays keep the pop-up.
-    const primarySurveyId = effectiveSources.find(
-      (source) => source.annotationSetId === primarySetId,
-    )?.surveyId;
-    if (
-      onOpenImage &&
-      (!setId || setId === primarySetId) &&
-      imageById.get(imageId)?.surveyId === primarySurveyId
-    ) {
-      onOpenImage(imageId);
-      return;
-    }
     setViewerImageId(imageId);
     setViewerSetId(setId || primarySetId);
     setViewerOpen(true);
   };
   const openViewerRef = useRef(openViewer);
   openViewerRef.current = openViewer;
+  const closeViewer = useCallback(() => setViewerOpen(false), []);
+
+  const stageViewer = (imageId: string, setId: string) => {
+    if (!editable || viewerOpen) return;
+    setViewerImageId(imageId);
+    setViewerSetId(setId || primarySetId);
+  };
+  const stageViewerRef = useRef(stageViewer);
+  stageViewerRef.current = stageViewer;
+
+  const warmViewer = (imageId: string, setId: string) => {
+    const image = imageMetaById.get(imageId);
+    if (!editable || !image) return undefined;
+    const stage = stageRef.current;
+    const controller = new AbortController();
+    warmImage(
+      client,
+      image,
+      pointsBySetImage.get(`${setId || primarySetId}:${imageId}`) ?? [],
+      controller.signal,
+      stage?.clientWidth
+        ? { width: stage.clientWidth, height: stage.clientHeight }
+        : undefined,
+    );
+    return () => controller.abort();
+  };
+  const warmViewerRef = useRef(warmViewer);
+  warmViewerRef.current = warmViewer;
 
   const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(
     null,
@@ -799,9 +903,7 @@ export default function DensityMap({
 
       // ---- Interactions -------------------------------------------------
       // Click a cluster -> zoom to its expansion.
-      map.on('click', LYR_CLUSTERS, (e) => {
-        const feature = e.features?.[0];
-        if (!feature) return;
+      const clickCluster = (feature: maplibregl.MapGeoJSONFeature) => {
         const clusterId = feature.properties?.cluster_id;
         const src = map.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource;
         src.getClusterExpansionZoom(clusterId).then((zoom) => {
@@ -813,7 +915,7 @@ export default function DensityMap({
             zoom,
           });
         });
-      });
+      };
 
       const pointPopup = (
         coordinates: [number, number],
@@ -839,15 +941,16 @@ export default function DensityMap({
             openViewerRef.current(imageId, setId),
           );
         }
-        new maplibregl.Popup({ closeButton: true })
+        const stopWarming = warmViewerRef.current(imageId, setId);
+        stageViewerRef.current(imageId, setId);
+        const popup = new maplibregl.Popup({ closeButton: true })
           .setLngLat(coordinates)
           .setDOMContent(node)
           .addTo(map);
+        popup.on('close', () => stopWarming?.());
       };
 
-      map.on('click', LYR_POINTS, (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
+      const clickPoint = (f: maplibregl.MapGeoJSONFeature) => {
         const p = f.properties;
         const name = uniqueNamesGenerator({
           dictionaries: [adjectives, names],
@@ -865,11 +968,9 @@ export default function DensityMap({
           p.imageId,
           p.setId,
         );
-      });
+      };
 
-      map.on('click', LYR_IMAGES, (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
+      const clickImage = (f: maplibregl.MapGeoJSONFeature) => {
         const p = f.properties;
         const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
         pointPopup(
@@ -879,19 +980,44 @@ export default function DensityMap({
           p.imageId,
           '',
         );
-      });
+      };
 
-      map.on('click', LYR_STRATA_LINE, (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
+      const clickStratum = (
+        f: maplibregl.MapGeoJSONFeature,
+        lngLat: maplibregl.LngLat,
+      ) => {
         new maplibregl.Popup()
-          .setLngLat(e.lngLat)
+          .setLngLat(lngLat)
           .setHTML(
             `<div style="color:#000"><strong>Stratum:</strong> ${
               f.properties?.name ?? ''
             }</div>`,
           )
           .addTo(map);
+      };
+
+      // Overlapping layers share one click: only the topmost kind responds.
+      const topFeature = (point: maplibregl.Point, layers: string[]) => {
+        const present = layers.filter((id) => map.getLayer(id));
+        const hits = map.queryRenderedFeatures(point, { layers: present });
+        for (const id of present) {
+          const hit = hits.find((f) => f.layer.id === id);
+          if (hit) return hit;
+        }
+        return undefined;
+      };
+      map.on('click', (e) => {
+        const f = topFeature(e.point, [
+          LYR_CLUSTERS,
+          LYR_POINTS,
+          LYR_IMAGES,
+          LYR_STRATA_LINE,
+        ]);
+        if (!f) return;
+        if (f.layer.id === LYR_CLUSTERS) clickCluster(f);
+        else if (f.layer.id === LYR_POINTS) clickPoint(f);
+        else if (f.layer.id === LYR_IMAGES) clickImage(f);
+        else clickStratum(f, e.lngLat);
       });
 
       const hoverStratum = (id: string | null) => {
@@ -902,6 +1028,33 @@ export default function DensityMap({
         hoverStratum(e.features?.[0]?.properties?.id ?? null);
       });
       map.on('mouseleave', LYR_STRATA_FILL, () => hoverStratum(null));
+
+      // Prefetch only once the pointer rests on a point, not as it sweeps past.
+      let hoverKey = '';
+      let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+      let stopHoverWarm: (() => void) | undefined;
+      const endHover = () => {
+        clearTimeout(hoverTimer);
+        stopHoverWarm?.();
+        stopHoverWarm = undefined;
+        hoverKey = '';
+      };
+      map.on('mousemove', (e) => {
+        const p = topFeature(e.point, [LYR_POINTS, LYR_IMAGES])?.properties;
+        if (!p?.imageId) {
+          if (hoverKey) endHover();
+          return;
+        }
+        const setId: string = p.setId ?? '';
+        const key = `${setId}:${p.imageId}`;
+        if (key === hoverKey) return;
+        endHover();
+        hoverKey = key;
+        hoverTimer = setTimeout(() => {
+          stopHoverWarm = warmViewerRef.current(p.imageId, setId);
+        }, HOVER_INTENT_MS);
+      });
+      map.on('mouseout', endHover);
 
       for (const lyr of [
         LYR_CLUSTERS,
@@ -1222,18 +1375,31 @@ export default function DensityMap({
       )}
 
       {editable ? (
-        <AnnotationViewerModal
+        <ReviewImageModal
           show={viewerOpen}
-          onClose={() => setViewerOpen(false)}
-          imageId={viewerImageId}
-          imageIds={orderedImageIds}
-          annotationSetId={viewerSetId || primarySetId}
-          onNavigate={(id) => openViewer(id, viewerSetId)}
-        />
+          onClose={closeViewer}
+          stageRef={stageRef}
+        >
+          {viewerImageId && (
+            <ReviewImageStage
+              ids={reviewIds}
+              currentId={viewerImageId}
+              lookup={reviewLookup}
+              annotationSetId={reviewSetId}
+              visible={viewerOpen}
+              buffer={viewerOpen}
+              onStep={(delta) => {
+                const next =
+                  reviewIds[reviewIds.indexOf(viewerImageId) + delta];
+                if (next) openViewer(next, reviewSetId);
+              }}
+            />
+          )}
+        </ReviewImageModal>
       ) : (
         <ImageViewerModal
           show={viewerOpen}
-          onClose={() => setViewerOpen(false)}
+          onClose={closeViewer}
           imageId={viewerImageId}
           imageIds={orderedImageIds}
           annotationSetId={viewerSetId || primarySetId}
