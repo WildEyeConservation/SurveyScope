@@ -42,6 +42,7 @@ import { Kbd, MapButton } from './survey/mapControls';
 import { LIGHT_THEME, MAP_CONTROLS, MAP_DIVIDER } from './survey/mapTheme';
 import { gpsRowKey } from './survey/new-survey/gpsIndex';
 import { ringToPolygon, type SurveyArea } from './survey/new-survey/surveyArea';
+import { spreadOverlapping } from './survey/spreadOverlapping';
 
 // Define the GPS data structure
 export interface GPSData {
@@ -292,6 +293,19 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
   deletedStackRef.current = deletedPointsStack;
   const allPointsByKeyRef = useRef(allPointsByKey);
   allPointsByKeyRef.current = allPointsByKey;
+  const positions = useMemo(
+    () =>
+      spreadOverlapping(
+        Array.from(allPointsByKey, ([id, p]) => ({
+          id,
+          latitude: p.lat,
+          longitude: p.lng,
+        })),
+      ),
+    [allPointsByKey],
+  );
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
 
   const handleRemovePoint = useCallback(
     (index: number) => {
@@ -461,7 +475,10 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
       closeButton: true,
       maxWidth: '280px',
     })
-      .setLngLat([props.lng, props.lat])
+      .setLngLat([
+        positionsRef.current[props.key]?.longitude ?? props.lng,
+        positionsRef.current[props.key]?.latitude ?? props.lat,
+      ])
       .setDOMContent(container)
       .addTo(map);
   }, []);
@@ -492,10 +509,16 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
               ? 'outside'
               : 'removed',
         },
-        geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+        geometry: {
+          type: 'Point',
+          coordinates: [
+            positions[key]?.longitude ?? p.lng,
+            positions[key]?.latitude ?? p.lat,
+          ],
+        },
       })),
     }),
-    [allPointsByKey, visibleKeys, outsideAreaKeys],
+    [allPointsByKey, positions, visibleKeys, outsideAreaKeys],
   );
 
   const areaFC = useMemo<FeatureCollection>(
@@ -765,7 +788,11 @@ const GPSSubset: React.FC<GPSSubsetProps> = ({
     const newVisiblePoints: GPSData[] = [];
     const removedPoints: GPSData[] = [];
     for (const point of currentPointsRef.current) {
-      const inside = booleanPointInPolygon([point.lng, point.lat], polygon);
+      const pos = positionsRef.current[createPointKey(point)];
+      const inside = booleanPointInPolygon(
+        [pos?.longitude ?? point.lng, pos?.latitude ?? point.lat],
+        polygon,
+      );
       if (inside === keep) newVisiblePoints.push(point);
       else removedPoints.push(point);
     }

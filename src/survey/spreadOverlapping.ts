@@ -16,6 +16,7 @@ export function spreadOverlapping(
       adjusted[img.id] = { latitude: img.latitude, longitude: img.longitude };
       continue;
     }
+    group.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     group.forEach((img, index) => {
       const latRad = (img.latitude * Math.PI) / 180;
       const radiusDeg = 0.00005;

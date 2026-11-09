@@ -58,6 +58,7 @@ import {
 } from './sightingQueries';
 import { Kbd, MapButton } from './survey/mapControls';
 import { LIGHT_THEME, MAP_CONTROLS } from './survey/mapTheme';
+import { spreadOverlapping } from './survey/spreadOverlapping';
 import { BASE_STYLE } from './survey/surveyMapStyle';
 import { strataColors } from './survey/transectStrata';
 import { useInfoTagData } from './useInfoTags';
@@ -350,32 +351,17 @@ export default function DensityMap({
 
   // Match the transect map's ~5m circle for images sharing coordinates.
   // Build before filtering so an image keeps its position as filters change.
-  const adjustedPositions = useMemo(() => {
-    const groups = new Map<string, string[]>();
-    const positions = new Map<string, { lat: number; lng: number }>();
-    for (const [id, img] of imageById) {
-      const key = `${img.lat},${img.lng}`;
-      const group = groups.get(key) ?? [];
-      group.push(id);
-      groups.set(key, group);
-    }
-    for (const group of groups.values()) {
-      group.sort();
-      group.forEach((id, index) => {
-        const img = imageById.get(id)!;
-        const angle = (2 * Math.PI * index) / group.length;
-        const radius = group.length > 1 ? 0.00005 : 0;
-        positions.set(id, {
-          lat: img.lat + radius * Math.sin(angle),
-          lng:
-            img.lng +
-            (radius * Math.cos(angle)) /
-              Math.max(Math.cos((img.lat * Math.PI) / 180), 1e-6),
-        });
-      });
-    }
-    return positions;
-  }, [imageById]);
+  const adjustedPositions = useMemo(
+    () =>
+      spreadOverlapping(
+        Array.from(imageById, ([id, img]) => ({
+          id,
+          latitude: img.lat,
+          longitude: img.lng,
+        })),
+      ),
+    [imageById],
+  );
 
   // Ordered list of image ids (by capture time) for in-modal navigation.
   const orderedImageIds = useMemo(
@@ -488,7 +474,7 @@ export default function DensityMap({
 
         // Small deterministic jitter (~3m) so co-located sightings separate.
         const h = hashString(a.id);
-        const position = adjustedPositions.get(a.imageId)!;
+        const position = adjustedPositions[a.imageId];
         const radius = 0.00003;
         const angle = ((h % 360) * Math.PI) / 180;
         const dLat = radius * Math.sin(angle);
@@ -500,7 +486,7 @@ export default function DensityMap({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [position.lng + dLng, position.lat + dLat],
+            coordinates: [position.longitude + dLng, position.latitude + dLat],
           },
           properties: {
             id: a.id,
@@ -624,12 +610,12 @@ export default function DensityMap({
         const t = img.transectId;
         if (transectIdSet.size && (!t || !transectIdSet.has(t))) continue;
         const info = t ? transectInfo.lookup.get(t) : undefined;
-        const position = adjustedPositions.get(img.id)!;
+        const position = adjustedPositions[img.id];
         features.push({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [position.lng, position.lat],
+            coordinates: [position.longitude, position.latitude],
           },
           properties: {
             imageId: img.id,
