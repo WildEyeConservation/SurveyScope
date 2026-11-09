@@ -53,6 +53,8 @@ interface AnnotationSessionProps {
   showMapLegend?: boolean;
   infoTags?: Map<string, string[]>;
   embedded?: boolean;
+  bearing?: number;
+  onBearingChange?: (bearing: number) => void;
 }
 
 /*
@@ -84,6 +86,8 @@ function AnnotationSession(props: AnnotationSessionProps) {
     viewBoundsScale,
     hideNavButtons,
     embedded,
+    bearing,
+    onBearingChange,
   } = props;
   const labelNames = useMemo(() => categories.map((c) => c.name), [categories]);
   const { onNext, waiting, waitingMessage } = useTaskCompletion({
@@ -122,6 +126,8 @@ function AnnotationSession(props: AnnotationSessionProps) {
         showMapLegend={showMapLegend}
         infoTags={infoTags}
         embedded={embedded}
+        bearing={bearing}
+        onBearingChange={onBearingChange}
       />
       {waiting && <WaitingOverlay message={waitingMessage} />}
     </div>
@@ -147,6 +153,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     taskTag,
     viewBoundsScale,
     embedded = false,
+    bearing,
+    onBearingChange,
   } = props;
 
   const { annotationSetId } = location;
@@ -417,6 +425,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       showMapLegend={embedded || legendCollapsed}
       infoTags={infoTagsByAnnotation}
       embedded={embedded}
+      bearing={bearing}
+      onBearingChange={onBearingChange}
     />
   );
 

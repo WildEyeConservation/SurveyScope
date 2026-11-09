@@ -50,12 +50,15 @@ export interface AnnotationWorkspaceProps {
   taskTag?: string;
   /** Image only: no header, side legend or frame, for viewers embedded in a page. */
   embedded?: boolean;
+  /** Map bearing in degrees; rotating the map reports the new one. */
+  bearing?: number;
+  onBearingChange?: (bearing: number) => void;
 }
 
 /** A fully hydrated task returned by the annotation queue source. */
 export type AnnotationTaskPayload = Omit<
   AnnotationWorkspaceProps,
-  'visible' | 'next' | 'prev'
+  'visible' | 'next' | 'prev' | 'bearing' | 'onBearingChange'
 > & {
   ack: TaskAcknowledgement;
 };

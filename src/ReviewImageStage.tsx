@@ -27,6 +27,8 @@ export default function ReviewImageStage({
   visible,
   buffer,
   onStep,
+  bearingFor,
+  onBearingChange,
 }: {
   ids: string[];
   currentId: string;
@@ -35,6 +37,8 @@ export default function ReviewImageStage({
   visible: boolean;
   buffer: boolean;
   onStep: (delta: number) => void;
+  bearingFor?: (id: string) => number;
+  onBearingChange?: (id: string, bearing: number) => void;
 }) {
   const { client } = useContext(GlobalContext)!;
   const index = ids.indexOf(currentId);
@@ -91,6 +95,10 @@ export default function ReviewImageStage({
               counts={slot.counts}
               onStep={onStep}
               visible={visible && isCurrent}
+              bearing={bearingFor?.(id)}
+              onBearingChange={
+                onBearingChange && ((bearing) => onBearingChange(id, bearing))
+              }
             />
           </div>
         );
