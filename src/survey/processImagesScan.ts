@@ -1,5 +1,5 @@
-import { loadProjectImages } from '../projectImages';
 import { loadRows } from '../rowChunks';
+import type { LoadSurveyImages } from './surveyImages';
 
 export type ModelValue = 'scoutbotv3' | 'elephant' | 'mad' | 'owl-d';
 
@@ -40,16 +40,14 @@ export async function findUnprocessedByModel(
   client: unknown,
   projectId: string,
   models: readonly ModelValue[],
+  loadImages: LoadSurveyImages,
   {
     signal,
     onProgress,
   }: { signal?: AbortSignal; onProgress?: (count: number) => void } = {},
 ): Promise<{ total: number; unprocessed: Record<string, ScanImage[]> }> {
   const [images, ...processed] = await Promise.all([
-    loadProjectImages(client, projectId, ['id', 'originalPath'], {
-      signal,
-      onProgress,
-    }),
+    loadImages({ signal, onProgress }),
     ...models.map((model) =>
       loadRows(
         client,

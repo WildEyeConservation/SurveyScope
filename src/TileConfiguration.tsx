@@ -5,16 +5,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { ChevronRightIcon } from 'lucide-react';
 import Papa from 'papaparse';
-import {
-  ChangeEvent,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import { GlobalContext } from './Context';
-import { loadProjectImages } from './projectImages';
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSurveyImages } from './survey/surveyImages';
 import TileImagePreviewModal from './TileImagePreviewModal';
 import type { TiledLaunchRequest } from './types/LaunchTask';
 
@@ -177,7 +169,7 @@ export default function TileConfiguration({
   onExpectedTilesChange,
   disabled = false,
 }: TileConfigurationProps) {
-  const { client } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
   const [bySize, setBySize] = useState(initial?.specifyTileDimensions ?? false);
   const [inPercent, setInPercent] = useState(
     initial?.specifyOverlapInPercentage ?? false,
@@ -330,22 +322,12 @@ export default function TileConfiguration({
     async function getAllImages() {
       setLoadingImages(true);
       setImagesLoaded(0);
-      const all = await loadProjectImages(
-        client,
-        projectId,
-        [
-          'width',
-          'height',
-          'timestamp',
-          'originalPath',
-          'transectId',
-          'latitude',
-          'longitude',
-        ],
-        { signal, onProgress: (count) => setImagesLoaded(count) },
-      );
+      const all = await surveyImages.load({
+        signal,
+        onProgress: setImagesLoaded,
+      });
       if (signal.aborted) return;
-      const imagesArr: ImageData[] = (all as any[]).map((img: any) => ({
+      const imagesArr: ImageData[] = all.map((img) => ({
         timestamp: (img?.timestamp ?? null) as Nullable<number>,
         width: img.width as number,
         height: img.height as number,
@@ -378,7 +360,7 @@ export default function TileConfiguration({
       });
     }
     return () => controller.abort();
-  }, [projectId, client]);
+  }, [projectId, surveyImages]);
 
   useEffect(() => {
     setLaunchDisabled(loadingImages || !settingsValid);

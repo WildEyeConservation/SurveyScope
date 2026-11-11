@@ -10,6 +10,7 @@ import Logs from './Logs';
 import ManageTiles from './ManageTiles';
 import ManageUsers from './ManageUsers';
 import ProcessImages from './ProcessImages';
+import SurveyImagesProvider from './SurveyImagesProvider';
 
 export default function EditSurveyModal({
   show,
@@ -28,55 +29,57 @@ export default function EditSurveyModal({
         <Title>Edit Survey: {project.name}</Title>
       </Header>
       <Body>
-        <Tabs defaultTab={openTab || 0}>
-          <Tab label='Information'>
-            <EditInformation key={project.id} projectId={project.id} />
-          </Tab>
-          <Tab label='Edit Cameras'>
-            <EditCameras
-              key={project.id}
-              projectId={project.id}
-              organizationId={project.organizationId}
-            />
-          </Tab>
-          <Tab label='Define Strata'>
-            <DefineStrata
-              key={project.id}
-              projectId={project.id}
-              organizationId={project.organizationId}
-            />
-          </Tab>
-          <Tab label='Define Transects'>
-            <DefineTransects
-              key={project.id}
-              projectId={project.id}
-              organizationId={project.organizationId}
-            />
-          </Tab>
-          <Tab label='Manage Tiles'>
-            <ManageTiles key={project.id} project={project} />
-          </Tab>
-          <Tab label='Process Images'>
-            <ProcessImages
-              key={project.id}
-              projectId={project.id}
-              organizationId={project.organizationId}
-            />
-          </Tab>
-          <Tab label='Manage Users'>
-            <ManageUsers
-              key={project.id}
-              projectId={project.id}
-              organizationId={project.organizationId}
-            />
-          </Tab>
-          <Tab label='Delete Images'>
-            <DeleteImages key={project.id} projectId={project.id} />
-          </Tab>
-          <Tab label='Logs'>
-            <Logs key={project.id} projectId={project.id} />
-          </Tab>
-        </Tabs>
+        <SurveyImagesProvider key={project.id} projectId={project.id}>
+          <Tabs defaultTab={openTab || 0}>
+            <Tab label='Information'>
+              <EditInformation key={project.id} projectId={project.id} />
+            </Tab>
+            <Tab label='Edit Cameras'>
+              <EditCameras
+                key={project.id}
+                projectId={project.id}
+                organizationId={project.organizationId}
+              />
+            </Tab>
+            <Tab label='Define Strata'>
+              <DefineStrata
+                key={project.id}
+                projectId={project.id}
+                organizationId={project.organizationId}
+              />
+            </Tab>
+            <Tab label='Define Transects'>
+              <DefineTransects
+                key={project.id}
+                projectId={project.id}
+                organizationId={project.organizationId}
+              />
+            </Tab>
+            <Tab label='Manage Tiles'>
+              <ManageTiles key={project.id} project={project} />
+            </Tab>
+            <Tab label='Process Images'>
+              <ProcessImages
+                key={project.id}
+                projectId={project.id}
+                organizationId={project.organizationId}
+              />
+            </Tab>
+            <Tab label='Manage Users'>
+              <ManageUsers
+                key={project.id}
+                projectId={project.id}
+                organizationId={project.organizationId}
+              />
+            </Tab>
+            <Tab label='Delete Images'>
+              <DeleteImages key={project.id} projectId={project.id} />
+            </Tab>
+            <Tab label='Logs'>
+              <Logs key={project.id} projectId={project.id} />
+            </Tab>
+          </Tabs>
+        </SurveyImagesProvider>
       </Body>
     </Modal>
   );

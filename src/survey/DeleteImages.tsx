@@ -38,12 +38,13 @@ import { BASE_STYLE, EMPTY_FC, type FeatureCollection } from './surveyMapStyle';
 
 import './surveyMap.css';
 
-import { loadProjectImages } from '../projectImages';
 import {
   boundaryRecomputePending,
   recomputeBoundaryStatus,
 } from '../utils/shapefileUtils';
+import { errToString, makeRetrying, runOp, sleep } from './retryOps';
 import { spreadOverlapping } from './spreadOverlapping';
+import { useSurveyImages } from './surveyImages';
 import { runSurveySave } from './surveySaves';
 import {
   clearJollyResults,
@@ -114,71 +115,6 @@ const MARK_CONCURRENCY = 10;
 const RECOMPUTE_POLL_MS = 3000;
 const FETCH_CONCURRENCY = 6;
 
-/** Abortable sleep used between retry attempts. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-/** Flatten an error (thrown error or a GraphQL error object) to a string. */
-function errToString(err: any): string {
-  if (!err) return '';
-  if (typeof err === 'string') return err;
-  const parts = [err.errorType, err.name, err.code, err.message].filter(
-    Boolean,
-  );
-  if (Array.isArray(err.errors)) {
-    for (const e of err.errors) {
-      parts.push(e?.errorType, e?.message);
-    }
-  }
-  return parts.filter(Boolean).join(' ') || String(err);
-}
-
-const TRANSIENT_PATTERNS = [
-  'throttl',
-  'toomanyrequests',
-  'too many requests',
-  'rate exceeded',
-  'serviceunavailable',
-  'service unavailable',
-  'internalfailure',
-  'internal failure',
-  'internalservererror',
-  'networkerror',
-  'network error',
-  'failed to fetch',
-  'load failed',
-  'timeout',
-  'timed out',
-  'econnreset',
-  '429',
-  '502',
-  '503',
-  '504',
-];
-
-/** True for errors worth retrying (throttling / transient network / 5xx). */
-function isTransientError(err: any): boolean {
-  const s = errToString(err).toLowerCase();
-  if (!s) return false;
-  if (s.includes('abort')) return false; // a cancellation, never retry
-  return TRANSIENT_PATTERNS.some((p) => s.includes(p));
-}
-
 const GONE_PATTERNS = [
   'conditionalcheckfailed',
   'not found',
@@ -191,79 +127,6 @@ const GONE_PATTERNS = [
 function isAlreadyGone(err: any): boolean {
   const s = errToString(err).toLowerCase();
   return GONE_PATTERNS.some((p) => s.includes(p));
-}
-
-/** Exponential backoff (capped) with full jitter. */
-function backoffDelay(attempt: number, baseDelay: number): number {
-  const capped = Math.min(baseDelay * Math.pow(2, attempt - 1), 8000);
-  return Math.round(capped / 2 + Math.random() * (capped / 2));
-}
-
-interface RunOpOpts {
-  retries?: number;
-  baseDelay?: number;
-  signal?: AbortSignal;
-}
-
-/**
- * Run an Amplify data operation with retries. The data client resolves with
- * `{ data, errors }` rather than throwing on GraphQL errors, so we inspect
- * BOTH the thrown path and the returned `errors` array. Transient failures are
- * retried with backoff; a non-transient `errors` array is surfaced as a throw
- * so callers can record a real failure (the previous code silently treated
- * GraphQL errors as success).
- */
-async function runOp<T>(
-  fn: () => Promise<T>,
-  opts: RunOpOpts = {},
-): Promise<T> {
-  const { retries = 5, baseDelay = 300, signal } = opts;
-  let attempt = 0;
-  for (;;) {
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    let res: T;
-    try {
-      res = await fn();
-    } catch (err) {
-      if (!signal?.aborted && attempt < retries && isTransientError(err)) {
-        attempt += 1;
-        await sleep(backoffDelay(attempt, baseDelay), signal);
-        continue;
-      }
-      throw err;
-    }
-    const errors = (res as any)?.errors as any[] | null | undefined;
-    if (errors && errors.length) {
-      if (
-        !signal?.aborted &&
-        attempt < retries &&
-        errors.some(isTransientError)
-      ) {
-        attempt += 1;
-        await sleep(backoffDelay(attempt, baseDelay), signal);
-        continue;
-      }
-      const e: any = new Error(
-        errors.map((x) => x?.message || x?.errorType || String(x)).join('; '),
-      );
-      e.graphQLErrors = errors;
-      throw e;
-    }
-    return res;
-  }
-}
-
-/**
- * Wrap a paginated query function so each page request retries via runOp.
- * Returns `any` so it slots into `fetchAllPaginatedResults`' overloaded query
- * parameter without fighting its generic inference (the call sites cast the
- * resulting rows, as the rest of this file does).
- */
-function makeRetrying(queryFn: any, signal?: AbortSignal): any {
-  return (...args: any[]) =>
-    runOp(() => (signal ? queryFn(...args, { signal }) : queryFn(...args)), {
-      signal,
-    });
 }
 
 /**
@@ -303,6 +166,7 @@ async function runPool<T>(
 
 export default function DeleteImages({ projectId }: { projectId: string }) {
   const { client, showModal } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
   const { cognitoGroups } = useContext(UserContext)!;
   const isSysadmin = cognitoGroups.includes('sysadmin');
   const [images, setImages] = useState<ImageData[]>([]);
@@ -356,111 +220,73 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   const drawFinishedAtRef = useRef(0);
 
   // Fetch images with GPS coordinates
-  const fetchImages = useCallback(async (): Promise<ImageData[]> => {
-    const { signal } = loadAbortRef.current;
-    setLoading(true);
-    setError(null);
-    setLoadingStatus('Loading images...');
+  const fetchImages = useCallback(
+    async (refresh = false): Promise<ImageData[]> => {
+      const { signal } = loadAbortRef.current;
+      if (refresh) surveyImages.refresh();
+      setLoading(true);
+      setError(null);
+      setLoadingStatus('Loading images...');
 
-    try {
-      const onProgress = (count: number) => {
-        if (!signal.aborted) {
-          setLoadingStatus(
-            `Loading images · ${count.toLocaleString()} loaded...`,
-          );
-        }
-      };
-      const allImages = (await loadProjectImages(
-        client,
-        projectId,
-        [
-          'latitude',
-          'longitude',
-          'originalPath',
-          'timestamp',
-          'cameraId',
-          'transectId',
-          'boundaryStatus',
-        ],
-        {
-          signal,
-          onProgress,
-          fallback: () =>
-            fetchAllPaginatedResults(
-              makeRetrying(client.models.Image.imagesByProjectId, signal),
-              {
-                projectId,
-                selectionSet: [
-                  'id',
-                  'latitude',
-                  'longitude',
-                  'originalPath',
-                  'timestamp',
-                  'cameraId',
-                  'transectId',
-                  'boundaryStatus',
-                ],
-                limit: 10000,
-              },
-              onProgress,
-            ),
-        },
-      )) as Array<{
-        id: string;
-        latitude?: number | null;
-        longitude?: number | null;
-        originalPath?: string | null;
-        transectId?: string | null;
-        boundaryStatus?: 'inside' | 'outside' | 'excluded' | null;
-      }>;
+      try {
+        const onProgress = (count: number) => {
+          if (!signal.aborted) {
+            setLoadingStatus(
+              `Loading images · ${count.toLocaleString()} loaded...`,
+            );
+          }
+        };
+        const allImages = await surveyImages.load({ signal, onProgress });
 
-      if (signal.aborted) return [];
+        if (signal.aborted) return [];
 
-      const colours = savedTransectColours(onEffortImages(allImages).images);
+        const colours = savedTransectColours(onEffortImages(allImages).images);
 
-      // Filter to only images with valid GPS coordinates
-      const gpsImages: ImageData[] = allImages
-        .filter(
-          (img) =>
-            img.id &&
-            typeof img.latitude === 'number' &&
-            typeof img.longitude === 'number' &&
-            Number.isFinite(img.latitude) &&
-            Number.isFinite(img.longitude),
-        )
-        .map((img) => ({
-          id: img.id,
-          latitude: img.latitude!,
-          longitude: img.longitude!,
-          originalPath: img.originalPath,
-          color:
-            (isOnEffort(img.boundaryStatus) &&
-              img.transectId &&
-              colours.get(img.transectId)) ||
-            NO_TRANSECT_COLOR,
-        }));
+        // Filter to only images with valid GPS coordinates
+        const gpsImages: ImageData[] = allImages
+          .filter(
+            (img) =>
+              img.id &&
+              typeof img.latitude === 'number' &&
+              typeof img.longitude === 'number' &&
+              Number.isFinite(img.latitude) &&
+              Number.isFinite(img.longitude),
+          )
+          .map((img) => ({
+            id: img.id,
+            latitude: img.latitude!,
+            longitude: img.longitude!,
+            originalPath: img.originalPath,
+            color:
+              (isOnEffort(img.boundaryStatus) &&
+                img.transectId &&
+                colours.get(img.transectId)) ||
+              NO_TRANSECT_COLOR,
+          }));
 
-      setImages(gpsImages);
-      setSelectedIds(new Set());
-      setLoadingStatus(
-        allImages.length > gpsImages.length
-          ? `${(allImages.length - gpsImages.length).toLocaleString()} images without location data are not shown.`
-          : '',
-      );
-      return gpsImages;
-    } catch (err) {
-      if (signal.aborted) return [];
-      console.error('Failed to fetch images:', err);
-      setError(
-        `Failed to fetch images: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      return [];
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, [client, projectId]);
+        setImages(gpsImages);
+        setSelectedIds(new Set());
+        setLoadingStatus(
+          allImages.length > gpsImages.length
+            ? `${(allImages.length - gpsImages.length).toLocaleString()} images without location data are not shown.`
+            : '',
+        );
+        return gpsImages;
+      } catch (err) {
+        if (signal.aborted) return [];
+        console.error('Failed to fetch images:', err);
+        setError(
+          `Failed to fetch images: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return [];
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    },
+    [surveyImages],
+  );
 
   // Initial fetch
   useEffect(() => {
@@ -1302,7 +1128,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         // Refresh the map, then keep any images that still exist (failed,
         // un-reached or cancelled) selected so they can be retried.
         setDeleteProgress({ current: 0, total: 0, phase: 'Refreshing map...' });
-        const remaining = await fetchImages();
+        const remaining = await fetchImages(true);
         const targetSet = new Set(imageIds);
         setSelectedIds(
           new Set(
@@ -1316,7 +1142,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           for (const id of failedToFetch) failedImageIds.add(id);
           counters.imagesFailed = failedImageIds.size;
           setDeleteResult(counters);
-          const remaining = await fetchImages();
+          const remaining = await fetchImages(true);
           const targetSet = new Set(imageIds);
           setSelectedIds(
             new Set(

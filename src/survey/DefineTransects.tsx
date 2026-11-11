@@ -14,6 +14,7 @@ import {
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import { fetchAllPaginatedResults } from '../utils';
+import { useSurveyImages } from './surveyImages';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -115,6 +116,7 @@ function DefineTransectsEditor({
   organizationId,
 }: DefineTransectsProps) {
   const { client, showModal } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
   const [loading, setLoading] = useState(true);
   const [loadedCount, setLoadedCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -320,7 +322,7 @@ function DefineTransectsEditor({
         await surveySaveSettled(projectId);
         if (signal.aborted) return;
         const [imageData, area, savedStrata] = await Promise.all([
-          loadOnEffortImages(client, projectId, signal, setLoadedCount),
+          loadOnEffortImages(surveyImages.load, signal, setLoadedCount),
           loadSurveyArea(client, projectId, signal),
           loadStrata(client, projectId, signal),
         ]);
@@ -350,7 +352,7 @@ function DefineTransectsEditor({
       }
     })();
     return () => controller.abort();
-  }, [client, projectId]);
+  }, [client, projectId, surveyImages]);
 
   const handleSubmit = async () => {
     const snapshot = segmentedImages;
