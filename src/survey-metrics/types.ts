@@ -120,6 +120,12 @@ export type ObservationRow = {
   owner: string | null;
   source: string | null;
   createdAt: string | null;
+  // The observed location's box; (x, y) is its centre.
+  imageId: string | null;
+  x: number | null;
+  y: number | null;
+  width: number | null;
+  height: number | null;
 };
 
 export type CategoryRow = {

@@ -540,14 +540,70 @@ export function loadAnnotations(setId: string, ctx: LoadContext) {
   ) as Promise<AnnotationRow[]>;
 }
 
-export function loadObservations(setId: string, ctx: LoadContext) {
-  return loadChunked(
+type NestedObservation = Pick<
+  ObservationRow,
+  'locationId' | 'owner' | 'source' | 'createdAt'
+> & {
+  location: Pick<
+    ObservationRow,
+    'imageId' | 'x' | 'y' | 'width' | 'height'
+  > | null;
+};
+
+export async function loadObservations(
+  setId: string,
+  ctx: LoadContext,
+): Promise<ObservationRow[]> {
+  ctx.onProgress(0);
+  const rows = await loadRows(
+    client,
     'observationsByAnnotationSetId',
-    { annotationSetId: 'ID!' },
-    ['locationId', 'owner', 'source', 'createdAt'],
     setId,
-    ctx,
-  ) as Promise<ObservationRow[]>;
+    [
+      'locationId',
+      'owner',
+      'source',
+      'createdAt',
+      'location.imageId',
+      'location.x',
+      'location.y',
+      'location.width',
+      'location.height',
+    ],
+    {
+      signal: ctx.signal,
+      onProgress: (count) => ctx.onProgress(count),
+      fallback: async () => {
+        const nested = await fetchAll<NestedObservation>(
+          'observationsByAnnotationSetId',
+          { annotationSetId: 'ID!' },
+          'locationId owner source createdAt location { imageId x y width height }',
+          { annotationSetId: setId },
+          ctx.signal,
+          counted(ctx),
+        );
+        return nested.map(({ location, ...row }) => ({
+          ...row,
+          'location.imageId': location?.imageId,
+          'location.x': location?.x,
+          'location.y': location?.y,
+          'location.width': location?.width,
+          'location.height': location?.height,
+        }));
+      },
+    },
+  );
+  return rows.map((row) => ({
+    locationId: row.locationId as string,
+    owner: row.owner ?? null,
+    source: row.source ?? null,
+    createdAt: row.createdAt ?? null,
+    imageId: row['location.imageId'] ?? null,
+    x: row['location.x'] ?? null,
+    y: row['location.y'] ?? null,
+    width: row['location.width'] ?? null,
+    height: row['location.height'] ?? null,
+  }));
 }
 
 export function loadCategories(setId: string, ctx: LoadContext) {
