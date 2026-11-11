@@ -402,6 +402,36 @@ describe('model gateway', () => {
     );
   });
 
+  it('checks restricted fields on create only where the policy asks', async () => {
+    const data = fixture();
+    const restricted = (onCreate?: boolean) =>
+      gateway(data, actor('annotator'), {
+        ...policies,
+        Note: {
+          ...policies.Note,
+          restricted: [
+            { fields: ['text'], rules: [{ survey: 'admin' }], onCreate },
+          ],
+        },
+      }).models;
+    await restricted().run('Note', 'create', [{ projectId: 'p1', text: 'a' }]);
+    await denied(
+      restricted(true).run('Note', 'create', [{ projectId: 'p1', text: 'b' }]),
+    );
+    await restricted(true).run('Note', 'create', [
+      { projectId: 'p1', text: null },
+    ]);
+    await gateway(data, actor('surveyAdmin'), {
+      ...policies,
+      Note: {
+        ...policies.Note,
+        restricted: [
+          { fields: ['text'], rules: [{ survey: 'admin' }], onCreate: true },
+        ],
+      },
+    }).models.run('Note', 'create', [{ projectId: 'p1', text: 'c' }]);
+  });
+
   it('only lets sysadmins use models without rules', async () => {
     const data = fixture();
     await denied(

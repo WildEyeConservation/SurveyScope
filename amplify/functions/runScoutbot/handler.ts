@@ -6,6 +6,7 @@ import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { authorizeRequest } from '../shared/authorizeRequest';
+import { continuationEvent, parseImageEntry } from '../shared/detectorImages';
 
 Amplify.configure(
   {
@@ -66,13 +67,7 @@ export const handler: RunScoutbotHandler = async (event, context) => {
     // (true -> width > height, false -> height > width).
     const landscape = event.arguments.landscape ?? undefined;
 
-    const images = imagesFromEvent.map((imageStr) => {
-      const [id, originalPath] = imageStr.split('---');
-      return {
-        id,
-        originalPath,
-      };
-    });
+    const images = imagesFromEvent.map(parseImageEntry);
 
     const queueUrl = event.arguments.queueUrl;
 
@@ -102,10 +97,7 @@ export const handler: RunScoutbotHandler = async (event, context) => {
           new SendMessageCommand({
             QueueUrl: queueUrl,
             MessageBody: JSON.stringify({
-              images: chunk.map((image) => ({
-                imageId: image.id,
-                key: 'images/' + image.originalPath,
-              })),
+              images: chunk,
               projectId,
               bucket,
               setId,
@@ -134,15 +126,7 @@ export const handler: RunScoutbotHandler = async (event, context) => {
               FunctionName: process.env.AWS_LAMBDA_FUNCTION_NAME!,
               InvocationType: 'Event',
               Payload: Buffer.from(
-                JSON.stringify({
-                  images: remainingImageStrings,
-                  projectId,
-                  setId,
-                  bucket,
-                  queueUrl,
-                  ...(rotation !== undefined ? { rotation } : {}),
-                  ...(landscape !== undefined ? { landscape } : {}),
-                })
+                JSON.stringify(continuationEvent(event, remainingImageStrings))
               ),
             })
           );

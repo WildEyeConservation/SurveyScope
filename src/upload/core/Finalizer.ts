@@ -306,7 +306,7 @@ export class Finalizer {
     candidateIds: Set<string>,
     masks: number[][][],
   ): Promise<boolean> {
-    const { client, backend, projectId } = this.ctx;
+    const { client, projectId } = this.ctx;
     const payload = batch.payload.map((img) => ({
       id: img.id,
       originalPath: img.originalPath,
@@ -329,7 +329,6 @@ export class Finalizer {
             sessionIds,
             skipExistingSuggestions: true,
           }),
-          queueUrl: backend.custom.lightglueTaskQueueUrl,
         },
         { retry: false },
       );
@@ -375,7 +374,7 @@ export class Finalizer {
     model: string,
     allProjectImages: CreatedImage[],
   ): Promise<void> {
-    const { client, backend, projectId, keyInfo } = this.ctx;
+    const { client, projectId, keyInfo } = this.ctx;
     const config = DETECTOR_DISPATCH[model];
     if (!config) {
       console.warn(`Unknown model '${model}', skipping detector dispatch`);
@@ -415,8 +414,6 @@ export class Finalizer {
           (image) => `${image.id}---${keyInfo.makeKey(image.originalPath)}`,
         ),
         setId: locationSetId,
-        bucket: backend.storage.buckets[1].bucket_name,
-        queueUrl: config.queueUrl(backend),
       });
     }
 

@@ -5,6 +5,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { authorizeRequest } from '../shared/authorizeRequest';
+import { parseImageEntry } from '../shared/detectorImages';
 
 Amplify.configure(
   {
@@ -50,10 +51,7 @@ export const handler: RunStormflyDetectorHandler = async (event) => {
     authorizeRequest(event.identity, organizationId);
   }
 
-  const images = (event.arguments.images ?? []).map((image) => {
-    const [imageId, key] = image.split('---');
-    return { imageId, key: `images/${key}` };
-  });
+  const images = (event.arguments.images ?? []).map(parseImageEntry);
   // Optional CCW rotation (90/180/270) and orientation guard for images whose
   // orientation is missing from EXIF. Forwarded in the SQS body so the processor
   // rotates before inference (and only when dimensions match, if `landscape` is set).

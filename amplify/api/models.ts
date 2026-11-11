@@ -45,7 +45,8 @@ export interface ModelPolicy {
   update?: Rule[];
   delete?: Rule[];
   managed?: string[];
-  restricted?: { fields: string[]; rules: Rule[] }[];
+  // onCreate also checks fields a new row sets; no rules leaves them to sysadmins.
+  restricted?: { fields: string[]; rules: Rule[]; onCreate?: boolean }[];
   scan?: boolean;
   // References that may point outside the row's scope; the rules must vouch for them.
   crossScope?: string[];
@@ -112,6 +113,11 @@ const isScalar = (v: unknown): v is string | number =>
   (typeof v === 'string' && v !== '') || typeof v === 'number';
 const isObject = (v: unknown): v is Row =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
+const sameValue = (a: unknown, b: unknown) =>
+  a === b ||
+  (typeof a === 'object' &&
+    typeof b === 'object' &&
+    JSON.stringify(a) === JSON.stringify(b));
 
 export function eqPins(filter: unknown): Row {
   const pins: Row = {};
@@ -569,6 +575,28 @@ export class Models {
     return true;
   }
 
+  private async assertRestricted(
+    model: string,
+    touched: string[],
+    row: Row,
+    scope: Scope | null,
+    creating = false,
+  ) {
+    if (this.access.isSysadmin) return;
+    for (const { fields, rules, onCreate } of this.policy(model).restricted ??
+      []) {
+      if (creating && !onCreate) continue;
+      if (!fields.some((f) => touched.includes(f))) continue;
+      const verdicts = await Promise.all(
+        rules.map((r) => this.evaluate(r, row, scope)),
+      );
+      if (!verdicts.includes(true))
+        throw forbidden(
+          `Not allowed to ${creating ? 'set' : 'change'} ${fields.join(', ')}`,
+        );
+    }
+  }
+
   private async create(model: string, input: unknown, options: QueryOptions) {
     if (!isObject(input)) throw badRequest('Invalid input');
     const row = this.writable(model, input);
@@ -578,6 +606,10 @@ export class Models {
     const scope = await this.scopeOf(model, row);
     if (!scope) throw badRequest(`${model} needs a scope`);
     if (!(await this.allows(model, 'create', row))) throw forbidden();
+    const set = Object.keys(row).filter(
+      (f) => row[f] !== undefined && row[f] !== null,
+    );
+    await this.assertRestricted(model, set, row, scope, true);
     await this.assertReferences(model, row, scope);
     if (this.schema.hasField(model, 'group')) {
       const group = await this.groupFor(scope);
@@ -627,17 +659,9 @@ export class Models {
       throw forbidden('A row cannot move to another scope');
     if (!(await this.allows(model, 'update', merged))) throw forbidden();
     const changed = Object.keys(changes).filter(
-      (f) => changes[f] !== existing[f],
+      (f) => !sameValue(changes[f], existing[f]),
     );
-    for (const { fields, rules } of this.policy(model).restricted ?? []) {
-      if (!fields.some((f) => changed.includes(f)) || this.access.isSysadmin)
-        continue;
-      const verdicts = await Promise.all(
-        rules.map((r) => this.evaluate(r, existing, before)),
-      );
-      if (!verdicts.includes(true))
-        throw forbidden(`Not allowed to change ${fields.join(', ')}`);
-    }
+    await this.assertRestricted(model, changed, existing, before);
     await this.assertReferences(model, merged, after, changed);
     await this.guarded(model, 'update', changes);
     const result = await this.data.update(model, changes, {

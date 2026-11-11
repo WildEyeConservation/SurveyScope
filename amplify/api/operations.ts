@@ -1,5 +1,10 @@
 import { ROW_SOURCES } from '../../shared/rowSources';
 import type { Access } from './access';
+import {
+  dispatchTarget,
+  requireDetectorImages,
+  requireRegistrationImages,
+} from './dispatch';
 import { badRequest, forbidden } from './errors';
 import { authorizeLaunch, type LaunchStore } from './launch';
 import type { Models, Result } from './models';
@@ -198,10 +203,28 @@ const surveyResults: Authorize = async (ctx, args) => {
   ]);
 };
 
-const detector: Authorize = async (ctx, args) => {
+const detector =
+  (operation: string): Authorize =>
+  async (ctx, args) => {
+    const projectId = stringArg(args, 'projectId');
+    await ctx.access.requireSurveyAdmin(projectId);
+    await requireInSurvey(ctx, projectId, [['LocationSet', args.setId]]);
+    const project = await ctx.models.load('Project', { id: projectId });
+    if (!project) throw forbidden();
+    await requireDetectorImages(ctx.launches, project, args.images);
+    const target = await dispatchTarget(ctx.launches, operation);
+    return new Authorized({ args: { ...args, ...target } });
+  };
+
+const registration: Authorize = async (ctx, args) => {
   const projectId = stringArg(args, 'projectId');
   await ctx.access.requireSurveyAdmin(projectId);
-  await requireInSurvey(ctx, projectId, [['LocationSet', args.setId]]);
+  await requireRegistrationImages(ctx.launches, projectId, args.metadata);
+  const { queueUrl } = await dispatchTarget(
+    ctx.launches,
+    'runImageRegistration',
+  );
+  return new Authorized({ args: { ...args, queueUrl } });
 };
 
 export const OPERATIONS: Record<string, OperationPolicy> = {
@@ -262,13 +285,25 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   launchIndividualId: { fn: 'launchIndividualId', authorize: launch },
   runImageRegistration: {
     fn: 'runImageRegistration',
-    authorize: surveyAdmin('projectId'),
+    authorize: registration,
   },
-  runScoutbot: { fn: 'runScoutbot', authorize: detector },
-  runMadDetector: { fn: 'runMadDetector', authorize: detector },
-  runStormflyDetector: { fn: 'runStormflyDetector', authorize: detector },
-  runOwlDDetector: { fn: 'runOwlDDetector', authorize: detector },
-  runElephantDetector: { fn: 'runElephantDetector', authorize: detector },
+  runScoutbot: { fn: 'runScoutbot', authorize: detector('runScoutbot') },
+  runMadDetector: {
+    fn: 'runMadDetector',
+    authorize: detector('runMadDetector'),
+  },
+  runStormflyDetector: {
+    fn: 'runStormflyDetector',
+    authorize: detector('runStormflyDetector'),
+  },
+  runOwlDDetector: {
+    fn: 'runOwlDDetector',
+    authorize: detector('runOwlDDetector'),
+  },
+  runElephantDetector: {
+    fn: 'runElephantDetector',
+    authorize: detector('runElephantDetector'),
+  },
   uploadedImagePaths: {
     fn: 'imageAccess',
     authorize: surveyAdmin('projectId'),

@@ -123,6 +123,7 @@ export const POLICIES: Record<string, ModelPolicy> = {
     create: [organizationAdmin],
     update: [surveyAdmin],
     delete: [surveyAdmin],
+    restricted: [{ fields: ['tags'], rules: [], onCreate: true }],
     scan: true,
   },
   Category: {
@@ -154,9 +155,12 @@ export const POLICIES: Record<string, ModelPolicy> = {
     resultsReader,
   ]),
   Camera: administered({ survey: 'projectId' }, [surveyMember, resultsReader]),
-  Queue: administered({ survey: 'projectId' }, [
-    { all: [surveyMember, visibleQueue] },
-  ]),
+  Queue: {
+    ...administered({ survey: 'projectId' }, [
+      { all: [surveyMember, visibleQueue] },
+    ]),
+    managed: ['url'],
+  },
   IndividualIdJob: administered({ survey: 'projectId' }, [surveyMember]),
   ProjectTestConfig: administered({ survey: 'projectId' }, [surveyMember]),
   TestPresetProject: {
@@ -190,7 +194,11 @@ export const POLICIES: Record<string, ModelPolicy> = {
   ImageProcessedBy: administered({ survey: 'projectId' }),
   Object: administered({ survey: 'projectId' }),
   Image: administered({ survey: 'projectId' }, [taskImage('id')]),
-  ImageFile: administered({ survey: 'projectId' }, [taskImage('imageId')]),
+  ImageFile: {
+    scope: { survey: 'projectId' },
+    read: [surveyAdmin, taskImage('imageId')],
+    delete: [surveyAdmin],
+  },
   Location: administered({ survey: 'projectId' }, [
     task((t, r) => t.location(r.id, r.imageId, r.projectId), ['id', 'imageId']),
   ]),
@@ -321,11 +329,7 @@ export const POLICIES: Record<string, ModelPolicy> = {
   },
   JollyResultsMembership: {
     scope: { survey: 'surveyId' },
-    read: [
-      surveyAdmin,
-      { self: 'userId' },
-      { results: { survey: 'surveyId', set: 'annotationSetId' } },
-    ],
+    read: [surveyAdmin, { self: 'userId' }],
     create: [surveyAdmin],
     delete: [surveyAdmin],
     scan: true,

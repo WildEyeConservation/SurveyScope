@@ -63,6 +63,7 @@ export function installApi(props: {
   userPoolClient: cognito.IUserPoolClient;
   tables: Record<string, dynamodb.ITable>;
   graphqlApi: IConstruct;
+  dispatchTargetsParameterName: string;
 }) {
   const { router, publisher } = props;
   const stack = Stack.of(router);
@@ -106,6 +107,23 @@ export function installApi(props: {
   (router as lambda.Function).addEnvironment(
     'API_TABLES',
     stack.toJsonString(referenceTables),
+  );
+
+  router.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        stack.formatArn({
+          service: 'ssm',
+          resource: 'parameter',
+          resourceName: props.dispatchTargetsParameterName.replace(/^\//, ''),
+        }),
+      ],
+    }),
+  );
+  (router as lambda.Function).addEnvironment(
+    'DISPATCH_TARGETS_PARAMETER',
+    props.dispatchTargetsParameterName,
   );
 
   const functionNames: Record<string, string> = {};

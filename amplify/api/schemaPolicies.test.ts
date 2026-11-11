@@ -122,3 +122,129 @@ describe('policies on the deployed schema', () => {
     }
   });
 });
+
+function surveyFixture() {
+  const data = new MemoryData(
+    {
+      Organization: [{ id: 'org1' }],
+      OrganizationMembership: [
+        { organizationId: 'org1', userId: 'orgAdmin', isAdmin: true },
+        { organizationId: 'org1', userId: 'surveyAdmin', isAdmin: false },
+        { organizationId: 'org1', userId: 'annotator', isAdmin: false },
+      ],
+      Project: [{ id: 'p1', organizationId: 'org1', name: 'One', tags: [] }],
+      UserProjectMembership: [
+        { id: 'm1', userId: 'surveyAdmin', projectId: 'p1', isAdmin: true },
+        { id: 'm2', userId: 'annotator', projectId: 'p1', isAdmin: false },
+      ],
+      Queue: [{ id: 'q1', projectId: 'p1', name: 'Queue', url: 'queue-url' }],
+      Image: [
+        { id: 'i1', projectId: 'p1' },
+        { id: 'i2', projectId: 'p1' },
+      ],
+      ImageFile: [
+        { id: 'f1', projectId: 'p1', imageId: 'i1', key: 'k1' },
+        { id: 'f2', projectId: 'p1', imageId: 'i2', key: 'k2' },
+      ],
+    },
+    deployed,
+  );
+  data.leases = [
+    {
+      userId: 'annotator',
+      leaseId: 'l1',
+      kind: 'queue',
+      projectId: 'p1',
+      grantedFor: 'p1',
+      imageIds: ['i1'],
+      locationIds: [],
+      pairs: [],
+      readSetIds: [],
+      writeSetIds: [],
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    },
+  ];
+  return data;
+}
+
+const user = (data: MemoryData, name: string) =>
+  gateway(data, actor(name, name === 'root' ? ['sysadmin'] : []), POLICIES)
+    .models;
+
+describe('queue settings', () => {
+  it('lets survey admins change queue settings but never the queue URL', async () => {
+    const data = surveyFixture();
+    for (const name of ['surveyAdmin', 'orgAdmin', 'root']) {
+      await user(data, name).run('Queue', 'update', [
+        { id: 'q1', zoom: 3, url: 'other-url' },
+      ]);
+      await user(data, name).run('Queue', 'create', [
+        { projectId: 'p1', name: 'New', url: 'other-url' },
+      ]);
+    }
+    assert.equal(data.tables.Queue[0].url, 'queue-url');
+    assert.equal(data.tables.Queue[0].zoom, 3);
+    assert.ok(data.tables.Queue.slice(1).every((q) => q.url === undefined));
+    await forbidden(
+      user(data, 'annotator').run('Queue', 'update', [{ id: 'q1', zoom: 4 }]),
+    );
+  });
+});
+
+describe('image files', () => {
+  it('lets survey admins read and delete image files, and leaseholders read their images', async () => {
+    const data = surveyFixture();
+    const annotator = user(data, 'annotator');
+    await annotator.run('ImageFile', 'get', [{ id: 'f1' }]);
+    await forbidden(annotator.run('ImageFile', 'get', [{ id: 'f2' }]));
+    await forbidden(annotator.run('ImageFile', 'delete', [{ id: 'f1' }]));
+    for (const name of ['surveyAdmin', 'orgAdmin']) {
+      const models = user(data, name);
+      await models.run('ImageFile', 'get', [{ id: 'f2' }]);
+      await forbidden(
+        models.run('ImageFile', 'create', [
+          { projectId: 'p1', imageId: 'i1', key: 'k3', path: 'x', type: 'y' },
+        ]),
+      );
+      await forbidden(
+        models.run('ImageFile', 'update', [{ id: 'f1', key: 'k3' }]),
+      );
+    }
+    await user(data, 'surveyAdmin').run('ImageFile', 'delete', [{ id: 'f2' }]);
+    assert.deepEqual(
+      data.tables.ImageFile.map((f) => [f.id, f.key]),
+      [['f1', 'k1']],
+    );
+  });
+});
+
+describe('survey tags', () => {
+  it('leaves survey tags to sysadmins on create and update', async () => {
+    const data = surveyFixture();
+    const survey = { organizationId: 'org1', name: 'Two' };
+    const orgAdmin = user(data, 'orgAdmin');
+    await forbidden(
+      orgAdmin.run('Project', 'create', [{ ...survey, tags: ['legacy'] }]),
+    );
+    await orgAdmin.run('Project', 'create', [survey]);
+    await forbidden(user(data, 'annotator').run('Project', 'create', [survey]));
+    for (const name of ['surveyAdmin', 'orgAdmin']) {
+      await forbidden(
+        user(data, name).run('Project', 'update', [
+          { id: 'p1', tags: ['legacy'] },
+        ]),
+      );
+      await user(data, name).run('Project', 'update', [
+        { id: 'p1', name, tags: [] },
+      ]);
+    }
+    const root = user(data, 'root');
+    await root.run('Project', 'update', [{ id: 'p1', tags: ['test'] }]);
+    await root.run('Project', 'create', [{ ...survey, tags: ['legacy'] }]);
+    assert.deepEqual(data.tables.Project[0].tags, ['test']);
+    assert.deepEqual(
+      data.tables.Project.slice(1).map((p) => p.tags),
+      [undefined, ['legacy']],
+    );
+  });
+});

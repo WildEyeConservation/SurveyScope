@@ -86,6 +86,64 @@ describe('results sharing', () => {
     );
   });
 
+  it('accepts only the link currently stored for the set', async () => {
+    const data = fixture();
+    const admin = resultsContext(data, 'admin');
+    const args = { surveyId: 'p1', annotationSetId: 'a1' };
+    const first = (
+      (await results.share(admin, {
+        ...args,
+        expiresAt: Date.now() + 3600_000,
+      })) as { data: { token: string } }
+    ).data.token;
+    data.tables.ResultSharingToken = [];
+    await denied(
+      results.redeem(resultsContext(data, 'reader'), { token: first }),
+    );
+    const second = (
+      (await results.share(admin, {
+        ...args,
+        expiresAt: Date.now() + 7200_000,
+      })) as { data: { token: string } }
+    ).data.token;
+    assert.notEqual(second, first);
+    await denied(
+      results.redeem(resultsContext(data, 'reader'), { token: first }),
+    );
+    await results.redeem(resultsContext(data, 'reader'), { token: second });
+    assert.deepEqual(
+      data.tables.JollyResultsMembership.map((m) => m.userId),
+      ['reader'],
+    );
+  });
+
+  it('shows results readers only their own membership', async () => {
+    const data = fixture();
+    for (const userId of ['reader', 'other'])
+      data.tables.JollyResultsMembership.push({
+        surveyId: 'p1',
+        annotationSetId: 'a1',
+        userId,
+      });
+    const list = async (user: string) =>
+      (
+        (await gateway(data, actor(user), POLICIES).models.run(
+          'JollyResultsMembership',
+          'list',
+          [
+            {
+              filter: {
+                surveyId: { eq: 'p1' },
+                annotationSetId: { eq: 'a1' },
+              },
+            },
+          ],
+        )) as { data: { userId: string }[] }
+      ).data.map((m) => m.userId);
+    assert.deepEqual(await list('reader'), ['reader']);
+    assert.deepEqual(await list('admin'), ['reader', 'other']);
+  });
+
   it('lets results readers fetch only their sets as row chunks', async () => {
     const data = fixture();
     data.tables.JollyResultsMembership.push({

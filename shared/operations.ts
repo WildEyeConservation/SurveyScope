@@ -123,13 +123,10 @@ const MUTATIONS = {
   runImageRegistration: op('AWSJSON', {
     projectId: 'String!',
     metadata: 'String!',
-    queueUrl: 'String!',
     images: '[String]',
   }),
   runScoutbot: op('AWSJSON', {
     projectId: 'String!',
-    bucket: 'String!',
-    queueUrl: 'String!',
     images: '[String]',
     setId: 'String!',
     rotation: 'Int',
@@ -137,15 +134,11 @@ const MUTATIONS = {
   }),
   runMadDetector: op('AWSJSON', {
     projectId: 'String!',
-    bucket: 'String!',
-    queueUrl: 'String!',
     images: '[String]',
     setId: 'String!',
   }),
   runStormflyDetector: op('AWSJSON', {
     projectId: 'String!',
-    bucket: 'String!',
-    queueUrl: 'String!',
     images: '[String]',
     setId: 'String!',
     rotation: 'Int',
@@ -153,8 +146,6 @@ const MUTATIONS = {
   }),
   runOwlDDetector: op('AWSJSON', {
     projectId: 'String!',
-    bucket: 'String!',
-    queueUrl: 'String!',
     images: '[String]',
     setId: 'String!',
     rotation: 'Int',
@@ -162,8 +153,6 @@ const MUTATIONS = {
   }),
   runElephantDetector: op('AWSJSON', {
     projectId: 'String!',
-    bucket: 'String!',
-    queueUrl: 'String!',
     images: '[String]',
     setId: 'String!',
     rotation: 'Int',

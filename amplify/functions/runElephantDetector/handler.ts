@@ -5,6 +5,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { authorizeRequest } from '../shared/authorizeRequest';
+import { parseImageEntry } from '../shared/detectorImages';
 
 Amplify.configure(
   {
@@ -59,10 +60,7 @@ export const handler: RunElephantDetectorHandler = async (event) => {
   const rotation = event.arguments.rotation ?? undefined;
   const landscape = event.arguments.landscape ?? undefined;
 
-  const images = (event.arguments.images ?? []).map((image) => {
-    const [imageId, originalPath] = image.split('---');
-    return { imageId, key: `images/${originalPath}` };
-  });
+  const images = (event.arguments.images ?? []).map(parseImageEntry);
 
   const sqsClient = new SQSClient({
     region: env.AWS_REGION,
