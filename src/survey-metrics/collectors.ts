@@ -1,3 +1,4 @@
+import { isPointInBox, type Box } from '../../shared/locationGeometry';
 import type { PixelTransform } from '../individual-id/types';
 import { isOlder } from '../individual-id/utils/imageAge';
 import { isInOverlap } from '../individual-id/utils/transforms';
@@ -578,13 +579,27 @@ export type ConfidenceBand = {
   observed: number;
   annotated: number;
   observedAndAnnotated: number;
+  // Neither observed nor annotated, but centred inside an observed box.
+  insideObserved: number;
+};
+
+export type ConfidenceBandSummary = ConfidenceBand & {
+  // Detections at or above this band; null for unscored detections.
+  cumulativeLocations: number | null;
+  completedDownTo: number | null;
+  precision: number | null;
+  // As above, treating what a launch would skip as reviewed.
+  countingSkipped: {
+    completedDownTo: number | null;
+    precision: number | null;
+  };
 };
 
 export type ConfidenceCoverageSource = {
   source: string;
   bandWidth: number;
   labels: string[];
-  bands: Record<string, ConfidenceBand>;
+  bands: Record<string, ConfidenceBandSummary>;
   totals: ConfidenceBand;
   lowestObservedBand: string | null;
 };
@@ -594,8 +609,35 @@ export type ConfidenceCoverage = {
   observedOutsideDetections: number;
 };
 
+function reviewed(band: ConfidenceBand): number {
+  return (
+    band.observed +
+    band.annotated -
+    band.observedAndAnnotated +
+    band.insideObserved
+  );
+}
+
+// Annotated detections are hits and those inside an observed box misses; the
+// detections nobody has reviewed take the rate seen among observed ones.
+function precisionCountingSkipped(band: ConfidenceBand): number | null {
+  if (band.locations === 0) return null;
+  const unreviewed = band.locations - reviewed(band);
+  if (unreviewed === 0) return band.annotated / band.locations;
+  const rate = ratio(band.observedAndAnnotated, band.observed);
+  return rate === null
+    ? null
+    : (band.annotated + unreviewed * rate) / band.locations;
+}
+
 function emptyBand(): ConfidenceBand {
-  return { locations: 0, observed: 0, annotated: 0, observedAndAnnotated: 0 };
+  return {
+    locations: 0,
+    observed: 0,
+    annotated: 0,
+    observedAndAnnotated: 0,
+    insideObserved: 0,
+  };
 }
 
 function groupAnnotationsByImage(annotations: AnnotationRow[]) {
@@ -622,6 +664,23 @@ export function scanConfidenceCoverage(
     observations.map((observation) => observation.locationId),
   );
   const byImage = groupAnnotationsByImage(annotations);
+  const observedBoxes = new Map<string, Box[]>();
+  const boxed = new Set<string>();
+  for (const observation of observations) {
+    const { imageId, x, y } = observation;
+    if (!imageId || x === null || y === null) continue;
+    if (boxed.has(observation.locationId)) continue;
+    boxed.add(observation.locationId);
+    const box = {
+      x,
+      y,
+      width: observation.width ?? 0,
+      height: observation.height ?? 0,
+    };
+    const boxes = observedBoxes.get(imageId);
+    if (boxes) boxes.push(box);
+    else observedBoxes.set(imageId, [box]);
+  }
   const bySource = new Map<
     string,
     { width: number; bands: Record<string, ConfidenceBand> }
@@ -658,6 +717,16 @@ export function scanConfidenceCoverage(
     }
     if (isAnnotated) band.annotated += 1;
     if (isObserved && isAnnotated) band.observedAndAnnotated += 1;
+    if (
+      !isObserved &&
+      !isAnnotated &&
+      location.imageId &&
+      observedBoxes
+        .get(location.imageId)
+        ?.some((box) => isPointInBox(location.x, location.y, box))
+    ) {
+      band.insideObserved += 1;
+    }
   };
 
   const finish = (): ConfidenceCoverage => {
@@ -672,6 +741,7 @@ export function scanConfidenceCoverage(
           totals.observed += band.observed;
           totals.annotated += band.annotated;
           totals.observedAndAnnotated += band.observedAndAnnotated;
+          totals.insideObserved += band.insideObserved;
           if (
             lowestObservedBand === null &&
             label !== UNSCORED &&
@@ -680,11 +750,46 @@ export function scanConfidenceCoverage(
             lowestObservedBand = label;
           }
         }
+        const summaries: Record<string, ConfidenceBandSummary> =
+          Object.fromEntries(
+            labels.map((label) => [
+              label,
+              {
+                ...bands[label],
+                cumulativeLocations: null,
+                completedDownTo: null,
+                precision: ratio(
+                  bands[label].observedAndAnnotated,
+                  bands[label].observed,
+                ),
+                countingSkipped: {
+                  completedDownTo: null,
+                  precision: precisionCountingSkipped(bands[label]),
+                },
+              },
+            ]),
+          );
+        let cumulativeLocations = 0;
+        let cumulativeObserved = 0;
+        let cumulativeReviewed = 0;
+        for (const label of [...labels].reverse()) {
+          if (label === UNSCORED) continue;
+          const band = summaries[label];
+          cumulativeLocations += band.locations;
+          cumulativeObserved += band.observed;
+          cumulativeReviewed += reviewed(band);
+          band.cumulativeLocations = cumulativeLocations;
+          band.completedDownTo = ratio(cumulativeObserved, cumulativeLocations);
+          band.countingSkipped.completedDownTo = ratio(
+            cumulativeReviewed,
+            cumulativeLocations,
+          );
+        }
         return {
           source,
           bandWidth: width,
           labels,
-          bands,
+          bands: summaries,
           totals,
           lowestObservedBand,
         };

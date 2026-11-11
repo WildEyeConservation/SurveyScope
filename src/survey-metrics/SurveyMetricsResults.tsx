@@ -1,14 +1,16 @@
 import SharedTable, { type DataColumn } from '@/components/DataTable';
 import { Alert, type AlertVariant } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   HOMOGRAPHY_BUCKETS,
   UNSCORED,
   type AnnotationSummary,
   type ChainLinkSummary,
   type ChainStateCounts,
+  type ConfidenceBand,
   type ConfidenceCoverage,
   type Counts,
   type DetectionSummary,
@@ -54,10 +56,23 @@ const percent = (value: number | null | undefined, digits = 1) =>
 const bandRange = (label: string, width: number) =>
   label === UNSCORED
     ? label
-    : `${label}–${Math.min(Number(label) + width, 1).toFixed(2)}`;
+    : // The word joiner keeps the range on one line.
+      `${label}–\u2060${Math.min(Number(label) + width, 1).toFixed(2)}`;
+
+const highestFirst = (labels: string[]) => [
+  ...labels.filter((label) => label !== UNSCORED).reverse(),
+  ...labels.filter((label) => label === UNSCORED),
+];
 
 const share = (part: number, whole: number) =>
   whole > 0 ? percent(part / whole) : 'N/A';
+
+const withShare = (part: number, whole: number) =>
+  `${count(part)} (${share(part, whole)})`;
+
+// Never shown to a reviewer, yet nothing a launch would queue.
+const alreadyCovered = (band: ConfidenceBand) =>
+  band.annotated - band.observedAndAnnotated + band.insideObserved;
 
 function date(value: string | null | undefined): string {
   if (!value) return 'N/A';
@@ -66,14 +81,17 @@ function date(value: string | null | undefined): string {
 }
 
 type Row = { id: string; cells: Cell[] };
+type Head = string | { title: string; description: string };
 type SortRow = { getValue: (columnId: string) => unknown };
 
-const NUMERIC = /^-?[\d,]+(\.\d+)?%?$/;
+// A number, optionally a percentage or followed by a bracketed share.
+const NUMERIC = /^(-?[\d,]+(?:\.\d+)?)%?(?: \(.*\))?$/;
 
 function sortValue(cell: Cell): string | number {
   if (typeof cell === 'number') return cell;
   if (typeof cell !== 'string') return '';
-  return NUMERIC.test(cell) ? Number(cell.replace(/[,%]/g, '')) : cell;
+  const number = NUMERIC.exec(cell)?.[1];
+  return number ? Number(number.replace(/,/g, '')) : cell;
 }
 
 function DataTable({
@@ -81,13 +99,13 @@ function DataTable({
   rows,
   numericFrom = 1,
 }: {
-  head: string[];
+  head: Head[];
   rows: Cell[][];
   numericFrom?: number;
 }) {
-  const columns: DataColumn<Row>[] = head.map((title, index) => ({
+  const columns: DataColumn<Row>[] = head.map((item, index) => ({
     id: String(index),
-    header: title,
+    header: typeof item === 'string' ? item : item.title,
     accessorFn: (row) => sortValue(row.cells[index]),
     cell: ({ row }) => row.original.cells[index],
     sortingFn: (a: SortRow, b: SortRow) => {
@@ -100,6 +118,9 @@ function DataTable({
     meta: {
       className:
         index >= numericFrom ? 'text-right tabular-nums whitespace-nowrap' : '',
+      headerClassName: index >= numericFrom ? 'text-right' : '',
+      wrapHeader: true,
+      description: typeof item === 'string' ? undefined : item.description,
     },
   }));
   return (
@@ -259,7 +280,26 @@ function DetectionModels({ data }: { data: ProcessedBySummary }) {
   );
 }
 
+const CUMULATIVE_HEAD = {
+  title: 'Cumulative detections',
+  description: 'Detections in this band and every band above it.',
+};
+
 function DetectorOutput({ data }: { data: DetectionSummary }) {
+  const bandRows = (source: DetectionSummary['sources'][number]) => {
+    let cumulative = 0;
+    return highestFirst(Object.keys(source.confidence).sort()).map((band) => {
+      const value = source.confidence[band];
+      const scored = band !== UNSCORED;
+      if (scored) cumulative += value;
+      return [
+        bandRange(band, source.bandWidth),
+        count(value),
+        count(scored ? cumulative : null),
+        share(value, source.detectionRows),
+      ];
+    });
+  };
   return (
     <>
       <Facts items={[['Images in survey', count(data.totalImages)]]} />
@@ -291,14 +331,17 @@ function DetectorOutput({ data }: { data: DetectionSummary }) {
             {source.bandWidth})
           </Subheading>
           <DataTable
-            head={['Confidence band', 'Detections', 'Share']}
-            rows={Object.entries(source.confidence)
-              .sort((a, b) => a[0].localeCompare(b[0]))
-              .map(([band, value]) => [
-                bandRange(band, source.bandWidth),
-                count(value),
-                share(value, source.detectionRows),
-              ])}
+            head={[
+              'Confidence band',
+              'Detections',
+              CUMULATIVE_HEAD,
+              {
+                title: 'Share',
+                description:
+                  'Detections in this band ÷ all of the model’s detections.',
+              },
+            ]}
+            rows={bandRows(source)}
           />
         </div>
       ))}
@@ -489,8 +532,18 @@ function Observations({
 }
 
 function ConfidenceCoverageView({ data }: { data: ConfidenceCoverage }) {
+  const [countSkipped, setCountSkipped] = useState(true);
   return (
     <>
+      <label className='flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1'>
+        <Switch checked={countSkipped} onCheckedChange={setCountSkipped} />
+        Count already covered detections as done
+        <span className='text-sm text-muted-foreground'>
+          A launch with “Skip locations that already have annotations” and “View
+          unobserved only” leaves them out. Changes Completed down to and
+          Precision.
+        </span>
+      </label>
       <Facts
         items={[
           [
@@ -512,6 +565,10 @@ function ConfidenceCoverageView({ data }: { data: ConfidenceCoverage }) {
                 share(source.totals.observed, source.totals.locations),
               ],
               [
+                'Already covered',
+                share(alreadyCovered(source.totals), source.totals.locations),
+              ],
+              [
                 'Holding an annotation',
                 share(source.totals.annotated, source.totals.locations),
               ],
@@ -527,24 +584,49 @@ function ConfidenceCoverageView({ data }: { data: ConfidenceCoverage }) {
             head={[
               'Confidence band',
               'Detections',
-              'Observed',
-              'Observed share',
-              'Annotated',
-              'Annotated share',
-              'Observed and annotated',
+              CUMULATIVE_HEAD,
+              {
+                title: 'Observed',
+                description:
+                  'Detections a reviewer was shown, and their share of the band.',
+              },
+              {
+                title: 'Already covered',
+                description:
+                  'Detections never shown to a reviewer because an animal was already marked inside them, or their centre sat inside a box someone had already observed. Mostly ground another model’s review reached first. Shown with their share of the band.',
+              },
+              {
+                title: 'Completed down to',
+                description: countSkipped
+                  ? 'Observed plus already covered ÷ Detections, across this band and every band above it. 100% means a launch would queue nothing.'
+                  : 'Observed ÷ Detections, across this band and every band above it.',
+              },
+              {
+                title: 'Annotated',
+                description:
+                  'Detections with an animal marked inside them, whether during this model’s review or another.',
+              },
+              {
+                title: 'Precision',
+                description: countSkipped
+                  ? 'Share of detections that hold an animal: Annotated ÷ Detections once the band is finished. Until then, detections nobody has reviewed take the hit rate seen among observed ones.'
+                  : 'Of the detections a reviewer was shown, the share they marked an animal on.',
+              },
             ]}
-            rows={source.labels
+            rows={highestFirst(source.labels)
               .filter((label) => source.bands[label].locations > 0)
               .map((label) => {
                 const band = source.bands[label];
+                const progress = countSkipped ? band.countingSkipped : band;
                 return [
                   bandRange(label, source.bandWidth),
                   count(band.locations),
-                  count(band.observed),
-                  share(band.observed, band.locations),
+                  count(band.cumulativeLocations),
+                  withShare(band.observed, band.locations),
+                  withShare(alreadyCovered(band), band.locations),
+                  percent(progress.completedDownTo),
                   count(band.annotated),
-                  share(band.annotated, band.locations),
-                  count(band.observedAndAnnotated),
+                  percent(progress.precision),
                 ];
               })}
           />
@@ -697,6 +779,10 @@ export default function SurveyMetricsResults({
     const outcome = report.stats[stat.id] as StatOutcome | undefined;
     return outcome ? [outcome] : [];
   });
+  const dataFrom = (id: StatId) =>
+    STATS.find((stat) => stat.id === id)!
+      .needs.flatMap((entity) => report.fetchedAt[entity] ?? [])
+      .sort()[0];
   return (
     <div className='flex flex-col gap-4'>
       <div className='flex flex-wrap items-center gap-2'>
@@ -723,8 +809,13 @@ export default function SurveyMetricsResults({
           id={`survey-metric-result-${outcome.id}`}
           className='scroll-mt-4'
         >
-          <CardHeader className='py-3'>
+          <CardHeader className='flex flex-wrap items-center justify-between gap-2 py-3'>
             <div className='font-semibold'>{outcome.label}</div>
+            {dataFrom(outcome.id) && (
+              <span className='text-sm text-muted-foreground'>
+                Data from {date(dataFrom(outcome.id))}
+              </span>
+            )}
           </CardHeader>
           <CardContent className='flex flex-col gap-3'>
             {outcome.status === 'error' ? (

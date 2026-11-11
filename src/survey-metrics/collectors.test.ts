@@ -18,6 +18,7 @@ import type {
   ImageRow,
   LocationRow,
   NeighbourRow,
+  ObservationRow,
 } from './types';
 
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -202,6 +203,24 @@ test('counts distinct images per processed-by source', () => {
   ]);
 });
 
+function observation(
+  locationId: string,
+  patch: Partial<ObservationRow> = {},
+): ObservationRow {
+  return {
+    locationId,
+    owner: 'u',
+    source: null,
+    createdAt: null,
+    imageId: null,
+    x: null,
+    y: null,
+    width: null,
+    height: null,
+    ...patch,
+  };
+}
+
 test('puts band edges in the band they open', () => {
   assert.equal(confidenceBucket(0.15), '0.15');
   assert.equal(confidenceBucket(0.3), '0.30');
@@ -286,11 +305,7 @@ test('reports observed and annotated detections per confidence band', () => {
       location('unseen', { confidence: 0.2, x: 800, y: 800 }),
       location('marker', { width: 0, height: 0, confidence: 0 }),
     ],
-    [
-      { locationId: 'high', owner: 'u', source: null, createdAt: null },
-      { locationId: 'low', owner: 'u', source: null, createdAt: null },
-      { locationId: 'tile', owner: 'u', source: null, createdAt: null },
-    ],
+    [observation('high'), observation('low'), observation('tile')],
     [annotation('1', 'a', 110, 90)],
   );
   assert.equal(coverage.sources.length, 1);
@@ -300,15 +315,95 @@ test('reports observed and annotated detections per confidence band', () => {
     observed: 2,
     annotated: 1,
     observedAndAnnotated: 1,
+    insideObserved: 0,
   });
   assert.deepEqual(source.bands['0.20'], {
     locations: 2,
     observed: 1,
     annotated: 0,
     observedAndAnnotated: 0,
+    insideObserved: 0,
+    cumulativeLocations: 3,
+    completedDownTo: 2 / 3,
+    precision: 0,
+    countingSkipped: { completedDownTo: 2 / 3, precision: 0 },
   });
+  assert.equal(source.bands['0.90'].cumulativeLocations, 1);
+  assert.equal(source.bands['0.90'].completedDownTo, 1);
+  assert.equal(source.bands['0.90'].precision, 1);
+  assert.equal(source.bands['0.50'].cumulativeLocations, 1);
+  assert.equal(source.bands['0.50'].precision, null);
+  assert.equal(source.bands['0.95'].completedDownTo, null);
   assert.equal(source.lowestObservedBand, '0.20');
   assert.equal(coverage.observedOutsideDetections, 1);
+});
+
+test('measures precision on observed detections only', () => {
+  const coverage = summariseConfidenceCoverage(
+    [
+      location('hit', { confidence: 0.9 }),
+      location('miss', { confidence: 0.9, x: 500, y: 500 }),
+      location('unseen', { confidence: 0.9, x: 110, y: 110 }),
+      location('unscored', { confidence: null, x: 500, y: 500 }),
+    ],
+    [observation('hit'), observation('miss')],
+    [annotation('1', 'a', 110, 90)],
+  );
+  const { bands } = coverage.sources[0];
+  assert.equal(bands['0.90'].annotated, 2);
+  assert.equal(bands['0.90'].precision, 0.5);
+  assert.equal(bands['0.90'].cumulativeLocations, 3);
+  assert.equal(bands['0.90'].completedDownTo, 2 / 3);
+  assert.deepEqual(bands['0.90'].countingSkipped, {
+    completedDownTo: 1,
+    precision: 2 / 3,
+  });
+  assert.equal(bands.unscored.cumulativeLocations, null);
+  assert.equal(bands.unscored.completedDownTo, null);
+});
+
+test('skipping annotated detections needs an observed rate for the rest', () => {
+  const coverage = summariseConfidenceCoverage(
+    [
+      location('known', { confidence: 0.9 }),
+      location('unseen', { confidence: 0.9, x: 500, y: 500 }),
+      location('all-known', { confidence: 0.4 }),
+    ],
+    [],
+    [annotation('1', 'a', 110, 90)],
+  );
+  const { bands } = coverage.sources[0];
+  assert.equal(bands['0.90'].precision, null);
+  assert.deepEqual(bands['0.90'].countingSkipped, {
+    completedDownTo: 0.5,
+    precision: null,
+  });
+  assert.deepEqual(bands['0.40'].countingSkipped, {
+    completedDownTo: 2 / 3,
+    precision: 1,
+  });
+});
+
+test('counts a detection centred inside an observed box as reviewed', () => {
+  const seen = { imageId: 'a', x: 100, y: 100, width: 200, height: 200 };
+  const coverage = summariseConfidenceCoverage(
+    [
+      location('seen', { confidence: 0.9, ...seen }),
+      location('inner', { confidence: 0.9, x: 150, y: 150 }),
+      location('outer', { confidence: 0.9, x: 600, y: 600 }),
+    ],
+    [observation('seen', seen), observation('seen', seen)],
+    [annotation('1', 'a', 100, 100)],
+  );
+  const band = coverage.sources[0].bands['0.90'];
+  assert.equal(band.observed, 1);
+  assert.equal(band.insideObserved, 1);
+  assert.equal(band.completedDownTo, 1 / 3);
+  assert.equal(band.precision, 1);
+  assert.deepEqual(band.countingSkipped, {
+    completedDownTo: 2 / 3,
+    precision: 2 / 3,
+  });
 });
 
 test('counts an annotation on the detection box edge as inside it', () => {
