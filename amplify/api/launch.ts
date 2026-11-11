@@ -10,6 +10,16 @@ export type ReferenceModel =
   | 'Image'
   | 'Transect';
 
+export interface ImageRef {
+  projectId: string;
+  originalPath: string | null;
+}
+
+export interface DispatchTargets {
+  bucket?: string;
+  queues?: Record<string, string>;
+}
+
 export interface LaunchStore {
   readJson(key: string): Promise<unknown>;
   writeJson(prefix: string, value: unknown): Promise<string>;
@@ -18,6 +28,8 @@ export interface LaunchStore {
     model: ReferenceModel,
     ids: string[],
   ): Promise<Map<string, string>>;
+  imagesOf(ids: string[]): Promise<Map<string, ImageRef>>;
+  dispatchTargets(): Promise<DispatchTargets | null>;
 }
 
 const SCALARS: Record<string, ReferenceModel> = {

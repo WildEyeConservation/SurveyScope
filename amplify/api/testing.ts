@@ -584,6 +584,8 @@ export function operationContext(
       writeJson: async () => '',
       remove: async () => {},
       projectsOf: async () => new Map(),
+      imagesOf: async () => new Map(),
+      dispatchTargets: async () => null,
     },
     queues: {
       recordObservation: async () => 1,

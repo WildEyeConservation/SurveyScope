@@ -1,12 +1,10 @@
-import type { UploadBackend, UploadClient } from './types';
+import type { UploadClient } from './types';
 
 // Detector dispatch settings by model.
 export interface DetectorArgs {
   projectId: string;
   images: string[];
   setId: string;
-  bucket: string;
-  queueUrl: string;
 }
 
 export interface DetectorConfig {
@@ -16,7 +14,6 @@ export interface DetectorConfig {
   processedSource: string;
   /** Project status set after dispatch. */
   nextStatus: string;
-  queueUrl: (backend: UploadBackend) => string;
   dispatch: (client: UploadClient, args: DetectorArgs) => void;
 }
 
@@ -25,7 +22,6 @@ export const DETECTOR_DISPATCH: Record<string, DetectorConfig> = {
     setSuffix: '_scoutbot',
     processedSource: 'scoutbotv3',
     nextStatus: 'processing-scoutbot',
-    queueUrl: (backend) => backend.custom.scoutbotTaskQueueUrl,
     dispatch: (client, args) =>
       void client.mutations.runScoutbot(args, { retry: false }),
   },
@@ -33,7 +29,6 @@ export const DETECTOR_DISPATCH: Record<string, DetectorConfig> = {
     setSuffix: '_elephant-detection-nadir',
     processedSource: 'heatmap',
     nextStatus: 'processing-pointFinder',
-    queueUrl: (backend) => backend.custom.elephantDetectorTaskQueueUrl,
     dispatch: (client, args) =>
       void client.mutations.runElephantDetector(args, { retry: false }),
   },
@@ -41,7 +36,6 @@ export const DETECTOR_DISPATCH: Record<string, DetectorConfig> = {
     setSuffix: '_mad',
     processedSource: 'mad-v2',
     nextStatus: 'processing-mad',
-    queueUrl: (backend) => backend.custom.madDetectorTaskQueueUrl,
     dispatch: (client, args) =>
       void client.mutations.runMadDetector(args, { retry: false }),
   },
@@ -49,7 +43,6 @@ export const DETECTOR_DISPATCH: Record<string, DetectorConfig> = {
     setSuffix: '_owl-d',
     processedSource: 'owl-d',
     nextStatus: 'processing-owl-d',
-    queueUrl: (backend) => backend.custom.owlDDetectorTaskQueueUrl,
     dispatch: (client, args) =>
       void client.mutations.runOwlDDetector(args, { retry: false }),
   },
@@ -59,7 +52,6 @@ export const DETECTOR_DISPATCH: Record<string, DetectorConfig> = {
     setSuffix: '_stormfly-testing',
     processedSource: 'stormfly-testing',
     nextStatus: 'processing-stormfly-testing',
-    queueUrl: (backend) => backend.custom.stormflyDetectorTaskQueueUrl,
     dispatch: (client, args) =>
       void client.mutations.runStormflyDetector(args, { retry: false }),
   },

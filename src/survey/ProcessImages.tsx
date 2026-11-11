@@ -27,7 +27,7 @@ export default function ProcessImages({
   projectId: string;
   organizationId: string;
 }) {
-  const { client, backend, showModal } = useContext(GlobalContext)!;
+  const { client, showModal } = useContext(GlobalContext)!;
   const [scan, setScan] = useState<{
     total: number;
     unprocessed: Record<string, ScanImage[]>;
@@ -150,30 +150,17 @@ export default function ProcessImages({
         ? `${projOrganizationId}/${projectId}/${orig}`
         : orig;
 
-    const bucket = backend.storage.buckets[1].bucket_name;
     const runBatch = (batchStrings: string[]) => {
-      const args = { projectId, images: batchStrings, setId, bucket };
+      const args = { projectId, images: batchStrings, setId };
       switch (modelValue) {
         case 'scoutbotv3':
-          return client.mutations.runScoutbot(
-            { ...args, queueUrl: backend.custom.scoutbotTaskQueueUrl },
-            { retry: false },
-          );
+          return client.mutations.runScoutbot(args, { retry: false });
         case 'elephant':
-          return client.mutations.runElephantDetector(
-            { ...args, queueUrl: backend.custom.elephantDetectorTaskQueueUrl },
-            { retry: false },
-          );
+          return client.mutations.runElephantDetector(args, { retry: false });
         case 'mad':
-          return client.mutations.runMadDetector(
-            { ...args, queueUrl: backend.custom.madDetectorTaskQueueUrl },
-            { retry: false },
-          );
+          return client.mutations.runMadDetector(args, { retry: false });
         case 'owl-d':
-          return client.mutations.runOwlDDetector(
-            { ...args, queueUrl: backend.custom.owlDDetectorTaskQueueUrl },
-            { retry: false },
-          );
+          return client.mutations.runOwlDDetector(args, { retry: false });
       }
     };
 

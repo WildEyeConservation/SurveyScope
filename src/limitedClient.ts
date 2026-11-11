@@ -116,11 +116,9 @@ declare module '../amplify/shared/data-schema.generated' {
   interface DataMutations {
     runOwlDDetector(
       args: {
-        bucket: string;
         images?: string[] | null;
         landscape?: boolean | null;
         projectId: string;
-        queueUrl: string;
         rotation?: number | null;
         setId: string;
       },

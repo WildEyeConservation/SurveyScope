@@ -1563,6 +1563,8 @@ withStatsAlarmAction(
   })
 );
 
+// Written by the ECS stack and read by name, so the API stack keeps no reference to it.
+const dispatchTargetsParameterName = `/${envName}/api/DispatchTargets`;
 let lightglueQueueUrl: string | undefined;
 let scoutbotQueueUrl: string | undefined;
 let madDetectorQueueUrl: string | undefined;
@@ -1896,6 +1898,24 @@ if (enableEcs) {
     );
     elephantDetectorQueueUrl = elephantDetectorAutoProcessor.queue.queueUrl;
   }
+
+  const dispatchQueues = Object.fromEntries(
+    Object.entries({
+      runImageRegistration: lightglueQueueUrl,
+      runScoutbot: scoutbotQueueUrl,
+      runMadDetector: madDetectorQueueUrl,
+      runStormflyDetector: stormflyDetectorQueueUrl,
+      runOwlDDetector: owlDDetectorQueueUrl,
+      runElephantDetector: elephantDetectorQueueUrl,
+    }).filter(([, url]) => url)
+  );
+  new ssm.StringParameter(ecsStack, 'DispatchTargetsParameter', {
+    parameterName: dispatchTargetsParameterName,
+    stringValue: ecsStack.toJsonString({
+      bucket: backend.inputBucket.resources.bucket.bucketName,
+      queues: dispatchQueues,
+    }),
+  });
 
   if (enableJollyFargate) {
     // Gateway endpoints are free and keep the bulk DynamoDB/S3 traffic off the
@@ -2918,6 +2938,7 @@ const surveyScopeApi = installApi({
   userPoolClient: backend.auth.resources.userPoolClient,
   tables: backend.data.resources.tables,
   graphqlApi: backend.data.resources.graphqlApi,
+  dispatchTargetsParameterName,
 });
 
 backend.addOutput({

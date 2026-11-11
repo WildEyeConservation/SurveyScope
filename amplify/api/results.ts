@@ -100,6 +100,11 @@ export async function redeem(ctx: ResultsContext, args: Row) {
   }
   const surveyId = payload.surveyId;
   const annotationSetId = payload.annotationSetId;
+  const stored = (
+    await ctx.data.get('ResultSharingToken', { surveyId, annotationSetId }, {})
+  ).data;
+  if (stored?.jwt !== args.token)
+    throw forbidden('The results link is invalid or has expired');
   const userId = ctx.access.userId;
   const key = { surveyId, annotationSetId, userId };
   const existing = (await ctx.data.get('JollyResultsMembership', key, {})).data;
