@@ -49,6 +49,8 @@ export interface AnnotationWorkspaceProps {
   /** Stable identifier for retry-safe Observation creation. */
   observationId?: string;
   taskTag?: string;
+  /** Set from the task's own queue; unset outside queue work. */
+  isFalseNegatives?: boolean;
   /** Image only: no header, side legend or frame, for viewers embedded in a page. */
   embedded?: boolean;
   /** Map bearing in degrees; rotating the map reports the new one. */

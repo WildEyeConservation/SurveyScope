@@ -107,6 +107,7 @@ export class SurveyAccumulator {
     key: string;
   }> = [];
   private readonly chainsMarkedOutside = new Set<string>();
+  private readonly chainsInPrimaryWork = new Set<string>();
   private readonly validation: ValidationCounts = {
     excludedImages: 0,
     outsideBoundary: 0,
@@ -118,6 +119,7 @@ export class SurveyAccumulator {
     invalidCameraOptics: 0,
     annotationsForExcludedImages: 0,
     annotationsMarkedOutside: 0,
+    falseNegativeAnnotations: 0,
   };
 
   constructor(options: SurveyAccumulatorOptions) {
@@ -257,6 +259,9 @@ export class SurveyAccumulator {
     if (annotation.outsideBoundary) {
       this.chainsMarkedOutside.add(annotation.objectId ?? annotation.id);
     }
+    if (!(annotation.source ?? '').includes('false-negative')) {
+      this.chainsInPrimaryWork.add(annotation.objectId ?? annotation.id);
+    }
     if (
       annotation.id !== annotation.objectId ||
       !this.selectedCategories.has(annotation.categoryId)
@@ -280,6 +285,11 @@ export class SurveyAccumulator {
     for (const { objectId, categoryId, key } of this.primaries) {
       if (this.chainsMarkedOutside.has(objectId)) {
         this.validation.annotationsMarkedOutside += 1;
+        continue;
+      }
+      // Seen only in false-negative review; that sample is a separate correction.
+      if (!this.chainsInPrimaryWork.has(objectId)) {
+        this.validation.falseNegativeAnnotations += 1;
         continue;
       }
       const counts = this.countsByCameraStrip.get(key) ?? {};
@@ -311,6 +321,11 @@ export class SurveyAccumulator {
     if (this.validation.annotationsMarkedOutside > 0) {
       warnings.push(
         `${this.validation.annotationsMarkedOutside} selected annotations marked outside the survey area were left out`
+      );
+    }
+    if (this.validation.falseNegativeAnnotations > 0) {
+      warnings.push(
+        `${this.validation.falseNegativeAnnotations} selected annotations found only in False Negatives review were left out`
       );
     }
     if (this.validation.annotationsForExcludedImages > 0) {

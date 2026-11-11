@@ -153,6 +153,7 @@ async function main(): Promise<void> {
           'imageId',
           'categoryId',
           'outsideBoundary',
+          'source',
         ],
       },
       async (pageAnnotations) => {

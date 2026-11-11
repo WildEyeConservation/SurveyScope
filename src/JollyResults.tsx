@@ -15,6 +15,10 @@ import { useUsers } from './apiInterface';
 import { GlobalContext, UserContext } from './Context.tsx';
 import DensityMap from './DensityMap.tsx';
 import { CollapsedSidebar, SidebarCollapseButton } from './SidebarCollapse';
+import {
+  fetchFalseNegativesStatus,
+  validSampleCount,
+} from './survey/falseNegativesApi';
 import { Tab, Tabs } from './Tabs';
 import { useOptimisticUpdates } from './useOptimisticUpdates.tsx';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
@@ -253,7 +257,7 @@ export default function JollyResults() {
         client.models.Annotation.annotationsByCategoryId,
         {
           categoryId,
-          selectionSet: ['source'],
+          selectionSet: ['id', 'objectId', 'source', 'categoryId'],
           limit: 10000,
         },
       );
@@ -265,7 +269,11 @@ export default function JollyResults() {
     const falseNegatives = annotations.reduce(
       (acc, annotation) => {
         const categoryId = annotation.categoryId;
-        if (annotation.source.includes('false-negative')) {
+        // Primaries only, to match the animals column.
+        if (
+          annotation.id === annotation.objectId &&
+          (annotation.source ?? '').includes('false-negative')
+        ) {
           if (!acc[categoryId]) {
             acc[categoryId] = 0;
           }
@@ -275,6 +283,17 @@ export default function JollyResults() {
       },
       {} as { [categoryId: string]: number },
     );
+
+    // The sample sizes needed to turn the finds into a miss rate.
+    const sample =
+      surveyId && annotationSetId
+        ? await fetchFalseNegativesStatus(client, surveyId, annotationSetId)
+            .then((status) => status.sample)
+            .catch((error) => {
+              console.error('Failed to load the false negatives sample', error);
+              return null;
+            })
+        : null;
 
     //add false negatives to results
     const resultsWithFalseNegatives = results.map((r) => ({
@@ -303,6 +322,9 @@ export default function JollyResults() {
           lowerBound95: r.lowerBound95,
           upperBound95: r.upperBound95,
           falseNegatives: r.falseNegatives,
+          falseNegativeTilesSampled: sample ? validSampleCount(sample) : '',
+          falseNegativeTilesReviewed: sample?.reviewedCount ?? '',
+          unreviewedTiles: sample?.unreviewedTiles ?? '',
         })),
       ),
       fileName: `${surveyName} - ${annotationSetName} - Jolly Results`,

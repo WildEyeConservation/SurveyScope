@@ -32,7 +32,6 @@ import { monitorScoutbotDlq } from '../functions/monitorScoutbotDlq/resource';
 import { processTilingBatch } from '../functions/processTilingBatch/resource';
 import { monitorTilingTasks } from '../functions/monitorTilingTasks/resource';
 import { findAndRequeueMissingLocations } from '../functions/findAndRequeueMissingLocations/resource';
-import { reconcileFalseNegatives } from '../functions/reconcileFalseNegatives/resource';
 import { createOrganization } from '../functions/createOrganization/resource';
 import { inviteUserToOrganization } from '../functions/inviteUserToOrganization/resource';
 import { respondToInvite } from '../functions/respondToInvite/resource';
@@ -1497,6 +1496,16 @@ const schema = a
       .returns(a.json())
       .authorization((allow) => [allow.authenticated()])
       .handler(a.handler.function(launchFalseNegatives)),
+    // The sample for an annotation set and the state of its launch job.
+    getFalseNegativesStatus: a
+      .query()
+      .arguments({
+        projectId: a.id().required(),
+        annotationSetId: a.id().required(),
+      })
+      .returns(a.json())
+      .authorization((allow) => [allow.authenticated()])
+      .handler(a.handler.function(launchFalseNegatives)),
     launchQCReview: a
       .mutation()
       .arguments({
@@ -1836,7 +1845,6 @@ const schema = a
     allow.resource(processTilingBatch),
     allow.resource(monitorTilingTasks),
     allow.resource(findAndRequeueMissingLocations),
-    allow.resource(reconcileFalseNegatives),
     allow.resource(createOrganization),
     allow.resource(inviteUserToOrganization),
     allow.resource(respondToInvite),
