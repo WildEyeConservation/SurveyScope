@@ -56,3 +56,19 @@ test('a 0.5 bounds scale shows exactly the location box', () => {
   assert.ok(tiles.every((t) => t.z === 2));
   assert.equal(tiles.length, 6);
 });
+
+test('without a zoom, a tile fills the view with a slim margin', () => {
+  const tile = { x: 3168, y: 4752, width: 2112, height: 1901 };
+  const tiles = viewTiles({
+    image,
+    location: { ...tile, source: 'manual' },
+    zoom: null,
+    viewport: { width: 1024, height: 720 },
+  });
+  const z = tiles[0].z;
+  const tilePx = 16384 / 2 ** z;
+  const cols = tiles.map((t) => t.col);
+  const rows = tiles.map((t) => t.row);
+  assert.ok((Math.max(...cols) - Math.min(...cols) + 1) * tilePx < 2112 * 2);
+  assert.ok((Math.max(...rows) - Math.min(...rows) + 1) * tilePx < 1901 * 2);
+});

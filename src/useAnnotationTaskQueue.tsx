@@ -12,6 +12,7 @@ import type {
   TaskAcknowledgement,
 } from './annotationTypes';
 import { primeTask } from './annotator/prefetchTask';
+import { TILE_VIEW_BOUNDS_SCALE } from './annotator/viewTiles';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
@@ -27,6 +28,7 @@ const LOCATION_SELECTION = [
   'width',
   'height',
   'confidence',
+  'source',
   'image.id',
   'image.width',
   'image.height',
@@ -80,6 +82,7 @@ export default function useAnnotationTaskQueue() {
   // user testing state
   const configRef = useRef<Schema['ProjectTestConfig']['type']>();
   const testUserRef = useRef(false);
+  const testViewBoundsScaleRef = useRef<number | undefined>(undefined);
   const testingSetupPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const maxCadenceIndexRef = useRef(-1);
   const { fetcher: testFetcher } = useTesting();
@@ -125,6 +128,7 @@ export default function useAnnotationTaskQueue() {
     async function setupTesting() {
       configRef.current = undefined;
       testUserRef.current = false;
+      testViewBoundsScaleRef.current = undefined;
       const { data: config } = await client.models.ProjectTestConfig.get(
         {
           projectId: currentPM.projectId,
@@ -150,7 +154,7 @@ export default function useAnnotationTaskQueue() {
         const { data: queue } = currentPM.queueId
           ? await client.models.Queue.get(
               { id: currentPM.queueId },
-              { selectionSet: ['name'] },
+              { selectionSet: ['name', 'locationSetId'] },
             )
           : { data: null };
         const shouldTest =
@@ -161,6 +165,18 @@ export default function useAnnotationTaskQueue() {
           )?.isTested ??
             false);
         testUserRef.current = shouldTest;
+
+        // Tests in a tiled job must open like its tiles, or they stand out.
+        if (shouldTest && queue?.locationSetId) {
+          const { data: sample } =
+            await client.models.Location.locationsBySetIdAndConfidence(
+              { setId: queue.locationSetId },
+              { limit: 1, selectionSet: ['source'] as const },
+            );
+          if (sample?.[0]?.source === 'manual') {
+            testViewBoundsScaleRef.current = TILE_VIEW_BOUNDS_SCALE;
+          }
+        }
       }
     }
 
@@ -196,6 +212,7 @@ export default function useAnnotationTaskQueue() {
           width: location.width,
           height: location.height,
           confidence: location.confidence,
+          source: location.source,
           image: location.image,
           annotationSetId: message.location.annotationSetId,
         },
@@ -423,7 +440,12 @@ export default function useAnnotationTaskQueue() {
 
       const testLocation = await testFetcher();
       if (!testLocation) return null;
-      return prepareTask(testLocation as unknown as AnnotationTaskMessage);
+      const task = await prepareTask(
+        testLocation as unknown as AnnotationTaskMessage,
+      );
+      return (
+        task && { ...task, viewBoundsScale: testViewBoundsScaleRef.current }
+      );
     }, [prepareTask, testFetcher]);
 
   const beforeNext = useCallback(

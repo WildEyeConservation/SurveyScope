@@ -26,8 +26,10 @@ import {
   mapZoomToStoredZoom,
   storedZoomToMapZoom,
 } from '../annotator/imageTiles';
+import { defaultViewBoundsScale } from '../annotator/viewTiles';
 import {
   DEFAULT_ZOOM_OFFSET,
+  loadPreviewImage,
   ZOOM_LEVEL_COUNT,
   type ZoomPreviewCandidate,
   type ZoomPreviewMode,
@@ -35,7 +37,6 @@ import {
 
 const OFFSET_MAX_MAP_ZOOM = 22;
 const WHOLE_IMAGE_PADDING = 20;
-const AUTO_FIT_SCALE = 1.5;
 const ANNOTATOR_MAX_WIDTH = '1024px';
 // Isolated wheel zooms lack originalEvent, so tag programmatic moves.
 const OWN_ZOOM = { ownZoom: true };
@@ -45,6 +46,7 @@ type Sample = {
   x: number;
   y: number;
   box: { width: number; height: number } | null;
+  source?: string | null;
   image: { id: string; width: number; height: number };
   sourceKey: string;
 };
@@ -143,18 +145,9 @@ export default function ZoomPreviewModal({
           }
           point = annotation;
         }
-        const { data: image } = await client.models.Image.get(
-          { id: point.imageId! },
-          { selectionSet: ['id', 'width', 'height'] as const },
-        );
-        const { data: files } = await client.models.ImageFile.imagesByimageId(
-          { imageId: point.imageId },
-          { selectionSet: ['id', 'type', 'key'] as const },
-        );
-        const file =
-          (files ?? []).find((f) => f.type === 'image/jpeg') ?? files?.[0];
+        const loaded = await loadPreviewImage(client, point.imageId!);
         if (cancelled) return;
-        if (!image || !file?.key) {
+        if (!loaded) {
           setError('This sample has no image to show. Try another sample.');
           return;
         }
@@ -166,8 +159,8 @@ export default function ZoomPreviewModal({
             target.width && target.height
               ? { width: target.width, height: target.height }
               : null,
-          image: { id: image.id, width: image.width, height: image.height },
-          sourceKey: file.key,
+          source: target.source,
+          ...loaded,
         });
       } catch (err) {
         console.error('Failed to load zoom preview image', err);
@@ -201,13 +194,14 @@ export default function ZoomPreviewModal({
     const map = mapRef.current;
     if (!map || !sample?.box || !projection) return;
     const { x, y, box } = sample;
+    const scale = defaultViewBoundsScale(sample);
     fitPxBounds(
       map,
       projection,
-      x - box.width * AUTO_FIT_SCALE,
-      y - box.height * AUTO_FIT_SCALE,
-      x + box.width * AUTO_FIT_SCALE,
-      y + box.height * AUTO_FIT_SCALE,
+      x - box.width * scale,
+      y - box.height * scale,
+      x + box.width * scale,
+      y + box.height * scale,
       OWN_ZOOM,
     );
   };
