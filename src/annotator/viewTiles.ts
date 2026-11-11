@@ -9,10 +9,24 @@ export interface ViewTile {
 const WORLD_SIZE_AT_ZOOM_0 = 512;
 const TILE_SIZE = 256;
 const DEFAULT_VIEW_BOUNDS_SCALE = 1.5;
+// Tiles get a slim margin (about 6% each side) so their edges stay visible.
+export const TILE_VIEW_BOUNDS_SCALE = 0.56;
+
+export function defaultViewBoundsScale(location?: { source?: string | null }) {
+  return location?.source === 'manual'
+    ? TILE_VIEW_BOUNDS_SCALE
+    : DEFAULT_VIEW_BOUNDS_SCALE;
+}
 
 export function viewTiles(input: {
   image: { width: number; height: number };
-  location: { x: number; y: number; width: number; height: number };
+  location: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    source?: string | null;
+  };
   zoom?: number | null;
   viewBoundsScale?: number;
   viewport: { width: number; height: number };
@@ -24,7 +38,7 @@ export function viewTiles(input: {
   if (zoom != null) {
     scale = (WORLD_SIZE_AT_ZOOM_0 * 2 ** (zoom - 1)) / n;
   } else {
-    const s = input.viewBoundsScale ?? DEFAULT_VIEW_BOUNDS_SCALE;
+    const s = input.viewBoundsScale ?? defaultViewBoundsScale(location);
     scale = Math.min(
       viewport.width / (2 * location.width * s),
       viewport.height / (2 * location.height * s),

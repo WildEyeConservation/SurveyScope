@@ -20,6 +20,7 @@ export function LocationLoader() {
           'width',
           'height',
           'confidence',
+          'source',
           'image.id',
           'image.width',
           'image.height',

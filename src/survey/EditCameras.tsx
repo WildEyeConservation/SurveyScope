@@ -2,10 +2,10 @@ import DataTable, { type DataColumn } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Schema } from '../amplify/client-schema';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
-import { Schema } from '../amplify/client-schema';
-import { loadProjectImages } from '../projectImages';
+import { useSurveyImages } from './surveyImages';
 import { SectionTitle } from './SurveyStructure';
 
 interface CameraFormData {
@@ -38,6 +38,7 @@ export default function EditCameras({
   organizationId: string;
 }) {
   const { client, showModal } = useContext(GlobalContext);
+  const surveyImages = useSurveyImages();
   const [cameras, setCameras] = useState<Schema['Camera']['type'][]>([]);
   const [form, setForm] = useState<CameraFormDataMap>({});
   const [saved, setSaved] = useState<CameraFormDataMap>({});
@@ -123,7 +124,7 @@ export default function EditCameras({
       });
 
       if (newCamera) {
-        const images = await loadProjectImages(client, projectId, []);
+        const images = await surveyImages.load();
         await Promise.all(
           images.map((image) =>
             client.models.Image.update({
@@ -132,6 +133,7 @@ export default function EditCameras({
             }),
           ),
         );
+        surveyImages.refresh();
         setCameras([newCamera]);
         const next = { [newCamera.id]: form[NEW_CAMERA] };
         setForm(next);

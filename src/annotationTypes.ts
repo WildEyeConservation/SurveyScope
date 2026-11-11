@@ -27,6 +27,7 @@ export interface AnnotationLocation {
   width: number;
   height: number;
   confidence?: number | null;
+  source?: string | null;
   image: AnnotationImage;
 }
 

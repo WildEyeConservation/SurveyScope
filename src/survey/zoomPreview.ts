@@ -11,6 +11,7 @@ export type ZoomPreviewCandidate = {
   y?: number;
   width?: number;
   height?: number;
+  source?: string | null;
 };
 
 export const ZOOM_LEVEL_COUNT = 13;
@@ -73,7 +74,47 @@ export async function loadLocationCandidates(
       y: loc.y,
       width,
       height,
+      source: loc.source,
     });
   }
   return pickZoomPreviewCandidates(found);
+}
+
+export async function loadPreviewImage(client: DataClient, imageId: string) {
+  const [{ data: image }, { data: files }] = await Promise.all([
+    client.models.Image.get(
+      { id: imageId },
+      { selectionSet: ['id', 'width', 'height'] as const },
+    ),
+    client.models.ImageFile.imagesByimageId(
+      { imageId },
+      { selectionSet: ['id', 'type', 'key'] as const },
+    ),
+  ]);
+  const file = (files ?? []).find((f) => f.type === 'image/jpeg') ?? files?.[0];
+  if (!image || !file?.key) return null;
+  return {
+    image: { id: image.id, width: image.width, height: image.height },
+    sourceKey: file.key,
+  };
+}
+
+export async function loadAnnotationCandidates(
+  client: DataClient,
+  projectId: string,
+): Promise<ZoomPreviewCandidate[]> {
+  const { data } =
+    await client.models.Annotation.annotationsByProjectIdAndCreatedAt(
+      { projectId },
+      {
+        sortDirection: 'DESC',
+        limit: SAMPLE_POOL_SIZE,
+        selectionSet: ['id', 'x', 'y', 'imageId'] as const,
+      },
+    );
+  return pickZoomPreviewCandidates(
+    (data ?? []).filter(
+      (a) => a.imageId && Number.isFinite(a.x) && Number.isFinite(a.y),
+    ),
+  );
 }

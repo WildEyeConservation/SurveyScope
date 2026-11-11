@@ -57,6 +57,7 @@ import {
 import MapRotateControl from './MapRotateControl';
 import { setAnnotatorViewport } from './prefetchTask';
 import useImageFileSource from './useImageFileSource';
+import { defaultViewBoundsScale } from './viewTiles';
 
 /*
 MapLibre-based image viewer for the species-labelling workflow, including
@@ -358,7 +359,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         zoom: storedZoomToMapZoom(zoom),
       });
     } else {
-      const scale = viewBoundsScale ?? 1.5;
+      const scale = viewBoundsScale ?? defaultViewBoundsScale(location);
       const hasBounds = location?.x && location?.width && location?.height;
       // Not clamped to the image, so edge locations stay centred.
       const left = hasBounds ? location.x - location.width * scale : 0;

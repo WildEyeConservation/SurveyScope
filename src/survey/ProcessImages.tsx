@@ -13,6 +13,7 @@ import {
   type ModelValue,
   type ScanImage,
 } from './processImagesScan';
+import { useSurveyImages } from './surveyImages';
 import { SectionTitle } from './SurveyStructure';
 
 const MODEL_VALUES: ModelValue[] = ['owl-d', 'scoutbotv3', 'elephant', 'mad'];
@@ -28,6 +29,7 @@ export default function ProcessImages({
   organizationId: string;
 }) {
   const { client, backend, showModal } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
   const [scan, setScan] = useState<{
     total: number;
     unprocessed: Record<string, ScanImage[]>;
@@ -51,12 +53,18 @@ export default function ProcessImages({
     // Only the scan reports errors without a model.
     setError((e) => (e?.model === null ? null : e));
     Promise.all([
-      findUnprocessedByModel(client, projectId, MODEL_VALUES, {
-        signal,
-        onProgress: (count) => {
-          if (!signal.aborted) setImagesLoaded(count);
+      findUnprocessedByModel(
+        client,
+        projectId,
+        MODEL_VALUES,
+        surveyImages.load,
+        {
+          signal,
+          onProgress: (count) => {
+            if (!signal.aborted) setImagesLoaded(count);
+          },
         },
-      }),
+      ),
       client.models.Project.get(
         { id: projectId },
         { selectionSet: ['status'], signal },
@@ -76,7 +84,7 @@ export default function ProcessImages({
         });
       });
     return () => controller.abort();
-  }, [client, projectId, scanKey]);
+  }, [client, projectId, scanKey, surveyImages]);
 
   const findLocationSetByName = useCallback(
     async (name: string) => {
@@ -259,7 +267,10 @@ export default function ProcessImages({
               size='sm'
               className='p-0 text-muted-foreground hover:text-foreground'
               disabled={(!scan && !error) || !!queueing}
-              onClick={() => setScanKey((key) => key + 1)}
+              onClick={() => {
+                surveyImages.refresh();
+                setScanKey((key) => key + 1);
+              }}
             >
               <RefreshCwIcon className='size-3.5' />
               Refresh

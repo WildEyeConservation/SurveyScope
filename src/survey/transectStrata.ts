@@ -1,9 +1,9 @@
 import * as turf from '@turf/turf';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { isOnEffort, type BoundaryStatus } from '../../shared/boundaryStatus';
-import { loadProjectImages } from '../projectImages';
 import { fetchAllPaginatedResults } from '../utils';
 import { ringToPolygon } from './new-survey/surveyArea';
+import type { LoadSurveyImages } from './surveyImages';
 
 export type LatLng = [number, number];
 
@@ -214,8 +214,7 @@ function imputeLatLng<
 }
 
 export async function loadOnEffortImages(
-  client: DataClient,
-  projectId: string,
+  load: LoadSurveyImages,
   signal?: AbortSignal,
   onProgress?: (count: number) => void,
 ): Promise<{
@@ -223,19 +222,7 @@ export async function loadOnEffortImages(
   imputedIds: Set<string>;
   dbTransectIds: Map<string, string | null>;
 }> {
-  const rawImgs = (await loadProjectImages(
-    client,
-    projectId,
-    [
-      'timestamp',
-      'cameraId',
-      'latitude',
-      'longitude',
-      'transectId',
-      'boundaryStatus',
-    ],
-    { signal, onProgress },
-  )) as any[];
+  const rawImgs = await load({ signal, onProgress });
   const dbTransectIds = new Map<string, string | null>(
     rawImgs.map((img) => [img.id, img.transectId ?? null]),
   );
