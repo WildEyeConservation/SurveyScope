@@ -36,6 +36,7 @@ export interface AnnotationRecord {
   imageId: string;
   categoryId: string;
   outsideBoundary?: boolean | null;
+  source?: string | null;
 }
 
 export interface JollyResultRecord {
@@ -70,6 +71,7 @@ export interface ValidationCounts {
   invalidCameraOptics: number;
   annotationsForExcludedImages: number;
   annotationsMarkedOutside: number;
+  falseNegativeAnnotations: number;
 }
 
 export interface ComputationOutput {

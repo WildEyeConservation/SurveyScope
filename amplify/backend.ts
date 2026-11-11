@@ -46,7 +46,6 @@ import { monitorScoutbotDlq } from './functions/monitorScoutbotDlq/resource';
 import { processTilingBatch } from './functions/processTilingBatch/resource';
 import { monitorTilingTasks } from './functions/monitorTilingTasks/resource';
 import { findAndRequeueMissingLocations } from './functions/findAndRequeueMissingLocations/resource';
-import { reconcileFalseNegatives } from './functions/reconcileFalseNegatives/resource';
 import { createOrganization } from './functions/createOrganization/resource';
 import { inviteUserToOrganization } from './functions/inviteUserToOrganization/resource';
 import { respondToInvite } from './functions/respondToInvite/resource';
@@ -130,7 +129,6 @@ const backend = defineBackend({
   processTilingBatch,
   monitorTilingTasks,
   findAndRequeueMissingLocations,
-  reconcileFalseNegatives,
   createOrganization,
   inviteUserToOrganization,
   respondToInvite,
@@ -1179,6 +1177,113 @@ for (const finishResource of [
   );
 }
 
+const falseNegativeSamplesTableName = `detweb-false-negative-samples-${workflowStatsEnvName}`;
+const falseNegativeSamplesTable = new dynamodb.Table(
+  workflowStatsStack,
+  'FalseNegativeSamples',
+  {
+    tableName: falseNegativeSamplesTableName,
+    partitionKey: {
+      name: 'annotationSetId',
+      type: dynamodb.AttributeType.STRING,
+    },
+    sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+    billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    encryption: dynamodb.TableEncryption.AWS_MANAGED,
+    pointInTimeRecovery: true,
+    removalPolicy: RemovalPolicy.RETAIN,
+  }
+);
+falseNegativeSamplesTable.addGlobalSecondaryIndex({
+  indexName: 'byImage',
+  partitionKey: { name: 'imageKey', type: dynamodb.AttributeType.STRING },
+  sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
+});
+
+for (const sampleResource of [
+  backend.launchFalseNegatives,
+  backend.launchAnnotationSet,
+  backend.findAndRequeueMissingLocations,
+]) {
+  sampleResource.addEnvironment(
+    'FALSE_NEGATIVE_SAMPLES_TABLE',
+    falseNegativeSamplesTableName
+  );
+  const sampleFunction = sampleResource.resources.lambda;
+  const sampleTableArn = Stack.of(sampleFunction).formatArn({
+    service: 'dynamodb',
+    resource: 'table',
+    resourceName: falseNegativeSamplesTableName,
+  });
+  sampleFunction.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: [
+        'dynamodb:GetItem',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:DeleteItem',
+        'dynamodb:Query',
+        'dynamodb:BatchWriteItem',
+      ],
+      resources: [sampleTableArn, `${sampleTableArn}/index/*`],
+    })
+  );
+}
+
+// Pass table names through SSM to avoid a data-stack dependency cycle.
+const falseNegativeTables = {
+  Location: backend.data.resources.tables['Location'],
+  Observation: backend.data.resources.tables['Observation'],
+  Annotation: backend.data.resources.tables['Annotation'],
+};
+const falseNegativeTablesParameterName = `/detweb/${workflowStatsEnvName}/false-negative-tables`;
+const falseNegativeTablesParameter = new ssm.StringParameter(
+  workflowStatsStack,
+  'FalseNegativeTables',
+  {
+    parameterName: falseNegativeTablesParameterName,
+    stringValue: JSON.stringify({
+      Location: falseNegativeTables.Location.tableName,
+      Observation: falseNegativeTables.Observation.tableName,
+      Annotation: falseNegativeTables.Annotation.tableName,
+    }),
+  }
+);
+backend.launchFalseNegatives.addEnvironment(
+  'FALSE_NEGATIVE_TABLES_PARAMETER',
+  falseNegativeTablesParameterName
+);
+new iam.Policy(workflowStatsStack, 'FalseNegativeLaunchDataAccess', {
+  roles: [backend.launchFalseNegatives.resources.lambda.role!],
+  statements: [
+    new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [falseNegativeTablesParameter.parameterArn],
+    }),
+    new iam.PolicyStatement({
+      actions: ['dynamodb:Query'],
+      resources: [
+        `${falseNegativeTables.Location.tableArn}/index/locationsBySetIdAndConfidence`,
+        `${falseNegativeTables.Observation.tableArn}/index/observationsByAnnotationSetIdAndCreatedAt`,
+        `${falseNegativeTables.Observation.tableArn}/index/observationsByLocationId`,
+        `${falseNegativeTables.Annotation.tableArn}/index/annotationsBySetId`,
+        `${falseNegativeTables.Annotation.tableArn}/index/annotationsByImageIdAndSetId`,
+      ],
+    }),
+    new iam.PolicyStatement({
+      actions: ['dynamodb:BatchGetItem'],
+      resources: [falseNegativeTables.Location.tableArn],
+    }),
+    new iam.PolicyStatement({
+      actions: ['dynamodb:BatchWriteItem', 'dynamodb:DeleteItem'],
+      resources: [
+        falseNegativeTables.Observation.tableArn,
+        falseNegativeTables.Annotation.tableArn,
+      ],
+    }),
+  ],
+});
+
 const workflowDailyStatsTableName = `detweb-workflow-daily-stats-${workflowStatsEnvName}`;
 
 // The reporting query reads the same tables. Names are pinned literals and the
@@ -1460,6 +1565,39 @@ const workflowStatsObservationProjector = new NodejsFunction(
       NODE_OPTIONS: '--enable-source-maps',
     },
   }
+);
+workflowStatsObservationProjector.addEnvironment(
+  'FALSE_NEGATIVE_MARKER_TABLES',
+  JSON.stringify({
+    samples: falseNegativeSamplesTable.tableName,
+    Location: falseNegativeTables.Location.tableName,
+    Annotation: falseNegativeTables.Annotation.tableName,
+    Observation: falseNegativeTables.Observation.tableName,
+  })
+);
+falseNegativeSamplesTable.grantReadWriteData(workflowStatsObservationProjector);
+falseNegativeTables.Location.grant(
+  workflowStatsObservationProjector,
+  'dynamodb:GetItem'
+);
+for (const table of [
+  falseNegativeTables.Annotation,
+  falseNegativeTables.Observation,
+]) {
+  table.grant(
+    workflowStatsObservationProjector,
+    'dynamodb:BatchWriteItem',
+    'dynamodb:DeleteItem'
+  );
+}
+workflowStatsObservationProjector.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['dynamodb:Query'],
+    resources: [
+      `${falseNegativeTables.Annotation.tableArn}/index/annotationsByImageIdAndSetId`,
+      `${falseNegativeTables.Observation.tableArn}/index/observationsByLocationId`,
+    ],
+  })
 );
 workflowRunsTable.grantReadData(workflowStatsObservationProjector);
 workflowEventsTable.grantReadWriteData(workflowStatsObservationProjector);
@@ -2321,10 +2459,6 @@ backend.launchAnnotationSet.addEnvironment(
   'PROCESS_TILING_BATCH_FUNCTION_NAME',
   backend.processTilingBatch.resources.lambda.functionName
 );
-backend.launchFalseNegatives.addEnvironment(
-  'PROCESS_TILING_BATCH_FUNCTION_NAME',
-  backend.processTilingBatch.resources.lambda.functionName
-);
 
 backend.runImageRegistration.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
@@ -2387,20 +2521,13 @@ backend.deleteQueue.resources.lambda.addToRolePolicy(
   })
 );
 backend.deleteQueue.addEnvironment(
-  'RECONCILE_FALSE_NEGATIVES_FUNCTION_NAME',
-  backend.reconcileFalseNegatives.resources.lambda.functionName
-);
-backend.deleteQueue.addEnvironment(
   'RECONCILE_HOMOGRAPHIES_FUNCTION_NAME',
   backend.reconcileHomographies.resources.lambda.functionName
 );
 backend.deleteQueue.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: ['lambda:InvokeFunction'],
-    resources: [
-      backend.reconcileFalseNegatives.resources.lambda.functionArn,
-      backend.reconcileHomographies.resources.lambda.functionArn,
-    ],
+    resources: [backend.reconcileHomographies.resources.lambda.functionArn],
   })
 );
 backend.cleanupJobs.resources.lambda.addToRolePolicy(
@@ -2411,25 +2538,6 @@ backend.cleanupJobs.resources.lambda.addToRolePolicy(
       'arn:aws:s3:::*/false-negative-manifests/*',
       'arn:aws:s3:::*/qc-review-manifests/*',
       'arn:aws:s3:::*/info-tag-manifests/*',
-    ],
-  })
-);
-backend.cleanupJobs.resources.lambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    actions: ['lambda:InvokeFunction'],
-    resources: [backend.reconcileFalseNegatives.resources.lambda.functionArn],
-  })
-);
-backend.cleanupJobs.addEnvironment(
-  'RECONCILE_FALSE_NEGATIVES_FUNCTION_NAME',
-  backend.reconcileFalseNegatives.resources.lambda.functionName
-);
-backend.reconcileFalseNegatives.resources.lambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    actions: ['s3:GetObject', 's3:PutObject'],
-    resources: [
-      'arn:aws:s3:::*/false-negative-pools/*',
-      'arn:aws:s3:::*/false-negative-history/*',
     ],
   })
 );
@@ -2711,15 +2819,8 @@ expireInactiveQueuesFunction.addToRolePolicy(
 expireInactiveQueuesFunction.addToRolePolicy(
   new iam.PolicyStatement({
     actions: ['lambda:InvokeFunction'],
-    resources: [
-      backend.reconcileFalseNegatives.resources.lambda.functionArn,
-      backend.reconcileHomographies.resources.lambda.functionArn,
-    ],
+    resources: [backend.reconcileHomographies.resources.lambda.functionArn],
   })
-);
-backend.expireInactiveQueues.addEnvironment(
-  'RECONCILE_FALSE_NEGATIVES_FUNCTION_NAME',
-  backend.reconcileFalseNegatives.resources.lambda.functionName
 );
 backend.expireInactiveQueues.addEnvironment(
   'RECONCILE_HOMOGRAPHIES_FUNCTION_NAME',

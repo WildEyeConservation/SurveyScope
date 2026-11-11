@@ -12,7 +12,6 @@ import { monitorTilingTasks } from "../functions/monitorTilingTasks/resource"
 import { cleanupJobs } from "../functions/cleanupJobs/resource"
 import { expireInactiveQueues } from "../functions/expireInactiveQueues/resource"
 import { findAndRequeueMissingLocations } from "../functions/findAndRequeueMissingLocations/resource"
-import { reconcileFalseNegatives } from "../functions/reconcileFalseNegatives/resource"
 import { launchQCReview } from "../functions/launchQCReview/resource"
 import { launchInfoTags } from "../functions/launchInfoTags/resource"
 import { launchHomography } from "../functions/launchHomography/resource"
@@ -109,7 +108,6 @@ export const outputBucket = defineStorage({
       allow.resource(workflowFiles).to(['get', 'delete']),
       allow.resource(launchFalseNegatives).to(['read', 'write']),
       allow.resource(launchAnnotationSet).to(['delete']),
-      allow.resource(reconcileFalseNegatives).to(['read', 'write']),
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ],
     // False negative history tracking
@@ -117,7 +115,6 @@ export const outputBucket = defineStorage({
       allow.resource(workflowFiles).to(['get', 'delete']),
       allow.resource(launchFalseNegatives).to(['read', 'write']),
       allow.resource(launchAnnotationSet).to(['delete']),
-      allow.resource(reconcileFalseNegatives).to(['read', 'write']),
       allow.groups(['sysadmin']).to(['read', 'write', 'delete'])
     ]
   })

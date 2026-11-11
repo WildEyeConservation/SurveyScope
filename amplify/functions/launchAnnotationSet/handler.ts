@@ -18,6 +18,9 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { createSampleStore } from '../falseNegativeSamples/store';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import {
@@ -1425,6 +1428,18 @@ async function deleteFalseNegativeData(annotationSetId: string): Promise<void> {
 
   // Delete the FN manifest from S3 (for continuation detection)
   await deleteFnManifest(annotationSetId);
+
+  // The sample's tiles belong to the tiling being replaced.
+  const samplesTable = process.env.FALSE_NEGATIVE_SAMPLES_TABLE;
+  if (samplesTable) {
+    const rows = await createSampleStore(
+      DynamoDBDocumentClient.from(
+        new DynamoDBClient({ region: env.AWS_REGION })
+      ),
+      samplesTable
+    ).deleteSample(annotationSetId);
+    console.log('Deleted FN sample', { annotationSetId, rows });
+  }
 }
 
 // Delete all false-negative data across every annotation set in a project.

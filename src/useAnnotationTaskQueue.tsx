@@ -46,6 +46,7 @@ const RECEIVE_BATCH_SIZE = 5;
 // Start the next batch while there is still time to prime it.
 const RECEIVE_AHEAD = 3;
 const VISIBILITY_TIMEOUT_S = 600;
+const FALSE_NEGATIVES_QUEUE = 'False Negatives';
 
 interface AnnotationTaskMessage {
   location: {
@@ -61,6 +62,7 @@ interface AnnotationTaskMessage {
   queueId?: string;
   observationId?: string;
   taskTag?: string;
+  isFalseNegatives?: boolean;
 }
 
 /*
@@ -76,8 +78,12 @@ export default function useAnnotationTaskQueue() {
   const [backupUrl, setBackupUrl] = useState<string | undefined>(undefined);
   const [zoom, setZoom] = useState<number | undefined>(undefined);
   const [backupZoom, setBackupZoom] = useState<number | undefined>(undefined);
+  const [isFnQueue, setIsFnQueue] = useState(false);
+  const [backupIsFnQueue, setBackupIsFnQueue] = useState(false);
   // Use ref instead of state to prevent fetcher reference churn on every new location
   const processedLocationsRef = useRef<Set<string>>(new Set());
+  // Tasks this session finished, so paging back to one is not a redelivery.
+  const ownObservationsRef = useRef<Set<string>>(new Set());
 
   // user testing state
   const configRef = useRef<Schema['ProjectTestConfig']['type']>();
@@ -111,6 +117,7 @@ export default function useAnnotationTaskQueue() {
       touchQueue(client, currentPM.queueId);
       client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
         if (!data) return;
+        setIsFnQueue(data.name === FALSE_NEGATIVES_QUEUE);
         setUrl(data.url ?? undefined);
         setZoom(data.zoom ?? undefined);
       });
@@ -118,6 +125,7 @@ export default function useAnnotationTaskQueue() {
         client.models.Queue.get({ id: currentPM.backupQueueId }).then(
           ({ data }) => {
             if (!data) return;
+            setBackupIsFnQueue(data.name === FALSE_NEGATIVES_QUEUE);
             setBackupUrl(data.url ?? undefined);
             setBackupZoom(data.zoom ?? undefined);
           },
@@ -158,7 +166,7 @@ export default function useAnnotationTaskQueue() {
             )
           : { data: null };
         const shouldTest =
-          queue?.name !== 'False Negatives' &&
+          queue?.name !== FALSE_NEGATIVES_QUEUE &&
           (myOrganizationHook.data?.find(
             (membership) =>
               membership.organizationId === config.project.organizationId,
@@ -192,10 +200,21 @@ export default function useAnnotationTaskQueue() {
       const locationId = message.location?.id;
       if (!locationId) return null;
 
-      const { data: location } = await client.models.Location.get(
-        { id: locationId },
-        { selectionSet: LOCATION_SELECTION },
-      );
+      const observationId = message.observationId;
+      const [{ data: location }, done] = await Promise.all([
+        client.models.Location.get(
+          { id: locationId },
+          { selectionSet: LOCATION_SELECTION },
+        ),
+        // A redelivered message someone else already completed.
+        observationId && !ownObservationsRef.current.has(observationId)
+          ? client.models.Observation.get(
+              { id: observationId },
+              { selectionSet: ['id'] },
+            )
+          : null,
+      ]);
+      if (done?.data) return null;
       if (
         !location?.image ||
         location.width == null ||
@@ -224,6 +243,7 @@ export default function useAnnotationTaskQueue() {
         queueId: message.queueId,
         observationId: message.observationId,
         taskTag: message.taskTag,
+        isFalseNegatives: message.isFalseNegatives,
       };
 
       if (!message.skipLocationWithAnnotations) {
@@ -263,6 +283,7 @@ export default function useAnnotationTaskQueue() {
       entity: Message,
       sourceUrl: string,
       queueZoom: number | undefined,
+      isFalseNegatives: boolean,
       receiveMs: number,
     ): Promise<AnnotationTaskPayload | null> => {
       const body = JSON.parse(entity.Body!) as AnnotationTaskMessage;
@@ -270,7 +291,11 @@ export default function useAnnotationTaskQueue() {
         body.observationId = `queue-message:${entity.MessageId}`;
       }
       body.zoom = queueZoom;
+      body.isFalseNegatives = isFalseNegatives;
       const ack = async () => {
+        if (body.observationId) {
+          ownObservationsRef.current.add(body.observationId);
+        }
         try {
           // Re-resolve the client: the ack can fire long after the receive.
           const ackClient = await getSqsClient();
@@ -354,10 +379,14 @@ export default function useAnnotationTaskQueue() {
       };
     };
 
-    let source = { url: url!, zoom };
+    let source = { url: url!, zoom, isFalseNegatives: isFnQueue };
     let received = await receive(url!);
     if (received.messages.length === 0 && backupUrl) {
-      source = { url: backupUrl, zoom: backupZoom };
+      source = {
+        url: backupUrl,
+        zoom: backupZoom,
+        isFalseNegatives: backupIsFnQueue,
+      };
       received = await receive(backupUrl);
       if (received.messages.length > 0 && currentPM.backupQueueId) {
         touchQueue(client, currentPM.backupQueueId);
@@ -370,6 +399,7 @@ export default function useAnnotationTaskQueue() {
           entity,
           source.url,
           source.zoom,
+          source.isFalseNegatives,
           received.receiveMs,
         ).catch((error: unknown) => {
           console.error('Failed to prepare annotation task', error);
@@ -386,6 +416,8 @@ export default function useAnnotationTaskQueue() {
     backupUrl,
     zoom,
     backupZoom,
+    isFnQueue,
+    backupIsFnQueue,
     getSqsClient,
     prepareMessage,
     client,

@@ -151,6 +151,7 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     observationId,
     revalidate,
     taskTag,
+    isFalseNegatives,
     viewBoundsScale,
     embedded = false,
     bearing,
@@ -220,8 +221,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       },
     );
   }, [surveyId]);
-  const [isFalseNegativesJob, setIsFalseNegativesJob] =
+  const [membershipQueueIsFn, setIsFalseNegativesJob] =
     useState<boolean>(false);
+  // Queue tasks know their queue up front; the lookup below can lag.
+  const isFalseNegativesJob = isFalseNegatives ?? membershipQueueIsFn;
   const [jobSetId, setJobSetId] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
