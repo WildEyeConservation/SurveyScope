@@ -19,16 +19,18 @@ import type {
   TaskAcknowledgement,
 } from './annotationTypes';
 import MapLibreAnnotator from './annotator/MapLibreAnnotator';
+import { selectTestContextAnnotations } from './annotator/testContextAnnotations';
 import {
   publishSharedDefaultZoom,
   storedDefaultZoom,
   subscribeToSharedDefaultZoom,
 } from './defaultZoomEvents';
-import type { CategoryType } from './schemaTypes';
+import type { CategoryType, ExtendedAnnotationType } from './schemaTypes';
 import useImageStats from './useImageStats';
 import { useImageInfoTags } from './useInfoTags';
 import { useOptimisticUpdates } from './useOptimisticUpdates';
 import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
+import { fetchAllPaginatedResults } from './utils';
 
 interface AnnotationSessionProps {
   location: AnnotationLocation;
@@ -50,6 +52,7 @@ interface AnnotationSessionProps {
   allowOutside?: boolean;
   categories: CategoryType[];
   hideFnAnnotations?: boolean;
+  readonlyAnnotations?: ExtendedAnnotationType[] | null;
   showMapLegend?: boolean;
   infoTags?: Map<string, string[]>;
   embedded?: boolean;
@@ -79,6 +82,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     allowOutside,
     categories,
     hideFnAnnotations,
+    readonlyAnnotations,
     showMapLegend,
     infoTags,
     stats,
@@ -123,6 +127,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
         source={observationSource!}
         categories={categories}
         hideFnAnnotations={hideFnAnnotations}
+        readonlyAnnotations={readonlyAnnotations}
         showMapLegend={showMapLegend}
         infoTags={infoTags}
         embedded={embedded}
@@ -346,13 +351,57 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   >(
     'Annotation',
     async (nextToken: string | null | undefined) =>
-      client.models.Annotation.annotationsByImageIdAndSetId(
-        { imageId: location.image.id, setId: { eq: location.annotationSetId } },
-        { limit: 10000, nextToken },
-      ),
+      // A test's working set is a fresh ephemeral set; never load the answers.
+      isTest
+        ? { data: [] as Schema['Annotation']['type'][], nextToken: null }
+        : client.models.Annotation.annotationsByImageIdAndSetId(
+            {
+              imageId: location.image.id,
+              setId: { eq: location.annotationSetId },
+            },
+            { limit: 10000, nextToken },
+          ),
     subscriptionFilter,
   ) as unknown as AnnotationsHook;
   const stats = useImageStats(annotationsHook);
+
+  const [testContext, setTestContext] = useState<{
+    annotations: ExtendedAnnotationType[];
+    categories: { id: string; name: string }[];
+  } | null>(null);
+  useEffect(() => {
+    if (!isTest) return;
+    let cancelled = false;
+    setTestContext(null);
+    Promise.all([
+      fetchAllPaginatedResults(
+        client.models.Annotation.annotationsByImageIdAndSetId,
+        {
+          imageId: location.image.id,
+          setId: { eq: annotationSetId },
+          limit: 10000,
+        },
+      ),
+      fetchAllPaginatedResults(
+        client.models.Category.categoriesByAnnotationSetId,
+        { annotationSetId, selectionSet: ['id', 'name'] },
+      ),
+    ])
+      .then(([annotations, categories]) => {
+        if (cancelled) return;
+        setTestContext({
+          annotations: annotations.filter(Boolean) as ExtendedAnnotationType[],
+          categories: categories.filter(Boolean),
+        });
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to load test context annotations', error);
+        if (!cancelled) setTestContext({ annotations: [], categories: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isTest, client, location.image.id, annotationSetId]);
 
   // Source tag written onto both annotations and observations.
   const source = useMemo(() => {
@@ -374,6 +423,35 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       ) ?? [],
     [legendCategories, projectCategories, legendSetId],
   );
+
+  // Browsing shows every sighting, whatever the user's job.
+  const hideFnAnnotations = !embedded && !isFalseNegativesJob;
+
+  const readonlyAnnotations = useMemo(() => {
+    if (!isTest) return undefined;
+    if (!testContext || filteredCategories.length === 0) return null;
+    return selectTestContextAnnotations({
+      annotations: testContext.annotations,
+      sourceCategories: testContext.categories,
+      jobCategories: filteredCategories,
+      location: {
+        x: location.x,
+        y: location.y,
+        width: location.width,
+        height: location.height,
+      },
+      hideFnAnnotations,
+    });
+  }, [
+    isTest,
+    testContext,
+    filteredCategories,
+    location.x,
+    location.y,
+    location.width,
+    location.height,
+    hideFnAnnotations,
+  ]);
 
   async function handleShare() {
     const windowUrl = new URL(window.location.href);
@@ -423,8 +501,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       observationSource={source}
       allowOutside={allowOutside}
       categories={filteredCategories}
-      // Browsing shows every sighting, whatever the user's job.
-      hideFnAnnotations={!embedded && !isFalseNegativesJob}
+      hideFnAnnotations={hideFnAnnotations}
+      readonlyAnnotations={readonlyAnnotations}
       showMapLegend={embedded || legendCollapsed}
       infoTags={infoTagsByAnnotation}
       embedded={embedded}

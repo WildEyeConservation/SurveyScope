@@ -2,7 +2,12 @@ import { useCallback, useContext, useRef } from 'react';
 import { Schema } from './amplify/client-schema';
 import { GlobalContext, ImageContext, ProjectContext } from './Context';
 import { hasModelField } from './modelFields';
-import { countTestAnnotations, type TestAnnotation } from './testScoring';
+import {
+  countTestAnnotations,
+  countTestKey,
+  type KeyAnnotation,
+  type TestAnnotation,
+} from './testScoring';
 import { fetchAllPaginatedResults } from './utils';
 
 interface UseCreateTestResultProps {
@@ -13,6 +18,14 @@ interface UseCreateTestResultProps {
   testPresetId?: string;
   /** Job labels used for name-based scoring. */
   labelNames?: string[];
+  /** Set when the test was served grown to a tile; scored in this box. */
+  grownBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    imageId: string;
+  };
 }
 
 // Only name-linked labels contribute to per-label accuracy; totals include all labels.
@@ -22,6 +35,7 @@ export default function useCreateTestResult({
   testSetId,
   testPresetId,
   labelNames,
+  grownBox,
 }: UseCreateTestResultProps) {
   const { project, categoriesHook, currentPM } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
@@ -38,10 +52,12 @@ export default function useCreateTestResult({
       {} as Record<string, string>,
     );
 
-    const { data: location } = await client.models.Location.get(
-      { id: locationId! },
-      { selectionSet: ['x', 'y', 'width', 'height'] },
-    );
+    const { data: location } = grownBox
+      ? { data: grownBox }
+      : await client.models.Location.get(
+          { id: locationId! },
+          { selectionSet: ['x', 'y', 'width', 'height'] },
+        );
 
     if (!location) {
       console.error('No location found');
@@ -49,15 +65,28 @@ export default function useCreateTestResult({
     }
 
     // Fetch counts per category for the test location
-    const categoryCounts = await fetchAllPaginatedResults(
-      client.models.LocationAnnotationCount
-        .categoryCountsByLocationIdAndAnnotationSetId,
-      {
-        locationId: locationId!,
-        annotationSetId: { eq: annotationSetId },
-        selectionSet: ['categoryId', 'category.name', 'count'],
-      },
-    );
+    const categoryCounts = grownBox
+      ? countTestKey(
+          (await fetchAllPaginatedResults(
+            client.models.Annotation.annotationsByImageIdAndSetId,
+            {
+              imageId: grownBox.imageId,
+              setId: { eq: annotationSetId! },
+              selectionSet: ['x', 'y', 'categoryId', 'category.name'] as const,
+              limit: 10000,
+            },
+          )) as KeyAnnotation[],
+          grownBox,
+        )
+      : await fetchAllPaginatedResults(
+          client.models.LocationAnnotationCount
+            .categoryCountsByLocationIdAndAnnotationSetId,
+          {
+            locationId: locationId!,
+            annotationSetId: { eq: annotationSetId },
+            selectionSet: ['categoryId', 'category.name', 'count'],
+          },
+        );
 
     if (!categoryCounts) {
       console.error('No category counts found');
@@ -163,5 +192,6 @@ export default function useCreateTestResult({
     annotationSetToUse,
     testPresetId,
     labelNames,
+    grownBox,
   ]);
 }

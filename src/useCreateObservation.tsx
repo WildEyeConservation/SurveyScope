@@ -1,4 +1,4 @@
-import { useCallback, useContext, useRef } from 'react';
+import { useCallback, useContext, useMemo, useRef } from 'react';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
@@ -66,12 +66,34 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   const loadMetricsRef = useRef<ReturnType<typeof tileLoadStats.take>>();
   const plannedRef = useRef(false);
 
+  const grownBox = useMemo(
+    () =>
+      isTest && location?.testBoxGrown
+        ? {
+            x: location.x,
+            y: location.y,
+            width: location.width,
+            height: location.height,
+            imageId: location.image.id,
+          }
+        : undefined,
+    [
+      isTest,
+      location?.testBoxGrown,
+      location?.x,
+      location?.y,
+      location?.width,
+      location?.height,
+      location?.image.id,
+    ],
+  );
   const createTestResult = useCreateTestResult({
     locationId: id,
     annotationSetId,
     testSetId: isTest ? testSetId : undefined,
     testPresetId,
     labelNames,
+    grownBox,
   });
 
   const newAck = useCallback(

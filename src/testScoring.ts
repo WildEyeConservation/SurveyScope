@@ -14,6 +14,38 @@ type Bounds = {
   height?: number | null;
 };
 
+export type TestKeyCount = {
+  categoryId: string;
+  category: { name: string };
+  count: number;
+};
+
+export type KeyAnnotation = {
+  x: number;
+  y: number;
+  categoryId: string;
+  category?: { name: string } | null;
+};
+
+export function countTestKey(
+  annotations: KeyAnnotation[],
+  location: Bounds,
+): TestKeyCount[] {
+  const counts = new Map<string, TestKeyCount>();
+  for (const annotation of annotations) {
+    if (!isWithinLocationBounds(annotation, location)) continue;
+    const entry = counts.get(annotation.categoryId);
+    if (entry) entry.count += 1;
+    else
+      counts.set(annotation.categoryId, {
+        categoryId: annotation.categoryId,
+        category: { name: annotation.category?.name ?? '' },
+        count: 1,
+      });
+  }
+  return [...counts.values()];
+}
+
 export function countTestAnnotations(
   {
     local,
