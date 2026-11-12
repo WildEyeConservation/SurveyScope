@@ -103,6 +103,8 @@ export interface MapLibreAnnotatorProps {
   /** Categories for legend, hotkeys and marker colours (already filtered to the real set). */
   categories: CategoryType[];
   hideFnAnnotations?: boolean;
+  /** Read-only markers outside the working set. */
+  readonlyAnnotations?: ExtendedAnnotationType[] | null;
   /** Force the on-map legend visible (used when the side legend is collapsed). */
   showMapLegend?: boolean;
   /** Informational tag names per annotation id, shown in the hover popup. */
@@ -130,6 +132,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     source,
     categories,
     hideFnAnnotations,
+    readonlyAnnotations,
     showMapLegend,
     infoTags,
     embedded,
@@ -173,6 +176,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   const draggingIdRef = useRef<string | null>(null);
   const dragPositionRef = useRef<{ x: number; y: number } | null>(null);
   const annotationsRef = useRef<ExtendedAnnotationType[]>([]);
+  const readonlyAnnotationsRef = useRef<ExtendedAnnotationType[]>([]);
 
   const {
     imageFiles,
@@ -225,6 +229,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   );
   annotationsRef.current = annotations;
 
+  const shownReadonlyAnnotations = useMemo(
+    () => readonlyAnnotations ?? [],
+    [readonlyAnnotations],
+  );
+  readonlyAnnotationsRef.current = shownReadonlyAnnotations;
+
   const categoryColor = useCallback(
     (categoryId: string) =>
       categories?.find((c) => c.id === categoryId)?.color ?? 'red',
@@ -246,6 +256,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   const buildFeatureCollection = useCallback((): GeoJSON.FeatureCollection => {
     return buildAnnotationFeatureCollection({
       annotations: annotationsRef.current,
+      readonlyAnnotations: readonlyAnnotationsRef.current,
       draggedAnnotationId: draggingIdRef.current,
       dragPosition: dragPositionRef.current,
       locationBounds: locationBoundsRef.current,
@@ -406,7 +417,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   // ── Annotation data sync ──
   useEffect(() => {
     if (mapReady) refreshAnnotationSource();
-  }, [annotations, mapReady, refreshAnnotationSource]);
+  }, [
+    annotations,
+    shownReadonlyAnnotations,
+    mapReady,
+    refreshAnnotationSource,
+  ]);
 
   // ── Interactions ──
   useEffect(() => {
@@ -419,6 +435,10 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     };
     const annotationById = (id: string) =>
       annotationsRef.current.find((a) => a.id === id);
+    // Only for display; read-only features never reach a write handler.
+    const displayedAnnotationById = (id: string) =>
+      annotationById(id) ??
+      readonlyAnnotationsRef.current.find((a) => a.id === id);
     const featureProperties = (
       feature?: maplibregl.MapGeoJSONFeature,
     ): AnnotationFeatureProperties | undefined =>
@@ -441,7 +461,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         hoveredIdRef.current = id;
         popupRef.current?.remove();
         popupRef.current = null;
-        const annotation = id ? annotationById(id) : undefined;
+        const annotation = id ? displayedAnnotationById(id) : undefined;
         if (annotation) {
           const div = document.createElement('div');
           div.style.color = '#212529';
@@ -547,11 +567,11 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       if (feature) {
         const properties = featureProperties(feature);
         if (!properties) return;
-        const annotation = annotationById(properties.id);
+        const annotation = displayedAnnotationById(properties.id);
         if (!annotation) return;
         const items = buildAnnotationMenuItems({
           annotation,
-          readonly: properties.readonly,
+          readonly: properties.readonly || !annotationById(properties.id),
           canMarkOutside: canMarkOutsideBoundary() && !outsideRef.current,
           onDelete: annotationsHook.delete,
           onUpdate: annotationsHook.update,

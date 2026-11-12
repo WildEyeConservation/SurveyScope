@@ -29,6 +29,8 @@ export interface AnnotationLocation {
   confidence?: number | null;
   source?: string | null;
   image: AnnotationImage;
+  /** A test grown to the job's tile size; its key is recounted in this box. */
+  testBoxGrown?: boolean;
 }
 
 export interface AnnotationWorkspaceProps {
