@@ -17,6 +17,12 @@ import {
   findSameImageAnnotationConflicts,
   type ChainSplitPlan,
 } from './utils/chains';
+import {
+  proposalLassos,
+  updateHerdProposals,
+  type HerdProposalUpdate,
+  type HerdProposals,
+} from './utils/groupLink';
 import { isOov } from './utils/identity';
 import { buildMatchCandidates } from './utils/munkres';
 import { buildNeighbourTransforms } from './utils/transforms';
@@ -90,6 +96,9 @@ export function IndividualIdPairHarness({
   editHomographyHref,
 }: Props) {
   const [leniency, setLeniency] = useState<number>(DEFAULT_LENIENCY);
+  const [herdProposals, setHerdProposals] = useState<
+    Record<string, HerdProposals>
+  >({});
   const navigate = useNavigate();
   const { client } = useContext(GlobalContext)!;
   const projectCtx = useContext(ProjectContext);
@@ -177,9 +186,18 @@ export function IndividualIdPairHarness({
       backward: pair.backward,
       leniency,
       categoryFilter: categoryId,
+      proposedPairs: herdProposals[currentPairKey]?.pairs,
     });
     return working.mergeCandidates(currentPairKey, munkres);
-  }, [pair, annotationsByImage, leniency, categoryId, working, currentPairKey]);
+  }, [
+    pair,
+    annotationsByImage,
+    leniency,
+    categoryId,
+    working,
+    currentPairKey,
+    herdProposals,
+  ]);
 
   // ---- The map-pair callbacks (mirror IndividualIdHarness) ----
   // Persist a dragged real annotation's new position straight to the DB
@@ -871,6 +889,19 @@ export function IndividualIdPairHarness({
     active: string;
     clicked: string;
   } | null>(null);
+  const proposeHerd = useCallback(
+    (update: HerdProposalUpdate) => {
+      const pairKey = currentPairKey;
+      if (!pairKey) return;
+      setHerdProposals((prev) => {
+        const { [pairKey]: current, ...rest } = prev;
+        const next = updateHerdProposals(current, update);
+        return next ? { ...rest, [pairKey]: next } : rest;
+      });
+    },
+    [currentPairKey],
+  );
+
   const requestManualLink = useCallback(
     (activeAnnotationId: string, clickedAnnotationId: string) => {
       setPendingLink({
@@ -975,6 +1006,8 @@ export function IndividualIdPairHarness({
           onSetProposedObscured={handleSetProposedObscured}
           onMoveToOov={handleMoveToOov}
           onManualLinkRequest={requestManualLink}
+          onProposeHerd={proposeHerd}
+          herdLassos={proposalLassos(herdProposals[currentPairKey])}
           onRequestPrevPair={goPrev}
           onRequestNextPair={goNext}
           collapsed={toolbarCollapsed}

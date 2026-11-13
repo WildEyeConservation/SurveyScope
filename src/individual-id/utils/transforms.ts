@@ -49,7 +49,7 @@ export function projectsInside(
   return tx >= 0 && ty >= 0 && tx < w && ty < h;
 }
 
-function pointInPolygon(
+export function pointInPolygon(
   px: number,
   py: number,
   poly: [number, number][],
