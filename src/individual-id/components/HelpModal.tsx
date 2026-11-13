@@ -209,6 +209,9 @@ export function HelpModal({ show, onHide }: Props) {
             <p style={{ opacity: 0.85, fontSize: 13, marginBottom: 0 }}>
               Markers of your label that fall outside the other image's overlap
               look normal but are left out of matching and pair completion too.
+              If the animal moved and is visible on the other image anyway,
+              select it and <strong>Ctrl/⌘ + left-click</strong> it there to
+              link them manually.
             </p>
           </Section>
 
