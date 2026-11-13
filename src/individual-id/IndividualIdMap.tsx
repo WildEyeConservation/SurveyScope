@@ -62,6 +62,7 @@ export interface MapMarker {
    * toggle label.
    */
   obscured: boolean;
+  categoryName?: string;
   /** Marked outside the survey area on its own. */
   outside?: boolean;
   /**
@@ -715,6 +716,11 @@ export function IndividualIdMap({
       : '';
     el.innerHTML = `
       <div style="font-weight:600">${escape(nameFor(data.identityKey))}</div>
+      ${
+        data.categoryName
+          ? `<div style="font-size:11px;margin-top:2px">Label: <strong>${escape(data.categoryName)}</strong></div>`
+          : ''
+      }
       <div style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.4px;margin-top:2px">
         ${kindLabel}
       </div>
