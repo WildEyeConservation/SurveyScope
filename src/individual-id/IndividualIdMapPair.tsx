@@ -117,6 +117,8 @@ interface Props {
   foreignAnnotations?: AnnotationType[];
   /** categoryId → marker colour, used to colour the informational markers. */
   categoryColors?: Record<string, string>;
+  /** categoryId → label name. */
+  categoryNames?: Record<string, string>;
   /** Real annotation ids that violate the one-chain-member-per-image invariant. */
   duplicateAnnotationIds?: Set<string>;
   /** Real annotation ids from the last blocked chain-merge conflict. */
@@ -149,6 +151,7 @@ function candidateDistanceSq(a: MatchCandidate, b: MatchCandidate): number {
 // Stable empty defaults so the optional props don't churn memo identities.
 const NO_FOREIGN: AnnotationType[] = [];
 const NO_COLORS: Record<string, string> = {};
+const NO_NAMES: Record<string, string> = {};
 const NO_DUPLICATES: Set<string> = new Set();
 const NO_CONFLICT_HIGHLIGHTS: Set<string> = new Set();
 
@@ -187,6 +190,7 @@ export function IndividualIdMapPair(props: Props) {
     chainViewerBaseHref,
     foreignAnnotations = NO_FOREIGN,
     categoryColors = NO_COLORS,
+    categoryNames = NO_NAMES,
     duplicateAnnotationIds = NO_DUPLICATES,
     conflictHighlightAnnotationIds = NO_CONFLICT_HIGHLIGHTS,
     onClearConflictHighlights,
@@ -288,6 +292,7 @@ export function IndividualIdMapPair(props: Props) {
         status: c.status,
         kind: classify(c.realA, c.isShadowA),
         identityKey: c.identityKey,
+        categoryName: category?.name,
         active: c.pairKey === activeKey,
         obscured: c.realA ? !!c.realA.obscured : !!c.obscuredA,
         outside: isMarkedOutside(c.realA),
@@ -314,6 +319,7 @@ export function IndividualIdMapPair(props: Props) {
         x: a.x,
         y: a.y,
         color: categoryColors[a.categoryId] ?? DEFAULT_COLOR,
+        categoryName: categoryNames[a.categoryId],
         status: 'pending',
         kind: classify(a, false),
         identityKey: a.objectId ?? a.id,
@@ -336,6 +342,8 @@ export function IndividualIdMapPair(props: Props) {
     foreignAnnotations,
     imageA.id,
     categoryColors,
+    categoryNames,
+    category?.name,
     canSplitChain,
     duplicateAnnotationIds,
     conflictHighlightAnnotationIds,
@@ -358,6 +366,7 @@ export function IndividualIdMapPair(props: Props) {
         status: c.status,
         kind: classify(c.realB, c.isShadowB),
         identityKey: c.identityKey,
+        categoryName: category?.name,
         active: c.pairKey === activeKey,
         obscured: c.realB ? !!c.realB.obscured : !!c.obscuredB,
         outside: isMarkedOutside(c.realB),
@@ -384,6 +393,7 @@ export function IndividualIdMapPair(props: Props) {
         x: a.x,
         y: a.y,
         color: categoryColors[a.categoryId] ?? DEFAULT_COLOR,
+        categoryName: categoryNames[a.categoryId],
         status: 'pending',
         kind: classify(a, false),
         identityKey: a.objectId ?? a.id,
@@ -406,6 +416,8 @@ export function IndividualIdMapPair(props: Props) {
     foreignAnnotations,
     imageB.id,
     categoryColors,
+    categoryNames,
+    category?.name,
     canSplitChain,
     duplicateAnnotationIds,
     conflictHighlightAnnotationIds,

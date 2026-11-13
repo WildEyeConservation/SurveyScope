@@ -450,6 +450,10 @@ export function IndividualIdPairHarness({
     }
     return m;
   }, [setCategories]);
+  const categoryNames = useMemo(
+    () => Object.fromEntries(setCategories.map((c) => [c.id, c.name])),
+    [setCategories],
+  );
 
   // Annotations on the pair's two images that belong to OTHER categories —
   // rendered as read-only informational markers. OOV rows are excluded
@@ -953,6 +957,7 @@ export function IndividualIdPairHarness({
           category={pairData.data?.category ?? null}
           foreignAnnotations={foreignAnnotations}
           categoryColors={categoryColors}
+          categoryNames={categoryNames}
           duplicateAnnotationIds={duplicateAnnotationIds}
           conflictHighlightAnnotationIds={conflictHighlightAnnotationIds}
           onClearConflictHighlights={clearConflictHighlights}
