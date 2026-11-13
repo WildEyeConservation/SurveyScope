@@ -446,7 +446,7 @@ export function IndividualIdMapPair(props: Props) {
   );
 
   // Dragging a marker also focuses it — acting on any marker moves the
-  // active state to that marker. Informational markers can't be focused, so
+  // active state to that marker. Other-category markers can't be focused, so
   // dragging one only repositions it.
   const handleDragA = useCallback(
     (candidateKey: string, x: number, y: number) => {
@@ -773,12 +773,10 @@ export function IndividualIdMapPair(props: Props) {
     (candidateKey: string) => {
       // Other-category markers aren't part of the workflow — not focusable.
       if (foreignById.has(candidateKey)) return;
-      // Don't activate informational candidates — no partner to lock/accept.
-      const c = candidates.find((cc) => cc.pairKey === candidateKey);
-      if (c?.informational) return;
+      // Out-of-overlap markers stay selectable for manual linking; navigation skips them.
       setActiveKey(candidateKey);
     },
-    [candidates, foreignById],
+    [foreignById],
   );
 
   // Empty-map click places a new annotation and makes it the active marker
