@@ -385,6 +385,7 @@ installSubscriptionGroupAuth(backend.data.resources.cfnResources.cfnResolvers,
 // Newer data constructs default tables to AWS-owned keys; keep the existing KMS encryption.
 for (const table of Object.values(backend.data.resources.cfnResources.amplifyDynamoDbTables)) {
   table.sseSpecification = { sseEnabled: true };
+  table.pointInTimeRecoveryEnabled = true;
 }
 
 // Newer storage constructs rename these policies; keep the deployed names so CloudFormation updates
