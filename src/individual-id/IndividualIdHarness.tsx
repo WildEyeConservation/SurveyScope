@@ -43,6 +43,12 @@ import {
 } from './utils/chains';
 import { evaluatePairCompletion } from './utils/completion';
 import { completionNavigationTarget } from './utils/completionNavigation';
+import {
+  proposalLassos,
+  updateHerdProposals,
+  type HerdProposalUpdate,
+  type HerdProposals,
+} from './utils/groupLink';
 import { isOov } from './utils/identity';
 import { isOlder } from './utils/imageAge';
 import { imageSourceQuery } from './utils/imageSource';
@@ -217,6 +223,9 @@ export function IndividualIdHarness({
       ? leniencyProp
       : DEFAULT_LENIENCY,
   );
+  const [herdProposals, setHerdProposals] = useState<
+    Record<string, HerdProposals>
+  >({});
 
   // Kept in a ref so the Phase-6 completion detector can fire it from an
   // effect without a stale closure.
@@ -474,6 +483,7 @@ export function IndividualIdHarness({
         annotationSignaturesByImage[p.image1Id] ?? '',
         annotationSignaturesByImage[p.image2Id] ?? '',
         working.getPairVersion(pairKey),
+        herdProposals[pairKey]?.version ?? 0,
       ].join('\x1f');
       const cached = cache.get(pairKey);
       if (cached?.cacheKey === cacheKey && cached.pair === p) {
@@ -488,6 +498,7 @@ export function IndividualIdHarness({
         backward: p.backward,
         leniency,
         categoryFilter: categoryId,
+        proposedPairs: herdProposals[pairKey]?.pairs,
       });
       const merged = working.mergeCandidates(pairKey, fresh);
       const view = {
@@ -511,6 +522,7 @@ export function IndividualIdHarness({
     leniency,
     categoryId,
     working,
+    herdProposals,
   ]);
 
   // ---- Progress-bar rows ----
@@ -1959,6 +1971,16 @@ export function IndividualIdHarness({
     active: string;
     clicked: string;
   } | null>(null);
+  const proposeHerd = useCallback((update: HerdProposalUpdate) => {
+    const pairKey = currentPairKeyRef.current;
+    if (!pairKey) return;
+    setHerdProposals((prev) => {
+      const { [pairKey]: current, ...rest } = prev;
+      const next = updateHerdProposals(current, update);
+      return next ? { ...rest, [pairKey]: next } : rest;
+    });
+  }, []);
+
   const requestManualLink = useCallback(
     (activeAnnotationId: string, clickedAnnotationId: string) => {
       setPendingLink({
@@ -2098,6 +2120,8 @@ export function IndividualIdHarness({
             onSetProposedObscured={handleSetProposedObscured}
             onMoveToOov={handleMoveToOov}
             onManualLinkRequest={requestManualLink}
+            onProposeHerd={proposeHerd}
+            herdLassos={proposalLassos(herdProposals[currentView.pairKeyStr])}
             onAllAccepted={handleAllAccepted}
             onRequestPrevPair={() => laneNav(-1)}
             onRequestNextPair={() => laneNav(1)}

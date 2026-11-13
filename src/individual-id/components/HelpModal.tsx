@@ -179,7 +179,8 @@ export function HelpModal({ show, onHide }: Props) {
             <Row demo={<DemoMarker kind='shadow' />} label='Proposed'>
               A position the system predicts for the animal but with no
               annotation yet. Distinct white border and slightly faded.
-              Confirming it creates the real annotation.
+              Confirming it creates the real annotation. The ghost button in the
+              toolbar hides these, except on the selected candidate.
             </Row>
             <Row demo={<DemoMarker kind='primary' obscured />} label='Obscured'>
               An eye-off badge in the top-right corner. The object <em>is</em>{' '}
@@ -317,6 +318,21 @@ export function HelpModal({ show, onHide }: Props) {
               to confirm, and the link is saved straight away. This works when
               the selected marker has no real partner yet; two markers that are
               both already real can't be re-linked this way.
+            </p>
+            <p style={{ opacity: 0.85, fontSize: 14 }}>
+              <strong>Herd pairing:</strong> when a herd moved between the two
+              images, press the lasso button in the toolbar and click points
+              around the herd on each image (double-click or Enter closes the
+              shape), then click <strong>Propose pairs</strong>. Each animal is
+              proposed with the partner closest to where its neighbours'
+              movement puts it, so the herd may move unevenly. Nothing is linked
+              yet: check and accept the proposals with <strong>Space</strong> as
+              usual. Pairs with a dashed amber border are uncertain (for example
+              two spare animals joined) and come last. After accepting the pairs
+              you are sure of, <strong>Re-pair the rest</strong> pairs the
+              remaining animals again, which gets more of them right. Existing
+              links are kept, and <strong>Discard proposals</strong> goes back
+              to the normal ones.
             </p>
             <p style={{ opacity: 0.85, fontSize: 14, marginBottom: 6 }}>
               <strong>Keyboard shortcuts</strong>

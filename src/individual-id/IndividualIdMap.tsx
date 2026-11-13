@@ -7,6 +7,8 @@ import * as jdenticon from 'jdenticon';
 import { Check, Copy, EyeOff, Layers, RotateCw } from 'lucide-react';
 import pLimit from 'p-limit';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
+import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import { isOnEffort, OUTSIDE_SURVEY_AREA } from '../../shared/boundaryStatus';
 import type { ImageType } from '../schemaTypes';
 import { imageTileContext } from '../StorageLayer';
@@ -16,6 +18,7 @@ import {
   type LocationSourceConfig,
 } from './MapLocationOverlay';
 import type { CandidateStatus, PixelTransform } from './types';
+import type { Lasso } from './utils/groupLink';
 import { nameFor } from './utils/identity';
 import {
   annotationTiles,
@@ -63,6 +66,8 @@ export interface MapMarker {
    */
   obscured: boolean;
   categoryName?: string;
+  /** Herd proposal that sits far beyond its predicted motion. */
+  uncertain?: boolean;
   /** Marked outside the survey area on its own. */
   outside?: boolean;
   /**
@@ -216,6 +221,11 @@ interface Props {
   markersHidden?: boolean;
   /** Fires once the initial tiles finish loading. */
   onInitialTilesLoaded?: () => void;
+  /** Clicks place lasso corners instead of annotations; markers ignore the pointer. */
+  lassoMode?: boolean;
+  lasso?: Lasso | null;
+  onLassoDrawn?: (lasso: Lasso) => void;
+  badge?: string;
 }
 
 /** Inactive marker diameter in pixels. Active markers are ~25 (125%). */
@@ -233,6 +243,8 @@ const LENIENCY_LAYER = 'individual-id-leniency-ring';
 const PREVIEW_SOURCE = 'individual-id-homography-preview';
 const PREVIEW_LAYER_OUTLINE = 'individual-id-homography-outline';
 const PREVIEW_LAYER_GRID = 'individual-id-homography-grid';
+const LASSO_SOURCE = 'individual-id-lasso';
+const LASSO_COLOR = '#ff8c1a';
 
 /**
  * Top-left button that eases the map bearing by 90°. Same pattern as the
@@ -385,6 +397,9 @@ function applyMarkerStyle(el: HTMLDivElement, m: MapMarker) {
   } else if (m.duplicateChainMember) {
     el.style.border = '3px solid #dc2626';
     el.style.opacity = '1';
+  } else if (m.uncertain) {
+    el.style.border = '3px dashed #f59e0b';
+    el.style.opacity = '1';
   } else if (m.kind === 'shadow') {
     el.style.border = '2px solid #ffffff';
     el.style.opacity = '0.75';
@@ -494,6 +509,10 @@ export function IndividualIdMap({
   markersHidden,
   onInitialTilesLoaded,
   priorityTilePoints,
+  lassoMode,
+  lasso,
+  onLassoDrawn,
+  badge,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<maplibregl.Map | null>(null);
@@ -517,6 +536,8 @@ export function IndividualIdMap({
   // focus-pan displaced the marker off the cursor — timestamp the drag-end
   // so the map-click handler can swallow that bogus click.
   const lastMarkerDragEndRef = useRef(0);
+  const lassoModeRef = useRef(lassoMode);
+  lassoModeRef.current = lassoMode;
 
   // Latest callback refs so persistent marker handlers always invoke the
   // freshest closures without needing to be re-bound.
@@ -733,6 +754,11 @@ export function IndividualIdMap({
       ${
         data.conflictHighlight
           ? `<div style="font-size:10px;color:#7e22ce;margin-top:3px;font-weight:700">Blocked merge conflict</div>`
+          : ''
+      }
+      ${
+        data.uncertain
+          ? `<div style="font-size:10px;color:#b45309;margin-top:3px;font-weight:700">Uncertain pairing: check before accepting</div>`
           : ''
       }
       ${
@@ -1234,6 +1260,27 @@ export function IndividualIdMap({
         },
       });
 
+      m.addSource(LASSO_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      m.addLayer({
+        id: `${LASSO_SOURCE}-fill`,
+        type: 'fill',
+        source: LASSO_SOURCE,
+        paint: { 'fill-color': LASSO_COLOR, 'fill-opacity': 0.12 },
+      });
+      m.addLayer({
+        id: `${LASSO_SOURCE}-line`,
+        type: 'line',
+        source: LASSO_SOURCE,
+        paint: {
+          'line-color': LASSO_COLOR,
+          'line-width': 2,
+          'line-dasharray': [3, 2],
+        },
+      });
+
       m.fitBounds([px2lngLat(0, image.height), px2lngLat(image.width, 0)], {
         padding: 20,
         animate: false,
@@ -1273,6 +1320,7 @@ export function IndividualIdMap({
       // drag-end (the focus-pan moved the marker off the cursor, so the
       // click lands on the canvas rather than being absorbed by the marker).
       if (Date.now() - lastMarkerDragEndRef.current < 250) return;
+      if (lassoModeRef.current) return;
       const { x, y } = lngLat2px(e.lngLat.lng, e.lngLat.lat);
       if (x < 0 || y < 0 || x >= image.width || y >= image.height) return;
       mapClickRef.current?.(x, y);
@@ -1621,6 +1669,91 @@ export function IndividualIdMap({
     }
   }, [markersHidden, markers, map]);
 
+  const showLasso = useCallback(
+    (points: Lasso | null | undefined) => {
+      const src = map?.getSource(LASSO_SOURCE) as
+        maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+      const ring = (points ?? []).map(([x, y]) => px2lngLat(x, y));
+      src.setData({
+        type: 'FeatureCollection',
+        features:
+          ring.length < 3
+            ? []
+            : [
+                {
+                  type: 'Feature',
+                  properties: {},
+                  geometry: {
+                    type: 'Polygon',
+                    coordinates: [[...ring, ring[0]]],
+                  },
+                },
+              ],
+      });
+    },
+    [map, px2lngLat],
+  );
+
+  useEffect(() => {
+    try {
+      showLasso(lasso);
+    } catch {
+      // Map removed mid-commit.
+    }
+  }, [showLasso, lasso]);
+
+  const onLassoDrawnRef = useRef(onLassoDrawn);
+  onLassoDrawnRef.current = onLassoDrawn;
+  useEffect(() => {
+    if (!map || !lassoMode) return;
+    const draw = new TerraDraw({
+      adapter: new TerraDrawMapLibreGLAdapter({ map }),
+      modes: [
+        new TerraDrawPolygonMode({
+          pointerDistance: 12,
+          styles: {
+            fillColor: LASSO_COLOR,
+            fillOpacity: 0.12,
+            outlineColor: LASSO_COLOR,
+            outlineWidth: 2,
+          },
+        }),
+      ],
+    });
+    draw.on('finish', (id) => {
+      const feature = draw.getSnapshot().find((f) => f.id === id);
+      draw.clear();
+      if (feature?.geometry.type !== 'Polygon') return;
+      const ring = feature.geometry.coordinates[0].slice(0, -1);
+      onLassoDrawnRef.current?.(
+        ring.map(([lng, lat]) => {
+          const { x, y } = lngLat2px(lng, lat);
+          return [x, y];
+        }),
+      );
+    });
+    draw.start();
+    draw.setMode('polygon');
+    map.doubleClickZoom.disable();
+    map.getCanvas().style.cursor = 'crosshair';
+    return () => {
+      try {
+        draw.stop();
+        map.doubleClickZoom.enable();
+        map.getCanvas().style.cursor = '';
+      } catch {
+        // Map removed.
+      }
+    };
+  }, [map, lassoMode, lngLat2px]);
+
+  useEffect(() => {
+    for (const mk of markerRefs.current.values()) {
+      mk.getElement().style.pointerEvents = lassoMode ? 'none' : '';
+    }
+  }, [lassoMode, markers, map]);
+
   // Image filename pill — top-centered, click-to-copy. Mirrors the pattern
   // in MapLibreImageViewer so the two map experiences feel the same.
   const imageName = (image as any).originalPath ?? image.id;
@@ -1691,6 +1824,27 @@ export function IndividualIdMap({
           </span>
         </button>
       </div>
+      {badge && (
+        <div
+          className='maplibregl-ctrl maplibregl-ctrl-group'
+          style={{
+            position: 'absolute',
+            top: 10,
+            right: 10,
+            zIndex: 10,
+            padding: '0 8px',
+            height: 29,
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            color: '#333',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {badge}
+        </div>
+      )}
       {locationSources && locationSources.length > 0 && (
         <MapLocationOverlay
           map={map}
