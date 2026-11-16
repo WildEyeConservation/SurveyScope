@@ -6,12 +6,10 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
-import {
-  readFalseNegativeFile,
-  uploadWorkflowFile,
-} from '../storage/workflowFiles';
+import { uploadWorkflowFile } from '../storage/workflowFiles';
 import TileConfiguration, { type TileSettings } from '../TileConfiguration';
 import type { TiledLaunchRequest } from '../types/LaunchTask';
+import { fetchFalseNegativesStatus } from './falseNegativesApi';
 import { SectionTitle } from './SurveyStructure';
 
 // Threshold in bytes above which we upload the payload to S3.
@@ -173,10 +171,12 @@ export default function ManageTiles({
 
         for (const as of annotationSets) {
           if (signal.aborted) return;
-          const pool = await readFalseNegativeFile(as.id, 'pool', signal).catch(
-            () => null,
-          );
-          if (pool) {
+          const status = await fetchFalseNegativesStatus(
+            client,
+            project.id,
+            as.id,
+          ).catch(() => null);
+          if (status?.sample) {
             if (!signal.aborted) setHasFnData(true);
             return;
           }
@@ -189,7 +189,7 @@ export default function ManageTiles({
     }
     checkForFnData();
     return () => controller.abort();
-  }, [client.models.AnnotationSet, project.id]);
+  }, [client, project.id]);
 
   const startPollingProgress = useCallback(
     (tilingTaskId: string) => {
@@ -604,7 +604,7 @@ export default function ManageTiles({
               {hasFnData && (
                 <div className='text-xs text-warning'>
                   This survey's false-negative annotations, observations and
-                  pool files will be deleted too.
+                  samples will be deleted too.
                 </div>
               )}
             </div>

@@ -3,9 +3,12 @@ import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { DataClient } from '../../amplify/shared/data-schema.generated';
-import { isOnEffort } from '../../shared/boundaryStatus';
 import { Schema } from '../amplify/client-schema';
 import { GlobalContext, UserContext } from '../Context';
+import {
+  groupLaunchImages,
+  launchSelection,
+} from '../individual-id/utils/launchGroups';
 import { findIncompleteTransectIds } from '../individual-id/utils/transectCompletion';
 import { loadProjectImages } from '../projectImages';
 import { loadProjectNeighbours } from '../projectNeighbours';
@@ -26,8 +29,6 @@ import {
   SettingRow,
 } from './launchParts';
 import { LoadingProgressCard } from './LoadingProgressCard';
-
-const OUTSIDE_GROUP = 'outside-boundary';
 
 // AppSync rejects very large mutation arguments; above this the payload is
 // staged in S3 and only a reference is sent (mirrors FalseNegatives).
@@ -72,9 +73,7 @@ type AnnotationRow = {
   oov: boolean | null;
 };
 
-// timestamp/originalPath drive the reunion search's chronological endpoint
-// ordering — without them every image falls back to id order and the
-// launch-time check could disagree with the harness.
+// Keep launch-time grouping and completion inputs aligned with the harness.
 type ProjectImage = Pick<
   ImageType,
   | 'id'
@@ -84,6 +83,9 @@ type ProjectImage = Pick<
   | 'timestamp'
   | 'originalPath'
   | 'boundaryStatus'
+  | 'latitude'
+  | 'longitude'
+  | 'cameraId'
 >;
 
 type ProjectImages = {
@@ -118,10 +120,7 @@ export default function IndividualId({
   const [loading, setLoading] = useState(true);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>(INITIAL_LOAD_STATUS);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  // Transects (for the selected label) that still have linking work, computed
-  // with the same Munkres/completion logic the harness uses. `null` until
-  // computed or when the project has no transects yet (nothing could be
-  // complete, so the gate doesn't apply and the lambda detects transects).
+  // Existing or detected transects with linking work; null until checked.
   const [incompleteTransectIds, setIncompleteTransectIds] = useState<
     string[] | null
   >(null);
@@ -155,48 +154,28 @@ export default function IndividualId({
   // Project images keyed by id, plus the transect grouping and the de-duped,
   // skip-filtered neighbour list — the inputs the harness's completion logic
   // needs. Derived once from the project image load; category-independent.
-  const { imagesById, imageIdsByTransect, rawNeighbours } = useMemo(() => {
-    const byId: Record<string, ImageType> = {};
-    const byTransect = new Map<string, Set<string>>();
-    for (const img of projectImages.images) {
-      byId[img.id] = img as unknown as ImageType;
-      const group = isOnEffort(img.boundaryStatus)
-        ? img.transectId
-        : OUTSIDE_GROUP;
-      if (group) {
-        let set = byTransect.get(group);
-        if (!set) {
-          set = new Set<string>();
-          byTransect.set(group, set);
-        }
-        set.add(img.id);
+  const { imagesById, imageIdsByTransect, transectsExist, rawNeighbours } =
+    useMemo(() => {
+      const byId: Record<string, ImageType> = {};
+      for (const img of projectImages.images) {
+        byId[img.id] = img as unknown as ImageType;
       }
-    }
-    return {
-      imagesById: byId,
-      imageIdsByTransect: byTransect,
-      rawNeighbours: projectImages.neighbours.filter((n) => !n.skipped),
-    };
-  }, [projectImages]);
-
-  // Transects only exist once a prior workflow (or a previous Individual ID
-  // launch) has created them. Without them no individual-id linking can have
-  // happened, so the "already complete" gate doesn't apply — the launch
-  // lambda detects and creates transects itself.
-  const transectsExist = Array.from(imageIdsByTransect.keys()).some(
-    (group) => group !== OUTSIDE_GROUP,
-  );
+      const { groups, transectsExist } = groupLaunchImages(
+        projectImages.images,
+      );
+      return {
+        imagesById: byId,
+        imageIdsByTransect: groups,
+        transectsExist,
+        rawNeighbours: projectImages.neighbours.filter((n) => !n.skipped),
+      };
+    }, [projectImages]);
 
   // Recompute which transects still have work whenever the label changes.
   // Deferred to a macrotask so the "Checking…" status can paint before the
   // (potentially heavy) Munkres sweep blocks the thread.
   useEffect(() => {
     if (loading || !selectedCategoryId) {
-      setIncompleteTransectIds(null);
-      setAnalyzing(false);
-      return;
-    }
-    if (!transectsExist) {
       setIncompleteTransectIds(null);
       setAnalyzing(false);
       return;
@@ -232,7 +211,6 @@ export default function IndividualId({
   }, [
     loading,
     selectedCategoryId,
-    transectsExist,
     allAnnotations,
     imagesById,
     imageIdsByTransect,
@@ -242,7 +220,6 @@ export default function IndividualId({
   // No transect has outstanding work for this label — launching would create
   // a job whose every transect is already done.
   const noWork =
-    transectsExist &&
     !analyzing &&
     incompleteTransectIds !== null &&
     incompleteTransectIds.length === 0;
@@ -343,6 +320,7 @@ export default function IndividualId({
   const selectedCategoryIdRef = useRef(selectedCategoryId);
   const selectedImageIdsRef = useRef(selectedImageIds);
   const transectsExistRef = useRef(transectsExist);
+  const imageIdsByTransectRef = useRef(imageIdsByTransect);
   const incompleteTransectIdsRef = useRef(incompleteTransectIds);
   useEffect(() => {
     selectedCategoryIdRef.current = selectedCategoryId;
@@ -353,6 +331,9 @@ export default function IndividualId({
   useEffect(() => {
     transectsExistRef.current = transectsExist;
   }, [transectsExist]);
+  useEffect(() => {
+    imageIdsByTransectRef.current = imageIdsByTransect;
+  }, [imageIdsByTransect]);
   useEffect(() => {
     incompleteTransectIdsRef.current = incompleteTransectIds;
   }, [incompleteTransectIds]);
@@ -369,12 +350,12 @@ export default function IndividualId({
           return;
         }
 
-        // Only launch transects that still have linking work. When transects
-        // already exist we send the explicit incomplete set so the lambda
-        // skips already-finished ones; if none remain, abort before launching.
-        const transectsExist = transectsExistRef.current;
         const incomplete = incompleteTransectIdsRef.current;
-        if (transectsExist && incomplete !== null && incomplete.length === 0) {
+        if (incomplete === null) {
+          onProgress('Still checking which transects need linking.');
+          return;
+        }
+        if (incomplete.length === 0) {
           onProgress(
             'All transects for this label are already complete — nothing to launch.',
           );
@@ -394,14 +375,15 @@ export default function IndividualId({
           queueName: jobNameRef.current.trim() || undefined,
           annotatedImageIds: selectedImageIdsRef.current,
         };
-        // Omitted when transects don't exist yet: the lambda detects/creates
-        // them, and a fresh project has no completed work to skip.
-        if (transectsExist && incomplete && incomplete.length > 0) {
-          payload.incompleteTransectIds = incomplete.filter(
-            (id) => id !== OUTSIDE_GROUP,
-          );
-          payload.includeOutside = incomplete.includes(OUTSIDE_GROUP);
-        }
+        Object.assign(
+          payload,
+          launchSelection(
+            incomplete,
+            imageIdsByTransectRef.current,
+            selectedImageIdsRef.current,
+            transectsExistRef.current,
+          ),
+        );
 
         onProgress('Submitting ChainLinker request...');
         await sendLaunchIndividualIdRequest(client, payload);
@@ -433,10 +415,7 @@ export default function IndividualId({
     (c) => c.id === selectedCategoryId,
   );
 
-  const outstanding =
-    transectsExist && incompleteTransectIds !== null
-      ? incompleteTransectIds.length
-      : null;
+  const outstanding = incompleteTransectIds?.length ?? null;
   useLaunchLabel(
     outstanding ? `Launch ${plural(outstanding, 'transect')}` : null,
     !loading && availableCategories.length === 0
@@ -590,6 +569,9 @@ async function fetchProjectImages(
       'timestamp',
       'originalPath',
       'boundaryStatus',
+      'latitude',
+      'longitude',
+      'cameraId',
     ],
     { onProgress },
   );

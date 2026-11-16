@@ -384,7 +384,6 @@ async function cancelQueue(queue: QueueRow): Promise<boolean> {
 
   // reconcileHomographies reads the manifest itself, then deletes it.
   const isHomographyQueue = queue.tag === 'homography';
-  const isFnQueue = queue.name === 'False Negatives';
   if (queue.locationManifestS3Key && !isHomographyQueue && env.OUTPUTS_BUCKET_NAME) {
     try {
       await s3.send(
@@ -403,10 +402,6 @@ async function cancelQueue(queue: QueueRow): Promise<boolean> {
       annotationSetId: queue.annotationSetId,
       queueId: queue.id,
       manifestS3Key: queue.locationManifestS3Key ?? null,
-    });
-  } else if (!isFnQueue && queue.annotationSetId) {
-    await invoke(process.env.RECONCILE_FALSE_NEGATIVES_FUNCTION_NAME, {
-      annotationSetId: queue.annotationSetId,
     });
   }
 

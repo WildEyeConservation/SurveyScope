@@ -77,6 +77,9 @@ export interface MatchCandidate {
    * all skip it. The hover popup (Change Label, Delete) still works.
    */
   informational?: boolean;
+  herdProposed?: boolean;
+  /** Herd pairing that sits far beyond its predicted motion; visited last and marked for checking. */
+  uncertain?: boolean;
   /**
    * Set when one side of this candidate is an "out of view" (OOV)
    * annotation: an animal known to be on this point but not visible in the

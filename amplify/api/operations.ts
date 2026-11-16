@@ -279,6 +279,10 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   },
   launchAnnotationSet: { fn: 'launchAnnotationSet', authorize: launch },
   launchFalseNegatives: { fn: 'launchFalseNegatives', authorize: launch },
+  getFalseNegativesStatus: {
+    fn: 'launchFalseNegatives',
+    authorize: surveyAdmin('projectId'),
+  },
   launchQCReview: { fn: 'launchQCReview', authorize: launch },
   launchInfoTags: { fn: 'launchInfoTags', authorize: launch },
   launchHomography: { fn: 'launchHomography', authorize: launch },

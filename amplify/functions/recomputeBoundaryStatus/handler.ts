@@ -43,6 +43,7 @@ type ImageRow = {
   longitude?: number | null;
   boundaryStatus?: BoundaryStatus | null;
   transectId?: string | null;
+  boundaryOverride?: 'inside' | 'outside' | null;
 };
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -414,11 +415,13 @@ async function recompute(
         'longitude',
         'boundaryStatus',
         'transectId',
+        'boundaryOverride',
       ],
       async (images) => {
         for (const image of images) {
           counts.images += 1;
-          const next = classify(image.latitude, image.longitude);
+          const next =
+            image.boundaryOverride ?? classify(image.latitude, image.longitude);
           counts[next ?? 'inside'] += 1;
           statuses.set(image.id, { current: image.boundaryStatus, next });
           designImages.push({

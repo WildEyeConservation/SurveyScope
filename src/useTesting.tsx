@@ -1,10 +1,28 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
 import { startTest } from './api/tasks';
 import { GlobalContext, ProjectContext } from './Context';
 import type { Identifiable } from './TaskBuffer';
 import { fetchAllPaginatedResults } from './utils';
 
-export default function useTesting() {
+export type TestCandidate = {
+  locationId: string;
+  annotationSetId: string;
+  testPresetId: string;
+};
+
+export type CandidateFilter = (entry: TestCandidate) => Promise<boolean>;
+
+// An extra check a candidate must pass; with it, no unfit fallback is served.
+export default function useTesting(
+  acceptRef?: MutableRefObject<CandidateFilter | undefined>,
+) {
   const { currentPM, project, categoriesHook } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
 
@@ -13,14 +31,8 @@ export default function useTesting() {
   const [zoom, setZoom] = useState<number | undefined>(undefined);
   const setupPromiseRef = useRef<Promise<void>>(Promise.resolve());
 
-  const primaryCandidates = useRef<
-    { locationId: string; annotationSetId: string; testPresetId: string }[]
-  >([]);
-  const currentLocation = useRef<{
-    locationId: string;
-    annotationSetId: string;
-    testPresetId: string;
-  } | null>(null);
+  const primaryCandidates = useRef<TestCandidate[]>([]);
+  const currentLocation = useRef<TestCandidate | null>(null);
 
   useEffect(() => {
     async function setup() {
@@ -146,6 +158,7 @@ export default function useTesting() {
       throw new Error('No primary candidates available for testing');
     }
     const length = candidateEntries.length;
+    const accept = acceptRef?.current;
 
     // Capture and immediately increment the index to prevent race conditions
     // when multiple concurrent fetcher calls happen
@@ -175,13 +188,23 @@ export default function useTesting() {
         (c) => !surveyCategories?.includes(c),
       );
       // Return the first valid test location
-      if (missingCategories.length === 0) {
+      if (
+        missingCategories.length === 0 &&
+        (!accept || (await accept(entry)))
+      ) {
         // Update ref to skip past this entry for next call
         iRef.current = (currentIndex + 1) % length;
         return entry;
       }
     }
     // If no valid candidate found, fallback to the next in sequence
+    if (accept) {
+      for (let attempt = 0; attempt < length; attempt++) {
+        const entry = candidateEntries[(startIndex + attempt) % length];
+        if (await accept(entry)) return entry;
+      }
+      return null;
+    }
     const fallbackIndex = startIndex % length;
     console.warn(
       'No valid test location found, defaulting to candidate',
@@ -189,15 +212,16 @@ export default function useTesting() {
     );
     iRef.current = (fallbackIndex + 1) % length;
     return candidateEntries[fallbackIndex];
-  }, [client, categoriesHook.data]);
+  }, [client, categoriesHook.data, acceptRef]);
 
-  const fetcher = useCallback(async (): Promise<Identifiable> => {
+  const fetcher = useCallback(async (): Promise<Identifiable | null> => {
     const location = await getTestLocation();
 
     currentLocation.current = location;
 
     if (!location) {
       console.warn('No location found for testing');
+      return null;
     }
 
     await startTest({

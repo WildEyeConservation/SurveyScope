@@ -7,7 +7,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { GlobalContext } from '../Context';
+import { isOnEffort } from '../../shared/boundaryStatus';
+import { GlobalContext, UserContext } from '../Context';
 import { Footer } from '../Modal';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -37,14 +38,37 @@ import { BASE_STYLE, EMPTY_FC, type FeatureCollection } from './surveyMapStyle';
 
 import './surveyMap.css';
 
-import { loadProjectImages } from '../projectImages';
+import {
+  boundaryRecomputePending,
+  recomputeBoundaryStatus,
+} from '../utils/shapefileUtils';
+import { errToString, makeRetrying, runOp, sleep } from './retryOps';
+import { spreadOverlapping } from './spreadOverlapping';
+import { useSurveyImages } from './surveyImages';
+import { runSurveySave } from './surveySaves';
+import {
+  clearJollyResults,
+  onEffortImages,
+  savedTransectColours,
+} from './transectStrata';
 
 type ImageData = {
   id: string;
   latitude: number;
   longitude: number;
   originalPath?: string | null;
+  color: string;
 };
+
+type MarkTarget = 'inside' | 'outside';
+type MarkResult = {
+  target: MarkTarget;
+  marked: number;
+  failed: number;
+  cancelled: boolean;
+};
+
+const NO_TRANSECT_COLOR = '#808080';
 
 type ImageAggregate = {
   id: string;
@@ -87,72 +111,9 @@ const LYR_SHAPEFILE = 'shapefile-line';
 // ---------------------------------------------------------------------------
 
 const DELETE_CONCURRENCY = 6;
+const MARK_CONCURRENCY = 10;
+const RECOMPUTE_POLL_MS = 3000;
 const FETCH_CONCURRENCY = 6;
-
-/** Abortable sleep used between retry attempts. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-/** Flatten an error (thrown error or a GraphQL error object) to a string. */
-function errToString(err: any): string {
-  if (!err) return '';
-  if (typeof err === 'string') return err;
-  const parts = [err.errorType, err.name, err.code, err.message].filter(
-    Boolean,
-  );
-  if (Array.isArray(err.errors)) {
-    for (const e of err.errors) {
-      parts.push(e?.errorType, e?.message);
-    }
-  }
-  return parts.filter(Boolean).join(' ') || String(err);
-}
-
-const TRANSIENT_PATTERNS = [
-  'throttl',
-  'toomanyrequests',
-  'too many requests',
-  'rate exceeded',
-  'serviceunavailable',
-  'service unavailable',
-  'internalfailure',
-  'internal failure',
-  'internalservererror',
-  'networkerror',
-  'network error',
-  'failed to fetch',
-  'load failed',
-  'timeout',
-  'timed out',
-  'econnreset',
-  '429',
-  '502',
-  '503',
-  '504',
-];
-
-/** True for errors worth retrying (throttling / transient network / 5xx). */
-function isTransientError(err: any): boolean {
-  const s = errToString(err).toLowerCase();
-  if (!s) return false;
-  if (s.includes('abort')) return false; // a cancellation, never retry
-  return TRANSIENT_PATTERNS.some((p) => s.includes(p));
-}
 
 const GONE_PATTERNS = [
   'conditionalcheckfailed',
@@ -166,79 +127,6 @@ const GONE_PATTERNS = [
 function isAlreadyGone(err: any): boolean {
   const s = errToString(err).toLowerCase();
   return GONE_PATTERNS.some((p) => s.includes(p));
-}
-
-/** Exponential backoff (capped) with full jitter. */
-function backoffDelay(attempt: number, baseDelay: number): number {
-  const capped = Math.min(baseDelay * Math.pow(2, attempt - 1), 8000);
-  return Math.round(capped / 2 + Math.random() * (capped / 2));
-}
-
-interface RunOpOpts {
-  retries?: number;
-  baseDelay?: number;
-  signal?: AbortSignal;
-}
-
-/**
- * Run an Amplify data operation with retries. The data client resolves with
- * `{ data, errors }` rather than throwing on GraphQL errors, so we inspect
- * BOTH the thrown path and the returned `errors` array. Transient failures are
- * retried with backoff; a non-transient `errors` array is surfaced as a throw
- * so callers can record a real failure (the previous code silently treated
- * GraphQL errors as success).
- */
-async function runOp<T>(
-  fn: () => Promise<T>,
-  opts: RunOpOpts = {},
-): Promise<T> {
-  const { retries = 5, baseDelay = 300, signal } = opts;
-  let attempt = 0;
-  for (;;) {
-    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    let res: T;
-    try {
-      res = await fn();
-    } catch (err) {
-      if (!signal?.aborted && attempt < retries && isTransientError(err)) {
-        attempt += 1;
-        await sleep(backoffDelay(attempt, baseDelay), signal);
-        continue;
-      }
-      throw err;
-    }
-    const errors = (res as any)?.errors as any[] | null | undefined;
-    if (errors && errors.length) {
-      if (
-        !signal?.aborted &&
-        attempt < retries &&
-        errors.some(isTransientError)
-      ) {
-        attempt += 1;
-        await sleep(backoffDelay(attempt, baseDelay), signal);
-        continue;
-      }
-      const e: any = new Error(
-        errors.map((x) => x?.message || x?.errorType || String(x)).join('; '),
-      );
-      e.graphQLErrors = errors;
-      throw e;
-    }
-    return res;
-  }
-}
-
-/**
- * Wrap a paginated query function so each page request retries via runOp.
- * Returns `any` so it slots into `fetchAllPaginatedResults`' overloaded query
- * parameter without fighting its generic inference (the call sites cast the
- * resulting rows, as the rest of this file does).
- */
-function makeRetrying(queryFn: any, signal?: AbortSignal): any {
-  return (...args: any[]) =>
-    runOp(() => (signal ? queryFn(...args, { signal }) : queryFn(...args)), {
-      signal,
-    });
 }
 
 /**
@@ -278,6 +166,9 @@ async function runPool<T>(
 
 export default function DeleteImages({ projectId }: { projectId: string }) {
   const { client, showModal } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
+  const { cognitoGroups } = useContext(UserContext)!;
+  const isSysadmin = cognitoGroups.includes('sysadmin');
   const [images, setImages] = useState<ImageData[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -292,7 +183,13 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   const [deleteResult, setDeleteResult] = useState<DeletionCounters | null>(
     null,
   );
-  const [confirming, setConfirming] = useState(false);
+  const [markResult, setMarkResult] = useState<MarkResult | null>(null);
+  const [busyAction, setBusyAction] = useState<'delete' | 'mark'>('delete');
+  const [confirming, setConfirming] = useState<'delete' | MarkTarget | null>(
+    null,
+  );
+  const [chosenMode, setMode] = useState<'oob' | 'delete'>('oob');
+  const mode = isSysadmin ? chosenMode : 'delete';
   const [fullscreen, setFullscreen] = useState(false);
   const frameRef = useRef<HTMLDivElement>(null);
   const [shapefileCoords, setShapefileCoords] = useState<
@@ -314,91 +211,82 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   // Latest values for the once-registered map event handlers to read.
   const imagesRef = useRef(images);
   imagesRef.current = images;
+  const positions = useMemo(() => spreadOverlapping(images), [images]);
+  const positionsRef = useRef(positions);
+  positionsRef.current = positions;
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
   const drawingRef = useRef(false);
+  const drawFinishedAtRef = useRef(0);
 
   // Fetch images with GPS coordinates
-  const fetchImages = useCallback(async (): Promise<ImageData[]> => {
-    const { signal } = loadAbortRef.current;
-    setLoading(true);
-    setError(null);
-    setLoadingStatus('Loading images...');
-    setDeleteResult(null);
+  const fetchImages = useCallback(
+    async (refresh = false): Promise<ImageData[]> => {
+      const { signal } = loadAbortRef.current;
+      if (refresh) surveyImages.refresh();
+      setLoading(true);
+      setError(null);
+      setLoadingStatus('Loading images...');
 
-    try {
-      const onProgress = (count: number) => {
-        if (!signal.aborted) {
-          setLoadingStatus(
-            `Loading images · ${count.toLocaleString()} loaded...`,
-          );
-        }
-      };
-      const allImages = (await loadProjectImages(
-        client,
-        projectId,
-        ['latitude', 'longitude', 'originalPath'],
-        {
-          signal,
-          onProgress,
-          fallback: () =>
-            fetchAllPaginatedResults(
-              makeRetrying(client.models.Image.imagesByProjectId, signal),
-              {
-                projectId,
-                selectionSet: ['id', 'latitude', 'longitude', 'originalPath'],
-                limit: 10000,
-              },
-              onProgress,
-            ),
-        },
-      )) as Array<{
-        id: string;
-        latitude?: number | null;
-        longitude?: number | null;
-        originalPath?: string | null;
-      }>;
+      try {
+        const onProgress = (count: number) => {
+          if (!signal.aborted) {
+            setLoadingStatus(
+              `Loading images · ${count.toLocaleString()} loaded...`,
+            );
+          }
+        };
+        const allImages = await surveyImages.load({ signal, onProgress });
 
-      if (signal.aborted) return [];
+        if (signal.aborted) return [];
 
-      // Filter to only images with valid GPS coordinates
-      const gpsImages: ImageData[] = allImages
-        .filter(
-          (img) =>
-            img.id &&
-            typeof img.latitude === 'number' &&
-            typeof img.longitude === 'number' &&
-            Number.isFinite(img.latitude) &&
-            Number.isFinite(img.longitude),
-        )
-        .map((img) => ({
-          id: img.id,
-          latitude: img.latitude!,
-          longitude: img.longitude!,
-          originalPath: img.originalPath,
-        }));
+        const colours = savedTransectColours(onEffortImages(allImages).images);
 
-      setImages(gpsImages);
-      setSelectedIds(new Set());
-      setLoadingStatus(
-        allImages.length > gpsImages.length
-          ? `${(allImages.length - gpsImages.length).toLocaleString()} images without location data are not shown.`
-          : '',
-      );
-      return gpsImages;
-    } catch (err) {
-      if (signal.aborted) return [];
-      console.error('Failed to fetch images:', err);
-      setError(
-        `Failed to fetch images: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      return [];
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  }, [client, projectId]);
+        // Filter to only images with valid GPS coordinates
+        const gpsImages: ImageData[] = allImages
+          .filter(
+            (img) =>
+              img.id &&
+              typeof img.latitude === 'number' &&
+              typeof img.longitude === 'number' &&
+              Number.isFinite(img.latitude) &&
+              Number.isFinite(img.longitude),
+          )
+          .map((img) => ({
+            id: img.id,
+            latitude: img.latitude!,
+            longitude: img.longitude!,
+            originalPath: img.originalPath,
+            color:
+              (isOnEffort(img.boundaryStatus) &&
+                img.transectId &&
+                colours.get(img.transectId)) ||
+              NO_TRANSECT_COLOR,
+          }));
+
+        setImages(gpsImages);
+        setSelectedIds(new Set());
+        setLoadingStatus(
+          allImages.length > gpsImages.length
+            ? `${(allImages.length - gpsImages.length).toLocaleString()} images without location data are not shown.`
+            : '',
+        );
+        return gpsImages;
+      } catch (err) {
+        if (signal.aborted) return [];
+        console.error('Failed to fetch images:', err);
+        setError(
+          `Failed to fetch images: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return [];
+      } finally {
+        if (!signal.aborted) setLoading(false);
+      }
+    },
+    [surveyImages],
+  );
 
   // Initial fetch
   useEffect(() => {
@@ -490,14 +378,20 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   const imagesFC = useMemo<FeatureCollection>(
     () => ({
       type: 'FeatureCollection',
-      features: images.map((img) => ({
-        type: 'Feature',
-        id: img.id,
-        properties: { id: img.id },
-        geometry: { type: 'Point', coordinates: [img.longitude, img.latitude] },
-      })),
+      features: images.map((img) => {
+        const pos = positions[img.id] ?? img;
+        return {
+          type: 'Feature',
+          id: img.id,
+          properties: { id: img.id, color: img.color },
+          geometry: {
+            type: 'Point',
+            coordinates: [pos.longitude, pos.latitude],
+          },
+        };
+      }),
     }),
-    [images],
+    [images, positions],
   );
 
   // -----------------------------------------------------------------------
@@ -553,11 +447,13 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             14,
             ['case', ['boolean', ['feature-state', 'selected'], false], 6, 4.5],
           ],
-          'circle-color': [
+          'circle-color': ['get', 'color'],
+          'circle-stroke-color': '#000',
+          'circle-stroke-width': [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
-            '#dc3545',
-            '#2563eb',
+            1.5,
+            0,
           ],
         },
       });
@@ -565,6 +461,8 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       // Click a marker to select it; Shift or Ctrl/⌘-click toggles it.
       map.on('click', (e) => {
         if (drawingRef.current) return; // drawing mode owns map clicks
+        // The click that closes the lasso arrives after 'finish'.
+        if (performance.now() - drawFinishedAtRef.current < 500) return;
         const [feature] = map.queryRenderedFeatures(e.point, {
           layers: [LYR_IMAGES],
         });
@@ -608,9 +506,10 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           if (feature && (feature.geometry as any)?.type === 'Polygon') {
             const newSelected = new Set<string>();
             for (const img of imagesRef.current) {
+              const pos = positionsRef.current[img.id] ?? img;
               if (
                 booleanPointInPolygon(
-                  [img.longitude, img.latitude],
+                  [pos.longitude, pos.latitude],
                   feature as any,
                 )
               ) {
@@ -629,6 +528,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             /* map torn down; ignore */
           }
           drawingRef.current = false;
+          drawFinishedAtRef.current = performance.now();
           setDrawing(false);
           map.getCanvas().style.cursor = '';
         }
@@ -698,6 +598,21 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     }
     appliedSelectionRef.current = new Set(selectedIds);
   }, [mapLoaded, selectedIds]);
+
+  const hasSelection = selectedIds.size > 0;
+  useEffect(() => {
+    if (!hasSelection) setConfirming(null);
+  }, [hasSelection]);
+  useEffect(() => {
+    if (!mapLoaded) return;
+    mapRef.current?.setPaintProperty(
+      LYR_IMAGES,
+      'circle-opacity',
+      hasSelection
+        ? ['case', ['boolean', ['feature-state', 'selected'], false], 1, 0.2]
+        : 1,
+    );
+  }, [mapLoaded, hasSelection]);
 
   // Shapefile overlay. Stored coords are [lat, lng]; GeoJSON wants [lng, lat].
   useEffect(() => {
@@ -1011,7 +926,8 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         retryIds && retryIds.length ? retryIds : Array.from(selectedIds);
       if (imageIds.length === 0) return;
 
-      setConfirming(false);
+      setConfirming(null);
+      setBusyAction('delete');
 
       const abort = new AbortController();
       abortRef.current = abort;
@@ -1020,6 +936,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
       setDeleting(true);
       setError(null);
       setDeleteResult(null);
+      setMarkResult(null);
 
       const counters: DeletionCounters = {
         imagesDeleted: 0,
@@ -1211,7 +1128,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
         // Refresh the map, then keep any images that still exist (failed,
         // un-reached or cancelled) selected so they can be retried.
         setDeleteProgress({ current: 0, total: 0, phase: 'Refreshing map...' });
-        const remaining = await fetchImages();
+        const remaining = await fetchImages(true);
         const targetSet = new Set(imageIds);
         setSelectedIds(
           new Set(
@@ -1225,7 +1142,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
           for (const id of failedToFetch) failedImageIds.add(id);
           counters.imagesFailed = failedImageIds.size;
           setDeleteResult(counters);
-          const remaining = await fetchImages();
+          const remaining = await fetchImages(true);
           const targetSet = new Set(imageIds);
           setSelectedIds(
             new Set(
@@ -1250,6 +1167,135 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     [selectedIds, fetchImageData, fetchImages, client, projectId],
   );
 
+  // The recompute is not cancellable, so neither is the wait.
+  const waitForRecompute = useCallback(async () => {
+    for (;;) {
+      const { data } = await runOp(() =>
+        client.models.Project.get(
+          { id: projectId },
+          {
+            selectionSet: [
+              'boundaryRecomputeRequested',
+              'boundaryRecomputeLeaseUntil',
+            ],
+          },
+        ),
+      );
+      if (!data || !boundaryRecomputePending(data)) return;
+      await sleep(RECOMPUTE_POLL_MS);
+    }
+  }, [client, projectId]);
+
+  const handleMark = useCallback(
+    async (target: MarkTarget) => {
+      const imageIds = Array.from(selectedIds);
+      if (imageIds.length === 0) return;
+
+      setConfirming(null);
+      setBusyAction('mark');
+      const abort = new AbortController();
+      abortRef.current = abort;
+      const signal = abort.signal;
+
+      setDeleting(true);
+      setError(null);
+      setDeleteResult(null);
+      setMarkResult(null);
+
+      const result: MarkResult = {
+        target,
+        marked: 0,
+        failed: 0,
+        cancelled: false,
+      };
+      const phase = `Marking images ${target} the survey boundary...`;
+      const markedIds = new Set<string>();
+      const failedIds = new Set<string>();
+      try {
+        await runSurveySave(projectId, async () => {
+          let processed = 0;
+          setDeleteProgress({
+            current: 0,
+            total: imageIds.length,
+            phase,
+          });
+          await runPool(
+            imageIds,
+            async (id) => {
+              try {
+                await runOp(
+                  () =>
+                    client.models.Image.update({
+                      id,
+                      boundaryOverride: target,
+                    }),
+                  { signal },
+                );
+                markedIds.add(id);
+                result.marked += 1;
+              } catch (err) {
+                if (signal.aborted) return;
+                failedIds.add(id);
+                console.warn(`Failed to mark image ${target}`, id, err);
+              } finally {
+                processed += 1;
+                if (!signal.aborted) {
+                  setDeleteProgress({
+                    current: processed,
+                    total: imageIds.length,
+                    phase,
+                  });
+                }
+              }
+            },
+            MARK_CONCURRENCY,
+            signal,
+          );
+          result.cancelled = signal.aborted;
+          result.failed = failedIds.size;
+          if (result.marked === 0) return;
+
+          // Recompute even after partial cancellation.
+          setDeleteProgress({
+            current: 0,
+            total: 0,
+            phase: 'Updating transects and strata...',
+          });
+          await clearJollyResults(client, projectId);
+          await recomputeBoundaryStatus(client, projectId);
+          await waitForRecompute();
+          try {
+            await runOp(() =>
+              client.mutations.updateProjectMemberships({ projectId }),
+            );
+          } catch (err) {
+            console.warn('Failed to notify other users', err);
+          }
+        });
+        setMarkResult(result);
+        setDeleteProgress({ current: 0, total: 0, phase: 'Refreshing map...' });
+        const remaining = new Set((await fetchImages()).map((img) => img.id));
+        setSelectedIds(
+          new Set(
+            imageIds.filter((id) => !markedIds.has(id) && remaining.has(id)),
+          ),
+        );
+      } catch (err) {
+        console.error(`Mark ${target} failed:`, err);
+        setError(
+          `Marking images ${target} failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      } finally {
+        setDeleteProgress(null);
+        setDeleting(false);
+        abortRef.current = null;
+      }
+    },
+    [selectedIds, client, projectId, fetchImages, waitForRecompute],
+  );
+
   const cancelDelete = useCallback(() => {
     abortRef.current?.abort();
   }, []);
@@ -1265,6 +1311,9 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
   }, [images]);
 
   const selectedCount = selectedIds.size;
+  const selectedLabel = `${selectedCount.toLocaleString()} image${
+    selectedCount === 1 ? '' : 's'
+  }`;
   const hasImages = images.length > 0;
   const canSelectOutside =
     !!shapefileCoords && shapefileCoords.length >= 3 && hasImages;
@@ -1304,16 +1353,20 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
     const key = e.key.toLowerCase();
     if (key === 'escape') {
       if (drawingRef.current) stopDraw();
-      else if (confirming) setConfirming(false);
+      else if (confirming) setConfirming(null);
       else clearSelection();
     } else if (key === 'v') stopDraw();
     else if (key === 'p' && !drawingRef.current) toggleDraw();
     else if (key === 'o' && canSelectOutside) selectOutsideShapefile();
     else if (key === 'a') selectAll();
     else if (key === 'f') fitAll();
-    else if ((key === 'delete' || key === 'backspace') && selectedCount > 0) {
+    else if (
+      (key === 'delete' || key === 'backspace') &&
+      mode === 'delete' &&
+      selectedCount > 0
+    ) {
       e.preventDefault();
-      setConfirming(true);
+      setConfirming('delete');
     }
   };
   useEffect(() => {
@@ -1396,7 +1449,7 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             style={{ position: 'absolute', inset: 0 }}
           />
 
-          {(banners.length > 0 || deleteResult) && (
+          {(banners.length > 0 || deleteResult || markResult) && (
             <div className='absolute top-3 left-1/2 z-20 flex w-max max-w-[60%] -translate-x-1/2 flex-col gap-2'>
               {banners.map((banner) => (
                 <div
@@ -1464,6 +1517,43 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
                     aria-label='Dismiss'
                     className='hover:text-primary'
                     onClick={() => setDeleteResult(null)}
+                  >
+                    <XIcon className='size-4' />
+                  </button>
+                </div>
+              )}
+              {markResult && (
+                <div
+                  className={cn(
+                    'flex items-start gap-3 border px-3 py-2 text-sm text-[#212529] shadow-lg',
+                    markResult.cancelled || markResult.failed > 0
+                      ? 'border-warning bg-[#fff3cd]'
+                      : 'border-success bg-[#e3f4e3]',
+                  )}
+                >
+                  <span className='flex flex-1 flex-col gap-1'>
+                    <span>
+                      {markResult.cancelled
+                        ? 'Cancelled after marking'
+                        : 'Marked'}{' '}
+                      <strong>
+                        {markResult.marked.toLocaleString()} image
+                        {markResult.marked === 1 ? '' : 's'}
+                      </strong>{' '}
+                      {markResult.target} the survey boundary.
+                    </span>
+                    {markResult.failed > 0 && (
+                      <span className='text-danger'>
+                        {markResult.failed.toLocaleString()} could not be marked
+                        and are still selected.
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    type='button'
+                    aria-label='Dismiss'
+                    className='hover:text-primary'
+                    onClick={() => setMarkResult(null)}
                   >
                     <XIcon className='size-4' />
                   </button>
@@ -1601,7 +1691,8 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             <div className='mr-auto flex min-w-0 flex-1 flex-col gap-1'>
               <span className='flex items-center gap-2 text-sm'>
                 <Spinner animation='border' size='sm' />
-                {deleteProgress?.phase ?? 'Deleting...'}
+                {deleteProgress?.phase ??
+                  (busyAction === 'mark' ? 'Marking...' : 'Deleting...')}
                 {progressPercent !== null && (
                   <span className='text-muted-foreground'>
                     {deleteProgress!.current.toLocaleString()} of{' '}
@@ -1611,37 +1702,62 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
               </span>
               <div className='h-1 max-w-md bg-white/15'>
                 <div
-                  className='h-full bg-danger transition-[width]'
+                  className={cn(
+                    'h-full transition-[width]',
+                    busyAction === 'mark' ? 'bg-primary' : 'bg-danger',
+                  )}
                   style={{ width: `${progressPercent ?? 100}%` }}
                 />
               </div>
             </div>
-            <Button variant='outline-light' onClick={cancelDelete}>
-              Cancel
-            </Button>
+            {progressPercent !== null && (
+              <Button variant='outline-light' onClick={cancelDelete}>
+                Cancel
+              </Button>
+            )}
           </>
         ) : confirming ? (
           <>
-            <div className='mr-auto'>
-              <div>
-                Permanently delete {selectedCount.toLocaleString()} image
-                {selectedCount === 1 ? '' : 's'}?
-              </div>
-              <div className='text-xs text-muted-foreground'>
-                Their annotations and detections are deleted too. This cannot be
-                undone.
-              </div>
-            </div>
             <Button
-              variant='outline-light'
-              onClick={() => setConfirming(false)}
+              variant='ghost'
+              className='mr-auto'
+              onClick={() => setConfirming(null)}
             >
               Cancel
             </Button>
-            <Button variant='danger' onClick={() => handleDelete()}>
-              Delete {selectedCount.toLocaleString()} image
-              {selectedCount === 1 ? '' : 's'}
-            </Button>
+            <div className='text-right'>
+              {confirming === 'delete' ? (
+                <>
+                  <div>Permanently delete {selectedLabel}?</div>
+                  <div className='text-xs text-muted-foreground'>
+                    Their annotations and detections are deleted too. This
+                    cannot be undone.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    Mark {selectedLabel} {confirming} the survey boundary?
+                  </div>
+                  <div className='text-xs text-muted-foreground'>
+                    {confirming === 'outside'
+                      ? 'They leave their transects'
+                      : 'They can rejoin nearby transects'}{' '}
+                    and keep this status when the boundary changes. Jolly
+                    results are cleared.
+                  </div>
+                </>
+              )}
+            </div>
+            {confirming === 'delete' ? (
+              <Button variant='danger' onClick={() => handleDelete()}>
+                Delete {selectedLabel}
+              </Button>
+            ) : (
+              <Button variant='primary' onClick={() => handleMark(confirming)}>
+                Mark {confirming}
+              </Button>
+            )}
           </>
         ) : (
           <>
@@ -1652,17 +1768,58 @@ export default function DeleteImages({ projectId }: { projectId: string }) {
             >
               Close
             </Button>
-            <Button
-              variant='danger'
-              onClick={() => setConfirming(true)}
-              disabled={loading || selectedCount === 0}
-            >
-              {selectedCount > 0
-                ? `Delete ${selectedCount.toLocaleString()} image${
-                    selectedCount === 1 ? '' : 's'
-                  }`
-                : 'Delete images'}
-            </Button>
+            {isSysadmin && (
+              <div
+                role='radiogroup'
+                aria-label='Action'
+                className='inline-flex border border-white/30'
+              >
+                {(
+                  [
+                    ['oob', 'OOB'],
+                    ['delete', 'Delete'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type='button'
+                    role='radio'
+                    aria-checked={mode === value}
+                    onClick={() => setMode(value)}
+                    className={cn(
+                      'px-3 py-1.5 text-base leading-normal transition-colors',
+                      mode === value
+                        ? 'bg-primary text-white'
+                        : 'hover:bg-white/10',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {mode === 'oob' ? (
+              (['inside', 'outside'] as const).map((target) => (
+                <Button
+                  key={target}
+                  variant='primary'
+                  onClick={() => setConfirming(target)}
+                  disabled={loading || selectedCount === 0}
+                >
+                  Mark {target}
+                </Button>
+              ))
+            ) : (
+              <Button
+                variant='danger'
+                onClick={() => setConfirming('delete')}
+                disabled={loading || selectedCount === 0}
+              >
+                {selectedCount > 0
+                  ? `Delete ${selectedLabel}`
+                  : 'Delete images'}
+              </Button>
+            )}
           </>
         )}
       </Footer>

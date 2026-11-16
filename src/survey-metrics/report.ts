@@ -1,3 +1,4 @@
+import type { ReportCache } from './cache';
 import {
   addDetection,
   finishDetections,
@@ -290,6 +291,91 @@ export const STATS = [
   }),
 ] as const;
 
+const REVIEW_STATS: StatId[] = [
+  'annotations',
+  'observations',
+  'confidenceCoverage',
+];
+
+export type StatTile = {
+  id: string;
+  label: string;
+  description: string;
+  cost: StatCost;
+  needsSet: boolean;
+  stats: StatId[];
+};
+
+// What the picker offers; one tile can fetch several stats.
+export const TILES: StatTile[] = STATS.flatMap((stat): StatTile[] => {
+  if (!REVIEW_STATS.includes(stat.id)) {
+    const { id, label, description, cost, needsSet } = stat;
+    return [{ id, label, description, cost, needsSet, stats: [id] }];
+  }
+  if (stat.id !== REVIEW_STATS[0]) return [];
+  return [
+    {
+      id: 'review',
+      label: 'Annotations and review',
+      description:
+        'Annotations and observations by source, person and category, plus per model and confidence band: detections reviewed, precision, and how far down review is complete.',
+      cost: 'very heavy',
+      needsSet: true,
+      stats: ['detectorOutput', ...REVIEW_STATS],
+    },
+  ];
+});
+
+// Small enough that reading them never decides what comes along.
+const LOOKUPS: EntityKey[] = [
+  'project',
+  'imageSets',
+  'annotationSets',
+  'locationSets',
+  'queues',
+  'registration',
+  'categories',
+  'tasks',
+];
+
+function bulkData(tile: StatTile): EntityKey[] {
+  return entitiesFor(tile.stats).filter((entity) => !LOOKUPS.includes(entity));
+}
+
+// Offered tiles whose bulk data the ticked tiles already read, mapped to the
+// ticked tiles they come with.
+export function includedTiles(
+  ticked: StatTile[],
+  offered: StatTile[] = TILES,
+): Map<string, StatTile[]> {
+  let roots = ticked;
+  for (const tile of ticked) {
+    const rest = roots.filter((other) => other.id !== tile.id);
+    const needs = bulkData(tile);
+    if (needs.length > 0 && needs.every((e) => rest.some(reads(e)))) {
+      roots = rest;
+    }
+  }
+  const included = new Map<string, StatTile[]>();
+  for (const tile of offered) {
+    const needs = bulkData(tile);
+    if (roots.includes(tile) || needs.length === 0) continue;
+    if (!needs.every((entity) => roots.some(reads(entity)))) continue;
+    const whole = roots.find((root) => needs.every((e) => reads(e)(root)));
+    included.set(
+      tile.id,
+      whole
+        ? [whole]
+        : roots.filter((root) => needs.some((e) => reads(e)(root))),
+    );
+  }
+  return included;
+}
+
+function reads(entity: EntityKey) {
+  return (tile: StatTile) => bulkData(tile).includes(entity);
+}
+
 export type StatOutcome<Id extends StatId = StatId> = {
   id: Id;
   label: string;
@@ -325,9 +411,6 @@ export type SurveyReport = {
   fetchedAt: Partial<Record<EntityKey, string>>;
   stats: { [Id in StatId]?: StatOutcome<Id> };
 };
-
-type CacheEntry = { data: unknown; fetchedAt: string };
-export type ReportCache = Map<string, CacheEntry>;
 
 export type ReportRequest = {
   surveyId: string;
@@ -421,7 +504,20 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         : cacheKey(request, entity);
 
     const promise = (async () => {
-      const cached = request.reuseCache ? request.cache.get(key) : undefined;
+      const needs: Dependencies = {};
+      // Loaded first: fetching either afresh drops the scans matched to it.
+      if (entity === 'locationScan' && wantsCoverage) {
+        try {
+          const observations = (await load('observations')) as ObservationRow[];
+          needs.annotations = (await load('annotations')) as AnnotationRow[];
+          needs.observations = observations;
+        } catch {
+          // Detector output does not need the set.
+        }
+      }
+      const cached = request.reuseCache
+        ? await request.cache.get(key)
+        : undefined;
       if (cached) {
         task.state = 'cached';
         task.fetchedAt = cached.fetchedAt;
@@ -443,20 +539,8 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
       };
 
       try {
-        const needs: Dependencies = {};
         if (entity === 'neighbours') {
           needs.images = () => load('images') as Promise<ImageRow[]>;
-        }
-        if (entity === 'locationScan' && wantsCoverage) {
-          try {
-            const observations = (await load(
-              'observations',
-            )) as ObservationRow[];
-            needs.annotations = (await load('annotations')) as AnnotationRow[];
-            needs.observations = observations;
-          } catch {
-            // Detector output does not need the set.
-          }
         }
         task.state = 'running';
         emit(true);
@@ -465,7 +549,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         if (entity === 'annotations' || entity === 'observations') {
           const scanPrefix = `${surveyId}:locationScan@`;
           const setSuffix = `:${annotationSetId}`;
-          for (const cached of [...request.cache.keys()]) {
+          for (const cached of request.cache.keys()) {
             if (cached.startsWith(scanPrefix) && cached.endsWith(setSuffix))
               request.cache.delete(cached);
           }
@@ -473,7 +557,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         if (entity === 'locationScan') {
           const scan = data as LocationScan;
           const prefix = `${cacheKey(request, entity, false)}:`;
-          for (const cached of [...request.cache.keys()]) {
+          for (const cached of request.cache.keys()) {
             if (cached.startsWith(prefix)) request.cache.delete(cached);
           }
           request.cache.set(cacheKey(request, entity, false), {

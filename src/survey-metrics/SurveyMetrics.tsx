@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { Download, Play, Square } from 'lucide-react';
+import { Download, Lock, Play, Square } from 'lucide-react';
 import {
   useCallback,
   useContext,
@@ -19,8 +19,9 @@ import {
 } from 'react';
 import type { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
-import { GlobalContext } from '../Context';
+import { GlobalContext, UserContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
+import { openReportCache, type ReportCache } from './cache';
 import {
   AbortError,
   BAND_WIDTHS,
@@ -30,13 +31,13 @@ import {
   type BandWidths,
 } from './loaders';
 import {
-  STATS,
+  TILES,
   entitiesFor,
+  includedTiles,
   runReport,
-  type ReportCache,
   type ReportProgress,
   type StatCost,
-  type StatId,
+  type StatTile,
   type SurveyReport,
 } from './report';
 import SurveyMetricsResults from './SurveyMetricsResults';
@@ -51,8 +52,14 @@ const COST_CLASS: Record<StatCost, string> = {
 };
 
 // Survives switching admin tabs, which unmounts this component.
-const cache: ReportCache = new Map();
-let cachedSurveyId: string | null = null;
+let opened: { scope: string; cache: Promise<ReportCache> } | null = null;
+
+function cacheFor(scope: string): Promise<ReportCache> {
+  if (opened?.scope !== scope) {
+    opened = { scope, cache: openReportCache(scope) };
+  }
+  return opened.cache;
+}
 
 function elapsed(ms: number): string {
   const seconds = Math.floor(ms / 1000);
@@ -61,6 +68,7 @@ function elapsed(ms: number): string {
 
 export default function SurveyMetrics() {
   const { client } = useContext(GlobalContext)!;
+  const userId = useContext(UserContext)?.user.userId ?? '';
   const { users } = useUsers();
   const [surveys, setSurveys] = useState<SurveyOption[]>([]);
   const [loadingSurveys, setLoadingSurveys] = useState(true);
@@ -68,8 +76,8 @@ export default function SurveyMetrics() {
   const [annotationSets, setAnnotationSets] = useState<AnnotationSetRow[]>([]);
   const [loadingSets, setLoadingSets] = useState(false);
   const [setId, setSetId] = useState('');
-  const [selected, setSelected] = useState<Set<StatId>>(
-    () => new Set<StatId>(['overview']),
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(['overview']),
   );
   const [reuseCache, setReuseCache] = useState(true);
   const [bandWidths, setBandWidths] = useState<BandWidths>(DEFAULT_BAND_WIDTHS);
@@ -147,10 +155,6 @@ export default function SurveyMetrics() {
     setProgress(null);
     setError(null);
     if (!survey) return;
-    if (cachedSurveyId !== survey.value) {
-      cache.clear();
-      cachedSurveyId = survey.value;
-    }
     const abort = new AbortController();
     setLoadingSets(true);
     loadAnnotationSets(survey.value, {
@@ -186,15 +190,29 @@ export default function SurveyMetrics() {
     [users],
   );
 
-  const activeStats = useMemo(
+  const offered = useMemo(
+    () => TILES.filter((tile) => !tile.needsSet || setId),
+    [setId],
+  );
+  const included = useMemo(
     () =>
-      STATS.filter(
-        (stat) => selected.has(stat.id) && (!stat.needsSet || setId),
+      includedTiles(
+        offered.filter((tile) => selected.has(tile.id)),
+        offered,
       ),
-    [selected, setId],
+    [offered, selected],
+  );
+  const activeTiles = useMemo(
+    () =>
+      offered.filter((tile) => selected.has(tile.id) || included.has(tile.id)),
+    [offered, selected, included],
+  );
+  const activeStats = useMemo(
+    () => [...new Set(activeTiles.flatMap((tile) => tile.stats))],
+    [activeTiles],
   );
 
-  const toggle = (id: StatId) =>
+  const toggle = (id: string) =>
     setSelected((previous) => {
       const next = new Set(previous);
       if (next.has(id)) next.delete(id);
@@ -213,10 +231,11 @@ export default function SurveyMetrics() {
     setStartedAt(Date.now());
     setNow(Date.now());
     try {
+      const cache = await cacheFor(`${userId}:${survey.value}`);
       const result = await runReport({
         surveyId: survey.value,
         annotationSetId: setId || null,
-        statIds: activeStats.map((stat) => stat.id),
+        statIds: activeStats,
         imageCountHint: survey.imageCount || undefined,
         bandWidths,
         cache,
@@ -261,20 +280,22 @@ export default function SurveyMetrics() {
     URL.revokeObjectURL(url);
   };
 
-  const statTile = (stat: (typeof STATS)[number]) => {
-    const disabled = running || (stat.needsSet && !setId);
-    const checked = selected.has(stat.id);
+  const statTile = (stat: StatTile) => {
+    const parents = included.get(stat.id);
+    const unavailable = running || (stat.needsSet && !setId);
+    const checked = selected.has(stat.id) || Boolean(parents);
     return (
       <label
         key={stat.id}
         htmlFor={`survey-metric-${stat.id}`}
         className={cn(
           'flex items-start gap-3 border p-3 transition-colors',
-          checked && !disabled
+          checked && !unavailable
             ? 'border-primary bg-primary/10'
             : 'border-white/15',
-          disabled
-            ? 'cursor-not-allowed opacity-50'
+          unavailable && 'opacity-50',
+          unavailable || parents
+            ? 'cursor-not-allowed'
             : 'cursor-pointer hover:bg-white/5',
         )}
       >
@@ -282,7 +303,7 @@ export default function SurveyMetrics() {
           id={`survey-metric-${stat.id}`}
           className='mt-0.5'
           checked={checked}
-          disabled={disabled}
+          disabled={unavailable || Boolean(parents)}
           onCheckedChange={() => toggle(stat.id)}
         />
         <div className='min-w-0 flex-1'>
@@ -300,14 +321,23 @@ export default function SurveyMetrics() {
           <div className='mt-1 text-sm text-muted-foreground'>
             {stat.description}
           </div>
+          {parents && (
+            <div className='mt-1 flex items-center gap-1.5 text-sm'>
+              <Lock size={12} className='shrink-0' />
+              <span>
+                Included with {parents.map((tile) => tile.label).join(' and ')}:
+                its data is already being read.
+              </span>
+            </div>
+          )}
         </div>
       </label>
     );
   };
 
-  const plannedEntities = entitiesFor(activeStats.map((stat) => stat.id));
+  const plannedEntities = entitiesFor(activeStats);
   const usesBands = activeStats.some(
-    (stat) => stat.id === 'detectorOutput' || stat.id === 'confidenceCoverage',
+    (id) => id === 'detectorOutput' || id === 'confidenceCoverage',
   );
   const setName = (id: string) =>
     annotationSets.find((set) => set.id === id)?.name ?? id;
@@ -374,8 +404,8 @@ export default function SurveyMetrics() {
               onClick={() =>
                 setSelected(
                   new Set(
-                    STATS.filter((stat) => stat.cost === 'light').map(
-                      (stat) => stat.id,
+                    TILES.filter((tile) => tile.cost === 'light').map(
+                      (tile) => tile.id,
                     ),
                   ),
                 )
@@ -387,7 +417,7 @@ export default function SurveyMetrics() {
               variant='ghost'
               size='sm'
               disabled={running}
-              onClick={() => setSelected(new Set(STATS.map((stat) => stat.id)))}
+              onClick={() => setSelected(new Set(TILES.map((tile) => tile.id)))}
             >
               All
             </Button>
@@ -406,7 +436,7 @@ export default function SurveyMetrics() {
             <div className='text-sm font-semibold tracking-wide text-muted-foreground uppercase'>
               Survey-wide
             </div>
-            {STATS.filter((stat) => !stat.needsSet).map(statTile)}
+            {TILES.filter((tile) => !tile.needsSet).map(statTile)}
           </div>
           <div className='flex flex-col gap-2'>
             <div className='text-sm font-semibold tracking-wide text-muted-foreground uppercase'>
@@ -422,7 +452,7 @@ export default function SurveyMetrics() {
                 Pick an annotation set above to enable these.
               </div>
             )}
-            {STATS.filter((stat) => stat.needsSet).map(statTile)}
+            {TILES.filter((tile) => tile.needsSet).map(statTile)}
           </div>
         </CardContent>
         {usesBands && (
@@ -480,8 +510,8 @@ export default function SurveyMetrics() {
           <div className='ml-auto flex items-center gap-3'>
             {!running && survey && plannedEntities.length > 0 && (
               <span className='text-sm text-muted-foreground'>
-                {activeStats.length} metric
-                {activeStats.length === 1 ? '' : 's'}, reading{' '}
+                {activeTiles.length} metric
+                {activeTiles.length === 1 ? '' : 's'}, reading{' '}
                 {plannedEntities.length} data set
                 {plannedEntities.length === 1 ? '' : 's'}
               </span>
@@ -495,7 +525,7 @@ export default function SurveyMetrics() {
               <Button
                 variant='primary'
                 onClick={fetchReport}
-                disabled={!survey || activeStats.length === 0}
+                disabled={!survey || activeTiles.length === 0}
               >
                 <Play size={14} />
                 Fetch
@@ -563,7 +593,11 @@ export default function SurveyMetrics() {
                     {task.state === 'pending' && 'Waiting'}
                     {task.state === 'error' && (task.error ?? 'Failed')}
                     {task.state === 'cached' &&
-                      `${task.count.toLocaleString()} (reused)`}
+                      `${task.count.toLocaleString()} (reused, from ${
+                        task.fetchedAt
+                          ? new Date(task.fetchedAt).toLocaleString()
+                          : 'earlier'
+                      })`}
                     {(task.state === 'running' || task.state === 'done') &&
                       `${task.count.toLocaleString()}${
                         task.total && task.state === 'running'

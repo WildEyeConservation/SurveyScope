@@ -3,11 +3,13 @@ import { test } from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { encodeRows } from '../../shared/rowChunk';
 import { ROW_SOURCES, type RowSourceName } from '../../shared/rowSources';
+import { loadProjectImages } from '../projectImages';
 import {
   MODELS,
   dispatchBatches,
   findUnprocessedByModel,
 } from './processImagesScan';
+import type { LoadSurveyImages } from './surveyImages';
 
 const pack = (
   source: RowSourceName,
@@ -59,6 +61,13 @@ test('finds images without an exact processedBy source match', async () => {
     client,
     'p',
     ['mad', 'owl-d'],
+    (options) =>
+      loadProjectImages(
+        client,
+        'p',
+        ['originalPath'],
+        options,
+      ) as ReturnType<LoadSurveyImages>,
     { onProgress: (count) => progress.push(count) },
   );
   assert.equal(total, 3);

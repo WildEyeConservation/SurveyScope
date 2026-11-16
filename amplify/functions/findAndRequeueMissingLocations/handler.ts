@@ -14,6 +14,9 @@ import {
 } from '@aws-sdk/client-sqs';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { createSampleStore } from '../falseNegativeSamples/store';
 import {
   listQueues,
   observationsByAnnotationSetId,
@@ -76,6 +79,10 @@ const s3Client = new S3Client({
     sessionToken: env.AWS_SESSION_TOKEN,
   },
 });
+
+const sampleDb = DynamoDBDocumentClient.from(
+  new DynamoDBClient({ region: env.AWS_REGION })
+);
 
 const sqsClient = new SQSClient({
   region: env.AWS_REGION,
@@ -310,37 +317,13 @@ async function processQueue(queue: QueueRecord): Promise<number> {
   const launchedLocationIds = launchedLocations.map((l) => l.locationId);
   console.log('Downloaded manifest', { locationCount: launchedLocations.length });
 
-  // Step 5.1: Query observations to find observed locations
-  console.log('Fetching observations', { annotationSetId: queue.annotationSetId });
-  const observedLocationIds = await fetchObservedLocationIds(queue.annotationSetId!);
-  console.log('Fetched observations result', {
-    annotationSetId: queue.annotationSetId,
-    observedCount: observedLocationIds.size,
-  });
-
-  // Some of the launched locations may have been annotated but not observed
-  // Step 5.2: Query annotations to find annotated unobserved locations
-  console.log('Fetching annotations', { annotationSetId: queue.annotationSetId });
-  const unobservedLaunchedLocations = launchedLocations.filter((l) => !observedLocationIds.has(l.locationId));
-  const annotatedUnobservedLocationIds = await fetchAnnotatedLocationIds(unobservedLaunchedLocations, queue.annotationSetId!);
-  console.log('Fetched annotations result', {
-    annotationSetId: queue.annotationSetId,
-    annotatedCount: annotatedUnobservedLocationIds.size,
-  });
-
-  // Step 6: Compute missing locations
-  const missingLocationIds = launchedLocationIds.filter(
-    (id) => !observedLocationIds.has(id) && !annotatedUnobservedLocationIds.has(id)
-  );
-  const observedFromLaunched = launchedLocationIds.filter((id) => observedLocationIds.has(id)).length;
-  console.log('Computed missing locations', {
-    queueId: queue.id,
-    launched: launchedLocationIds.length,
-    observedFromLaunched,
-    observedTotal: observedLocationIds.size,
-    annotated: annotatedUnobservedLocationIds.size,
-    missingCount: missingLocationIds.length,
-  });
+  // Step 5-6: Work out which launched locations still need a look
+  const isFalseNegatives = queue.name === 'False Negatives';
+  const missingLocationIds =
+    (isFalseNegatives
+      ? await pendingSampleTiles(queue.annotationSetId!, launchedLocationIds)
+      : null) ??
+    (await missingByObservations(queue, launchedLocations, launchedLocationIds));
 
   if (missingLocationIds.length === 0) {
     console.log('No missing locations, updating requeuesCompleted', { queueId: queue.id });
@@ -360,7 +343,8 @@ async function processQueue(queue: QueueRecord): Promise<number> {
     count: missingLocationIds.length,
   });
 
-  await requeueLocations(queue, missingLocationIds);
+  // A false-negative tile is a sample of ground; marks must stay inside it.
+  await requeueLocations(queue, missingLocationIds, !isFalseNegatives);
 
   // Step 8: Update queue record
   await executeGraphql(updateQueue, {
@@ -382,6 +366,67 @@ async function processQueue(queue: QueueRecord): Promise<number> {
   });
 
   return missingLocationIds.length;
+}
+
+/** The sample's tiles that are still pending; null when the set has none. */
+async function pendingSampleTiles(
+  annotationSetId: string,
+  launchedLocationIds: string[]
+): Promise<string[] | null> {
+  const table = process.env.FALSE_NEGATIVE_SAMPLES_TABLE;
+  if (!table) return null;
+  const samples = createSampleStore(sampleDb, table);
+  if (!(await samples.getSummary(annotationSetId))) return null;
+  const pending = new Set<string>();
+  for await (const page of samples.rowPages(annotationSetId)) {
+    for (const row of page) {
+      if (row.status === 'pending') pending.add(row.tileId);
+    }
+  }
+  const missing = launchedLocationIds.filter((id) => pending.has(id));
+  console.log('Computed missing sample tiles', {
+    annotationSetId,
+    launched: launchedLocationIds.length,
+    missingCount: missing.length,
+  });
+  return missing;
+}
+
+async function missingByObservations(
+  queue: QueueRecord,
+  launchedLocations: Location[],
+  launchedLocationIds: string[]
+): Promise<string[]> {
+  console.log('Fetching observations', { annotationSetId: queue.annotationSetId });
+  const observedLocationIds = await fetchObservedLocationIds(queue.annotationSetId!);
+  console.log('Fetched observations result', {
+    annotationSetId: queue.annotationSetId,
+    observedCount: observedLocationIds.size,
+  });
+
+  // Some of the launched locations may have been annotated but not observed
+  // Step 5.2: Query annotations to find annotated unobserved locations
+  console.log('Fetching annotations', { annotationSetId: queue.annotationSetId });
+  const unobservedLaunchedLocations = launchedLocations.filter((l) => !observedLocationIds.has(l.locationId));
+  const annotatedUnobservedLocationIds = await fetchAnnotatedLocationIds(unobservedLaunchedLocations, queue.annotationSetId!);
+  console.log('Fetched annotations result', {
+    annotationSetId: queue.annotationSetId,
+    annotatedCount: annotatedUnobservedLocationIds.size,
+  });
+
+  const missingLocationIds = launchedLocationIds.filter(
+    (id) => !observedLocationIds.has(id) && !annotatedUnobservedLocationIds.has(id)
+  );
+  const observedFromLaunched = launchedLocationIds.filter((id) => observedLocationIds.has(id)).length;
+  console.log('Computed missing locations', {
+    queueId: queue.id,
+    launched: launchedLocationIds.length,
+    observedFromLaunched,
+    observedTotal: observedLocationIds.size,
+    annotated: annotatedUnobservedLocationIds.size,
+    missingCount: missingLocationIds.length,
+  });
+  return missingLocationIds;
 }
 
 async function checkSqsEmpty(queueUrl: string): Promise<boolean> {
@@ -577,7 +622,11 @@ async function fetchObservedLocationIds(annotationSetId: string): Promise<Set<st
   return observedIds;
 }
 
-async function requeueLocations(queue: QueueRecord, locationIds: string[]): Promise<void> {
+async function requeueLocations(
+  queue: QueueRecord,
+  locationIds: string[],
+  allowOutside = true
+): Promise<void> {
   const queueType = await getQueueType(queue.url);
   const groupId = randomUUID();
   const batchSize = 10;
@@ -600,7 +649,7 @@ async function requeueLocations(queue: QueueRecord, locationIds: string[]): Prom
           annotationSetId: queue.annotationSetId,
         },
         queueId: queue.id,
-        allowOutside: true,
+        allowOutside,
         taskTag: queue.tag ?? queue.name,
         skipLocationWithAnnotations: false,
         isRequeued: true,

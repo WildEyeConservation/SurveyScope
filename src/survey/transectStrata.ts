@@ -1,9 +1,9 @@
 import * as turf from '@turf/turf';
 import type { DataClient } from '../../amplify/shared/data-schema.generated';
-import { isOnEffort } from '../../shared/boundaryStatus';
-import { loadProjectImages } from '../projectImages';
+import { isOnEffort, type BoundaryStatus } from '../../shared/boundaryStatus';
 import { fetchAllPaginatedResults } from '../utils';
 import { ringToPolygon } from './new-survey/surveyArea';
+import type { LoadSurveyImages } from './surveyImages';
 
 export type LatLng = [number, number];
 
@@ -214,8 +214,7 @@ function imputeLatLng<
 }
 
 export async function loadOnEffortImages(
-  client: DataClient,
-  projectId: string,
+  load: LoadSurveyImages,
   signal?: AbortSignal,
   onProgress?: (count: number) => void,
 ): Promise<{
@@ -223,39 +222,51 @@ export async function loadOnEffortImages(
   imputedIds: Set<string>;
   dbTransectIds: Map<string, string | null>;
 }> {
-  const rawImgs = (await loadProjectImages(
-    client,
-    projectId,
-    [
-      'timestamp',
-      'cameraId',
-      'latitude',
-      'longitude',
-      'transectId',
-      'boundaryStatus',
-    ],
-    { signal, onProgress },
-  )) as any[];
+  const rawImgs = await load({ signal, onProgress });
   const dbTransectIds = new Map<string, string | null>(
     rawImgs.map((img) => [img.id, img.transectId ?? null]),
   );
+  return { ...onEffortImages(rawImgs), dbTransectIds };
+}
+
+type RawImage = {
+  id: string;
+  timestamp?: number | string | null;
+  cameraId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  transectId?: string | null;
+  boundaryStatus?: BoundaryStatus | null;
+};
+
+export function onEffortImages(rawImgs: RawImage[]): {
+  images: SurveyImage[];
+  imputedIds: Set<string>;
+} {
   const onEffort = rawImgs
     .filter((img) => isOnEffort(img.boundaryStatus))
     .map((img) => ({
-      id: img.id as string,
+      id: img.id,
       timestamp: normalizeToMillis(img.timestamp),
-      cameraId: (img.cameraId ?? null) as string | null,
-      latitude: img.latitude,
-      longitude: img.longitude,
-      dbTransectId: (img.transectId ?? null) as string | null,
+      cameraId: img.cameraId ?? null,
+      latitude: img.latitude as number,
+      longitude: img.longitude as number,
+      dbTransectId: img.transectId ?? null,
     }))
     .sort((a, b) => a.timestamp - b.timestamp);
   const { filled, imputedIds } = imputeLatLng(onEffort);
   return {
     images: filled.filter((img) => isValidLatLng(img.latitude, img.longitude)),
     imputedIds: new Set([...imputedIds].map((i) => filled[i].id)),
-    dbTransectIds,
   };
+}
+
+export function savedTransectColours(
+  images: SurveyImage[],
+): Map<string, string> {
+  const { segmented, dbIdByIndex } = segmentBySavedTransect(images);
+  const colours = assignTransectColours(segmented);
+  return new Map(dbIdByIndex.map((dbId, index) => [dbId, colours.get(index)!]));
 }
 
 export async function loadStrata(

@@ -5,16 +5,9 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { ChevronRightIcon } from 'lucide-react';
 import Papa from 'papaparse';
-import {
-  ChangeEvent,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import { GlobalContext } from './Context';
-import { loadProjectImages } from './projectImages';
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSurveyImages } from './survey/surveyImages';
+import TileImagePreviewModal from './TileImagePreviewModal';
 import type { TiledLaunchRequest } from './types/LaunchTask';
 
 type Nullable<T> = T | null;
@@ -176,7 +169,7 @@ export default function TileConfiguration({
   onExpectedTilesChange,
   disabled = false,
 }: TileConfigurationProps) {
-  const { client } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
   const [bySize, setBySize] = useState(initial?.specifyTileDimensions ?? false);
   const [inPercent, setInPercent] = useState(
     initial?.specifyOverlapInPercentage ?? false,
@@ -206,6 +199,16 @@ export default function TileConfiguration({
   const [subsetN, setSubsetN] = useState(1);
   const [csvFilterIds, setCsvFilterIds] = useState<string[]>([]);
   const [csvParseError, setCsvParseError] = useState<string | null>(null);
+  const [previewSnapshot, setPreviewSnapshot] = useState<{
+    bySize: boolean;
+    inPercent: boolean;
+    horizontalTiles: number;
+    verticalTiles: number;
+    tileWidth: number;
+    tileHeight: number;
+    sidelap: number;
+    overlap: number;
+  } | null>(null);
 
   const across = tileAxis(
     imageWidth ?? 0,
@@ -319,22 +322,12 @@ export default function TileConfiguration({
     async function getAllImages() {
       setLoadingImages(true);
       setImagesLoaded(0);
-      const all = await loadProjectImages(
-        client,
-        projectId,
-        [
-          'width',
-          'height',
-          'timestamp',
-          'originalPath',
-          'transectId',
-          'latitude',
-          'longitude',
-        ],
-        { signal, onProgress: (count) => setImagesLoaded(count) },
-      );
+      const all = await surveyImages.load({
+        signal,
+        onProgress: setImagesLoaded,
+      });
       if (signal.aborted) return;
-      const imagesArr: ImageData[] = (all as any[]).map((img: any) => ({
+      const imagesArr: ImageData[] = all.map((img) => ({
         timestamp: (img?.timestamp ?? null) as Nullable<number>,
         width: img.width as number,
         height: img.height as number,
@@ -367,7 +360,7 @@ export default function TileConfiguration({
       });
     }
     return () => controller.abort();
-  }, [projectId, client]);
+  }, [projectId, surveyImages]);
 
   useEffect(() => {
     setLaunchDisabled(loadingImages || !settingsValid);
@@ -550,6 +543,130 @@ export default function TileConfiguration({
   const locked = loadingImages || disabled;
   const unit = inPercent ? '%' : 'px';
 
+  const fields = (
+    <>
+      <Segmented
+        label='Set tiles by'
+        options={['Number of tiles', 'Tile size']}
+        value={bySize ? 1 : 0}
+        onChange={(index) => switchMode(index === 1)}
+        disabled={locked}
+      />
+      <div className='grid grid-cols-2 gap-3'>
+        {bySize ? (
+          <>
+            <NumberField
+              label='Width'
+              unit='px'
+              value={tileWidth}
+              onChange={setTileWidth}
+              disabled={locked}
+            />
+            <NumberField
+              label='Height'
+              unit='px'
+              value={tileHeight}
+              onChange={setTileHeight}
+              disabled={locked}
+            />
+          </>
+        ) : (
+          <>
+            <NumberField
+              label='Across'
+              value={horizontalTiles}
+              onChange={(v) => setHorizontalTiles(Math.round(v))}
+              disabled={locked}
+              min={1}
+            />
+            <NumberField
+              label='Down'
+              value={verticalTiles}
+              onChange={(v) => setVerticalTiles(Math.round(v))}
+              disabled={locked}
+              min={1}
+            />
+          </>
+        )}
+      </div>
+      <div className='-mt-1 text-xs text-muted-foreground'>
+        {bySize ? (
+          <>
+            That is{' '}
+            <strong className='text-foreground'>
+              {across.tiles} × {down.tiles}
+            </strong>{' '}
+            tiles per image
+          </>
+        ) : (
+          <>
+            Each tile is{' '}
+            <strong className='text-foreground'>
+              {across.size.toLocaleString()} × {down.size.toLocaleString()} px
+            </strong>
+          </>
+        )}
+      </div>
+      <Segmented
+        label='Overlap unit'
+        options={['Overlap in px', 'Overlap in %']}
+        value={inPercent ? 1 : 0}
+        onChange={(index) => switchUnit(index === 1)}
+        disabled={locked}
+      />
+      <div className='grid grid-cols-2 gap-3'>
+        <NumberField
+          label='Between columns'
+          unit={unit}
+          value={sidelap}
+          onChange={setSidelap}
+          disabled={locked}
+          min={0}
+        />
+        <NumberField
+          label='Between rows'
+          unit={unit}
+          value={overlap}
+          onChange={setOverlap}
+          disabled={locked}
+          min={0}
+        />
+      </div>
+      {!settingsValid && (
+        <div className='text-xs text-danger'>
+          Overlap must be smaller than the tiles.
+        </div>
+      )}
+    </>
+  );
+
+  const openTilePreview = () => {
+    setPreviewSnapshot({
+      bySize,
+      inPercent,
+      horizontalTiles,
+      verticalTiles,
+      tileWidth,
+      tileHeight,
+      sidelap,
+      overlap,
+    });
+  };
+
+  const cancelTilePreview = () => {
+    if (previewSnapshot) {
+      setBySize(previewSnapshot.bySize);
+      setInPercent(previewSnapshot.inPercent);
+      setHorizontalTiles(previewSnapshot.horizontalTiles);
+      setVerticalTiles(previewSnapshot.verticalTiles);
+      setTileWidth(previewSnapshot.tileWidth);
+      setTileHeight(previewSnapshot.tileHeight);
+      setSidelap(previewSnapshot.sidelap);
+      setOverlap(previewSnapshot.overlap);
+    }
+    setPreviewSnapshot(null);
+  };
+
   return (
     <div className='flex flex-col gap-3'>
       <div className='border border-white/15 bg-white/[0.07] p-4'>
@@ -571,109 +688,45 @@ export default function TileConfiguration({
           </div>
         ) : (
           <div className='flex flex-wrap gap-6'>
-            <div className='flex min-w-72 flex-1 flex-col gap-3'>
-              <Segmented
-                label='Set tiles by'
-                options={['Number of tiles', 'Tile size']}
-                value={bySize ? 1 : 0}
-                onChange={(index) => switchMode(index === 1)}
-                disabled={locked}
+            <div className='flex min-w-72 flex-1 flex-col gap-3'>{fields}</div>
+            <div className='flex flex-col items-center gap-2 self-center'>
+              <TilePreview
+                imageWidth={imageWidth}
+                imageHeight={imageHeight}
+                across={across}
+                down={down}
+                sidelapPx={sidelapPx}
+                overlapPx={overlapPx}
+                valid={settingsValid}
               />
-              <div className='grid grid-cols-2 gap-3'>
-                {bySize ? (
-                  <>
-                    <NumberField
-                      label='Width'
-                      unit='px'
-                      value={tileWidth}
-                      onChange={setTileWidth}
-                      disabled={locked}
-                    />
-                    <NumberField
-                      label='Height'
-                      unit='px'
-                      value={tileHeight}
-                      onChange={setTileHeight}
-                      disabled={locked}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <NumberField
-                      label='Across'
-                      value={horizontalTiles}
-                      onChange={(v) => setHorizontalTiles(Math.round(v))}
-                      disabled={locked}
-                      min={1}
-                    />
-                    <NumberField
-                      label='Down'
-                      value={verticalTiles}
-                      onChange={(v) => setVerticalTiles(Math.round(v))}
-                      disabled={locked}
-                      min={1}
-                    />
-                  </>
-                )}
-              </div>
-              <div className='-mt-1 text-xs text-muted-foreground'>
-                {bySize ? (
-                  <>
-                    That is{' '}
-                    <strong className='text-foreground'>
-                      {across.tiles} × {down.tiles}
-                    </strong>{' '}
-                    tiles per image
-                  </>
-                ) : (
-                  <>
-                    Each tile is{' '}
-                    <strong className='text-foreground'>
-                      {across.size.toLocaleString()} ×{' '}
-                      {down.size.toLocaleString()} px
-                    </strong>
-                  </>
-                )}
-              </div>
-              <Segmented
-                label='Overlap unit'
-                options={['Overlap in px', 'Overlap in %']}
-                value={inPercent ? 1 : 0}
-                onChange={(index) => switchUnit(index === 1)}
+              <Button
+                variant='outline-light'
+                size='sm'
+                onClick={openTilePreview}
                 disabled={locked}
-              />
-              <div className='grid grid-cols-2 gap-3'>
-                <NumberField
-                  label='Between columns'
-                  unit={unit}
-                  value={sidelap}
-                  onChange={setSidelap}
-                  disabled={locked}
-                  min={0}
-                />
-                <NumberField
-                  label='Between rows'
-                  unit={unit}
-                  value={overlap}
-                  onChange={setOverlap}
-                  disabled={locked}
-                  min={0}
-                />
-              </div>
-              {!settingsValid && (
-                <div className='text-xs text-danger'>
-                  Overlap must be smaller than the tiles.
-                </div>
-              )}
+              >
+                Preview a tile
+              </Button>
             </div>
-            <TilePreview
-              imageWidth={imageWidth}
-              imageHeight={imageHeight}
-              across={across}
-              down={down}
-              sidelapPx={sidelapPx}
-              overlapPx={overlapPx}
-              valid={settingsValid}
+            <TileImagePreviewModal
+              show={previewSnapshot !== null}
+              projectId={projectId}
+              tiledLocationSetId={existingLocationSetId}
+              fallbackImageIds={allImages.map((img) => img.id)}
+              baselineLandscape={imageWidth >= imageHeight}
+              layout={
+                settingsValid
+                  ? {
+                      width: across.size,
+                      height: down.size,
+                      across: across.tiles,
+                      down: down.tiles,
+                    }
+                  : null
+              }
+              controls={<div className='flex flex-col gap-3'>{fields}</div>}
+              onCancel={cancelTilePreview}
+              onApply={() => setPreviewSnapshot(null)}
             />
           </div>
         )}

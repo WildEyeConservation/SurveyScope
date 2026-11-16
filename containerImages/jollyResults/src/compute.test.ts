@@ -301,6 +301,56 @@ test('invalid images are excluded without aborting a computable stratum', () => 
   assert.equal(output.results.length, 2);
 });
 
+test('animals seen only in false-negative review are left out', () => {
+  const accumulator = createAccumulator();
+  for (const [id, latitude] of [
+    ['image-1', -33],
+    ['image-2', -33.001],
+  ] as const) {
+    accumulator.addImage({
+      id,
+      transectId: 'transect-1',
+      cameraId: 'camera-1',
+      latitude,
+      longitude: 18,
+      altitude_agl: 100,
+      timestamp: id === 'image-1' ? 1 : 2,
+    });
+  }
+  const falseNegative = 'manual-Primary - False Negatives-false-negative';
+  for (const [id, source] of [
+    ['primary-work', 'manual-Primary'],
+    ['missed', falseNegative],
+    ['missed-here-only', falseNegative],
+  ] as const) {
+    accumulator.addAnnotation({
+      id,
+      objectId: id,
+      imageId: 'image-1',
+      categoryId: 'seen',
+      source,
+    });
+  }
+  // The same animal was found by primary work on the next image.
+  accumulator.addAnnotation({
+    id: 'missed-here-only-secondary',
+    objectId: 'missed-here-only',
+    imageId: 'image-2',
+    categoryId: 'seen',
+    source: 'manual-Primary',
+  });
+
+  const output = accumulator.calculate();
+  assert.equal(
+    output.results.find((result) => result.categoryId === 'seen')?.animals,
+    2
+  );
+  assert.equal(output.validation.falseNegativeAnnotations, 1);
+  assert.ok(
+    output.warnings.some((warning) => warning.includes('False Negatives'))
+  );
+});
+
 test('chains with a marked annotation are left out', () => {
   const accumulator = createAccumulator();
   for (const [id, latitude] of [

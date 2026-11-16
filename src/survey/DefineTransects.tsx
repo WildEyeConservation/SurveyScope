@@ -14,6 +14,7 @@ import {
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import { fetchAllPaginatedResults } from '../utils';
+import { useSurveyImages } from './surveyImages';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -55,6 +56,7 @@ import {
 import BoundaryRecomputeGate from './BoundaryRecomputeGate';
 import { Kbd, MapButton } from './mapControls';
 import { LIGHT_THEME, MAP_CONTROLS, MAP_DIVIDER } from './mapTheme';
+import { spreadOverlapping } from './spreadOverlapping';
 import {
   runSurveySave,
   surveySaveSettled,
@@ -114,6 +116,7 @@ function DefineTransectsEditor({
   organizationId,
 }: DefineTransectsProps) {
   const { client, showModal } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
   const [loading, setLoading] = useState(true);
   const [loadedCount, setLoadedCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -197,36 +200,10 @@ function DefineTransectsEditor({
     return result;
   }, [segmentedImages, strata]);
 
-  // Jitter duplicate coordinates slightly so overlapping markers are visible
-  const adjustedPositions = useMemo(() => {
-    const byCoordKey: Record<string, SegmentedImage[]> = {};
-    const adjusted: Record<string, { latitude: number; longitude: number }> =
-      {};
-    segmentedImages.forEach((img) => {
-      const key = `${img.latitude},${img.longitude}`;
-      (byCoordKey[key] = byCoordKey[key] || []).push(img);
-    });
-    Object.values(byCoordKey).forEach((group) => {
-      if (group.length === 1) {
-        const img = group[0];
-        adjusted[img.id] = { latitude: img.latitude, longitude: img.longitude };
-        return;
-      }
-      // Spread duplicates around a small circle (~5m radius)
-      group.forEach((img, index) => {
-        const latRad = (img.latitude * Math.PI) / 180;
-        const radiusDeg = 0.00005;
-        const angle = (2 * Math.PI * index) / group.length;
-        adjusted[img.id] = {
-          latitude: img.latitude + radiusDeg * Math.sin(angle),
-          longitude:
-            img.longitude +
-            (radiusDeg * Math.cos(angle)) / Math.max(Math.cos(latRad), 1e-6),
-        };
-      });
-    });
-    return adjusted;
-  }, [segmentedImages]);
+  const adjustedPositions = useMemo(
+    () => spreadOverlapping(segmentedImages),
+    [segmentedImages],
+  );
 
   // Refs so the once-registered map handlers always read current values.
   const segmentedImagesRef = useRef(segmentedImages);
@@ -345,7 +322,7 @@ function DefineTransectsEditor({
         await surveySaveSettled(projectId);
         if (signal.aborted) return;
         const [imageData, area, savedStrata] = await Promise.all([
-          loadOnEffortImages(client, projectId, signal, setLoadedCount),
+          loadOnEffortImages(surveyImages.load, signal, setLoadedCount),
           loadSurveyArea(client, projectId, signal),
           loadStrata(client, projectId, signal),
         ]);
@@ -375,7 +352,7 @@ function DefineTransectsEditor({
       }
     })();
     return () => controller.abort();
-  }, [client, projectId]);
+  }, [client, projectId, surveyImages]);
 
   const handleSubmit = async () => {
     const snapshot = segmentedImages;

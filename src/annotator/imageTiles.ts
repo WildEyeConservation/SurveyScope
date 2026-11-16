@@ -130,5 +130,10 @@ export function fitPxBounds(
     right,
     bottom,
   );
-  if (camera) map.jumpTo(camera, eventData);
+  if (!camera) return;
+  // jumpTo rounds to zoomSnap, which can push the bounds off screen.
+  const snap = map.getZoomSnap();
+  map.setZoomSnap(0);
+  map.jumpTo(camera, eventData);
+  map.setZoomSnap(snap);
 }
