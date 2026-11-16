@@ -22,15 +22,14 @@ import {
   type SetHomographySummary,
 } from './collectors';
 import { DETECTORS, detectorLabel } from './loaders';
-import type {
-  OverviewResult,
-  SetLaunchesResult,
-  StatId,
-  StatOutcome,
-  StatResults,
-  SurveyReport,
-} from './report';
-import { STATS } from './report';
+import type { StatOutcome, SurveyReport } from './report';
+import {
+  STATS,
+  type OverviewResult,
+  type SetLaunchesResult,
+  type StatId,
+  type StatResults,
+} from './stats';
 import type { QueueRow } from './types';
 
 type Cell = ReactNode;

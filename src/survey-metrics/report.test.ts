@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { TILES, includedTiles } from './report';
+import { TILES, includedTiles } from './stats';
 
 const tiles = (...ids: string[]) =>
   ids.map((id) => TILES.find((tile) => tile.id === id)!);

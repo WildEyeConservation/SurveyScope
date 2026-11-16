@@ -52,6 +52,17 @@ const FALSE_NEGATIVES_QUEUE = 'False Negatives';
 
 type TileSample = { tile: Size; image: Size };
 
+function waiter() {
+  const waiter = { done: false, resolve: () => {}, ready: Promise.resolve() };
+  waiter.ready = new Promise<void>((resolve) => {
+    waiter.resolve = () => {
+      waiter.done = true;
+      resolve();
+    };
+  });
+  return waiter;
+}
+
 function growToTile(
   sample: TileSample,
   location: Box & { id?: string },
@@ -96,8 +107,6 @@ export default function useAnnotationTaskQueue() {
   const [backupIsFnQueue, setBackupIsFnQueue] = useState(false);
   // Use ref instead of state to prevent fetcher reference churn on every new location
   const processedLocationsRef = useRef<Set<string>>(new Set());
-  // Tasks this session finished, so paging back to one is not a redelivery.
-  const ownObservationsRef = useRef<Set<string>>(new Set());
 
   // user testing state
   const configRef = useRef<Schema['ProjectTestConfig']['type']>();
@@ -105,8 +114,11 @@ export default function useAnnotationTaskQueue() {
   const testViewBoundsScaleRef = useRef<number | undefined>(undefined);
   const testingSetupPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const maxCadenceIndexRef = useRef(-1);
+  // Taken from the first task of the primary queue.
+  const tileRef = useRef<TileSample | undefined>(undefined);
+  const workReadyRef = useRef(waiter());
+  const tileReadyRef = useRef(waiter());
   // Set in False Negatives jobs, whose tests are grown to the tile size.
-  const fnTileRef = useRef<TileSample | undefined>(undefined);
   const testFilterRef = useRef<CandidateFilter | undefined>(undefined);
   const { fetcher: testFetcher } = useTesting(testFilterRef);
   const {
@@ -154,7 +166,10 @@ export default function useAnnotationTaskQueue() {
       configRef.current = undefined;
       testUserRef.current = false;
       testViewBoundsScaleRef.current = undefined;
-      fnTileRef.current = undefined;
+      // Keep an unresolved waiter so a pending standby fetch still wakes.
+      if (workReadyRef.current.done) workReadyRef.current = waiter();
+      if (tileReadyRef.current.done) tileReadyRef.current = waiter();
+      tileRef.current = undefined;
       testFilterRef.current = undefined;
       const { data: config } = await client.models.ProjectTestConfig.get(
         {
@@ -180,7 +195,7 @@ export default function useAnnotationTaskQueue() {
         const { data: queue } = currentPM.queueId
           ? await client.models.Queue.get(
               { id: currentPM.queueId },
-              { selectionSet: ['name', 'locationSetId'] },
+              { selectionSet: ['name'] },
             )
           : { data: null };
         const shouldTest =
@@ -190,85 +205,16 @@ export default function useAnnotationTaskQueue() {
           )?.isTested ?? false;
         testUserRef.current = shouldTest;
 
-        // Tests in a tiled job must open like its tiles, or they stand out.
-        if (shouldTest && queue?.locationSetId) {
-          const { data: sample } =
-            await client.models.Location.locationsBySetIdAndConfidence(
-              { setId: queue.locationSetId },
-              { limit: 1, selectionSet: ['source'] as const },
-            );
-          if (sample?.[0]?.source === 'manual') {
-            testViewBoundsScaleRef.current = TILE_VIEW_BOUNDS_SCALE;
-          }
-        }
-
         // False-negative jobs show large tiles, so a small test box stands out.
         if (shouldTest && queue?.name === FALSE_NEGATIVES_QUEUE) {
-          await setupFnTests(queue.locationSetId);
+          testFilterRef.current = (location) => {
+            const sample = tileRef.current;
+            return Boolean(
+              sample && growToTile(sample, location, location.image),
+            );
+          };
         }
       }
-    }
-
-    async function setupFnTests(locationSetId: string | null | undefined) {
-      const { data: tiles } = locationSetId
-        ? await client.models.Location.locationsBySetIdAndConfidence(
-            { setId: locationSetId },
-            {
-              limit: 1,
-              selectionSet: [
-                'width',
-                'height',
-                'image.width',
-                'image.height',
-              ] as const,
-            },
-          )
-        : { data: null };
-      const tile = tiles?.[0];
-      if (!tile?.width || !tile.height || !tile.image) {
-        testUserRef.current = false;
-        return;
-      }
-      const sample: TileSample = {
-        tile: { width: tile.width, height: tile.height },
-        image: { width: tile.image.width, height: tile.image.height },
-      };
-      fnTileRef.current = sample;
-      const fits = new Map<string, Promise<boolean>>();
-      testFilterRef.current = (entry) => {
-        let fit = fits.get(entry.locationId);
-        if (!fit) {
-          fit = client.models.Location.get(
-            { id: entry.locationId },
-            {
-              selectionSet: [
-                'id',
-                'x',
-                'y',
-                'width',
-                'height',
-                'image.width',
-                'image.height',
-              ] as const,
-            },
-          ).then(({ data }) =>
-            Boolean(
-              data?.image &&
-              data.width != null &&
-              data.height != null &&
-              growToTile(
-                sample,
-                { ...data, width: data.width, height: data.height },
-                data.image,
-              ),
-            ),
-          );
-          // A failed lookup is retried on the next test.
-          fit.catch(() => fits.delete(entry.locationId));
-          fits.set(entry.locationId, fit);
-        }
-        return fit;
-      };
     }
 
     testingSetupPromiseRef.current = setupTesting();
@@ -283,21 +229,10 @@ export default function useAnnotationTaskQueue() {
       const locationId = message.location?.id;
       if (!locationId) return null;
 
-      const observationId = message.observationId;
-      const [{ data: location }, done] = await Promise.all([
-        client.models.Location.get(
-          { id: locationId },
-          { selectionSet: LOCATION_SELECTION },
-        ),
-        // A redelivered message someone else already completed.
-        observationId && !ownObservationsRef.current.has(observationId)
-          ? client.models.Observation.get(
-              { id: observationId },
-              { selectionSet: ['id'] },
-            )
-          : null,
-      ]);
-      if (done?.data) return null;
+      const { data: location } = await client.models.Location.get(
+        { id: locationId },
+        { selectionSet: LOCATION_SELECTION },
+      );
       if (
         !location?.image ||
         location.width == null ||
@@ -373,9 +308,6 @@ export default function useAnnotationTaskQueue() {
       body.zoom = queueZoom;
       body.isFalseNegatives = isFalseNegatives;
       const ack = async () => {
-        if (body.observationId) {
-          ownObservationsRef.current.add(body.observationId);
-        }
         try {
           await ackTask(received.leaseId);
           if (body.location?.id) {
@@ -445,10 +377,14 @@ export default function useAnnotationTaskQueue() {
       return { messages, receiveMs: performance.now() - startedAt };
     };
 
-    let source = { zoom, isFalseNegatives: isFnQueue };
+    let source = { zoom, isFalseNegatives: isFnQueue, primary: true };
     let received = await receive(queueId!);
     if (received.messages.length === 0 && backupQueueId) {
-      source = { zoom: backupZoom, isFalseNegatives: backupIsFnQueue };
+      source = {
+        zoom: backupZoom,
+        isFalseNegatives: backupIsFnQueue,
+        primary: false,
+      };
       received = await receive(backupQueueId);
       if (received.messages.length > 0) touchQueue(client, backupQueueId);
     }
@@ -466,9 +402,24 @@ export default function useAnnotationTaskQueue() {
         }),
       ),
     );
-    readyRef.current.push(
-      ...tasks.filter((task): task is AnnotationTaskPayload => task !== null),
+    const ready = tasks.filter(
+      (task): task is AnnotationTaskPayload => task !== null,
     );
+    // Tests must open like the job's tiles, or they stand out.
+    const sample = source.primary ? ready[0]?.location : undefined;
+    if (sample && !tileRef.current) {
+      tileRef.current = {
+        tile: { width: sample.width, height: sample.height },
+        image: { width: sample.image.width, height: sample.image.height },
+      };
+      if (sample.source === 'manual') {
+        testViewBoundsScaleRef.current = TILE_VIEW_BOUNDS_SCALE;
+      }
+      tileReadyRef.current.resolve();
+    }
+    // Backup work also releases tests; only False Negatives tests need the sample.
+    if (ready.length) workReadyRef.current.resolve();
+    readyRef.current.push(...ready);
     return received.messages.length;
   }, [
     queueId,
@@ -527,14 +478,18 @@ export default function useAnnotationTaskQueue() {
         return null;
       }
 
+      const growTests = Boolean(testFilterRef.current);
+      await (growTests ? tileReadyRef : workReadyRef).current.ready;
+      const sample = tileRef.current;
+      if (growTests && !sample) return null;
+
       const testLocation = await testFetcher();
       if (!testLocation) return null;
       const task = await prepareTask(
         testLocation as unknown as AnnotationTaskMessage,
       );
       if (!task) return null;
-      const sample = fnTileRef.current;
-      if (!sample) {
+      if (!growTests || !sample) {
         return { ...task, viewBoundsScale: testViewBoundsScaleRef.current };
       }
 

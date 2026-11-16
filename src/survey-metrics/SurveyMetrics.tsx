@@ -30,16 +30,14 @@ import {
   loadAnnotationSets,
   type BandWidths,
 } from './loaders';
+import { runReport, type ReportProgress, type SurveyReport } from './report';
 import {
   TILES,
   entitiesFor,
   includedTiles,
-  runReport,
-  type ReportProgress,
   type StatCost,
   type StatTile,
-  type SurveyReport,
-} from './report';
+} from './stats';
 import SurveyMetricsResults from './SurveyMetricsResults';
 import type { AnnotationSetRow } from './types';
 

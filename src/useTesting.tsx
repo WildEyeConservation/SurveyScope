@@ -6,7 +6,7 @@ import {
   useState,
   type MutableRefObject,
 } from 'react';
-import { startTest } from './api/tasks';
+import { startTest, type TestLocation } from './api/tasks';
 import { GlobalContext, ProjectContext } from './Context';
 import type { Identifiable } from './TaskBuffer';
 import { fetchAllPaginatedResults } from './utils';
@@ -17,7 +17,7 @@ export type TestCandidate = {
   testPresetId: string;
 };
 
-export type CandidateFilter = (entry: TestCandidate) => Promise<boolean>;
+export type CandidateFilter = (location: TestLocation) => boolean;
 
 // An extra check a candidate must pass; with it, no unfit fallback is served.
 export default function useTesting(
@@ -33,9 +33,11 @@ export default function useTesting(
 
   const primaryCandidates = useRef<TestCandidate[]>([]);
   const currentLocation = useRef<TestCandidate | null>(null);
+  const unfitRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     async function setup() {
+      unfitRef.current = new Set();
       if (currentPM.queueId) {
         client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
           if (data?.zoom) setZoom(data.zoom);
@@ -159,6 +161,15 @@ export default function useTesting(
     }
     const length = candidateEntries.length;
     const accept = acceptRef?.current;
+    // The location is unreadable until its test lease starts.
+    const pick = async (entry: TestCandidate) => {
+      if (!accept) return { entry, started: false };
+      if (unfitRef.current.has(entry.locationId)) return null;
+      const { location } = await startTest({ projectId: project.id, ...entry });
+      if (accept(location)) return { entry, started: true };
+      unfitRef.current.add(entry.locationId);
+      return null;
+    };
 
     // Capture and immediately increment the index to prevent race conditions
     // when multiple concurrent fetcher calls happen
@@ -188,20 +199,20 @@ export default function useTesting(
         (c) => !surveyCategories?.includes(c),
       );
       // Return the first valid test location
-      if (
-        missingCategories.length === 0 &&
-        (!accept || (await accept(entry)))
-      ) {
+      const picked = missingCategories.length === 0 ? await pick(entry) : null;
+      if (picked) {
         // Update ref to skip past this entry for next call
         iRef.current = (currentIndex + 1) % length;
-        return entry;
+        return picked;
       }
     }
     // If no valid candidate found, fallback to the next in sequence
     if (accept) {
       for (let attempt = 0; attempt < length; attempt++) {
-        const entry = candidateEntries[(startIndex + attempt) % length];
-        if (await accept(entry)) return entry;
+        const picked = await pick(
+          candidateEntries[(startIndex + attempt) % length],
+        );
+        if (picked) return picked;
       }
       return null;
     }
@@ -211,11 +222,12 @@ export default function useTesting(
       candidateEntries[fallbackIndex],
     );
     iRef.current = (fallbackIndex + 1) % length;
-    return candidateEntries[fallbackIndex];
-  }, [client, categoriesHook.data, acceptRef]);
+    return { entry: candidateEntries[fallbackIndex], started: false };
+  }, [client, categoriesHook.data, acceptRef, project.id]);
 
   const fetcher = useCallback(async (): Promise<Identifiable | null> => {
-    const location = await getTestLocation();
+    const picked = await getTestLocation();
+    const location = picked?.entry ?? null;
 
     currentLocation.current = location;
 
@@ -224,12 +236,14 @@ export default function useTesting(
       return null;
     }
 
-    await startTest({
-      projectId: project.id,
-      testPresetId: location.testPresetId,
-      locationId: location.locationId,
-      annotationSetId: location.annotationSetId,
-    });
+    if (!picked?.started) {
+      await startTest({
+        projectId: project.id,
+        testPresetId: location.testPresetId,
+        locationId: location.locationId,
+        annotationSetId: location.annotationSetId,
+      });
+    }
 
     const id = crypto.randomUUID();
     const body = {

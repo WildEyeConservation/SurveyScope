@@ -38,12 +38,20 @@ function fixture() {
       { id: 'img1', projectId: 'p1' },
       { id: 'img2', projectId: 'p1' },
       { id: 'img3', projectId: 'p1' },
-      { id: 'poolImage', projectId: 'p2' },
+      { id: 'poolImage', projectId: 'p2', width: 600, height: 400 },
     ],
     ImageNeighbour: [{ image1Id: 'img1', image2Id: 'img2', projectId: 'p1' }],
     Location: [
       { id: 'loc1', projectId: 'p1', imageId: 'img1' },
-      { id: 'foreign', projectId: 'p2', imageId: 'poolImage' },
+      {
+        id: 'foreign',
+        projectId: 'p2',
+        imageId: 'poolImage',
+        x: 10,
+        y: 20,
+        width: 30,
+        height: 40,
+      },
     ],
     Annotation: [],
     IndividualIdJob: [
@@ -236,6 +244,27 @@ describe('task leases', () => {
     await denied(tasks.receiveBatch(ctx.tasks, { queueId: 'hidden', max: 5 }));
   });
 
+  it('drops a redelivered task that someone already saved', async () => {
+    const data = fixture();
+    data.tables.Observation = [
+      { id: 'queue-message:msg-0', projectId: 'p1', owner: 'other::other' },
+    ];
+    const queue = new MemoryQueue([
+      { body: { location: { id: 'loc1', annotationSetId: 'a1' } } },
+      { body: { location: { id: 'loc1', annotationSetId: 'a1' } } },
+    ]);
+    const received = await tasks.receiveBatch(
+      as(data, 'annotator', queue).tasks,
+      { queueId: 'q1', max: 5 },
+    );
+    assert.deepEqual(
+      (received.data as { messageId: string }[]).map((t) => t.messageId),
+      ['msg-1'],
+    );
+    assert.deepEqual(queue.removed, ['receipt-msg-0']);
+    assert.equal(data.leases.length, 1);
+  });
+
   it('lets survey members touch queues they may work', async () => {
     const data = fixture();
     data.tables.UserProjectMembership.push({
@@ -301,11 +330,19 @@ describe('task leases', () => {
     };
     await denied(ctx.models.run('Location', 'get', [{ id: 'foreign' }]));
     await denied(ctx.models.run('TestResult', 'create', [result]));
-    await tasks.test(ctx.tasks, {
+    const started = await tasks.test(ctx.tasks, {
       projectId: 'p1',
       testPresetId: 'preset',
       locationId: 'foreign',
       annotationSetId: 'pool',
+    });
+    assert.deepEqual(started.data.location, {
+      id: 'foreign',
+      x: 10,
+      y: 20,
+      width: 30,
+      height: 40,
+      image: { width: 600, height: 400 },
     });
     const fresh = as(data, 'annotator');
     await fresh.models.run('Location', 'get', [{ id: 'foreign' }]);
