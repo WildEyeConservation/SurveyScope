@@ -31,6 +31,7 @@ export interface AnnotationFeatureProperties {
 
 interface BuildAnnotationFeaturesOptions {
   annotations: ExtendedAnnotationType[];
+  readonlyAnnotations?: ExtendedAnnotationType[];
   draggedAnnotationId?: string | null;
   dragPosition?: { x: number; y: number } | null;
   locationBounds?: AnnotationBounds;
@@ -91,6 +92,7 @@ export function buildAnnotationFeatureProperties(
 
 export function buildAnnotationFeatureCollection({
   annotations,
+  readonlyAnnotations = [],
   draggedAnnotationId,
   dragPosition,
   locationBounds,
@@ -100,26 +102,43 @@ export function buildAnnotationFeatureCollection({
   GeoJSON.Point,
   AnnotationFeatureProperties
 > {
+  const readonlyFeatures = readonlyAnnotations.map(
+    (
+      annotation,
+    ): GeoJSON.Feature<GeoJSON.Point, AnnotationFeatureProperties> => ({
+      type: 'Feature',
+      geometry: {
+        type: 'Point',
+        coordinates: px2lngLat(annotation.x, annotation.y),
+      },
+      properties: {
+        ...buildAnnotationFeatureProperties(annotation, categoryColor),
+        readonly: true,
+      },
+    }),
+  );
   return {
     type: 'FeatureCollection',
-    features: annotations.map((annotation) => {
-      const override =
-        draggedAnnotationId === annotation.id ? dragPosition : null;
-      const x = override?.x ?? annotation.x;
-      const y = override?.y ?? annotation.y;
-      return {
-        type: 'Feature',
-        geometry: {
-          type: 'Point',
-          coordinates: px2lngLat(x, y),
-        },
-        properties: buildAnnotationFeatureProperties(
-          annotation,
-          categoryColor,
-          locationBounds,
-        ),
-      };
-    }),
+    features: readonlyFeatures.concat(
+      annotations.map((annotation) => {
+        const override =
+          draggedAnnotationId === annotation.id ? dragPosition : null;
+        const x = override?.x ?? annotation.x;
+        const y = override?.y ?? annotation.y;
+        return {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: px2lngLat(x, y),
+          },
+          properties: buildAnnotationFeatureProperties(
+            annotation,
+            categoryColor,
+            locationBounds,
+          ),
+        };
+      }),
+    ),
   };
 }
 

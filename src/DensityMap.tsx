@@ -18,21 +18,23 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { useQueries } from '@tanstack/react-query';
-import { pointOnFeature } from '@turf/turf';
+import { booleanPointInPolygon, pointOnFeature } from '@turf/turf';
 import {
+  LassoIcon,
   Maximize2Icon,
   Minimize2Icon,
   MinusIcon,
   PlusIcon,
   ScanIcon,
 } from 'lucide-react';
+import { TerraDraw, TerraDrawPolygonMode } from 'terra-draw';
+import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter';
 import {
   adjectives,
   names,
   uniqueNamesGenerator,
 } from 'unique-names-generator';
-import AnnotationViewerModal from './AnnotationViewerModal';
-import { GlobalContext } from './Context';
+import { GlobalContext, ProjectContext, UserContext } from './Context';
 import {
   DEFAULT_HEAT_RADIUS_KM,
   HEAT_COLOR_RAMP,
@@ -42,13 +44,21 @@ import {
 } from './densityHeat';
 import ImageViewerModal from './ImageViewerModal';
 import { formatInfoTagsForDisplay } from './infoTags';
+import type { OverlapImage } from './overlapReview/layout';
+import OverlapReviewModal, {
+  type SightingDot,
+} from './overlapReview/OverlapReviewModal';
+import ReviewImageModal from './ReviewImageModal';
+import ReviewImageStage, { type StageSlot } from './ReviewImageStage';
+import { type Point, warmImage } from './reviewImageView';
 import {
   extractUserIdFromOwner,
   setAnnotationsQuery,
   surveyGeoQuery,
 } from './sightingQueries';
-import { MapButton } from './survey/mapControls';
+import { Kbd, MapButton } from './survey/mapControls';
 import { LIGHT_THEME, MAP_CONTROLS } from './survey/mapTheme';
+import { spreadOverlapping } from './survey/spreadOverlapping';
 import { BASE_STYLE } from './survey/surveyMapStyle';
 import { strataColors } from './survey/transectStrata';
 import { useInfoTagData } from './useInfoTags';
@@ -96,13 +106,15 @@ interface DensityMapProps {
   ) => void;
   highlightedStratumId?: string | null;
   onStratumHover?: (stratumId: string | null) => void;
-  /** Opens images elsewhere instead of in the viewer pop-up. */
-  onOpenImage?: (imageId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
+const NO_POINTS: Point[] = [];
+// About human visual reaction time.
+const HOVER_INTENT_MS = 250;
 
 const SRC_ANNOTATIONS = 'annotations';
 // Small weighted cells rather than clusters, so the heatmap shows density.
@@ -205,9 +217,12 @@ export default function DensityMap({
   onTransectsLoaded,
   highlightedStratumId = null,
   onStratumHover,
-  onOpenImage,
 }: DensityMapProps) {
   const { client } = useContext(GlobalContext)!;
+  const projectCategories = useContext(ProjectContext)?.categoriesHook.data;
+  const isSysadmin =
+    !!useContext(UserContext)?.cognitoGroups.includes('sysadmin');
+  const canReviewOverlap = editable && isSysadmin;
 
   // Normalise the legacy single-source props into the `sources` shape.
   const effectiveSources = useMemo<DensitySource[]>(() => {
@@ -247,10 +262,18 @@ export default function DensityMap({
   const [viewerImageId, setViewerImageId] = useState<string | null>(null);
   const [viewerSetId, setViewerSetId] = useState<string>(primarySetId);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+
+  const drawRef = useRef<TerraDraw | null>(null);
+  const drawingRef = useRef(false);
+  const drawFinishedAtRef = useRef(0);
+  const [drawing, setDrawing] = useState(false);
+  const [overlapIds, setOverlapIds] = useState<string[] | null>(null);
+  const [overlapOpen, setOverlapOpen] = useState(false);
 
   // -----------------------------------------------------------------------
   // Data fetching — one cached query per survey (images + strata + exclusions)
@@ -328,32 +351,17 @@ export default function DensityMap({
 
   // Match the transect map's ~5m circle for images sharing coordinates.
   // Build before filtering so an image keeps its position as filters change.
-  const adjustedPositions = useMemo(() => {
-    const groups = new Map<string, string[]>();
-    const positions = new Map<string, { lat: number; lng: number }>();
-    for (const [id, img] of imageById) {
-      const key = `${img.lat},${img.lng}`;
-      const group = groups.get(key) ?? [];
-      group.push(id);
-      groups.set(key, group);
-    }
-    for (const group of groups.values()) {
-      group.sort();
-      group.forEach((id, index) => {
-        const img = imageById.get(id)!;
-        const angle = (2 * Math.PI * index) / group.length;
-        const radius = group.length > 1 ? 0.00005 : 0;
-        positions.set(id, {
-          lat: img.lat + radius * Math.sin(angle),
-          lng:
-            img.lng +
-            (radius * Math.cos(angle)) /
-              Math.max(Math.cos((img.lat * Math.PI) / 180), 1e-6),
-        });
-      });
-    }
-    return positions;
-  }, [imageById]);
+  const adjustedPositions = useMemo(
+    () =>
+      spreadOverlapping(
+        Array.from(imageById, ([id, img]) => ({
+          id,
+          latitude: img.lat,
+          longitude: img.lng,
+        })),
+      ),
+    [imageById],
+  );
 
   // Ordered list of image ids (by capture time) for in-modal navigation.
   const orderedImageIds = useMemo(
@@ -466,7 +474,7 @@ export default function DensityMap({
 
         // Small deterministic jitter (~3m) so co-located sightings separate.
         const h = hashString(a.id);
-        const position = adjustedPositions.get(a.imageId)!;
+        const position = adjustedPositions[a.imageId];
         const radius = 0.00003;
         const angle = ((h % 360) * Math.PI) / 180;
         const dLat = radius * Math.sin(angle);
@@ -478,13 +486,15 @@ export default function DensityMap({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [position.lng + dLng, position.lat + dLat],
+            coordinates: [position.longitude + dLng, position.latitude + dLat],
           },
           properties: {
             id: a.id,
             imageId: a.imageId,
             setId: a.setId ?? q.data.annotationSetId,
             categoryName: a.category.name,
+            x: a.x,
+            y: a.y,
             infoTags: formatInfoTagsForDisplay(tagNames),
           },
         });
@@ -506,6 +516,89 @@ export default function DensityMap({
     infoTagSig,
   ]);
 
+  const imageMetaById = useMemo(
+    () =>
+      new Map(
+        surveyQueries
+          .flatMap((q) => q.data?.images ?? [])
+          .map((i) => [i.id, i]),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [surveyDataSig],
+  );
+  const pointsBySetImage = useMemo(() => {
+    const out = new Map<string, Point[]>();
+    for (const q of annotationQueries) {
+      if (!q.data) continue;
+      for (const a of q.data.annotations) {
+        if (!a.imageId || a.x == null || a.y == null) continue;
+        const key = `${a.setId ?? q.data.annotationSetId}:${a.imageId}`;
+        const points = out.get(key) ?? [];
+        points.push({ x: a.x, y: a.y });
+        out.set(key, points);
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotationDataSig]);
+
+  const sightingCounts = useMemo(() => {
+    const out = new Map<string, Map<string, Map<string, number>>>();
+    for (const f of annotationsFC.features) {
+      const { setId, imageId, categoryName } = f.properties as {
+        setId: string;
+        imageId: string;
+        categoryName: string;
+      };
+      const images = out.get(setId) ?? new Map<string, Map<string, number>>();
+      const counts = images.get(imageId) ?? new Map<string, number>();
+      counts.set(categoryName, (counts.get(categoryName) ?? 0) + 1);
+      images.set(imageId, counts);
+      out.set(setId, images);
+    }
+    return out;
+  }, [annotationsFC]);
+
+  const reviewSetId = viewerSetId || primarySetId;
+  const reviewIds = useMemo(() => {
+    const ids = new Set(sightingCounts.get(reviewSetId)?.keys());
+    if (viewerImageId) ids.add(viewerImageId);
+    return [...ids].sort(
+      (a, b) =>
+        (imageById.get(a)?.timestamp ?? 0) - (imageById.get(b)?.timestamp ?? 0),
+    );
+  }, [sightingCounts, reviewSetId, viewerImageId, imageById]);
+  const reviewLookup = useCallback(
+    (id: string): StageSlot | null => {
+      const image = imageMetaById.get(id);
+      if (!image) return null;
+      const colorOf = (name: string) =>
+        projectCategories?.find(
+          (c) => c.annotationSetId === reviewSetId && c.name === name,
+        )?.color ?? '#adb5bd';
+      const counts = sightingCounts.get(reviewSetId)?.get(id);
+      return {
+        image,
+        points: pointsBySetImage.get(`${reviewSetId}:${id}`) ?? NO_POINTS,
+        counts: [...(counts ?? [])]
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, count]) => ({
+            key: name,
+            label: name,
+            color: colorOf(name),
+            count,
+          })),
+      };
+    },
+    [
+      imageMetaById,
+      pointsBySetImage,
+      sightingCounts,
+      reviewSetId,
+      projectCategories,
+    ],
+  );
+
   // Image points GeoJSON, coloured by transect (per survey) and transect-filtered.
   const imagesFC = useMemo<FeatureCollection>(() => {
     const transectIdSet = new Set(transectIds);
@@ -517,12 +610,12 @@ export default function DensityMap({
         const t = img.transectId;
         if (transectIdSet.size && (!t || !transectIdSet.has(t))) continue;
         const info = t ? transectInfo.lookup.get(t) : undefined;
-        const position = adjustedPositions.get(img.id)!;
+        const position = adjustedPositions[img.id];
         features.push({
           type: 'Feature',
           geometry: {
             type: 'Point',
-            coordinates: [position.lng, position.lat],
+            coordinates: [position.longitude, position.latitude],
           },
           properties: {
             imageId: img.id,
@@ -595,24 +688,142 @@ export default function DensityMap({
   // -----------------------------------------------------------------------
   const openViewer = (imageId: string, setId?: string) => {
     if (document.fullscreenElement) document.exitFullscreen?.();
-    // The Images tab only shows the primary set; overlays keep the pop-up.
-    const primarySurveyId = effectiveSources.find(
-      (source) => source.annotationSetId === primarySetId,
-    )?.surveyId;
-    if (
-      onOpenImage &&
-      (!setId || setId === primarySetId) &&
-      imageById.get(imageId)?.surveyId === primarySurveyId
-    ) {
-      onOpenImage(imageId);
-      return;
-    }
     setViewerImageId(imageId);
     setViewerSetId(setId || primarySetId);
     setViewerOpen(true);
   };
   const openViewerRef = useRef(openViewer);
   openViewerRef.current = openViewer;
+  const closeViewer = useCallback(() => setViewerOpen(false), []);
+
+  const stageViewer = (imageId: string, setId: string) => {
+    if (!editable || viewerOpen) return;
+    setViewerImageId(imageId);
+    setViewerSetId(setId || primarySetId);
+  };
+  const stageViewerRef = useRef(stageViewer);
+  stageViewerRef.current = stageViewer;
+
+  const warmViewer = (imageId: string, setId: string) => {
+    const image = imageMetaById.get(imageId);
+    if (!editable || !image) return undefined;
+    const stage = stageRef.current;
+    const controller = new AbortController();
+    warmImage(
+      client,
+      image,
+      pointsBySetImage.get(`${setId || primarySetId}:${imageId}`) ?? [],
+      controller.signal,
+      stage?.clientWidth
+        ? { width: stage.clientWidth, height: stage.clientHeight }
+        : undefined,
+    );
+    return () => controller.abort();
+  };
+  const warmViewerRef = useRef(warmViewer);
+  warmViewerRef.current = warmViewer;
+
+  const stopDraw = () => {
+    try {
+      drawRef.current?.clear();
+      drawRef.current?.stop();
+    } catch {
+      /* map torn down */
+    }
+    drawingRef.current = false;
+    setDrawing(false);
+    const canvas = mapRef.current?.getCanvas();
+    if (canvas) canvas.style.cursor = '';
+  };
+  const stopDrawRef = useRef(stopDraw);
+  stopDrawRef.current = stopDraw;
+
+  const startDraw = () => {
+    const draw = drawRef.current;
+    if (!draw) return;
+    draw.start();
+    draw.setMode('polygon');
+    drawingRef.current = true;
+    setDrawing(true);
+    mapRef.current!.getCanvas().style.cursor = 'crosshair';
+  };
+
+  const lasso = (polygon: GeoJSON.Feature<GeoJSON.Polygon>) => {
+    const ids = imagesFC.features
+      .filter((f) =>
+        booleanPointInPolygon(
+          (f.geometry as GeoJSON.Point).coordinates,
+          polygon,
+        ),
+      )
+      .map((f) => f.properties!.imageId as string);
+    if (!ids.length) return;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    setOverlapIds(ids);
+    setOverlapOpen(true);
+  };
+  const lassoRef = useRef(lasso);
+  lassoRef.current = lasso;
+
+  useEffect(() => {
+    if (!drawing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') stopDrawRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawing]);
+
+  const overlapImages = useMemo<OverlapImage[]>(
+    () =>
+      (overlapIds ?? []).flatMap((id) => {
+        const meta = imageMetaById.get(id);
+        const place = imageById.get(id);
+        if (!meta?.width || !meta.height || !place) return [];
+        return [
+          {
+            id,
+            cameraId: meta.cameraId ?? null,
+            transectId: place.transectId,
+            lat: place.lat,
+            lng: place.lng,
+            timestamp: place.timestamp,
+            width: meta.width,
+            height: meta.height,
+            originalPath: meta.originalPath,
+            boundaryStatus: meta.boundaryStatus,
+          },
+        ];
+      }),
+    [overlapIds, imageMetaById, imageById],
+  );
+  const overlapSightings = useMemo(() => {
+    const out = new Map<string, SightingDot[]>();
+    if (!overlapOpen) return out;
+    for (const f of annotationsFC.features) {
+      const p = f.properties as {
+        imageId: string;
+        setId: string;
+        categoryName: string;
+        x: number | null;
+        y: number | null;
+      };
+      if (p.x == null || p.y == null) continue;
+      const dots = out.get(p.imageId) ?? [];
+      dots.push({
+        x: p.x,
+        y: p.y,
+        label: p.categoryName,
+        color:
+          projectCategories?.find(
+            (c) => c.annotationSetId === p.setId && c.name === p.categoryName,
+          )?.color ?? '#ff8c00',
+      });
+      out.set(p.imageId, dots);
+    }
+    return out;
+  }, [overlapOpen, annotationsFC, projectCategories]);
+  const closeOverlap = useCallback(() => setOverlapOpen(false), []);
 
   const [mapHoveredStratumId, setMapHoveredStratumId] = useState<string | null>(
     null,
@@ -799,9 +1010,7 @@ export default function DensityMap({
 
       // ---- Interactions -------------------------------------------------
       // Click a cluster -> zoom to its expansion.
-      map.on('click', LYR_CLUSTERS, (e) => {
-        const feature = e.features?.[0];
-        if (!feature) return;
+      const clickCluster = (feature: maplibregl.MapGeoJSONFeature) => {
         const clusterId = feature.properties?.cluster_id;
         const src = map.getSource(SRC_ANNOTATIONS) as maplibregl.GeoJSONSource;
         src.getClusterExpansionZoom(clusterId).then((zoom) => {
@@ -813,7 +1022,7 @@ export default function DensityMap({
             zoom,
           });
         });
-      });
+      };
 
       const pointPopup = (
         coordinates: [number, number],
@@ -839,15 +1048,16 @@ export default function DensityMap({
             openViewerRef.current(imageId, setId),
           );
         }
-        new maplibregl.Popup({ closeButton: true })
+        const stopWarming = warmViewerRef.current(imageId, setId);
+        stageViewerRef.current(imageId, setId);
+        const popup = new maplibregl.Popup({ closeButton: true })
           .setLngLat(coordinates)
           .setDOMContent(node)
           .addTo(map);
+        popup.on('close', () => stopWarming?.());
       };
 
-      map.on('click', LYR_POINTS, (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
+      const clickPoint = (f: maplibregl.MapGeoJSONFeature) => {
         const p = f.properties;
         const name = uniqueNamesGenerator({
           dictionaries: [adjectives, names],
@@ -865,11 +1075,9 @@ export default function DensityMap({
           p.imageId,
           p.setId,
         );
-      });
+      };
 
-      map.on('click', LYR_IMAGES, (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
+      const clickImage = (f: maplibregl.MapGeoJSONFeature) => {
         const p = f.properties;
         const [lng, lat] = (f.geometry as GeoJSON.Point).coordinates;
         pointPopup(
@@ -879,19 +1087,47 @@ export default function DensityMap({
           p.imageId,
           '',
         );
-      });
+      };
 
-      map.on('click', LYR_STRATA_LINE, (e) => {
-        const f = e.features?.[0];
-        if (!f) return;
+      const clickStratum = (
+        f: maplibregl.MapGeoJSONFeature,
+        lngLat: maplibregl.LngLat,
+      ) => {
         new maplibregl.Popup()
-          .setLngLat(e.lngLat)
+          .setLngLat(lngLat)
           .setHTML(
             `<div style="color:#000"><strong>Stratum:</strong> ${
               f.properties?.name ?? ''
             }</div>`,
           )
           .addTo(map);
+      };
+
+      // Overlapping layers share one click: only the topmost kind responds.
+      const topFeature = (point: maplibregl.Point, layers: string[]) => {
+        const present = layers.filter((id) => map.getLayer(id));
+        const hits = map.queryRenderedFeatures(point, { layers: present });
+        for (const id of present) {
+          const hit = hits.find((f) => f.layer.id === id);
+          if (hit) return hit;
+        }
+        return undefined;
+      };
+      map.on('click', (e) => {
+        if (drawingRef.current) return;
+        // The click that closes the lasso arrives after 'finish'.
+        if (performance.now() - drawFinishedAtRef.current < 500) return;
+        const f = topFeature(e.point, [
+          LYR_CLUSTERS,
+          LYR_POINTS,
+          LYR_IMAGES,
+          LYR_STRATA_LINE,
+        ]);
+        if (!f) return;
+        if (f.layer.id === LYR_CLUSTERS) clickCluster(f);
+        else if (f.layer.id === LYR_POINTS) clickPoint(f);
+        else if (f.layer.id === LYR_IMAGES) clickImage(f);
+        else clickStratum(f, e.lngLat);
       });
 
       const hoverStratum = (id: string | null) => {
@@ -903,6 +1139,34 @@ export default function DensityMap({
       });
       map.on('mouseleave', LYR_STRATA_FILL, () => hoverStratum(null));
 
+      // Prefetch only once the pointer rests on a point, not as it sweeps past.
+      let hoverKey = '';
+      let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+      let stopHoverWarm: (() => void) | undefined;
+      const endHover = () => {
+        clearTimeout(hoverTimer);
+        stopHoverWarm?.();
+        stopHoverWarm = undefined;
+        hoverKey = '';
+      };
+      map.on('mousemove', (e) => {
+        if (drawingRef.current) return;
+        const p = topFeature(e.point, [LYR_POINTS, LYR_IMAGES])?.properties;
+        if (!p?.imageId) {
+          if (hoverKey) endHover();
+          return;
+        }
+        const setId: string = p.setId ?? '';
+        const key = `${setId}:${p.imageId}`;
+        if (key === hoverKey) return;
+        endHover();
+        hoverKey = key;
+        hoverTimer = setTimeout(() => {
+          stopHoverWarm = warmViewerRef.current(p.imageId, setId);
+        }, HOVER_INTENT_MS);
+      });
+      map.on('mouseout', endHover);
+
       for (const lyr of [
         LYR_CLUSTERS,
         LYR_POINTS,
@@ -910,12 +1174,26 @@ export default function DensityMap({
         LYR_STRATA_LINE,
       ]) {
         map.on('mouseenter', lyr, () => {
-          map.getCanvas().style.cursor = 'pointer';
+          if (!drawingRef.current) map.getCanvas().style.cursor = 'pointer';
         });
         map.on('mouseleave', lyr, () => {
-          map.getCanvas().style.cursor = '';
+          if (!drawingRef.current) map.getCanvas().style.cursor = '';
         });
       }
+
+      const draw = new TerraDraw({
+        adapter: new TerraDrawMapLibreGLAdapter({ map }),
+        modes: [new TerraDrawPolygonMode({ pointerDistance: 12 })],
+      });
+      draw.on('finish', (id) => {
+        const feature = draw.getSnapshot().find((f) => f.id === id);
+        if (feature?.geometry.type === 'Polygon') {
+          lassoRef.current(feature as GeoJSON.Feature<GeoJSON.Polygon>);
+        }
+        stopDrawRef.current();
+        drawFinishedAtRef.current = performance.now();
+      });
+      drawRef.current = draw;
 
       setMapLoaded(true);
     });
@@ -923,6 +1201,12 @@ export default function DensityMap({
     return () => {
       resizeObserver.disconnect();
       setMapLoaded(false);
+      try {
+        drawRef.current?.stop();
+      } catch {
+        /* map torn down */
+      }
+      drawRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -1187,6 +1471,37 @@ export default function DensityMap({
         />
       </div>
 
+      {canReviewOverlap && (
+        <div
+          className={cn(
+            'absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2',
+            MAP_CONTROLS,
+          )}
+        >
+          <MapButton
+            tipSide='top'
+            label='Draw around images to review overlapping transects'
+            active={drawing}
+            disabled={!mapLoaded || loading}
+            onClick={drawing ? stopDraw : startDraw}
+          >
+            <LassoIcon className='size-4' />
+          </MapButton>
+        </div>
+      )}
+      {drawing && (
+        <div
+          className={cn(
+            'absolute bottom-16 left-1/2 z-10 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-3 border border-black/10 px-3 py-1.5 text-xs text-[#212529]',
+            MAP_CONTROLS,
+          )}
+        >
+          Click to draw around the images to review · click the first point to
+          finish
+          <Kbd>Esc cancel</Kbd>
+        </div>
+      )}
+
       {/* Partial data would give a misleading map. */}
       {(loading || !mapLoaded) && (
         <div className='absolute inset-0 z-30 flex items-center justify-center bg-black/20'>
@@ -1221,19 +1536,44 @@ export default function DensityMap({
         </div>
       )}
 
-      {editable ? (
-        <AnnotationViewerModal
-          show={viewerOpen}
-          onClose={() => setViewerOpen(false)}
-          imageId={viewerImageId}
-          imageIds={orderedImageIds}
-          annotationSetId={viewerSetId || primarySetId}
-          onNavigate={(id) => openViewer(id, viewerSetId)}
+      {canReviewOverlap && (
+        <OverlapReviewModal
+          show={overlapOpen}
+          onClose={closeOverlap}
+          surveyIds={uniqueSurveyIds}
+          images={overlapImages}
+          transects={transectInfo.lookup}
+          sightings={overlapSightings}
+          annotationSetId={primarySetId}
         />
+      )}
+
+      {editable ? (
+        <ReviewImageModal
+          show={viewerOpen}
+          onClose={closeViewer}
+          stageRef={stageRef}
+        >
+          {viewerImageId && (
+            <ReviewImageStage
+              ids={reviewIds}
+              currentId={viewerImageId}
+              lookup={reviewLookup}
+              annotationSetId={reviewSetId}
+              visible={viewerOpen}
+              buffer={viewerOpen}
+              onStep={(delta) => {
+                const next =
+                  reviewIds[reviewIds.indexOf(viewerImageId) + delta];
+                if (next) openViewer(next, reviewSetId);
+              }}
+            />
+          )}
+        </ReviewImageModal>
       ) : (
         <ImageViewerModal
           show={viewerOpen}
-          onClose={() => setViewerOpen(false)}
+          onClose={closeViewer}
           imageId={viewerImageId}
           imageIds={orderedImageIds}
           annotationSetId={viewerSetId || primarySetId}

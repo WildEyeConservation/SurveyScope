@@ -11,7 +11,9 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Ghost,
   HelpCircle,
+  LassoSelect,
   PencilRuler,
   Settings2,
   Share2,
@@ -40,6 +42,13 @@ import {
   type MarkerKind,
 } from './IndividualIdMap';
 import type { MatchCandidate, NeighbourPair, PixelTransform } from './types';
+import {
+  herdSpares,
+  matchSelection,
+  selectHerd,
+  type HerdProposalUpdate,
+  type Lasso,
+} from './utils/groupLink';
 import { isOov } from './utils/identity';
 import { imageSourceQuery } from './utils/imageSource';
 import { pairTilePoints } from './utils/tiles';
@@ -91,6 +100,9 @@ interface Props {
     activeAnnotationId: string,
     clickedAnnotationId: string,
   ) => void;
+  /** null discards proposals; omit to hide the tool. */
+  onProposeHerd?: (update: HerdProposalUpdate) => void;
+  herdLassos?: [Lasso, Lasso][];
   onAllAccepted?: () => void;
   /** Omit to hide the prev button + Ctrl+← shortcut (used by single-pair mode). */
   onRequestPrevPair?: () => void;
@@ -117,6 +129,8 @@ interface Props {
   foreignAnnotations?: AnnotationType[];
   /** categoryId → marker colour, used to colour the informational markers. */
   categoryColors?: Record<string, string>;
+  /** categoryId → label name. */
+  categoryNames?: Record<string, string>;
   /** Real annotation ids that violate the one-chain-member-per-image invariant. */
   duplicateAnnotationIds?: Set<string>;
   /** Real annotation ids from the last blocked chain-merge conflict. */
@@ -149,6 +163,8 @@ function candidateDistanceSq(a: MatchCandidate, b: MatchCandidate): number {
 // Stable empty defaults so the optional props don't churn memo identities.
 const NO_FOREIGN: AnnotationType[] = [];
 const NO_COLORS: Record<string, string> = {};
+const NO_NAMES: Record<string, string> = {};
+const HIDE_SHADOWS_KEY = 'individual-id-hide-shadows';
 const NO_DUPLICATES: Set<string> = new Set();
 const NO_CONFLICT_HIGHLIGHTS: Set<string> = new Set();
 
@@ -175,6 +191,8 @@ export function IndividualIdMapPair(props: Props) {
     onSetProposedObscured,
     onMoveToOov,
     onManualLinkRequest,
+    onProposeHerd,
+    herdLassos,
     onAllAccepted,
     onRequestPrevPair,
     onRequestNextPair,
@@ -187,6 +205,7 @@ export function IndividualIdMapPair(props: Props) {
     chainViewerBaseHref,
     foreignAnnotations = NO_FOREIGN,
     categoryColors = NO_COLORS,
+    categoryNames = NO_NAMES,
     duplicateAnnotationIds = NO_DUPLICATES,
     conflictHighlightAnnotationIds = NO_CONFLICT_HIGHLIGHTS,
     onClearConflictHighlights,
@@ -231,6 +250,51 @@ export function IndividualIdMapPair(props: Props) {
     [candidates, activeKey],
   );
 
+  const [lassoMode, setLassoMode] = useState(false);
+  const [lassoA, setLassoA] = useState<Lasso | null>(null);
+  const [lassoB, setLassoB] = useState<Lasso | null>(null);
+  const herd = useMemo(
+    () =>
+      lassoMode ? selectHerd(candidates, lassoA ?? [], lassoB ?? []) : null,
+    [lassoMode, candidates, lassoA, lassoB],
+  );
+  const pendingProposals = useMemo(
+    () => candidates.filter((c) => c.herdProposed && c.status !== 'accepted'),
+    [candidates],
+  );
+  const spares = useMemo(
+    () => herdSpares(candidates, herdLassos ?? []),
+    [herdLassos, candidates],
+  );
+  const startLasso = useCallback(() => {
+    setActiveKey(null);
+    setLassoMode(true);
+  }, []);
+  const stopLasso = useCallback(() => {
+    setLassoMode(false);
+    setLassoA(null);
+    setLassoB(null);
+  }, []);
+  const pairHerd = useCallback(
+    (lassos: [Lasso, Lasso]) => {
+      if (!onProposeHerd) return;
+      const pairs = matchSelection(
+        selectHerd(candidates, ...lassos),
+        pair.forward,
+      );
+      onProposeHerd({
+        pairs: pairs.map(([a, b, uncertain]) => [a.id, b.id, uncertain]),
+        lassos,
+      });
+    },
+    [candidates, onProposeHerd, pair.forward],
+  );
+  const proposeHerd = useCallback(() => {
+    if (!lassoA || !lassoB) return;
+    pairHerd([lassoA, lassoB]);
+    stopLasso();
+  }, [lassoA, lassoB, pairHerd, stopLasso]);
+
   const sourceQueries = useQueries({
     queries: [
       imageSourceQuery(client, imageA),
@@ -241,8 +305,36 @@ export function IndividualIdMapPair(props: Props) {
 
   const color = category?.color || DEFAULT_COLOR;
 
+  const [countA, countB] = useMemo(() => {
+    const a = new Set<string>();
+    const b = new Set<string>();
+    for (const c of candidates) {
+      if (c.realA && !isOov(c.realA)) a.add(c.realA.id);
+      if (c.realB && !isOov(c.realB)) b.add(c.realB.id);
+    }
+    return [a.size, b.size];
+  }, [candidates]);
+  const countLabel = (n: number) => `${n} ${category?.name ?? 'annotations'}`;
+
   // Hold Tab to peek at the underlying images with every marker hidden.
   const [markersHidden, setMarkersHidden] = useState(false);
+  const [shadowsHidden, setShadowsHidden] = useState(() => {
+    try {
+      return localStorage.getItem(HIDE_SHADOWS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleShadows = useCallback(() => {
+    setShadowsHidden((prev) => {
+      try {
+        localStorage.setItem(HIDE_SHADOWS_KEY, prev ? '0' : '1');
+      } catch {
+        // Preference just won't persist.
+      }
+      return !prev;
+    });
+  }, []);
 
   // secondary = real whose objectId points at another row's identity; primary otherwise.
   function classify(
@@ -277,6 +369,8 @@ export function IndividualIdMapPair(props: Props) {
     for (const c of candidates) {
       if (!c.posA) continue;
       const isShadow = !c.realA || c.isShadowA;
+      // The selected candidate's shadow stays, so Space never creates an unseen annotation.
+      if (shadowsHidden && isShadow && c.pairKey !== activeKey) continue;
       const partnerReal = c.realB && !isOov(c.realB) ? c.realB : null;
       const chainAnnotation = c.realA ?? partnerReal;
       out.push({
@@ -288,8 +382,10 @@ export function IndividualIdMapPair(props: Props) {
         status: c.status,
         kind: classify(c.realA, c.isShadowA),
         identityKey: c.identityKey,
+        categoryName: category?.name,
         active: c.pairKey === activeKey,
         obscured: c.realA ? !!c.realA.obscured : !!c.obscuredA,
+        uncertain: !!c.uncertain && c.status !== 'accepted',
         outside: isMarkedOutside(c.realA),
         canMoveToOov: isShadow && !!partnerReal,
         canSplitChain: c.realA ? (canSplitChain?.(c.realA.id) ?? false) : false,
@@ -314,6 +410,7 @@ export function IndividualIdMapPair(props: Props) {
         x: a.x,
         y: a.y,
         color: categoryColors[a.categoryId] ?? DEFAULT_COLOR,
+        categoryName: categoryNames[a.categoryId],
         status: 'pending',
         kind: classify(a, false),
         identityKey: a.objectId ?? a.id,
@@ -332,10 +429,13 @@ export function IndividualIdMapPair(props: Props) {
   }, [
     candidates,
     activeKey,
+    shadowsHidden,
     color,
     foreignAnnotations,
     imageA.id,
     categoryColors,
+    categoryNames,
+    category?.name,
     canSplitChain,
     duplicateAnnotationIds,
     conflictHighlightAnnotationIds,
@@ -347,6 +447,7 @@ export function IndividualIdMapPair(props: Props) {
     for (const c of candidates) {
       if (!c.posB) continue;
       const isShadow = !c.realB || c.isShadowB;
+      if (shadowsHidden && isShadow && c.pairKey !== activeKey) continue;
       const partnerReal = c.realA && !isOov(c.realA) ? c.realA : null;
       const chainAnnotation = c.realB ?? partnerReal;
       out.push({
@@ -358,8 +459,10 @@ export function IndividualIdMapPair(props: Props) {
         status: c.status,
         kind: classify(c.realB, c.isShadowB),
         identityKey: c.identityKey,
+        categoryName: category?.name,
         active: c.pairKey === activeKey,
         obscured: c.realB ? !!c.realB.obscured : !!c.obscuredB,
+        uncertain: !!c.uncertain && c.status !== 'accepted',
         outside: isMarkedOutside(c.realB),
         canMoveToOov: isShadow && !!partnerReal,
         canSplitChain: c.realB ? (canSplitChain?.(c.realB.id) ?? false) : false,
@@ -384,6 +487,7 @@ export function IndividualIdMapPair(props: Props) {
         x: a.x,
         y: a.y,
         color: categoryColors[a.categoryId] ?? DEFAULT_COLOR,
+        categoryName: categoryNames[a.categoryId],
         status: 'pending',
         kind: classify(a, false),
         identityKey: a.objectId ?? a.id,
@@ -402,10 +506,13 @@ export function IndividualIdMapPair(props: Props) {
   }, [
     candidates,
     activeKey,
+    shadowsHidden,
     color,
     foreignAnnotations,
     imageB.id,
     categoryColors,
+    categoryNames,
+    category?.name,
     canSplitChain,
     duplicateAnnotationIds,
     conflictHighlightAnnotationIds,
@@ -446,7 +553,7 @@ export function IndividualIdMapPair(props: Props) {
   );
 
   // Dragging a marker also focuses it — acting on any marker moves the
-  // active state to that marker. Informational markers can't be focused, so
+  // active state to that marker. Other-category markers can't be focused, so
   // dragging one only repositions it.
   const handleDragA = useCallback(
     (candidateKey: string, x: number, y: number) => {
@@ -641,9 +748,10 @@ export function IndividualIdMapPair(props: Props) {
   const handleSpace = useCallback(async () => {
     if (!activeCandidate) {
       // Nothing focused → focus the first non-accepted, non-informational.
-      const next = candidates.find(
+      const open = candidates.filter(
         (c) => c.status !== 'accepted' && !c.informational,
       );
+      const next = open.find((c) => !c.uncertain) ?? open[0];
       if (next) {
         setActiveKey(next.pairKey);
         panToCandidate(next.pairKey);
@@ -667,9 +775,12 @@ export function IndividualIdMapPair(props: Props) {
       if (!accepted) return;
       // Advance focus within this pair; onAllAccepted is fired by the effect, not here (stale-read race).
       const linkable = candidates.filter((c) => !c.informational);
-      const remaining = linkable.filter(
+      const open = linkable.filter(
         (c) => c.status !== 'accepted' && c.pairKey !== activeCandidate.pairKey,
       );
+      const remaining = open.some((c) => !c.uncertain)
+        ? open.filter((c) => !c.uncertain)
+        : open;
       if (remaining.length === 0) {
         setActiveKey(null);
       } else {
@@ -711,6 +822,8 @@ export function IndividualIdMapPair(props: Props) {
   ]);
 
   const handleEscape = useCallback(() => {
+    // Terra-draw cancels the shape being drawn; finished lassos stay until Cancel.
+    if (lassoMode) return;
     if (conflictHighlightAnnotationIds.size > 0) {
       onClearConflictHighlights?.();
     }
@@ -719,6 +832,7 @@ export function IndividualIdMapPair(props: Props) {
       onUnfocus?.();
     }
   }, [
+    lassoMode,
     activeKey,
     onUnfocus,
     conflictHighlightAnnotationIds,
@@ -773,12 +887,10 @@ export function IndividualIdMapPair(props: Props) {
     (candidateKey: string) => {
       // Other-category markers aren't part of the workflow — not focusable.
       if (foreignById.has(candidateKey)) return;
-      // Don't activate informational candidates — no partner to lock/accept.
-      const c = candidates.find((cc) => cc.pairKey === candidateKey);
-      if (c?.informational) return;
+      // Out-of-overlap markers stay selectable for manual linking; navigation skips them.
       setActiveKey(candidateKey);
     },
-    [candidates, foreignById],
+    [foreignById],
   );
 
   // Empty-map click places a new annotation and makes it the active marker
@@ -1038,6 +1150,10 @@ export function IndividualIdMapPair(props: Props) {
             previewTransform={markersHidden ? undefined : pair.backward}
             otherImage={imageB}
             onInitialTilesLoaded={handleSideReadyA}
+            badge={countLabel(countA)}
+            lassoMode={lassoMode}
+            lasso={lassoA}
+            onLassoDrawn={setLassoA}
           />
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
@@ -1065,6 +1181,10 @@ export function IndividualIdMapPair(props: Props) {
             previewTransform={markersHidden ? undefined : pair.forward}
             otherImage={imageA}
             onInitialTilesLoaded={handleSideReadyB}
+            badge={countLabel(countB)}
+            lassoMode={lassoMode}
+            lasso={lassoB}
+            onLassoDrawn={setLassoB}
           />
         </div>
         <OovPanel
@@ -1079,6 +1199,28 @@ export function IndividualIdMapPair(props: Props) {
           onDelete={handleCardDeleteB}
         />
       </div>
+      {(herd || (herdLassos && pendingProposals.length > 0)) && (
+        <HerdPairingBar
+          herd={herd}
+          lassoA={lassoA}
+          lassoB={lassoB}
+          pending={pendingProposals.length}
+          uncertain={pendingProposals.filter((c) => c.uncertain).length}
+          spares={spares}
+          canDrop={
+            !!activeCandidate?.herdProposed &&
+            activeCandidate.status !== 'accepted'
+          }
+          onDrop={() =>
+            activeCandidate?.realA &&
+            onProposeHerd?.({ drop: activeCandidate.realA.id })
+          }
+          onRepair={() => herdLassos?.forEach(pairHerd)}
+          onCancel={stopLasso}
+          onConfirm={proposeHerd}
+          onDiscard={() => onProposeHerd?.(null)}
+        />
+      )}
       <PairToolbar
         // Counts exclude informational markers.
         candidatesCount={candidates.filter((c) => !c.informational).length}
@@ -1094,7 +1236,124 @@ export function IndividualIdMapPair(props: Props) {
         onCollapsedChange={onCollapsedChange}
         shareHref={shareHref}
         editHomographyHref={editHomographyHref}
+        shadowsHidden={shadowsHidden}
+        onShadowsToggle={toggleShadows}
+        herdPairingActive={lassoMode}
+        onHerdPairingToggle={
+          onProposeHerd ? (lassoMode ? stopLasso : startLasso) : undefined
+        }
       />
+    </div>
+  );
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+function HerdPairingBar({
+  herd,
+  lassoA,
+  lassoB,
+  pending,
+  uncertain,
+  spares,
+  canDrop,
+  onDrop,
+  onRepair,
+  onCancel,
+  onConfirm,
+  onDiscard,
+}: {
+  herd: ReturnType<typeof selectHerd> | null;
+  lassoA: Lasso | null;
+  lassoB: Lasso | null;
+  pending: number;
+  uncertain: number;
+  spares: { a: number; b: number };
+  canDrop: boolean;
+  onDrop: () => void;
+  onRepair: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onDiscard: () => void;
+}) {
+  const barStyle = {
+    background: '#3B4753',
+    color: '#f8f9fa',
+    borderTop: '1px solid rgba(255, 255, 255, 0.15)',
+  };
+  if (herd) {
+    const side = (lasso: Lasso | null, n: number) =>
+      lasso ? plural(n, 'unlinked animal') : 'no lasso yet';
+    return (
+      <div
+        className='flex flex-row items-center gap-3 px-4 py-2 text-sm'
+        style={barStyle}
+      >
+        <Button
+          size='sm'
+          variant='ghost'
+          className='mr-auto h-[31px] text-white'
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
+        <span>
+          Click to place points around the herd on each image · double-click or
+          Enter to close. Left: {side(lassoA, herd.freeA.length)} · Right:{' '}
+          {side(lassoB, herd.freeB.length)}
+          {herd.anchors.length > 0 &&
+            ` · ${plural(herd.anchors.length, 'existing link')} kept`}
+        </span>
+        <Button
+          size='sm'
+          className='h-[31px]'
+          disabled={
+            !lassoA || !lassoB || !herd.freeA.length || !herd.freeB.length
+          }
+          onClick={onConfirm}
+        >
+          Propose pairs
+        </Button>
+      </div>
+    );
+  }
+  const spare = [
+    spares.a > 0 && `${spares.a} on the left`,
+    spares.b > 0 && `${spares.b} on the right`,
+  ].filter(Boolean);
+  return (
+    <div
+      className='flex flex-row items-center gap-3 px-4 py-2 text-sm'
+      style={barStyle}
+    >
+      <span className='mr-auto'>
+        {plural(pending, 'proposed pair')} to accept with Space
+        {uncertain > 0 &&
+          ` (${uncertain} uncertain, dashed amber border, visited last)`}
+        .{spare.length > 0 && ` No partner (spare): ${spare.join(', ')}.`}
+      </span>
+      <Button
+        size='sm'
+        variant='outline-light'
+        className='h-[31px]'
+        disabled={!canDrop}
+        onClick={onDrop}
+        title='Return the selected pair to normal matching'
+      >
+        Drop selected proposal
+      </Button>
+      <Button
+        size='sm'
+        variant='outline-light'
+        className='h-[31px]'
+        onClick={onRepair}
+        title='Pair again only the animals you have not accepted yet'
+      >
+        Re-pair the rest
+      </Button>
+      <Button size='sm' className='h-[31px]' onClick={onDiscard}>
+        Discard proposals
+      </Button>
     </div>
   );
 }
@@ -1110,6 +1369,10 @@ function PairToolbar({
   onCollapsedChange,
   shareHref,
   editHomographyHref,
+  shadowsHidden,
+  onShadowsToggle,
+  herdPairingActive,
+  onHerdPairingToggle,
 }: {
   candidatesCount: number;
   acceptedCount: number;
@@ -1121,6 +1384,10 @@ function PairToolbar({
   onCollapsedChange: (next: boolean) => void;
   shareHref?: string;
   editHomographyHref?: string;
+  shadowsHidden: boolean;
+  onShadowsToggle: () => void;
+  herdPairingActive: boolean;
+  onHerdPairingToggle?: () => void;
 }) {
   const navigate = useNavigate();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -1257,6 +1524,32 @@ function PairToolbar({
               </p>
             </PopoverContent>
           </Popover>
+          <Button
+            size='icon-sm'
+            variant={shadowsHidden ? 'light' : 'outline-light'}
+            onClick={onShadowsToggle}
+            title={
+              shadowsHidden
+                ? 'Show shadow markers'
+                : 'Hide shadow markers (the selected one stays visible)'
+            }
+            aria-label='Hide shadow markers'
+            aria-pressed={shadowsHidden}
+          >
+            <Ghost size={16} />
+          </Button>
+          {onHerdPairingToggle && (
+            <Button
+              size='icon-sm'
+              variant={herdPairingActive ? 'light' : 'outline-light'}
+              onClick={onHerdPairingToggle}
+              title='Pair a herd that moved between the images'
+              aria-label='Pair a herd'
+              aria-pressed={herdPairingActive}
+            >
+              <LassoSelect size={16} />
+            </Button>
+          )}
           {editHomographyHref && (
             <Button
               size='icon-sm'

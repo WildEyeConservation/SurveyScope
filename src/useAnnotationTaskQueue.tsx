@@ -7,13 +7,20 @@ import type {
   TaskAcknowledgement,
 } from './annotationTypes';
 import { primeTask } from './annotator/prefetchTask';
+import { TILE_VIEW_BOUNDS_SCALE } from './annotator/viewTiles';
 import { ackTask, receiveTasks, type ReceivedTask } from './api/tasks';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
 import { decideTestCadence } from './testCadence';
+import {
+  growTestBox,
+  tileSizeForImage,
+  type Box,
+  type Size,
+} from './testTileBounds';
 import { touchQueue } from './touchQueue';
-import useTesting from './useTesting';
+import useTesting, { type CandidateFilter } from './useTesting';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 
 const LOCATION_SELECTION = [
@@ -23,6 +30,7 @@ const LOCATION_SELECTION = [
   'width',
   'height',
   'confidence',
+  'source',
   'image.id',
   'image.width',
   'image.height',
@@ -40,6 +48,33 @@ const RECEIVE_BATCH_SIZE = 5;
 // Start the next batch while there is still time to prime it.
 const RECEIVE_AHEAD = 3;
 const VISIBILITY_TIMEOUT_S = 600;
+const FALSE_NEGATIVES_QUEUE = 'False Negatives';
+
+type TileSample = { tile: Size; image: Size };
+
+function waiter() {
+  const waiter = { done: false, resolve: () => {}, ready: Promise.resolve() };
+  waiter.ready = new Promise<void>((resolve) => {
+    waiter.resolve = () => {
+      waiter.done = true;
+      resolve();
+    };
+  });
+  return waiter;
+}
+
+function growToTile(
+  sample: TileSample,
+  location: Box & { id?: string },
+  image: Size,
+) {
+  return growTestBox(
+    location,
+    tileSizeForImage(sample, image),
+    image,
+    location.id ?? '',
+  );
+}
 
 interface AnnotationTaskMessage {
   location: {
@@ -55,6 +90,7 @@ interface AnnotationTaskMessage {
   queueId?: string;
   observationId?: string;
   taskTag?: string;
+  isFalseNegatives?: boolean;
 }
 
 export default function useAnnotationTaskQueue() {
@@ -67,15 +103,24 @@ export default function useAnnotationTaskQueue() {
   );
   const [zoom, setZoom] = useState<number | undefined>(undefined);
   const [backupZoom, setBackupZoom] = useState<number | undefined>(undefined);
+  const [isFnQueue, setIsFnQueue] = useState(false);
+  const [backupIsFnQueue, setBackupIsFnQueue] = useState(false);
   // Use ref instead of state to prevent fetcher reference churn on every new location
   const processedLocationsRef = useRef<Set<string>>(new Set());
 
   // user testing state
   const configRef = useRef<Schema['ProjectTestConfig']['type']>();
   const testUserRef = useRef(false);
+  const testViewBoundsScaleRef = useRef<number | undefined>(undefined);
   const testingSetupPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const maxCadenceIndexRef = useRef(-1);
-  const { fetcher: testFetcher } = useTesting();
+  // Taken from the first task of the primary queue.
+  const tileRef = useRef<TileSample | undefined>(undefined);
+  const workReadyRef = useRef(waiter());
+  const tileReadyRef = useRef(waiter());
+  // Set in False Negatives jobs, whose tests are grown to the tile size.
+  const testFilterRef = useRef<CandidateFilter | undefined>(undefined);
+  const { fetcher: testFetcher } = useTesting(testFilterRef);
   const {
     jobsCompleted,
     currentAnnoCount,
@@ -101,6 +146,7 @@ export default function useAnnotationTaskQueue() {
       touchQueue(client, currentPM.queueId);
       client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
         if (!data) return;
+        setIsFnQueue(data.name === FALSE_NEGATIVES_QUEUE);
         setQueueId(data.url ? data.id : undefined);
         setZoom(data.zoom ?? undefined);
       });
@@ -108,6 +154,7 @@ export default function useAnnotationTaskQueue() {
         client.models.Queue.get({ id: currentPM.backupQueueId }).then(
           ({ data }) => {
             if (!data) return;
+            setBackupIsFnQueue(data.name === FALSE_NEGATIVES_QUEUE);
             setBackupQueueId(data.url ? data.id : undefined);
             setBackupZoom(data.zoom ?? undefined);
           },
@@ -118,6 +165,12 @@ export default function useAnnotationTaskQueue() {
     async function setupTesting() {
       configRef.current = undefined;
       testUserRef.current = false;
+      testViewBoundsScaleRef.current = undefined;
+      // Keep an unresolved waiter so a pending standby fetch still wakes.
+      if (workReadyRef.current.done) workReadyRef.current = waiter();
+      if (tileReadyRef.current.done) tileReadyRef.current = waiter();
+      tileRef.current = undefined;
+      testFilterRef.current = undefined;
       const { data: config } = await client.models.ProjectTestConfig.get(
         {
           projectId: currentPM.projectId,
@@ -139,7 +192,6 @@ export default function useAnnotationTaskQueue() {
       if (config?.projectId) {
         configRef.current = config;
 
-        // False-negative jobs show large tiles, so a small test box stands out.
         const { data: queue } = currentPM.queueId
           ? await client.models.Queue.get(
               { id: currentPM.queueId },
@@ -147,13 +199,21 @@ export default function useAnnotationTaskQueue() {
             )
           : { data: null };
         const shouldTest =
-          queue?.name !== 'False Negatives' &&
-          (myOrganizationHook.data?.find(
+          myOrganizationHook.data?.find(
             (membership) =>
               membership.organizationId === config.project.organizationId,
-          )?.isTested ??
-            false);
+          )?.isTested ?? false;
         testUserRef.current = shouldTest;
+
+        // False-negative jobs show large tiles, so a small test box stands out.
+        if (shouldTest && queue?.name === FALSE_NEGATIVES_QUEUE) {
+          testFilterRef.current = (location) => {
+            const sample = tileRef.current;
+            return Boolean(
+              sample && growToTile(sample, location, location.image),
+            );
+          };
+        }
       }
     }
 
@@ -189,6 +249,7 @@ export default function useAnnotationTaskQueue() {
           width: location.width,
           height: location.height,
           confidence: location.confidence,
+          source: location.source,
           image: location.image,
           annotationSetId: message.location.annotationSetId,
         },
@@ -200,6 +261,7 @@ export default function useAnnotationTaskQueue() {
         queueId: message.queueId,
         observationId: message.observationId,
         taskTag: message.taskTag,
+        isFalseNegatives: message.isFalseNegatives,
       };
 
       if (!message.skipLocationWithAnnotations) {
@@ -238,11 +300,13 @@ export default function useAnnotationTaskQueue() {
     async (
       received: ReceivedTask,
       queueZoom: number | undefined,
+      isFalseNegatives: boolean,
       receiveMs: number,
     ): Promise<AnnotationTaskPayload | null> => {
       const body = JSON.parse(received.body) as AnnotationTaskMessage;
       body.observationId = `queue-message:${received.messageId}`;
       body.zoom = queueZoom;
+      body.isFalseNegatives = isFalseNegatives;
       const ack = async () => {
         try {
           await ackTask(received.leaseId);
@@ -313,29 +377,60 @@ export default function useAnnotationTaskQueue() {
       return { messages, receiveMs: performance.now() - startedAt };
     };
 
-    let sourceZoom = zoom;
+    let source = { zoom, isFalseNegatives: isFnQueue, primary: true };
     let received = await receive(queueId!);
     if (received.messages.length === 0 && backupQueueId) {
-      sourceZoom = backupZoom;
+      source = {
+        zoom: backupZoom,
+        isFalseNegatives: backupIsFnQueue,
+        primary: false,
+      };
       received = await receive(backupQueueId);
       if (received.messages.length > 0) touchQueue(client, backupQueueId);
     }
 
     const tasks = await Promise.all(
       received.messages.map((message) =>
-        prepareMessage(message, sourceZoom, received.receiveMs).catch(
-          (error: unknown) => {
-            console.error('Failed to prepare annotation task', error);
-            return null;
-          },
-        ),
+        prepareMessage(
+          message,
+          source.zoom,
+          source.isFalseNegatives,
+          received.receiveMs,
+        ).catch((error: unknown) => {
+          console.error('Failed to prepare annotation task', error);
+          return null;
+        }),
       ),
     );
-    readyRef.current.push(
-      ...tasks.filter((task): task is AnnotationTaskPayload => task !== null),
+    const ready = tasks.filter(
+      (task): task is AnnotationTaskPayload => task !== null,
     );
+    // Tests must open like the job's tiles, or they stand out.
+    const sample = source.primary ? ready[0]?.location : undefined;
+    if (sample && !tileRef.current) {
+      tileRef.current = {
+        tile: { width: sample.width, height: sample.height },
+        image: { width: sample.image.width, height: sample.image.height },
+      };
+      if (sample.source === 'manual') {
+        testViewBoundsScaleRef.current = TILE_VIEW_BOUNDS_SCALE;
+      }
+      tileReadyRef.current.resolve();
+    }
+    // Backup work also releases tests; only False Negatives tests need the sample.
+    if (ready.length) workReadyRef.current.resolve();
+    readyRef.current.push(...ready);
     return received.messages.length;
-  }, [queueId, backupQueueId, zoom, backupZoom, prepareMessage, client]);
+  }, [
+    queueId,
+    backupQueueId,
+    zoom,
+    backupZoom,
+    isFnQueue,
+    backupIsFnQueue,
+    prepareMessage,
+    client,
+  ]);
 
   const receive = useCallback(() => {
     receivingRef.current ??= receiveBatch().finally(() => {
@@ -383,9 +478,37 @@ export default function useAnnotationTaskQueue() {
         return null;
       }
 
+      const growTests = Boolean(testFilterRef.current);
+      await (growTests ? tileReadyRef : workReadyRef).current.ready;
+      const sample = tileRef.current;
+      if (growTests && !sample) return null;
+
       const testLocation = await testFetcher();
       if (!testLocation) return null;
-      return prepareTask(testLocation as unknown as AnnotationTaskMessage);
+      const task = await prepareTask(
+        testLocation as unknown as AnnotationTaskMessage,
+      );
+      if (!task) return null;
+      if (!growTests || !sample) {
+        return { ...task, viewBoundsScale: testViewBoundsScaleRef.current };
+      }
+
+      const { location } = task;
+      const grown = growToTile(sample, location, location.image);
+      if (!grown) return null;
+      const testBoxGrown =
+        grown.x !== location.x ||
+        grown.y !== location.y ||
+        grown.width !== location.width ||
+        grown.height !== location.height;
+      // Served like a real tile so its size gives nothing away.
+      return {
+        ...task,
+        location: { ...location, ...grown, testBoxGrown },
+        allowOutside: false,
+        isFalseNegatives: true,
+        viewBoundsScale: testViewBoundsScaleRef.current,
+      };
     }, [prepareTask, testFetcher]);
 
   const beforeNext = useCallback(

@@ -34,9 +34,18 @@ export const setTaskVisibility = (leaseId: string, seconds: number) =>
 export const queueDepths = (queueIds: string[]) =>
   call<Record<string, string>>('/tasks/depth', { queueIds });
 
+export interface TestLocation {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  image: { width: number; height: number };
+}
+
 export const startTest = (test: {
   projectId: string;
   testPresetId: string;
   locationId: string;
   annotationSetId: string;
-}) => call<{ leaseId: string }>('/tasks/test', test);
+}) => call<{ leaseId: string; location: TestLocation }>('/tasks/test', test);

@@ -279,8 +279,6 @@ export const handler: Handler = async (event, context) => {
         }
 
         // Trigger post-completion Lambdas based on queue type
-        const isFnQueue = queue.name === 'False Negatives';
-
         if (isHomographyQueue && queue.annotationSetId) {
           // Trigger homography reconciliation — pass manifest key for targeted dedup
           try {
@@ -314,35 +312,6 @@ export const handler: Handler = async (event, context) => {
             }
           } catch (err) {
             console.error('Failed to trigger homography reconciliation', err);
-          }
-        } else if (!isFnQueue && !isHomographyQueue && queue.annotationSetId) {
-          // Trigger FN pool reconciliation for species labelling queues
-          try {
-            const functionName = (env as any).RECONCILE_FALSE_NEGATIVES_FUNCTION_NAME;
-            if (functionName) {
-              const lambdaClient = new LambdaClient({
-                region: env.AWS_REGION,
-                credentials: {
-                  accessKeyId: env.AWS_ACCESS_KEY_ID,
-                  secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-                  sessionToken: env.AWS_SESSION_TOKEN,
-                },
-              });
-              await lambdaClient.send(
-                new InvokeCommand({
-                  FunctionName: functionName,
-                  InvocationType: 'Event',
-                  Payload: new TextEncoder().encode(
-                    JSON.stringify({ annotationSetId: queue.annotationSetId })
-                  ),
-                })
-              );
-              console.log('Triggered FN reconciliation', {
-                annotationSetId: queue.annotationSetId,
-              });
-            }
-          } catch (err) {
-            console.error('Failed to trigger FN reconciliation', err);
           }
         }
 

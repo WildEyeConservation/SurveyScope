@@ -13,9 +13,13 @@ export interface BuildCandidatesInput {
   backward: PixelTransform;
   leniency: number;
   categoryFilter?: string | string[];
+  /** A→B annotation id pairs to propose regardless of distance (herd pairing); the flag marks an uncertain one. */
+  proposedPairs?: ReadonlyArray<readonly [string, string, boolean?]>;
 }
 
 const HARD_FORCE = -1_000_000;
+// Weaker than HARD_FORCE so an existing link always beats a stale proposal.
+const PROPOSED = -500_000;
 const HARD_FORBID = 1_000_000;
 
 function dist2(
@@ -71,7 +75,12 @@ export function buildMatchCandidates({
   backward,
   leniency,
   categoryFilter,
+  proposedPairs,
 }: BuildCandidatesInput): MatchCandidate[] {
+  const proposed = new Set(proposedPairs?.map(([a, b]) => `${a}\n${b}`));
+  const uncertain = new Set(
+    proposedPairs?.filter(([, , u]) => u).map(([a, b]) => `${a}\n${b}`),
+  );
   const all_A = annotationsA.filter((a) => passesCategory(a, categoryFilter));
   const all_B = annotationsB.filter((a) => passesCategory(a, categoryFilter));
 
@@ -159,6 +168,10 @@ export function buildMatchCandidates({
           cost[i][j] = HARD_FORCE;
           continue;
         }
+        if (proposed.has(`${a.id}\n${b.id}`)) {
+          cost[i][j] = PROPOSED;
+          continue;
+        }
         // Different objectIds intentionally fall through to the distance cost so a cross-chain match can be proposed (accepting merges the two chains).
         if (a.categoryId !== b.categoryId) {
           cost[i][j] = HARD_FORBID;
@@ -190,6 +203,8 @@ export function buildMatchCandidates({
           isShadowB: false,
           status:
             a.objectId && a.objectId === b.objectId ? 'accepted' : 'pending',
+          ...(proposed.has(`${a.id}\n${b.id}`) && { herdProposed: true }),
+          ...(uncertain.has(`${a.id}\n${b.id}`) && { uncertain: true }),
         });
         continue;
       }

@@ -1,22 +1,8 @@
+import type { ReportCache } from './cache';
 import {
   addDetection,
-  finishDetections,
   scanConfidenceCoverage,
-  summariseAnnotations,
-  summariseChainLinking,
-  summariseHomographies,
-  summariseObservations,
-  summariseProcessedBy,
-  summariseSetHomographies,
-  type AnnotationSummary,
-  type ChainLinkSummary,
-  type ConfidenceCoverage,
   type DetectionScan,
-  type DetectionSummary,
-  type HomographySummary,
-  type ObservationSummary,
-  type ProcessedBySummary,
-  type SetHomographySummary,
 } from './collectors';
 import {
   AbortError,
@@ -39,256 +25,23 @@ import {
   type BandWidths,
   type LoadContext,
 } from './loaders';
+import {
+  ENTITY_LABELS,
+  SET_ENTITIES,
+  STATS,
+  entitiesFor,
+  type EntityKey,
+  type LocationScan,
+  type StatId,
+  type StatResults,
+  type SurveyData,
+} from './stats';
 import type {
   AnnotationRow,
-  AnnotationSetRow,
-  CategoryRow,
   ImageRow,
-  ImageSetRow,
-  LocationSetRow,
-  NeighbourRow,
   ObservationRow,
-  ProcessedByRow,
-  ProjectRow,
   QueueRow,
-  RegistrationRows,
-  TaskRow,
 } from './types';
-
-export type LocationScan = {
-  rows: number;
-  detections: DetectionScan;
-  coverage: ConfidenceCoverage | null;
-};
-
-export type SurveyData = {
-  project: ProjectRow;
-  imageSets: ImageSetRow[];
-  annotationSets: AnnotationSetRow[];
-  locationSets: LocationSetRow[];
-  queues: QueueRow[];
-  registration: RegistrationRows;
-  images: ImageRow[];
-  neighbours: NeighbourRow[];
-  processedBy: ProcessedByRow[];
-  locationScan: LocationScan;
-  annotations: AnnotationRow[];
-  observations: ObservationRow[];
-  categories: CategoryRow[];
-  tasks: TaskRow[];
-};
-
-export type EntityKey = keyof SurveyData;
-
-const SET_ENTITIES: EntityKey[] = [
-  'annotations',
-  'observations',
-  'categories',
-  'tasks',
-];
-
-const ENTITY_LABELS: Record<EntityKey, string> = {
-  project: 'Survey',
-  imageSets: 'Image sets',
-  annotationSets: 'Annotation sets',
-  locationSets: 'Location sets',
-  queues: 'Queues',
-  registration: 'Registration counters',
-  images: 'Images',
-  neighbours: 'Image pairs',
-  processedBy: 'Processed-by records',
-  locationScan: 'Detector locations',
-  annotations: 'Annotations',
-  observations: 'Observations',
-  categories: 'Categories',
-  tasks: 'Launched location sets',
-};
-
-export type OverviewResult = {
-  project: ProjectRow;
-  imageSets: ImageSetRow[];
-  annotationSets: AnnotationSetRow[];
-  locationSets: LocationSetRow[];
-  queues: QueueRow[];
-};
-
-export type SetLaunchesResult = {
-  locationSets: { id: string; name: string; launchedAt: string | null }[];
-  queues: QueueRow[];
-};
-
-export type StatResults = {
-  overview: OverviewResult;
-  detectionModels: ProcessedBySummary;
-  detectorOutput: DetectionSummary;
-  homographies: HomographySummary;
-  setLaunches: SetLaunchesResult;
-  annotations: AnnotationSummary;
-  observations: ObservationSummary;
-  confidenceCoverage: ConfidenceCoverage;
-  setHomographies: SetHomographySummary;
-  chainLinking: ChainLinkSummary;
-};
-
-export type StatId = keyof StatResults;
-export type StatCost = 'light' | 'heavy' | 'very heavy';
-
-type StatDefinition<Id extends StatId> = {
-  id: Id;
-  label: string;
-  description: string;
-  cost: StatCost;
-  needsSet: boolean;
-  needs: EntityKey[];
-  compute: (data: SurveyData) => StatResults[Id];
-};
-
-function define<Id extends StatId>(definition: StatDefinition<Id>) {
-  return definition;
-}
-
-function totalImageCount(imageSets: ImageSetRow[]): number | null {
-  const total = imageSets.reduce((sum, set) => sum + (set.imageCount ?? 0), 0);
-  return total > 0 ? total : null;
-}
-
-export const STATS = [
-  define({
-    id: 'overview',
-    label: 'Survey overview',
-    description:
-      'Image, annotation and location sets with their stored counters, plus queues.',
-    cost: 'light',
-    needsSet: false,
-    needs: ['project', 'imageSets', 'annotationSets', 'locationSets', 'queues'],
-    compute: ({
-      project,
-      imageSets,
-      annotationSets,
-      locationSets,
-      queues,
-    }) => ({
-      project,
-      imageSets,
-      annotationSets,
-      locationSets,
-      queues,
-    }),
-  }),
-  define({
-    id: 'detectionModels',
-    label: 'Detection models run',
-    description:
-      'Which models processed the survey and how many images each one covered.',
-    cost: 'heavy',
-    needsSet: false,
-    needs: ['processedBy', 'imageSets'],
-    compute: ({ processedBy, imageSets }) =>
-      summariseProcessedBy(processedBy, totalImageCount(imageSets)),
-  }),
-  define({
-    id: 'detectorOutput',
-    label: 'Detector output',
-    description:
-      'Detections per model: images with detections, empty images, images never processed, and the confidence spread.',
-    cost: 'very heavy',
-    needsSet: false,
-    needs: ['locationScan', 'images'],
-    compute: ({ locationScan, images }) =>
-      finishDetections(locationScan.detections, images),
-  }),
-  define({
-    id: 'homographies',
-    label: 'Homographies',
-    description:
-      'Image pairs by registration outcome, homography source, camera pair, and how fragmented the pair graph is.',
-    cost: 'very heavy',
-    needsSet: false,
-    needs: ['images', 'neighbours', 'registration'],
-    compute: ({ neighbours, images, registration }) =>
-      summariseHomographies(neighbours, images, registration),
-  }),
-  define({
-    id: 'setLaunches',
-    label: 'Launched for annotation',
-    description:
-      'Location sets and queues launched against the annotation set, with confidence thresholds.',
-    cost: 'light',
-    needsSet: true,
-    needs: ['tasks', 'locationSets', 'queues'],
-    compute: ({ tasks, locationSets, queues }) => {
-      const names = new Map(locationSets.map((set) => [set.id, set.name]));
-      return {
-        locationSets: tasks.map((task) => ({
-          id: task.locationSetId,
-          name: names.get(task.locationSetId) ?? task.locationSetId,
-          launchedAt: task.createdAt,
-        })),
-        queues,
-      };
-    },
-  }),
-  define({
-    id: 'annotations',
-    label: 'Annotations',
-    description:
-      'Annotations by source, annotator and category, with primary, secondary and unlinked counts.',
-    cost: 'heavy',
-    needsSet: true,
-    needs: ['annotations', 'categories'],
-    compute: ({ annotations, categories }) =>
-      summariseAnnotations(annotations, categories),
-  }),
-  define({
-    id: 'observations',
-    label: 'Observations',
-    description:
-      'Locations reviewed in the annotation set, by source and reviewer.',
-    cost: 'heavy',
-    needsSet: true,
-    needs: ['observations'],
-    compute: ({ observations }) => summariseObservations(observations),
-  }),
-  define({
-    id: 'confidenceCoverage',
-    label: 'Model detections reviewed',
-    description:
-      'Per model and confidence band: detections, how many were observed, and how many hold an annotation.',
-    cost: 'very heavy',
-    needsSet: true,
-    needs: ['locationScan', 'observations', 'annotations'],
-    compute: ({ locationScan }) => {
-      if (!locationScan.coverage) {
-        throw new Error(
-          'Detector locations were not matched against this set.',
-        );
-      }
-      return locationScan.coverage;
-    },
-  }),
-  define({
-    id: 'setHomographies',
-    label: 'Homographies for annotated images',
-    description:
-      'Registration outcome of the pairs that touch an image annotated in this set.',
-    cost: 'very heavy',
-    needsSet: true,
-    needs: ['images', 'neighbours', 'annotations'],
-    compute: ({ neighbours, annotations }) =>
-      summariseSetHomographies(neighbours, annotations),
-  }),
-  define({
-    id: 'chainLinking',
-    label: 'Chain linking',
-    description:
-      'Whether annotations in overlapping image regions are already linked, or are being counted twice.',
-    cost: 'very heavy',
-    needsSet: true,
-    needs: ['images', 'neighbours', 'annotations'],
-    compute: ({ neighbours, images, annotations }) =>
-      summariseChainLinking(neighbours, images, annotations),
-  }),
-] as const;
 
 export type StatOutcome<Id extends StatId = StatId> = {
   id: Id;
@@ -326,9 +79,6 @@ export type SurveyReport = {
   stats: { [Id in StatId]?: StatOutcome<Id> };
 };
 
-type CacheEntry = { data: unknown; fetchedAt: string };
-export type ReportCache = Map<string, CacheEntry>;
-
 export type ReportRequest = {
   surveyId: string;
   annotationSetId: string | null;
@@ -341,16 +91,6 @@ export type ReportRequest = {
   signal: AbortSignal;
   onProgress: (progress: ReportProgress) => void;
 };
-
-export function entitiesFor(statIds: StatId[]): EntityKey[] {
-  const needed = new Set<EntityKey>();
-  for (const stat of STATS) {
-    if (statIds.includes(stat.id)) stat.needs.forEach((key) => needed.add(key));
-  }
-  return (Object.keys(ENTITY_LABELS) as EntityKey[]).filter((key) =>
-    needed.has(key),
-  );
-}
 
 function cacheKey(
   request: ReportRequest,
@@ -421,7 +161,20 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         : cacheKey(request, entity);
 
     const promise = (async () => {
-      const cached = request.reuseCache ? request.cache.get(key) : undefined;
+      const needs: Dependencies = {};
+      // Loaded first: fetching either afresh drops the scans matched to it.
+      if (entity === 'locationScan' && wantsCoverage) {
+        try {
+          const observations = (await load('observations')) as ObservationRow[];
+          needs.annotations = (await load('annotations')) as AnnotationRow[];
+          needs.observations = observations;
+        } catch {
+          // Detector output does not need the set.
+        }
+      }
+      const cached = request.reuseCache
+        ? await request.cache.get(key)
+        : undefined;
       if (cached) {
         task.state = 'cached';
         task.fetchedAt = cached.fetchedAt;
@@ -443,20 +196,8 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
       };
 
       try {
-        const needs: Dependencies = {};
         if (entity === 'neighbours') {
           needs.images = () => load('images') as Promise<ImageRow[]>;
-        }
-        if (entity === 'locationScan' && wantsCoverage) {
-          try {
-            const observations = (await load(
-              'observations',
-            )) as ObservationRow[];
-            needs.annotations = (await load('annotations')) as AnnotationRow[];
-            needs.observations = observations;
-          } catch {
-            // Detector output does not need the set.
-          }
         }
         task.state = 'running';
         emit(true);
@@ -465,7 +206,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         if (entity === 'annotations' || entity === 'observations') {
           const scanPrefix = `${surveyId}:locationScan@`;
           const setSuffix = `:${annotationSetId}`;
-          for (const cached of [...request.cache.keys()]) {
+          for (const cached of request.cache.keys()) {
             if (cached.startsWith(scanPrefix) && cached.endsWith(setSuffix))
               request.cache.delete(cached);
           }
@@ -473,7 +214,7 @@ export async function runReport(request: ReportRequest): Promise<SurveyReport> {
         if (entity === 'locationScan') {
           const scan = data as LocationScan;
           const prefix = `${cacheKey(request, entity, false)}:`;
-          for (const cached of [...request.cache.keys()]) {
+          for (const cached of request.cache.keys()) {
             if (cached.startsWith(prefix)) request.cache.delete(cached);
           }
           request.cache.set(cacheKey(request, entity, false), {

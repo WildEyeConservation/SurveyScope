@@ -27,7 +27,10 @@ export interface AnnotationLocation {
   width: number;
   height: number;
   confidence?: number | null;
+  source?: string | null;
   image: AnnotationImage;
+  /** A test grown to the job's tile size; its key is recounted in this box. */
+  testBoxGrown?: boolean;
 }
 
 export interface AnnotationWorkspaceProps {
@@ -48,14 +51,19 @@ export interface AnnotationWorkspaceProps {
   /** Stable identifier for retry-safe Observation creation. */
   observationId?: string;
   taskTag?: string;
+  /** Set from the task's own queue; unset outside queue work. */
+  isFalseNegatives?: boolean;
   /** Image only: no header, side legend or frame, for viewers embedded in a page. */
   embedded?: boolean;
+  /** Map bearing in degrees; rotating the map reports the new one. */
+  bearing?: number;
+  onBearingChange?: (bearing: number) => void;
 }
 
 /** A fully hydrated task returned by the annotation queue source. */
 export type AnnotationTaskPayload = Omit<
   AnnotationWorkspaceProps,
-  'visible' | 'next' | 'prev'
+  'visible' | 'next' | 'prev' | 'bearing' | 'onBearingChange'
 > & {
   ack: TaskAcknowledgement;
 };

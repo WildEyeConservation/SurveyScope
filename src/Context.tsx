@@ -59,16 +59,6 @@ export interface UserContextType {
   setCurrentAnnoCount: React.Dispatch<
     React.SetStateAction<{ [key: string]: { x: number; y: number }[] }>
   >;
-  sessionTestsResults: {
-    id: string;
-    locationId: string;
-    annotationSetId: string;
-  }[];
-  setSessionTestsResults: React.Dispatch<
-    React.SetStateAction<
-      { id: string; locationId: string; annotationSetId: string }[]
-    >
-  >;
 }
 
 export interface ManagementContextType {
@@ -126,6 +116,8 @@ type NeighbourTransform =
 interface ImageContextType {
   annotationsHook: AnnotationsHook;
   annoCount: number;
+  // Lets readers of stored rows skip deletes that may still be in flight.
+  deletedAnnotationIds: ReadonlySet<string>;
   startLoadingTimestamp: number;
   visibleTimestamp: number | undefined;
   fullyLoadedTimestamp: number | undefined;

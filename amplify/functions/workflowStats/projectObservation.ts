@@ -21,6 +21,10 @@ import {
   type WorkflowRunIdentity,
 } from './observationAdapter';
 import { writeWorkflowTaskEvent } from './store';
+import {
+  createTileMarker,
+  type MarkerTables,
+} from '../falseNegativeSamples/marking';
 
 const logger = new Logger({
   serviceName: 'project-observation-workflow-stats',
@@ -47,6 +51,10 @@ const documentClient = DynamoDBDocumentClient.from(
   { marshallOptions: { removeUndefinedValues: true } }
 );
 const runCache = new Map<string, WorkflowRunIdentity>();
+const markerTables = process.env.FALSE_NEGATIVE_MARKER_TABLES;
+const tileMarker = markerTables
+  ? createTileMarker(documentClient, JSON.parse(markerTables) as MarkerTables)
+  : null;
 
 function observationFromRecord(record: DynamoDBRecord): Record<string, unknown> {
   const image = record.dynamodb?.NewImage;
@@ -102,6 +110,14 @@ async function findRun(runId: string): Promise<WorkflowRunIdentity | null> {
 async function processRecord(record: DynamoDBRecord): Promise<void> {
   if (record.eventName !== 'INSERT') return;
   const observation = observationFromRecord(record);
+  await projectStatistics(observation);
+  // Last, so a failure here retries the record without losing its statistics.
+  await tileMarker?.onObservation(observation);
+}
+
+async function projectStatistics(
+  observation: Record<string, unknown>
+): Promise<void> {
   const queueId = observation.queueId;
   if (typeof queueId !== 'string' || queueId.trim() === '') {
     logger.debug('Observation has no queue; skipping shadow projection', {
@@ -156,7 +172,7 @@ export const handler: Handler<
       await processRecord(record);
     } catch (error) {
       const sequenceNumber = record.dynamodb?.SequenceNumber;
-      logger.error('Failed to project Observation into workflow statistics', {
+      logger.error('Failed to process Observation', {
         eventId: record.eventID,
         sequenceNumber,
         error: error instanceof Error ? error.message : String(error),

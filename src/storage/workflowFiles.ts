@@ -1,8 +1,8 @@
 import { storageOperation } from './api';
 
 /*
-Workflow files in the outputs bucket (false-negative pools and history, jolly
-result status, launch payloads and queue manifests). The workflowFiles backend
+Workflow files in the outputs bucket (jolly result status, launch payloads
+and queue manifests). The workflowFiles backend
 authorizes each request against the owning project and derives the key, so
 the browser never names an S3 key.
 */
@@ -19,7 +19,6 @@ interface UploadGrant {
   headers: Record<string, string>;
 }
 
-export type FalseNegativeFileKind = 'pool' | 'history';
 export type WorkflowUploadKind = 'launch-payload' | 'queue-manifest';
 
 async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -28,36 +27,6 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
     throw new Error(`Workflow file download failed: ${response.status}`);
   }
   return (await response.json()) as T;
-}
-
-/** Resolves to null when the file does not exist. */
-export async function readFalseNegativeFile<T>(
-  annotationSetId: string,
-  kind: FalseNegativeFileKind,
-  signal?: AbortSignal,
-): Promise<T | null> {
-  const file = await storageOperation<FileUrl>(
-    `query FalseNegativeFileUrl($annotationSetId: ID!, $kind: String!) {
-    falseNegativeFileUrl(annotationSetId: $annotationSetId, kind: $kind)
-  }`,
-    { annotationSetId, kind },
-    'falseNegativeFileUrl',
-    signal,
-  );
-  if (!file.exists || !file.url) return null;
-  return fetchJson<T>(file.url, signal);
-}
-
-export async function deleteFalseNegativeFiles(
-  annotationSetId: string,
-): Promise<void> {
-  await storageOperation<boolean>(
-    `mutation DeleteFalseNegativeFiles($annotationSetId: ID!) {
-    deleteFalseNegativeFiles(annotationSetId: $annotationSetId)
-  }`,
-    { annotationSetId },
-    'deleteFalseNegativeFiles',
-  );
 }
 
 export async function readJollyStatus<T>(

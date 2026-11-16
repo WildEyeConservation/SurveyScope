@@ -3,11 +3,17 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { BoundaryStatus } from '../shared/boundaryStatus';
-import AnnotationWorkspace from './AnnotationWorkspace';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { GlobalContext, ProjectContext } from './Context';
+import ReviewImageStage, { type StageSlot } from './ReviewImageStage';
+import { fileName, formatTime, type Point } from './reviewImageView';
 import {
   extractUserIdFromOwner,
   setAnnotationsQuery,
@@ -17,6 +23,8 @@ import { useInfoTagData } from './useInfoTags';
 
 type SortMode = 'time' | 'count';
 
+const NO_POINTS: Point[] = [];
+
 type ImageRow = {
   id: string;
   name: string;
@@ -24,12 +32,6 @@ type ImageRow = {
   total: number;
   counts: { categoryId: string; count: number }[];
 };
-
-const fileName = (path: string | null | undefined, id: string) =>
-  path?.split(/[\\/]/).pop() || id;
-
-const formatTime = (timestamp: number) =>
-  timestamp ? new Date(timestamp * 1000).toLocaleTimeString() : '';
 
 export default function ReviewImages({
   surveyId,
@@ -122,8 +124,44 @@ export default function ReviewImages({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotationsQuery.data, imagesById, filterKey, infoTagSig, sort]);
 
+  const pointsByImage = useMemo(() => {
+    const out = new Map<string, Point[]>();
+    for (const a of annotationsQuery.data?.annotations ?? []) {
+      if (!a.imageId || a.x == null || a.y == null) continue;
+      const points = out.get(a.imageId) ?? [];
+      points.push({ x: a.x, y: a.y });
+      out.set(a.imageId, points);
+    }
+    return out;
+  }, [annotationsQuery.data]);
+
   const index = rows.findIndex((row) => row.id === selectedImageId);
   const selected = selectedImageId ? imagesById.get(selectedImageId) : null;
+  const rowIds = useMemo(() => rows.map((row) => row.id), [rows]);
+  const rowById = useMemo(
+    () => new Map(rows.map((row) => [row.id, row])),
+    [rows],
+  );
+  const lookup = useCallback(
+    (id: string): StageSlot | null => {
+      const image = imagesById.get(id);
+      if (!image) return null;
+      return {
+        image,
+        points: pointsByImage.get(id) ?? NO_POINTS,
+        counts: (rowById.get(id)?.counts ?? []).map(({ categoryId, count }) => {
+          const category = categoryById.get(categoryId);
+          return {
+            key: categoryId,
+            label: category?.name ?? 'Unknown',
+            color: category?.color ?? '#adb5bd',
+            count,
+          };
+        }),
+      };
+    },
+    [imagesById, pointsByImage, rowById, categoryById],
+  );
 
   useEffect(() => {
     if (rows.length && (!selectedImageId || !imagesById.has(selectedImageId)))
@@ -274,89 +312,26 @@ export default function ReviewImages({
       </GridTable>
 
       <div className='relative min-w-0 grow overflow-hidden border border-white/15'>
-        {selected?.width && selected.height ? (
-          <AnnotationWorkspace
-            key={selected.id}
-            embedded
+        {selected ? (
+          <ReviewImageStage
+            ids={rowIds}
+            currentId={selected.id}
+            lookup={lookup}
+            annotationSetId={annotationSetId}
             visible={visible}
-            next={index < rows.length - 1 ? () => step(1) : undefined}
-            prev={index > 0 ? () => step(-1) : undefined}
-            hideZoomSetting
-            hideNavButtons
-            allowOutside
-            location={{
-              image: {
-                id: selected.id,
-                width: selected.width,
-                height: selected.height,
-                boundaryStatus:
-                  selected.boundaryStatus as BoundaryStatus | null,
-              },
-              annotationSetId,
-              x: selected.width / 2,
-              y: selected.height / 2,
-              width: selected.width,
-              height: selected.height,
-            }}
+            buffer={visible}
+            onStep={step}
           />
         ) : (
-          !loading && (
-            <div className='flex h-full items-center justify-center text-muted-foreground'>
-              No image selected.
-            </div>
-          )
-        )}
-
-        {selected && (
-          <div className='absolute top-2.5 left-1/2 z-10 flex max-w-[60%] -translate-x-1/2 items-center gap-2 bg-white px-1.5 py-1 text-sm text-[#212529] shadow-lg'>
-            <button
-              type='button'
-              aria-label='Previous image'
-              disabled={index <= 0}
-              onClick={() => step(-1)}
-              className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
-            >
-              <ChevronLeft className='size-4' />
-            </button>
-            <span className='min-w-0 truncate'>
-              <strong>{fileName(selected.originalPath, selected.id)}</strong>
-              <span className='text-[#6c757d]'>
-                {selected.timestamp
-                  ? ` · ${formatTime(selected.timestamp)}`
-                  : ''}
-                {index >= 0 &&
-                  ` · ${index + 1} of ${rows.length.toLocaleString()}`}
-              </span>
-            </span>
-            <button
-              type='button'
-              aria-label='Next image'
-              disabled={index < 0 || index >= rows.length - 1}
-              onClick={() => step(1)}
-              className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
-            >
-              <ChevronRight className='size-4' />
-            </button>
-          </div>
-        )}
-
-        {index >= 0 && (
-          <div className='absolute top-2.5 right-2.5 z-10 flex max-w-56 flex-col gap-1 bg-white px-3 py-2 text-sm text-[#212529] shadow-lg'>
-            <span className='text-[10px] font-semibold tracking-wider text-[#6c757d] uppercase'>
-              This image
-            </span>
-            {rows[index].counts.map(({ categoryId, count }) => {
-              const category = categoryById.get(categoryId);
-              return (
-                <span key={categoryId} className='flex items-baseline gap-2'>
-                  <span
-                    className='size-2.5 flex-none'
-                    style={{ backgroundColor: category?.color ?? '#adb5bd' }}
-                  />
-                  {count} {category?.name ?? 'Unknown'}
-                </span>
-              );
-            })}
+          <div className='flex h-full items-center justify-center gap-2 text-sm text-muted-foreground'>
+            {loading ? (
+              <>
+                <Spinner size='sm' />
+                Loading images...
+              </>
+            ) : (
+              'No image selected.'
+            )}
           </div>
         )}
       </div>

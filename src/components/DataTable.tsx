@@ -37,6 +37,8 @@ export interface DataColumnMeta {
   className?: string;
   headerClassName?: string;
   description?: string;
+  /** Lets a long header break onto several lines. */
+  wrapHeader?: boolean;
   style?: CSSProperties;
 }
 
@@ -167,11 +169,19 @@ export default function DataTable<T extends RowData>({
                     <button
                       type='button'
                       onClick={header.column.getToggleSortingHandler()}
-                      className='inline-flex items-center gap-1 text-left font-bold whitespace-nowrap hover:text-white'
+                      className={cn(
+                        'inline-flex items-center gap-1 font-bold hover:text-white',
+                        meta?.wrapHeader
+                          ? '[text-align:inherit]'
+                          : 'text-left whitespace-nowrap',
+                      )}
                     >
                       {label}
                       <Icon
-                        className={cn('size-3.5', !sorted && 'opacity-40')}
+                        className={cn(
+                          'size-3.5 shrink-0',
+                          !sorted && 'opacity-40',
+                        )}
                       />
                     </button>
                   ) : (
@@ -182,7 +192,8 @@ export default function DataTable<T extends RowData>({
                       key={header.id}
                       style={meta?.style}
                       className={cn(
-                        'bg-dark whitespace-nowrap',
+                        'bg-dark',
+                        meta?.wrapHeader ? 'align-bottom' : 'whitespace-nowrap',
                         meta?.headerClassName ?? meta?.className,
                       )}
                     >

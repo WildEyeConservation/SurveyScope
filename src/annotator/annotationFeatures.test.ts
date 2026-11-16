@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ExtendedAnnotationType } from '../schemaTypes';
 import {
+  buildAnnotationFeatureCollection,
   buildAnnotationFeatureProperties,
   buildAnnotationPopupLines,
 } from './annotationFeatures';
@@ -73,4 +74,22 @@ test('popup flags annotations outside the survey area only', () => {
   ]);
   assert.ok(!lines(false).includes('Outside survey area'));
   assert.ok(!lines().includes('Outside survey area'));
+});
+
+test('read-only annotations render first and are always read-only', () => {
+  const collection = buildAnnotationFeatureCollection({
+    annotations: [annotation({ id: 'own', x: 10, y: 10 })],
+    readonlyAnnotations: [annotation({ id: 'context', x: 900, y: 900 })],
+    px2lngLat: (x, y) => [x, y],
+    categoryColor: colorForCategory,
+  });
+
+  assert.deepEqual(
+    collection.features.map((f) => [f.properties.id, f.properties.readonly]),
+    [
+      ['context', true],
+      ['own', false],
+    ],
+  );
+  assert.equal(collection.features[0].properties.icon, 'identicon-context');
 });

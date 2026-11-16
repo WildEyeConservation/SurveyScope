@@ -1,10 +1,28 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { startTest } from './api/tasks';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
+import { startTest, type TestLocation } from './api/tasks';
 import { GlobalContext, ProjectContext } from './Context';
 import type { Identifiable } from './TaskBuffer';
 import { fetchAllPaginatedResults } from './utils';
 
-export default function useTesting() {
+export type TestCandidate = {
+  locationId: string;
+  annotationSetId: string;
+  testPresetId: string;
+};
+
+export type CandidateFilter = (location: TestLocation) => boolean;
+
+// An extra check a candidate must pass; with it, no unfit fallback is served.
+export default function useTesting(
+  acceptRef?: MutableRefObject<CandidateFilter | undefined>,
+) {
   const { currentPM, project, categoriesHook } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
 
@@ -13,17 +31,13 @@ export default function useTesting() {
   const [zoom, setZoom] = useState<number | undefined>(undefined);
   const setupPromiseRef = useRef<Promise<void>>(Promise.resolve());
 
-  const primaryCandidates = useRef<
-    { locationId: string; annotationSetId: string; testPresetId: string }[]
-  >([]);
-  const currentLocation = useRef<{
-    locationId: string;
-    annotationSetId: string;
-    testPresetId: string;
-  } | null>(null);
+  const primaryCandidates = useRef<TestCandidate[]>([]);
+  const currentLocation = useRef<TestCandidate | null>(null);
+  const unfitRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     async function setup() {
+      unfitRef.current = new Set();
       if (currentPM.queueId) {
         client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
           if (data?.zoom) setZoom(data.zoom);
@@ -146,6 +160,16 @@ export default function useTesting() {
       throw new Error('No primary candidates available for testing');
     }
     const length = candidateEntries.length;
+    const accept = acceptRef?.current;
+    // The location is unreadable until its test lease starts.
+    const pick = async (entry: TestCandidate) => {
+      if (!accept) return { entry, started: false };
+      if (unfitRef.current.has(entry.locationId)) return null;
+      const { location } = await startTest({ projectId: project.id, ...entry });
+      if (accept(location)) return { entry, started: true };
+      unfitRef.current.add(entry.locationId);
+      return null;
+    };
 
     // Capture and immediately increment the index to prevent race conditions
     // when multiple concurrent fetcher calls happen
@@ -175,37 +199,51 @@ export default function useTesting() {
         (c) => !surveyCategories?.includes(c),
       );
       // Return the first valid test location
-      if (missingCategories.length === 0) {
+      const picked = missingCategories.length === 0 ? await pick(entry) : null;
+      if (picked) {
         // Update ref to skip past this entry for next call
         iRef.current = (currentIndex + 1) % length;
-        return entry;
+        return picked;
       }
     }
     // If no valid candidate found, fallback to the next in sequence
+    if (accept) {
+      for (let attempt = 0; attempt < length; attempt++) {
+        const picked = await pick(
+          candidateEntries[(startIndex + attempt) % length],
+        );
+        if (picked) return picked;
+      }
+      return null;
+    }
     const fallbackIndex = startIndex % length;
     console.warn(
       'No valid test location found, defaulting to candidate',
       candidateEntries[fallbackIndex],
     );
     iRef.current = (fallbackIndex + 1) % length;
-    return candidateEntries[fallbackIndex];
-  }, [client, categoriesHook.data]);
+    return { entry: candidateEntries[fallbackIndex], started: false };
+  }, [client, categoriesHook.data, acceptRef, project.id]);
 
-  const fetcher = useCallback(async (): Promise<Identifiable> => {
-    const location = await getTestLocation();
+  const fetcher = useCallback(async (): Promise<Identifiable | null> => {
+    const picked = await getTestLocation();
+    const location = picked?.entry ?? null;
 
     currentLocation.current = location;
 
     if (!location) {
       console.warn('No location found for testing');
+      return null;
     }
 
-    await startTest({
-      projectId: project.id,
-      testPresetId: location.testPresetId,
-      locationId: location.locationId,
-      annotationSetId: location.annotationSetId,
-    });
+    if (!picked?.started) {
+      await startTest({
+        projectId: project.id,
+        testPresetId: location.testPresetId,
+        locationId: location.locationId,
+        annotationSetId: location.annotationSetId,
+      });
+    }
 
     const id = crypto.randomUUID();
     const body = {

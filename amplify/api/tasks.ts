@@ -149,6 +149,16 @@ async function leaseMessage(
     await ctx.queue.remove(url, message.receiptHandle);
     return null;
   }
+  // Someone saved it but the acknowledgement was lost.
+  if (
+    scope.locationIds.length &&
+    (await ctx.models.load('Observation', {
+      id: `queue-message:${message.messageId}`,
+    }))
+  ) {
+    await ctx.queue.remove(url, message.receiptHandle);
+    return null;
+  }
   const lease: Lease = {
     userId: ctx.access.userId,
     leaseId: randomUUID(),
@@ -286,6 +296,9 @@ export async function test(ctx: TaskContext, args: Row) {
   const location = await ctx.models.load('Location', { id: locationId });
   if (!location || !str(location.imageId))
     throw notFound('Test location not found');
+  const image = await ctx.models.load('Image', {
+    id: String(location.imageId),
+  });
   const lease: Lease = {
     userId: ctx.access.userId,
     leaseId: randomUUID(),
@@ -300,7 +313,19 @@ export async function test(ctx: TaskContext, args: Row) {
     expiresAt: now() + HOLD_SECONDS,
   };
   await ctx.leases.put(lease);
-  return { data: { leaseId: lease.leaseId } };
+  return {
+    data: {
+      leaseId: lease.leaseId,
+      location: {
+        id: locationId,
+        x: location.x,
+        y: location.y,
+        width: location.width,
+        height: location.height,
+        image: { width: image?.width, height: image?.height },
+      },
+    },
+  };
 }
 
 export async function holdJob(ctx: TaskContext, jobId: string) {

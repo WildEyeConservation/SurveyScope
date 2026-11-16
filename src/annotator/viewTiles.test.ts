@@ -43,3 +43,32 @@ test('without a zoom, fits the location box at 1.5x', () => {
   assert.ok(tiles.length > 0 && tiles.length <= 4);
   assert.ok(tiles.every((t) => t.z === 6));
 });
+
+test('a 0.5 bounds scale shows exactly the location box', () => {
+  const tiles = viewTiles({
+    image,
+    location: { x: 3168, y: 4752, width: 6336, height: 9504 },
+    zoom: null,
+    viewBoundsScale: 0.5,
+    viewport: { width: 800, height: 800 },
+  });
+  // The whole image at about 0.084x is level 2: 2 columns by 3 rows of tiles.
+  assert.ok(tiles.every((t) => t.z === 2));
+  assert.equal(tiles.length, 6);
+});
+
+test('without a zoom, a tile fills the view with a slim margin', () => {
+  const tile = { x: 3168, y: 4752, width: 2112, height: 1901 };
+  const tiles = viewTiles({
+    image,
+    location: { ...tile, source: 'manual' },
+    zoom: null,
+    viewport: { width: 1024, height: 720 },
+  });
+  const z = tiles[0].z;
+  const tilePx = 16384 / 2 ** z;
+  const cols = tiles.map((t) => t.col);
+  const rows = tiles.map((t) => t.row);
+  assert.ok((Math.max(...cols) - Math.min(...cols) + 1) * tilePx < 2112 * 2);
+  assert.ok((Math.max(...rows) - Math.min(...rows) + 1) * tilePx < 1901 * 2);
+});

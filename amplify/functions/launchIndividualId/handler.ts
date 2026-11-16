@@ -5,12 +5,13 @@ import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { authorizeRequest } from '../shared/authorizeRequest';
 import { enqueuePretile } from '../shared/enqueuePretile';
-import { detectTransects } from '../shared/detectTransects';
+import { detectTransectsById } from '../shared/detectTransects';
 import {
   isOnEffort,
   type BoundaryStatus,
 } from '../../../shared/boundaryStatus';
 import { assignOutsideImages, includeOutsideTransect } from './outside';
+import { allowedTransectIds } from './allowed';
 import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
 import {
   S3Client,
@@ -23,6 +24,8 @@ import {
   createShadowWorkflowRun,
   workflowLaunchUserId,
 } from '../workflowStats/runWriter';
+
+const DETECTED_PREFIX = 'detected:';
 
 const getProjectOrganizationId = /* GraphQL */ `
   query GetProject($id: ID!) {
@@ -165,13 +168,10 @@ type LaunchIndividualIdPayload = {
   // Distinct image IDs that have at least one annotation of the chosen
   // category. Computed client-side from the full annotation scan.
   annotatedImageIds: string[];
-  // Transects the client (running the same Munkres/completion logic as the
-  // harness) found to still have linking work. When present we only create
-  // availability rows for these — already-finished transects are skipped so
-  // users are never handed a transect with nothing to do. Omitted when the
-  // project has no transects yet (the lambda detects/creates them and a
-  // fresh project has no completed work to skip).
+  // Client-selected transects with linking work.
   incompleteTransectIds?: string[];
+  // Annotated images of incomplete groups, sent before transects exist.
+  incompleteImageIds?: string[];
   // Whether the client found linking work among images outside the survey
   // area. Older clients omit it.
   includeOutside?: boolean;
@@ -321,41 +321,9 @@ async function handleLaunch(
       if (img.transectId) imageToTransect.set(img.id, img.transectId);
     }
   } else {
-    // Detect transects from timestamp gaps, create a synthetic stratum + the
-    // transect rows, then queue the per-image transectId writes for the SQS
-    // fanout consumer (a single lambda would time out on large surveys).
-    const assignments = detectTransects(onEffortImages);
-    const transectIndexes = Array.from(
-      new Set(assignments.map((a) => a.transectIndex))
-    ).sort((a, b) => a - b);
-
-    const stratumData = await executeGraphql<{
-      createStratum?: { id: string };
-    }>(createStratumMutation, {
-      input: { projectId, name: 'ChainLinker', group: organizationId },
-    });
-    const stratumId = stratumData.createStratum?.id;
-    if (!stratumId) throw new Error('Failed to create stratum');
-
-    const indexToTransectId = new Map<number, string>();
-    const createLimit = pLimit(15);
-    await Promise.all(
-      transectIndexes.map((idx) =>
-        createLimit(async () => {
-          const t = await executeGraphql<{ createTransect?: { id: string } }>(
-            createTransectMutation,
-            { input: { projectId, stratumId, group: organizationId } }
-          );
-          if (!t.createTransect?.id) throw new Error('Failed to create transect');
-          indexToTransectId.set(idx, t.createTransect.id);
-        })
-      )
-    );
-
-    for (const a of assignments) {
-      const transectId = indexToTransectId.get(a.transectIndex)!;
-      imageToTransect.set(a.id, transectId);
-      fanout.push({ imageId: a.id, transectId });
+    // Rows are created only after the no-work checks pass.
+    for (const a of detectTransectsById(onEffortImages)) {
+      imageToTransect.set(a.id, `${DETECTED_PREFIX}${a.transectIndex}`);
     }
   }
 
@@ -372,7 +340,6 @@ async function handleLaunch(
       fresh: outside.created || assigned.fanout.length > 0,
     };
   }
-  const pendingImageUpdates = fanout.length;
 
   // Transects that contain annotations of this category.
   const transectsWithAnnotations = new Set<string>();
@@ -429,13 +396,10 @@ async function handleLaunch(
     };
   }
 
-  // Restrict to the transects the client found still-incomplete, so a job
-  // never includes transects whose linking is already done. The array is only
-  // sent when transects already existed (see payload type); when absent we
-  // launch every registerable transect (fresh project, nothing completed).
+  // No selection keeps older clients' launch-all behaviour.
   let effectiveTransectIds = workTransectIds;
-  if (Array.isArray(payload.incompleteTransectIds)) {
-    const allow = new Set(payload.incompleteTransectIds);
+  const allow = allowedTransectIds(payload, imageToTransect);
+  if (allow) {
     if (
       outsideTransect &&
       includeOutsideTransect(payload.includeOutside, outsideTransect.fresh)
@@ -452,6 +416,17 @@ async function handleLaunch(
       };
     }
   }
+
+  if (!hasTransects) {
+    effectiveTransectIds = await createDetectedTransects(
+      projectId,
+      organizationId,
+      imageToTransect,
+      effectiveTransectIds,
+      fanout,
+    );
+  }
+  const pendingImageUpdates = fanout.length;
 
   const transectCount = effectiveTransectIds.length;
   const jobId = randomUUID();
@@ -560,6 +535,48 @@ async function handleLaunch(
   });
 
   return { jobId, transectCount, pendingImageUpdates };
+}
+
+async function createDetectedTransects(
+  projectId: string,
+  organizationId: string,
+  imageToTransect: Map<string, string>,
+  transectKeys: string[],
+  fanout: Array<{ imageId: string; transectId: string }>,
+): Promise<string[]> {
+  const stratumData = await executeGraphql<{
+    createStratum?: { id: string };
+  }>(createStratumMutation, {
+    input: { projectId, name: 'ChainLinker', group: organizationId },
+  });
+  const stratumId = stratumData.createStratum?.id;
+  if (!stratumId) throw new Error('Failed to create stratum');
+
+  const keys = new Set(
+    Array.from(imageToTransect.values()).filter((key) =>
+      key.startsWith(DETECTED_PREFIX),
+    ),
+  );
+  const keyToTransectId = new Map<string, string>();
+  const createLimit = pLimit(15);
+  await Promise.all(
+    Array.from(keys).map((key) =>
+      createLimit(async () => {
+        const t = await executeGraphql<{ createTransect?: { id: string } }>(
+          createTransectMutation,
+          { input: { projectId, stratumId, group: organizationId } },
+        );
+        if (!t.createTransect?.id) throw new Error('Failed to create transect');
+        keyToTransectId.set(key, t.createTransect.id);
+      }),
+    ),
+  );
+
+  for (const [imageId, key] of imageToTransect) {
+    const transectId = keyToTransectId.get(key);
+    if (transectId) fanout.push({ imageId, transectId });
+  }
+  return transectKeys.map((key) => keyToTransectId.get(key) ?? key);
 }
 
 async function fetchAllProjectImages(
@@ -755,6 +772,9 @@ function parsePayload(request: unknown): LaunchIndividualIdPayload {
     ...(Array.isArray(parsed.incompleteTransectIds)
       ? { incompleteTransectIds: parsed.incompleteTransectIds }
       : {}),
+    ...(Array.isArray(parsed.incompleteImageIds)
+      ? { incompleteImageIds: parsed.incompleteImageIds }
+      : {}),
     ...(typeof parsed.includeOutside === 'boolean'
       ? { includeOutside: parsed.includeOutside }
       : {}),
@@ -784,6 +804,9 @@ async function readPayloadFromS3(
     annotatedImageIds: parsed.annotatedImageIds ?? [],
     ...(Array.isArray(parsed.incompleteTransectIds)
       ? { incompleteTransectIds: parsed.incompleteTransectIds }
+      : {}),
+    ...(Array.isArray(parsed.incompleteImageIds)
+      ? { incompleteImageIds: parsed.incompleteImageIds }
       : {}),
     ...(typeof parsed.includeOutside === 'boolean'
       ? { includeOutside: parsed.includeOutside }

@@ -16,6 +16,10 @@ const QUERIES = {
     uploadId: 'String!',
     partNumbers: '[Int!]!',
   }),
+  getFalseNegativesStatus: op('AWSJSON', {
+    projectId: 'ID!',
+    annotationSetId: 'ID!',
+  }),
   falseNegativeFileUrl: op('AWSJSON', {
     annotationSetId: 'ID!',
     kind: 'String!',

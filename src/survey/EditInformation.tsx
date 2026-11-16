@@ -5,11 +5,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useContext, useEffect, useState } from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
-import { loadProjectImages } from '../projectImages';
+import { useSurveyImages } from './surveyImages';
 import SurveyStructure, { Camera, SectionTitle } from './SurveyStructure';
 
 export default function EditInformation({ projectId }: { projectId: string }) {
   const { client, showModal } = useContext(GlobalContext)!;
+  const surveyImages = useSurveyImages();
   const [newProjectName, setNewProjectName] = useState('');
   const [savedName, setSavedName] = useState('');
   const [justSaved, setJustSaved] = useState(false);
@@ -90,20 +91,10 @@ export default function EditInformation({ projectId }: { projectId: string }) {
           { signal },
         );
 
-        const images = await loadProjectImages(
-          client,
-          projectId,
-          [
-            'cameraId',
-            'originalPath',
-            'latitude',
-            'longitude',
-            'altitude_agl',
-            'altitude_wgs84',
-            'timestamp',
-          ],
-          { signal, onProgress: setLoadedCount },
-        );
+        const images = await surveyImages.load({
+          signal,
+          onProgress: setLoadedCount,
+        });
 
         const surveyCameras =
           cameras.length === 0
@@ -177,7 +168,7 @@ export default function EditInformation({ projectId }: { projectId: string }) {
     getProject().catch(reportError);
     buildSurveyStructure().catch(reportError);
     return () => controller.abort();
-  }, [client, projectId]);
+  }, [client, projectId, surveyImages]);
 
   const trimmedName = newProjectName.trim();
   const unsaved = !fetching && trimmedName !== savedName;

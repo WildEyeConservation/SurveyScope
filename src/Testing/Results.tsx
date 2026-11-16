@@ -198,7 +198,11 @@ export default function Results() {
       return {
         buckets: responses
           .flatMap((parsed) => parsed.buckets ?? [])
-          .filter((bucket) => bucket.workflowType === 'species-labelling')
+          .filter(
+            (bucket) =>
+              bucket.workflowType === 'species-labelling' ||
+              bucket.workflowType === 'false-negatives',
+          )
           .map(({ userId, date, completedUnits }) => ({
             userId,
             date,

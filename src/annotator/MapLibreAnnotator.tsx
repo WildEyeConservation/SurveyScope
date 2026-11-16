@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 
+import { Spinner } from '@/components/ui/spinner';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 import { isHotkeyPressed, useHotkeys } from 'react-hotkeys-hook';
@@ -56,6 +57,7 @@ import {
 import MapRotateControl from './MapRotateControl';
 import { setAnnotatorViewport } from './prefetchTask';
 import useImageFileSource from './useImageFileSource';
+import { defaultViewBoundsScale } from './viewTiles';
 
 /*
 MapLibre-based image viewer for the species-labelling workflow, including
@@ -101,12 +103,16 @@ export interface MapLibreAnnotatorProps {
   /** Categories for legend, hotkeys and marker colours (already filtered to the real set). */
   categories: CategoryType[];
   hideFnAnnotations?: boolean;
+  /** Read-only markers outside the working set. */
+  readonlyAnnotations?: ExtendedAnnotationType[] | null;
   /** Force the on-map legend visible (used when the side legend is collapsed). */
   showMapLegend?: boolean;
   /** Informational tag names per annotation id, shown in the hover popup. */
   infoTags?: Map<string, string[]>;
   /** Fill the container with no frame or task outline. */
   embedded?: boolean;
+  bearing?: number;
+  onBearingChange?: (bearing: number) => void;
 }
 
 export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
@@ -126,10 +132,17 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     source,
     categories,
     hideFnAnnotations,
+    readonlyAnnotations,
     showMapLegend,
     infoTags,
     embedded,
+    bearing,
+    onBearingChange,
   } = props;
+  const bearingRef = useRef(bearing);
+  bearingRef.current = bearing;
+  const onBearingChangeRef = useRef(onBearingChange);
+  onBearingChangeRef.current = onBearingChange;
 
   const {
     annotationsHook,
@@ -163,6 +176,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   const draggingIdRef = useRef<string | null>(null);
   const dragPositionRef = useRef<{ x: number; y: number } | null>(null);
   const annotationsRef = useRef<ExtendedAnnotationType[]>([]);
+  const readonlyAnnotationsRef = useRef<ExtendedAnnotationType[]>([]);
 
   const {
     imageFiles,
@@ -215,6 +229,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   );
   annotationsRef.current = annotations;
 
+  const shownReadonlyAnnotations = useMemo(
+    () => readonlyAnnotations ?? [],
+    [readonlyAnnotations],
+  );
+  readonlyAnnotationsRef.current = shownReadonlyAnnotations;
+
   const categoryColor = useCallback(
     (categoryId: string) =>
       categories?.find((c) => c.id === categoryId)?.color ?? 'red',
@@ -236,6 +256,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   const buildFeatureCollection = useCallback((): GeoJSON.FeatureCollection => {
     return buildAnnotationFeatureCollection({
       annotations: annotationsRef.current,
+      readonlyAnnotations: readonlyAnnotationsRef.current,
       draggedAnnotationId: draggingIdRef.current,
       dragPosition: dragPositionRef.current,
       locationBounds: locationBoundsRef.current,
@@ -256,6 +277,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
 
     const map = createImageMap(containerRef.current, projection);
     mapRef.current = map;
+    if (bearingRef.current) map.setBearing(bearingRef.current);
+    map.on('rotateend', () => onBearingChangeRef.current?.(map.getBearing()));
     map.setZoomSnap(1);
     map.addControl(
       new maplibregl.NavigationControl({
@@ -269,6 +292,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     const unregisterMarkerImages = registerAnnotationMarkerImages(map);
 
     map.on('load', () => {
+      // Frame first so the only tiles requested are the ones shown.
+      if (map.getContainer().clientWidth) {
+        map.resize();
+        fitInitialView(map);
+        if (embedded) embeddedFittedRef.current = true;
+      }
       addImageTiles(map, sourceKey, image, projection, location?.id);
 
       // Location rectangle (task bounds)
@@ -331,9 +360,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   }, [sourceKey, image.id]);
 
   // ── Initial view ──
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
+  const fitInitialView = (map: maplibregl.Map) => {
     if (zoom != null) {
       map.jumpTo({
         center: px2lngLat(
@@ -343,7 +370,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         zoom: storedZoomToMapZoom(zoom),
       });
     } else {
-      const scale = viewBoundsScale ?? 1.5;
+      const scale = viewBoundsScale ?? defaultViewBoundsScale(location);
       const hasBounds = location?.x && location?.width && location?.height;
       // Not clamped to the image, so edge locations stay centred.
       const left = hasBounds ? location.x - location.width * scale : 0;
@@ -356,51 +383,46 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         : image.height;
       fitPxBounds(map, projection, left, top, right, bottom);
     }
+  };
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || embedded) return;
+    fitInitialView(map);
     // Reapply when a default changes while this buffered workspace is already
     // mounted. Other inputs are fixed for the lifetime of this map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, zoom]);
 
-  // The hook reports [] until its query has loaded.
-  const annotationsLoaded = !!(
-    annotationsHook as { meta?: { isSuccess?: boolean } }
-  ).meta?.isSuccess;
-  const fittedToAnnotationsRef = useRef(false);
+  const embeddedFittedRef = useRef(false);
   useEffect(() => {
     const map = mapRef.current;
-    if (!embedded || !map || !mapReady || fittedToAnnotationsRef.current)
-      return;
+    if (!mapReady) embeddedFittedRef.current = false;
+    if (!embedded || !map || !mapReady || embeddedFittedRef.current) return;
     // A hidden tab has no size to fit to; retry once it is shown.
-    if (!annotationsLoaded || !visible || !map.getContainer().clientWidth)
-      return;
-    fittedToAnnotationsRef.current = true;
-    if (annotations.length === 0) return;
-    const xs = annotations.map((a) => a.x);
-    const ys = annotations.map((a) => a.y);
-    const minSide = Math.min(image.width, image.height) / 4;
-    const pad = (lo: number, hi: number) => {
-      const span = Math.max(hi - lo, minSide);
-      const mid = (lo + hi) / 2;
-      return [mid - span * 0.6, mid + span * 0.6];
-    };
-    const [left, right] = pad(Math.min(...xs), Math.max(...xs));
-    const [top, bottom] = pad(Math.min(...ys), Math.max(...ys));
+    if (!map.getContainer().clientWidth) return;
+    embeddedFittedRef.current = true;
     map.resize();
-    fitPxBounds(map, projection, left, top, right, bottom);
-  }, [
-    embedded,
-    mapReady,
-    visible,
-    annotations,
-    annotationsLoaded,
-    image,
-    projection,
-  ]);
+    fitInitialView(map);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, mapReady, visible]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || bearing == null) return;
+    if (Math.abs(map.getBearing() - bearing) % 360 > 0.5)
+      map.setBearing(bearing);
+  }, [mapReady, bearing]);
 
   // ── Annotation data sync ──
   useEffect(() => {
     if (mapReady) refreshAnnotationSource();
-  }, [annotations, mapReady, refreshAnnotationSource]);
+  }, [
+    annotations,
+    shownReadonlyAnnotations,
+    mapReady,
+    refreshAnnotationSource,
+  ]);
 
   // ── Interactions ──
   useEffect(() => {
@@ -413,6 +435,10 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     };
     const annotationById = (id: string) =>
       annotationsRef.current.find((a) => a.id === id);
+    // Only for display; read-only features never reach a write handler.
+    const displayedAnnotationById = (id: string) =>
+      annotationById(id) ??
+      readonlyAnnotationsRef.current.find((a) => a.id === id);
     const featureProperties = (
       feature?: maplibregl.MapGeoJSONFeature,
     ): AnnotationFeatureProperties | undefined =>
@@ -435,7 +461,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         hoveredIdRef.current = id;
         popupRef.current?.remove();
         popupRef.current = null;
-        const annotation = id ? annotationById(id) : undefined;
+        const annotation = id ? displayedAnnotationById(id) : undefined;
         if (annotation) {
           const div = document.createElement('div');
           div.style.color = '#212529';
@@ -541,11 +567,11 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       if (feature) {
         const properties = featureProperties(feature);
         if (!properties) return;
-        const annotation = annotationById(properties.id);
+        const annotation = displayedAnnotationById(properties.id);
         if (!annotation) return;
         const items = buildAnnotationMenuItems({
           annotation,
-          readonly: properties.readonly,
+          readonly: properties.readonly || !annotationById(properties.id),
           canMarkOutside: canMarkOutsideBoundary() && !outsideRef.current,
           onDelete: annotationsHook.delete,
           onUpdate: annotationsHook.update,
@@ -759,6 +785,16 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             border: embedded ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           }}
         />
+
+        {embedded && visible && !fullyLoaded && (
+          <div
+            className='absolute inset-0 flex items-center justify-center gap-2 text-sm text-muted-foreground'
+            style={{ visibility: 'visible' }}
+          >
+            <Spinner size='sm' />
+            Loading image...
+          </div>
+        )}
 
         <ImageFileStatusOverlay
           loading={imageFilesLoading}

@@ -20,7 +20,6 @@ import { monitorScoutbotDlq } from '../functions/monitorScoutbotDlq/resource';
 import { processTilingBatch } from '../functions/processTilingBatch/resource';
 import { monitorTilingTasks } from '../functions/monitorTilingTasks/resource';
 import { findAndRequeueMissingLocations } from '../functions/findAndRequeueMissingLocations/resource';
-import { reconcileFalseNegatives } from '../functions/reconcileFalseNegatives/resource';
 import { createOrganization } from '../functions/createOrganization/resource';
 import { inviteUserToOrganization } from '../functions/inviteUserToOrganization/resource';
 import { respondToInvite } from '../functions/respondToInvite/resource';
@@ -174,6 +173,8 @@ export const schema = a
         tiledAt: a.datetime(),
         // Position relative to the survey area; a missing value counts as inside.
         boundaryStatus: a.enum(['inside', 'outside', 'excluded']),
+        // Set by hand; recomputes keep it instead of classifying the image.
+        boundaryOverride: a.enum(['inside', 'outside']),
       })
       .disableOperations(DISABLED_OPERATIONS)
       .authorization((allow) => [allow.group('sysadmin')])
@@ -1163,7 +1164,6 @@ export const schema = a
     allow.resource(processTilingBatch),
     allow.resource(monitorTilingTasks),
     allow.resource(findAndRequeueMissingLocations),
-    allow.resource(reconcileFalseNegatives),
     allow.resource(createOrganization),
     allow.resource(inviteUserToOrganization),
     allow.resource(respondToInvite),
