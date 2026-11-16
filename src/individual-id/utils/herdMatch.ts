@@ -31,6 +31,10 @@ const RIDGE = 1;
 const ANISO_DEAD = 1.5;
 const ANISO_MAX = 4;
 const PRUNE = 3;
+// Lets spare animals stay unpaired while searching, so the herd is not slid along to give everyone a partner.
+const SEARCH_GATE = 6;
+// Per-pair ceiling when ranking candidate solutions: many tight pairs beat everyone loosely paired.
+const SCORE_CAP = 2;
 
 const dist = (x1: number, y1: number, x2: number, y2: number) =>
   Math.sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
@@ -415,7 +419,12 @@ function localRefine(
     w = weights(c, sigma);
     for (let it = 0; it < LOCAL_ITERS; it++) {
       const { px, py } = predict(c, match, w);
-      const next = assign(c, px, py, sigma === finest ? gate : Infinity);
+      const next = assign(
+        c,
+        px,
+        py,
+        sigma === finest ? gate : SEARCH_GATE * c.spacing,
+      );
       const done = sameMatch(next, match);
       match = next;
       if (done) break;
@@ -481,7 +490,7 @@ function localRefine(
       dirs ? dirs.uy[i] : 0,
       aniso,
     );
-    score += Math.min(r, cap);
+    score += Math.min(r, SCORE_CAP * c.spacing);
     if (r > cap) uncertain[i] = 1;
   }
   return { match: final, score, uncertain };
@@ -670,12 +679,17 @@ function project(c: Ctx, t: Affine): { px: Float64Array; py: Float64Array } {
 
 function assignUnder(c: Ctx, t: Affine): Solution {
   const { px, py } = project(c, t);
-  const match = assign(c, px, py, Infinity);
+  const match = assign(c, px, py, SEARCH_GATE * c.spacing);
+  const top = SCORE_CAP * c.spacing;
   let cost = 0;
+  let linked = 0;
   for (let i = 0; i < c.n; i++) {
     const j = match[i];
-    if (j >= 0) cost += dist(px[i], py[i], c.bx[j], c.by[j]);
+    if (j < 0) continue;
+    cost += Math.min(top, dist(px[i], py[i], c.bx[j], c.by[j]));
+    linked++;
   }
+  cost += top * (Math.min(c.n, c.m) - linked);
   return { t, match, cost };
 }
 
@@ -789,13 +803,49 @@ function seedTransforms(c: Ctx): Affine[] {
       seeds.push(translation(c.bx[ib] - c.ax[ia], c.by[ib] - c.ay[ia]));
     }
   }
+  seeds.push(...votedTranslations(c));
   return seeds;
+}
+
+// The shifts that put the most A animals on a B animal: robust when the lassos hold different parts of the herd.
+function votedTranslations(c: Ctx, keep = 2): Affine[] {
+  const bin = 0.5 * c.spacing;
+  const K = 1 << 20;
+  const key = (qx: number, qy: number) => qx * K + qy + K / 2;
+  const votes = new Map<number, number>();
+  for (let i = 0; i < c.n; i++)
+    for (let j = 0; j < c.m; j++) {
+      const k = key(
+        Math.round((c.bx[j] - c.ax[i]) / bin),
+        Math.round((c.by[j] - c.ay[i]) / bin),
+      );
+      votes.set(k, (votes.get(k) ?? 0) + 1);
+    }
+  const scored: [number, number, number][] = [];
+  for (const k of votes.keys()) {
+    const qx = Math.floor(k / K);
+    const qy = k - qx * K - K / 2;
+    let sum = 0;
+    for (let u = -1; u <= 1; u++)
+      for (let v = -1; v <= 1; v++) sum += votes.get(key(qx + u, qy + v)) ?? 0;
+    scored.push([sum, qx * bin, qy * bin]);
+  }
+  scored.sort((p, q) => q[0] - p[0]);
+  const out: Affine[] = [];
+  for (const [, dx, dy] of scored) {
+    if (out.length >= keep) break;
+    if (out.some((t) => Math.hypot(t[2] - dx, t[5] - dy) < 2 * c.spacing))
+      continue;
+    out.push(translation(dx, dy));
+  }
+  return out;
 }
 
 function globalStarts(c: Ctx): Solution[] {
   const transforms: Affine[] = [];
   for (const seed of seedTransforms(c)) {
-    const t = nearestNeighbourIcp(c, seed);
+    let t = nearestNeighbourIcp(c, seed);
+    if (assignUnder(c, seed).cost < assignUnder(c, t).cost) t = seed;
     if (!transforms.some((p) => nearlySame(c, p, t))) transforms.push(t);
   }
   const screened = transforms
