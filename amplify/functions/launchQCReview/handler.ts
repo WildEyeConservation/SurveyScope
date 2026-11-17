@@ -518,6 +518,8 @@ async function createQueue(
       name: queueOptions.name,
       projectId,
       batchSize,
+      totalBatches:
+        batchSize > 0 ? Math.ceil(trackingParams.launchedCount / batchSize) : 0,
       zoom: zoom ?? undefined,
       hidden: queueOptions.hidden,
       tag: queueTag,
