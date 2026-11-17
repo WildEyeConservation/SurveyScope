@@ -35,6 +35,7 @@ import type { AnnotationType, CategoryType, ImageType } from '../schemaTypes';
 import { WaitingOverlay } from '../useAckOnTimeout';
 import { HelpModal } from './components/HelpModal';
 import { OovPanel } from './components/OovPanel';
+import { useUserNames } from './hooks/useUserNames';
 import {
   IndividualIdMap,
   type MapInstanceCallback,
@@ -211,6 +212,7 @@ export function IndividualIdMapPair(props: Props) {
     onClearConflictHighlights,
   } = props;
   const { client } = useContext(GlobalContext)!;
+  const ownerNameOf = useUserNames();
 
   // Nothing is focused on load — the user selects a candidate themselves
   // (click a marker, arrow keys, or Space).
@@ -383,6 +385,7 @@ export function IndividualIdMapPair(props: Props) {
         kind: classify(c.realA, c.isShadowA),
         identityKey: c.identityKey,
         categoryName: category?.name,
+        ownerName: ownerNameOf(c.realA?.owner),
         active: c.pairKey === activeKey,
         obscured: c.realA ? !!c.realA.obscured : !!c.obscuredA,
         uncertain: !!c.uncertain && c.status !== 'accepted',
@@ -411,6 +414,7 @@ export function IndividualIdMapPair(props: Props) {
         y: a.y,
         color: categoryColors[a.categoryId] ?? DEFAULT_COLOR,
         categoryName: categoryNames[a.categoryId],
+        ownerName: ownerNameOf(a.owner),
         status: 'pending',
         kind: classify(a, false),
         identityKey: a.objectId ?? a.id,
@@ -440,6 +444,7 @@ export function IndividualIdMapPair(props: Props) {
     duplicateAnnotationIds,
     conflictHighlightAnnotationIds,
     chainViewerHrefFor,
+    ownerNameOf,
   ]);
 
   const markersB: MapMarker[] = useMemo(() => {
@@ -460,6 +465,7 @@ export function IndividualIdMapPair(props: Props) {
         kind: classify(c.realB, c.isShadowB),
         identityKey: c.identityKey,
         categoryName: category?.name,
+        ownerName: ownerNameOf(c.realB?.owner),
         active: c.pairKey === activeKey,
         obscured: c.realB ? !!c.realB.obscured : !!c.obscuredB,
         uncertain: !!c.uncertain && c.status !== 'accepted',
@@ -488,6 +494,7 @@ export function IndividualIdMapPair(props: Props) {
         y: a.y,
         color: categoryColors[a.categoryId] ?? DEFAULT_COLOR,
         categoryName: categoryNames[a.categoryId],
+        ownerName: ownerNameOf(a.owner),
         status: 'pending',
         kind: classify(a, false),
         identityKey: a.objectId ?? a.id,
@@ -517,6 +524,7 @@ export function IndividualIdMapPair(props: Props) {
     duplicateAnnotationIds,
     conflictHighlightAnnotationIds,
     chainViewerHrefFor,
+    ownerNameOf,
   ]);
 
   const tilePointsA = useMemo(
