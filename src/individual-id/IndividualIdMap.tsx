@@ -66,6 +66,7 @@ export interface MapMarker {
    */
   obscured: boolean;
   categoryName?: string;
+  ownerName?: string;
   /** Herd proposal that sits far beyond its predicted motion. */
   uncertain?: boolean;
   /** Marked outside the survey area on its own. */
@@ -740,6 +741,11 @@ export function IndividualIdMap({
       ${
         data.categoryName
           ? `<div style="font-size:11px;margin-top:2px">Label: <strong>${escape(data.categoryName)}</strong></div>`
+          : ''
+      }
+      ${
+        data.ownerName
+          ? `<div style="font-size:11px;margin-top:2px">Owner: <strong>${escape(data.ownerName)}</strong></div>`
           : ''
       }
       <div style="font-size:10px;opacity:0.7;text-transform:uppercase;letter-spacing:0.4px;margin-top:2px">
