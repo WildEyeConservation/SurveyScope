@@ -65,8 +65,12 @@ export default function ProjectProgress({
       const q = projectData.queues[0];
       const url = q.url || '';
       const batchSize = q.batchSize || 0;
-      const totalBatches = q.totalBatches || 0;
       const launchedCount = q.launchedCount ?? null;
+      const totalBatches =
+        q.totalBatches ||
+        (batchSize > 0 && launchedCount
+          ? Math.ceil(launchedCount / batchSize)
+          : 0);
       const observedCount = q.observedCount ?? null;
       const requeuesCompleted = q.requeuesCompleted ?? null;
       const emptyQueueTimestamp = q.emptyQueueTimestamp ?? null;
