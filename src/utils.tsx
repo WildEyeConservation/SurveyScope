@@ -89,25 +89,7 @@ export const array2Matrix = (hc: number[] | null): number[][] | null => {
 
 // ReturnTypeOfFirstElementWithX is inferred as number
 
-/**
- * Whether a point falls within a location's bounds. Locations store a centre
- * point plus width/height, so the test is against half-extents. The boundary
- * itself counts as inside.
- */
-export function isWithinLocationBounds(
-  point: { x: number; y: number },
-  location: {
-    x: number;
-    y: number;
-    width?: number | null;
-    height?: number | null;
-  },
-): boolean {
-  return (
-    Math.abs(point.x - location.x) <= (location.width ?? 0) / 2 &&
-    Math.abs(point.y - location.y) <= (location.height ?? 0) / 2
-  );
-}
+export { isWithinLocationBounds } from '../shared/locationGeometry';
 
 /**
  * Map the user's currently selected category onto the annotation set actually

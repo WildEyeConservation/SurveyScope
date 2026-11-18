@@ -6,6 +6,7 @@ import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { SQSClient, DeleteQueueCommand } from '@aws-sdk/client-sqs';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { finishShadowWorkflowRun } from '../workflowStats/runWriter';
+import { authorizeSurveyAdmin } from '../shared/authorizeSurveyAdmin';
 
 const getQueueQuery = /* GraphQL */ `
   query GetQueue($id: ID!) {
@@ -16,6 +17,7 @@ const getQueueQuery = /* GraphQL */ `
       tag
       projectId
       annotationSetId
+      locationManifestS3Key
       group
     }
   }
@@ -31,11 +33,9 @@ const getProjectQuery = /* GraphQL */ `
   }
 `;
 
-const getUserProjectMembershipQuery = /* GraphQL */ `
-  query UserProjectMembershipsByUserId($userId: String!, $limit: Int) {
-    userProjectMembershipsByUserId(userId: $userId, limit: $limit) {
-      items { userId projectId isAdmin group }
-    }
+const getAnnotationSetProjectQuery = /* GraphQL */ `
+  query GetAnnotationSetProject($id: ID!) {
+    getAnnotationSet(id: $id) { id projectId }
   }
 `;
 
@@ -102,7 +102,7 @@ export const handler: DeleteQueueHandler = async (event) => {
 
     // 1. Fetch the Queue record
     const queueData = await executeGraphql<{
-      getQueue?: { id: string; url: string | null; name: string | null; tag: string | null; projectId: string; annotationSetId: string | null } | null;
+      getQueue?: { id: string; url: string | null; name: string | null; tag: string | null; projectId: string; annotationSetId: string | null; locationManifestS3Key: string | null } | null;
     }>(getQueueQuery, { id: queueId });
 
     const queue = queueData.getQueue;
@@ -122,37 +122,12 @@ export const handler: DeleteQueueHandler = async (event) => {
 
     // 3. Authorization check
     const identity = event.identity;
-    if (!identity?.sub) {
-      throw new Error('Unauthorized: no identity');
-    }
-
-    const groups = identity.groups ?? [];
-    const isSysadmin = groups.includes('sysadmin');
-
-    if (!isSysadmin) {
-      // Verify caller is in the org's Cognito group
-      if (!groups.includes(project.organizationId)) {
-        throw new Error('Unauthorized: user does not belong to this organization');
-      }
-
-      // Check project admin via UserProjectMembership
-      const membershipData = await executeGraphql<{
-        userProjectMembershipsByUserId?: {
-          items: { userId: string; projectId: string; isAdmin: boolean | null }[];
-        };
-      }>(getUserProjectMembershipQuery, {
-        userId: identity.sub,
-        limit: 1000,
-      });
-
-      const membership = membershipData.userProjectMembershipsByUserId?.items?.find(
-        (m) => m.projectId === queue.projectId
-      );
-
-      if (!membership?.isAdmin) {
-        throw new Error('Unauthorized: user is not a project admin');
-      }
-    }
+    await authorizeSurveyAdmin(
+      identity && 'sub' in identity ? identity : null,
+      project,
+      executeGraphql
+    );
+    const sub = (identity as { sub: string }).sub;
 
     // 4. Delete the SQS queue if it has a URL
     if (queue.url) {
@@ -179,14 +154,24 @@ export const handler: DeleteQueueHandler = async (event) => {
       runId: queueId,
       status: 'cancelled',
       reason: 'user',
-      finishedBy: identity.sub,
+      finishedBy: sub,
     });
 
     // 6. Trigger homography reconciliation for homography queues
     if (queue.tag === 'homography' && queue.annotationSetId) {
       try {
         const functionName = (env as any).RECONCILE_HOMOGRAPHIES_FUNCTION_NAME;
-        if (functionName) {
+        const setData = await executeGraphql<{
+          getAnnotationSet?: { projectId: string } | null;
+        }>(getAnnotationSetProjectQuery, { id: queue.annotationSetId });
+        if (setData.getAnnotationSet?.projectId !== queue.projectId) {
+          console.error('Skipping reconciliation: annotation set is not in the queue project', {
+            queueId,
+            annotationSetId: queue.annotationSetId,
+            queueProjectId: queue.projectId,
+            setProjectId: setData.getAnnotationSet?.projectId ?? null,
+          });
+        } else if (functionName) {
           const lambdaClient = new LambdaClient({
             region: env.AWS_REGION,
             credentials: {
@@ -200,7 +185,12 @@ export const handler: DeleteQueueHandler = async (event) => {
               FunctionName: functionName,
               InvocationType: 'Event',
               Payload: new TextEncoder().encode(
-                JSON.stringify({ annotationSetId: queue.annotationSetId, queueId })
+                JSON.stringify({
+                  annotationSetId: queue.annotationSetId,
+                  queueId,
+                  projectId: queue.projectId,
+                  manifestS3Key: queue.locationManifestS3Key,
+                })
               ),
             })
           );

@@ -73,7 +73,10 @@ export const launchStore: LaunchStore = {
     const object = await s3.send(
       new GetObjectCommand({ Bucket: bucket(), Key: key }),
     );
-    return JSON.parse(await object.Body!.transformToString());
+    return {
+      value: JSON.parse(await object.Body!.transformToString()),
+      projectId: object.Metadata?.['project-id'],
+    };
   },
 
   async writeJson(prefix, value) {

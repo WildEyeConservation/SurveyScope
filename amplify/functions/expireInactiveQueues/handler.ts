@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/client-cognito-identity-provider';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { finishShadowWorkflowRun } from '../workflowStats/runWriter';
+import { isUnder, manifestPrefixFor } from '../shared/s3Keys';
 import { SENDER } from '../inviteUserToOrganization/core';
 import {
   NOTICE_MS,
@@ -120,6 +121,12 @@ const deleteQueueMutation = /* GraphQL */ `
 const createAdminActionLogMutation = /* GraphQL */ `
   mutation CreateAdminActionLog($input: CreateAdminActionLogInput!) {
     createAdminActionLog(input: $input) { id group }
+  }
+`;
+
+const getAnnotationSetProjectQuery = /* GraphQL */ `
+  query GetAnnotationSetProject($id: ID!) {
+    getAnnotationSet(id: $id) { id projectId }
   }
 `;
 
@@ -384,7 +391,15 @@ async function cancelQueue(queue: QueueRow): Promise<boolean> {
 
   // reconcileHomographies reads the manifest itself, then deletes it.
   const isHomographyQueue = queue.tag === 'homography';
-  if (queue.locationManifestS3Key && !isHomographyQueue && env.OUTPUTS_BUCKET_NAME) {
+  if (
+    queue.locationManifestS3Key &&
+    !isHomographyQueue &&
+    !isUnder(queue.locationManifestS3Key, manifestPrefixFor(queue.tag))
+  ) {
+    console.error(
+      JSON.stringify({ msg: 'manifest_key_rejected', queueId: queue.id, key: queue.locationManifestS3Key })
+    );
+  } else if (queue.locationManifestS3Key && !isHomographyQueue && env.OUTPUTS_BUCKET_NAME) {
     try {
       await s3.send(
         new DeleteObjectCommand({
@@ -398,11 +413,31 @@ async function cancelQueue(queue: QueueRow): Promise<boolean> {
   }
 
   if (isHomographyQueue && queue.annotationSetId) {
-    await invoke(process.env.RECONCILE_HOMOGRAPHIES_FUNCTION_NAME, {
-      annotationSetId: queue.annotationSetId,
-      queueId: queue.id,
-      manifestS3Key: queue.locationManifestS3Key ?? null,
+    const set = await executeGraphql<{ getAnnotationSet: { projectId: string } | null }>(
+      getAnnotationSetProjectQuery,
+      { id: queue.annotationSetId }
+    ).catch((err) => {
+      console.error(JSON.stringify({ msg: 'annotation_set_lookup_failed', queueId: queue.id, error: String(err) }));
+      return null;
     });
+    if (set?.getAnnotationSet?.projectId !== queue.projectId) {
+      console.error(
+        JSON.stringify({
+          msg: 'reconcile_skipped_set_project_mismatch',
+          queueId: queue.id,
+          annotationSetId: queue.annotationSetId,
+          queueProjectId: queue.projectId,
+          setProjectId: set?.getAnnotationSet?.projectId ?? null,
+        })
+      );
+    } else {
+      await invoke(process.env.RECONCILE_HOMOGRAPHIES_FUNCTION_NAME, {
+        annotationSetId: queue.annotationSetId,
+        queueId: queue.id,
+        projectId: queue.projectId,
+        manifestS3Key: queue.locationManifestS3Key ?? null,
+      });
+    }
   }
 
   await finishShadowWorkflowRun({

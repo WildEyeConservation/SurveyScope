@@ -88,6 +88,13 @@ export async function share(ctx: ResultsContext, args: Row) {
   return { data: { token, expiresAt: Math.floor(expiresAt / 1000) * 1000 } };
 }
 
+// Existing members keep access; the link just stops working.
+export async function revoke(ctx: ResultsContext, args: Row) {
+  const key = await administeredSet(ctx, args);
+  await ctx.data.delete('ResultSharingToken', key, {});
+  return { data: true };
+}
+
 export async function redeem(ctx: ResultsContext, args: Row) {
   if (typeof args.token !== 'string') throw badRequest('Missing token');
   const payload = await readToken(ctx, args.token);

@@ -14,11 +14,11 @@ import {
   listObjects,
   locationSetsByAnnotationSetId,
   imageSetMembershipsByImageSetId,
-  listImageFiles,
   annotationsByAnnotationSetId,
   listLocations,
 } from './graphql/queries';
 import { generateClient, GraphQLResult } from 'aws-amplify/data';
+import { DeleteQueueCommand, SQSClient } from '@aws-sdk/client-sqs';
 import {
   Category,
   AnnotationSet,
@@ -26,10 +26,9 @@ import {
   Project,
   UserProjectMembership,
   Image,
-  Object,
+  Object as ObjectRow,
   TasksOnAnnotationSet,
   ImageSetMembership,
-  ImageFile,
   Annotation,
   Location,
 } from './graphql/API';
@@ -95,11 +94,6 @@ const deleteTasksOnAnnotationSet = /* GraphQL */ `
 const deleteImageSetMembership = /* GraphQL */ `
   mutation DeleteImageSetMembership($input: DeleteImageSetMembershipInput!) {
     deleteImageSetMembership(input: $input) { id group }
-  }
-`;
-const deleteImageFile = /* GraphQL */ `
-  mutation DeleteImageFile($input: DeleteImageFileInput!) {
-    deleteImageFile(input: $input) { id group }
   }
 `;
 const deleteAnnotation = /* GraphQL */ `
@@ -210,6 +204,437 @@ async function fetchAllPages<T, K extends string>(
     `Completed fetching all ${queryName} pages. Total items: ${allItems.length}`
   );
   return allItems;
+}
+
+type Row = Record<string, string>;
+interface DeleteSpec {
+  model: string;
+  keys: string[];
+}
+
+const spec = (model: string, ...keys: string[]): DeleteSpec => ({
+  model,
+  keys: keys.length ? keys : ['id'],
+});
+
+const CONCURRENCY = 25;
+
+async function mapLimit<T>(
+  items: T[],
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, items.length) }, async () => {
+      while (next < items.length) {
+        await fn(items[next++]);
+      }
+    }),
+  );
+}
+
+type ErrorLike = { message?: string; errors?: { message?: string }[] };
+
+function errorMessage(error: unknown): string {
+  const e = (error ?? {}) as ErrorLike;
+  return [e.message, ...(e.errors ?? []).map((inner) => inner?.message)]
+    .filter(Boolean)
+    .join('; ');
+}
+
+const isAlreadyGone = (error: unknown) =>
+  /conditional request failed|ConditionalCheckFailed/i.test(
+    errorMessage(error),
+  );
+
+async function listRows(
+  field: string,
+  arg: string,
+  value: string,
+  select: string[],
+  filter?: { type: string; value: Record<string, unknown> },
+): Promise<Row[]> {
+  const query = /* GraphQL */ `
+    query ${field[0].toUpperCase()}${field.slice(1)}(
+      $${arg}: ID!
+      $nextToken: String
+      ${filter ? `$filter: ${filter.type}` : ''}
+    ) {
+      ${field}(
+        ${arg}: $${arg}
+        nextToken: $nextToken
+        limit: 1000
+        ${filter ? 'filter: $filter' : ''}
+      ) {
+        items { ${select.join(' ')} }
+        nextToken
+      }
+    }
+  `;
+  return fetchAllPages<Row, string>(
+    (nextToken) =>
+      client.graphql({
+        query,
+        variables: { [arg]: value, nextToken, filter: filter?.value },
+      }) as Promise<GraphQLResult<Record<string, PagedList<Row>>>>,
+    field,
+  );
+}
+
+// Rows already gone are skipped.
+async function deleteRows(target: DeleteSpec, rows: Row[]): Promise<void> {
+  const query = /* GraphQL */ `
+    mutation Delete${target.model}($input: Delete${target.model}Input!) {
+      delete${target.model}(input: $input) { ${target.keys.join(' ')} }
+    }
+  `;
+  await mapLimit(rows, async (row) => {
+    const input = Object.fromEntries(target.keys.map((k) => [k, row[k]]));
+    try {
+      await client.graphql({ query, variables: { input } });
+    } catch (error) {
+      if (!isAlreadyGone(error)) throw error;
+    }
+  });
+}
+
+async function sweep(
+  target: DeleteSpec,
+  field: string,
+  arg: string,
+  value: string,
+  filter?: { type: string; value: Record<string, unknown> },
+): Promise<Row[]> {
+  const rows = await listRows(field, arg, value, target.keys, filter);
+  await deleteRows(target, rows);
+  return rows;
+}
+
+// Steps run independently: the project row is gone, so this cannot be retried.
+async function runSteps(
+  steps: [string, () => Promise<void>][],
+): Promise<string[]> {
+  const errors: string[] = [];
+  for (const [name, fn] of steps) {
+    try {
+      await fn();
+    } catch (error) {
+      console.error(`Cleanup step "${name}" failed:`, error);
+      errors.push(`${name}: ${errorMessage(error)}`);
+    }
+  }
+  return errors;
+}
+
+const SHARE_CHILDREN: [DeleteSpec, string][] = [
+  [spec('SharedChainAnnotation'), 'sharedChainAnnotationsByShareId'],
+  [spec('SharedChainImage'), 'sharedChainImagesByShareId'],
+  [spec('SharedChainLocation'), 'sharedChainLocationsByShareId'],
+  [spec('SharedChainNeighbour'), 'sharedChainNeighboursByShareId'],
+  [spec('SharedChainCategory'), 'sharedChainCategoriesByShareId'],
+  [spec('ChainReviewFeedback'), 'chainReviewFeedbackByShareId'],
+];
+
+// Rows found through an index on the project, annotation sets or members.
+async function deleteIndexedSurveyRows(
+  projectId: string,
+  annotationSetIds: string[],
+  userIds: string[],
+): Promise<string[]> {
+  const byProject = (
+    target: DeleteSpec,
+    field: string,
+    arg = 'projectId',
+  ): [string, () => Promise<void>] => [
+    target.model,
+    async () => {
+      await sweep(target, field, arg, projectId);
+    },
+  ];
+
+  return runSteps([
+    byProject(
+      spec('ResultSharingToken', 'surveyId', 'annotationSetId'),
+      'listResultSharingTokens',
+      'surveyId',
+    ),
+    byProject(
+      spec('JollyResultsMembership', 'surveyId', 'annotationSetId', 'userId'),
+      'jollyResultsMembershipsBySurveyId',
+      'surveyId',
+    ),
+    byProject(
+      spec(
+        'JollyResult',
+        'surveyId',
+        'stratumId',
+        'annotationSetId',
+        'categoryId',
+      ),
+      'jollyResultsBySurveyId',
+      'surveyId',
+    ),
+    [
+      'ChainShare',
+      async () => {
+        for (const setId of annotationSetIds) {
+          const shares = (
+            await listRows(
+              'chainSharesByAnnotationSetId',
+              'annotationSetId',
+              setId,
+              ['shareId', 'surveyId'],
+            )
+          ).filter((share) => share.surveyId === projectId);
+          for (const { shareId } of shares) {
+            for (const [child, field] of SHARE_CHILDREN) {
+              await sweep(child, field, 'shareId', shareId);
+            }
+          }
+          await deleteRows(spec('ChainShare', 'shareId'), shares);
+        }
+      },
+    ],
+    [
+      'IndividualIdJob',
+      async () => {
+        await sweep(
+          spec('IndividualIdTransect'),
+          'individualIdTransectsByProjectId',
+          'projectId',
+          projectId,
+        );
+        await sweep(
+          spec('IndividualIdJob'),
+          'individualIdJobsByProjectId',
+          'projectId',
+          projectId,
+        );
+      },
+    ],
+    [
+      'TilingTask',
+      async () => {
+        const tasks = await listRows(
+          'tilingTasksByProjectId',
+          'projectId',
+          projectId,
+          ['id'],
+        );
+        for (const task of tasks) {
+          await sweep(
+            spec('TilingBatch'),
+            'tilingBatchesByTaskId',
+            'tilingTaskId',
+            task.id,
+          );
+        }
+        await deleteRows(spec('TilingTask'), tasks);
+      },
+    ],
+    [
+      'Queue',
+      async () => {
+        const queues = await listRows(
+          'queuesByProjectId',
+          'projectId',
+          projectId,
+          ['id', 'url'],
+        );
+        // Without its row nothing could find the SQS queue later.
+        const sqs = new SQSClient({});
+        await mapLimit(queues, async (queue) => {
+          if (typeof queue.url !== 'string' || !queue.url) return;
+          try {
+            await sqs.send(new DeleteQueueCommand({ QueueUrl: queue.url }));
+          } catch (error) {
+            const name = (error as { name?: string }).name ?? '';
+            if (!/NonExistentQueue|QueueDoesNotExist/.test(name)) throw error;
+          }
+        });
+        await deleteRows(spec('Queue'), queues);
+      },
+    ],
+    [
+      'ProjectTestConfig',
+      async () => {
+        await deleteRows(spec('ProjectTestConfig', 'projectId'), [
+          { projectId },
+        ]);
+      },
+    ],
+    [
+      'RegistrationProgress',
+      async () => {
+        await deleteRows(spec('RegistrationProgress', 'projectId'), [
+          { projectId },
+        ]);
+      },
+    ],
+    byProject(
+      spec('RegistrationBucketStat', 'projectId', 'bucketKey'),
+      'registrationBucketStatsByProjectId',
+    ),
+    byProject(spec('Shapefile'), 'shapefilesByProjectId'),
+    byProject(spec('ShapefileExclusions'), 'shapefileExclusionsByProjectId'),
+    byProject(
+      spec('CameraOverlap', 'cameraAId', 'cameraBId'),
+      'cameraOverlapsByProjectId',
+    ),
+    byProject(spec('Camera'), 'camerasByProjectId'),
+    byProject(spec('Transect'), 'transectsByProjectId'),
+    byProject(spec('Stratum'), 'strataByProjectId'),
+    [
+      'TestResult',
+      async () => {
+        // Only indexed by user, so this covers the survey's members.
+        for (const userId of new Set(userIds)) {
+          const results = await listRows(
+            'testResultsByUserId',
+            'userId',
+            userId,
+            ['id'],
+            {
+              type: 'ModelTestResultFilterInput',
+              value: { projectId: { eq: projectId } },
+            },
+          );
+          for (const result of results) {
+            await sweep(
+              spec('TestResultCategoryCount', 'testResultId', 'categoryName'),
+              'listTestResultCategoryCounts',
+              'testResultId',
+              result.id,
+            );
+          }
+          await deleteRows(spec('TestResult'), results);
+        }
+      },
+    ],
+    byProject(
+      spec('UserStats', 'projectId', 'userId', 'date', 'setId'),
+      'listUserStats',
+    ),
+    [
+      'Observation',
+      async () => {
+        for (const setId of annotationSetIds) {
+          await sweep(
+            spec('Observation'),
+            'observationsByAnnotationSetId',
+            'annotationSetId',
+            setId,
+          );
+        }
+      },
+    ],
+    byProject(
+      spec('ImageProcessedBy', 'imageId', 'source'),
+      'processedByProjectIdAndSource',
+    ),
+    byProject(
+      spec('ImageNeighbour', 'image1Id', 'image2Id'),
+      'imageNeighboursByProjectId',
+    ),
+  ]);
+}
+
+// Location-scoped rows (no project index) and extra image sets.
+async function deleteLocationChildren(
+  projectId: string,
+  locationIds: string[],
+  annotationSetIds: string[],
+  // Only test locations carry answer counts.
+  testLocationIds: string[],
+): Promise<string[]> {
+  return runSteps([
+    [
+      'LocationAnnotationCount',
+      () =>
+        mapLimit(testLocationIds, async (locationId) => {
+          await sweep(
+            spec(
+              'LocationAnnotationCount',
+              'locationId',
+              'categoryId',
+              'annotationSetId',
+            ),
+            'categoryCountsByLocationIdAndAnnotationSetId',
+            'locationId',
+            locationId,
+          );
+        }),
+    ],
+    [
+      'TestPresetLocation',
+      async () => {
+        const links = await listRows(
+          'testPresetsByProjectId',
+          'projectId',
+          projectId,
+          ['testPresetId', 'projectId'],
+        );
+        const owned = await listRows(
+          'testPresetsByOwnerProjectId',
+          'ownerProjectId',
+          projectId,
+          ['id'],
+        );
+        const presetIds = new Set([
+          ...links.map((l) => l.testPresetId),
+          ...owned.map((p) => p.id),
+        ]);
+        const locationSet = new Set(locationIds);
+        const setIds = new Set(annotationSetIds);
+        for (const presetId of presetIds) {
+          const rows = (
+            await listRows(
+              'locationsByTestPresetId',
+              'testPresetId',
+              presetId,
+              ['testPresetId', 'locationId', 'annotationSetId'],
+            )
+          ).filter(
+            (r) =>
+              locationSet.has(r.locationId) || setIds.has(r.annotationSetId),
+          );
+          await deleteRows(
+            spec(
+              'TestPresetLocation',
+              'testPresetId',
+              'locationId',
+              'annotationSetId',
+            ),
+            rows,
+          );
+        }
+        await deleteRows(
+          spec('TestPresetProject', 'testPresetId', 'projectId'),
+          links,
+        );
+      },
+    ],
+    [
+      'ImageSet',
+      async () => {
+        const imageSets = await listRows(
+          'imageSetsByProjectId',
+          'projectId',
+          projectId,
+          ['id'],
+        );
+        for (const set of imageSets) {
+          await sweep(
+            spec('ImageSetMembership'),
+            'imageSetMembershipsByImageSetId',
+            'imageSetId',
+            set.id,
+          );
+        }
+        await deleteRows(spec('ImageSet'), imageSets);
+      },
+    ],
+  ]);
 }
 
 export const handler: DeleteProjectInFullHandler = async (event) => {
@@ -415,6 +840,12 @@ export const handler: DeleteProjectInFullHandler = async (event) => {
       })
     );
 
+    const cleanupErrors = await deleteIndexedSurveyRows(
+      projectId,
+      annotationSets.map((annotationSet) => annotationSet.id),
+      userMemberships.map((membership) => membership.userId)
+    );
+
     // delete all images
     const images = await fetchAllPages<Image, 'imagesByProjectId'>(
       (nextToken) =>
@@ -489,31 +920,17 @@ export const handler: DeleteProjectInFullHandler = async (event) => {
     );
 
     // delete all image files
-    const imageFiles = await fetchAllPages<ImageFile, 'listImageFiles'>(
-      (nextToken) =>
-        client.graphql({
-          query: listImageFiles,
-          variables: { filter: { imageId: { eq: imageSet.id } }, nextToken },
-        }) as Promise<GraphQLResult<{ listImageFiles: PagedList<ImageFile> }>>,
-      'listImageFiles'
-    );
-
-    await Promise.all(
-      imageFiles.map(async (imageFile) => {
-        await client.graphql({
-          query: deleteImageFile,
-          variables: { input: { id: imageFile.id } },
-        });
-      })
-    );
+    await mapLimit(images, async (image) => {
+      await sweep(spec('ImageFile'), 'imagesByimageId', 'imageId', image.id);
+    });
 
     // delete all objects
-    const objects = await fetchAllPages<Object, 'listObjects'>(
+    const objects = await fetchAllPages<ObjectRow, 'listObjects'>(
       (nextToken) =>
         client.graphql({
           query: listObjects,
           variables: { filter: { projectId: { eq: projectId } }, nextToken },
-        }) as Promise<GraphQLResult<{ listObjects: PagedList<Object> }>>,
+        }) as Promise<GraphQLResult<{ listObjects: PagedList<ObjectRow> }>>,
       'listObjects'
     );
 
@@ -632,6 +1049,21 @@ export const handler: DeleteProjectInFullHandler = async (event) => {
         });
       })
     );
+
+    cleanupErrors.push(
+      ...(await deleteLocationChildren(
+        projectId,
+        locations.map((location) => location.id),
+        annotationSets.map((annotationSet) => annotationSet.id),
+        locations
+          .filter((location) => location.source === 'testing')
+          .map((location) => location.id)
+      ))
+    );
+
+    if (cleanupErrors.length) {
+      throw new Error(`Incomplete cleanup: ${cleanupErrors.join(' | ')}`);
+    }
 
     return {
       statusCode: 200,

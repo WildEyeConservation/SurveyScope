@@ -8,19 +8,14 @@ import type {
 } from './annotationTypes';
 import { primeTask } from './annotator/prefetchTask';
 import { TILE_VIEW_BOUNDS_SCALE } from './annotator/viewTiles';
+import type { TestBox, TestContextAnnotation } from './api/tasks';
 import { ackTask, receiveTasks, type ReceivedTask } from './api/tasks';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
 import { decideTestCadence } from './testCadence';
-import {
-  growTestBox,
-  tileSizeForImage,
-  type Box,
-  type Size,
-} from './testTileBounds';
 import { touchQueue } from './touchQueue';
-import useTesting, { type CandidateFilter } from './useTesting';
+import useTesting, { type TileSample, type TileSource } from './useTesting';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 
 const LOCATION_SELECTION = [
@@ -50,8 +45,6 @@ const RECEIVE_AHEAD = 3;
 const VISIBILITY_TIMEOUT_S = 600;
 const FALSE_NEGATIVES_QUEUE = 'False Negatives';
 
-type TileSample = { tile: Size; image: Size };
-
 function waiter() {
   const waiter = { done: false, resolve: () => {}, ready: Promise.resolve() };
   waiter.ready = new Promise<void>((resolve) => {
@@ -61,19 +54,6 @@ function waiter() {
     };
   });
   return waiter;
-}
-
-function growToTile(
-  sample: TileSample,
-  location: Box & { id?: string },
-  image: Size,
-) {
-  return growTestBox(
-    location,
-    tileSizeForImage(sample, image),
-    image,
-    location.id ?? '',
-  );
 }
 
 interface AnnotationTaskMessage {
@@ -87,6 +67,9 @@ interface AnnotationTaskMessage {
   zoom?: number;
   testPresetId?: string;
   isTest?: boolean;
+  testLeaseId?: string;
+  testBox?: TestBox;
+  testContext?: TestContextAnnotation[];
   queueId?: string;
   observationId?: string;
   taskTag?: string;
@@ -119,8 +102,8 @@ export default function useAnnotationTaskQueue() {
   const workReadyRef = useRef(waiter());
   const tileReadyRef = useRef(waiter());
   // Set in False Negatives jobs, whose tests are grown to the tile size.
-  const testFilterRef = useRef<CandidateFilter | undefined>(undefined);
-  const { fetcher: testFetcher } = useTesting(testFilterRef);
+  const testGrowRef = useRef<TileSource | undefined>(undefined);
+  const { fetcher: testFetcher } = useTesting(testGrowRef);
   const {
     jobsCompleted,
     currentAnnoCount,
@@ -170,7 +153,7 @@ export default function useAnnotationTaskQueue() {
       if (workReadyRef.current.done) workReadyRef.current = waiter();
       if (tileReadyRef.current.done) tileReadyRef.current = waiter();
       tileRef.current = undefined;
-      testFilterRef.current = undefined;
+      testGrowRef.current = undefined;
       const { data: config } = await client.models.ProjectTestConfig.get(
         {
           projectId: currentPM.projectId,
@@ -207,12 +190,7 @@ export default function useAnnotationTaskQueue() {
 
         // False-negative jobs show large tiles, so a small test box stands out.
         if (shouldTest && queue?.name === FALSE_NEGATIVES_QUEUE) {
-          testFilterRef.current = (location) => {
-            const sample = tileRef.current;
-            return Boolean(
-              sample && growToTile(sample, location, location.image),
-            );
-          };
+          testGrowRef.current = () => tileRef.current;
         }
       }
     }
@@ -258,6 +236,8 @@ export default function useAnnotationTaskQueue() {
         zoom: message.zoom,
         testPresetId: message.testPresetId,
         isTest: message.isTest,
+        testLeaseId: message.testLeaseId,
+        testContext: message.testContext,
         queueId: message.queueId,
         observationId: message.observationId,
         taskTag: message.taskTag,
@@ -478,30 +458,26 @@ export default function useAnnotationTaskQueue() {
         return null;
       }
 
-      const growTests = Boolean(testFilterRef.current);
+      const growTests = Boolean(testGrowRef.current);
       await (growTests ? tileReadyRef : workReadyRef).current.ready;
-      const sample = tileRef.current;
-      if (growTests && !sample) return null;
 
-      const testLocation = await testFetcher();
+      const testLocation = (await testFetcher()) as
+        (AnnotationTaskMessage & { testBox?: TestBox }) | null;
       if (!testLocation) return null;
-      const task = await prepareTask(
-        testLocation as unknown as AnnotationTaskMessage,
-      );
+      const task = await prepareTask(testLocation);
       if (!task) return null;
-      if (!growTests || !sample) {
+      const grown = testLocation.testBox;
+      if (!grown) {
         return { ...task, viewBoundsScale: testViewBoundsScaleRef.current };
       }
 
+      // The server grew the box; it is served like a real tile so its size gives nothing away.
       const { location } = task;
-      const grown = growToTile(sample, location, location.image);
-      if (!grown) return null;
       const testBoxGrown =
         grown.x !== location.x ||
         grown.y !== location.y ||
         grown.width !== location.width ||
         grown.height !== location.height;
-      // Served like a real tile so its size gives nothing away.
       return {
         ...task,
         location: { ...location, ...grown, testBoxGrown },

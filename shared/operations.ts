@@ -312,3 +312,60 @@ export function operationReturnsJson(name: string): boolean {
     (MUTATIONS as Record<string, Spec>)[name];
   return spec?.returns === 'AWSJSON';
 }
+
+function scalarMatches(base: string, value: unknown): boolean {
+  switch (base) {
+    case 'String':
+    case 'ID':
+      return typeof value === 'string';
+    case 'Int':
+      return Number.isInteger(value);
+    case 'Float':
+      return typeof value === 'number' && Number.isFinite(value);
+    case 'Boolean':
+      return typeof value === 'boolean';
+    case 'AWSJSON':
+      return value !== undefined;
+    default:
+      return false;
+  }
+}
+
+// The router has no GraphQL layer, so it checks arguments against these specs.
+export function operationArgsError(
+  name: string,
+  args: Record<string, unknown>,
+): string | null {
+  const spec =
+    (QUERIES as Record<string, Spec>)[name] ??
+    (MUTATIONS as Record<string, Spec>)[name];
+  if (!spec) return `Unknown operation ${name}`;
+  const declared = spec.args ?? {};
+  for (const key of Object.keys(args)) {
+    if (!Object.prototype.hasOwnProperty.call(declared, key))
+      return `${name} takes no argument ${key}`;
+  }
+  for (const [key, notation] of Object.entries(declared)) {
+    const f = field(key, notation);
+    const base = typeof f.type === 'string' ? f.type : f.type.nonModel;
+    const value = args[key];
+    const required = f.isArray ? !f.isArrayNullable : f.isRequired;
+    if (value === undefined || value === null) {
+      if (required) return `${name} needs ${key}`;
+      continue;
+    }
+    if (!f.isArray) {
+      if (!scalarMatches(base, value)) return `${key} must be ${notation}`;
+      continue;
+    }
+    if (!Array.isArray(value)) return `${key} must be ${notation}`;
+    for (const item of value) {
+      if (item === null || item === undefined) {
+        if (f.isRequired) return `${key} must be ${notation}`;
+      } else if (!scalarMatches(base, item)) {
+        return `${key} must be ${notation}`;
+      }
+    }
+  }
+  return null;
+}

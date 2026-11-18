@@ -1,3 +1,4 @@
+import type { TestContextAnnotation } from './api/tasks';
 import type { ImageType } from './schemaTypes';
 
 export type TaskAcknowledgement = (
@@ -47,6 +48,8 @@ export interface AnnotationWorkspaceProps {
   hideZoomSetting?: boolean;
   testPresetId?: string;
   isTest?: boolean;
+  testLeaseId?: string;
+  testContext?: TestContextAnnotation[];
   queueId?: string;
   /** Stable identifier for retry-safe Observation creation. */
   observationId?: string;

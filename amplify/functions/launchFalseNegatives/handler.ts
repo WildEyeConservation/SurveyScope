@@ -133,6 +133,7 @@ const getAnnotationSetQuery = /* GraphQL */ `
 const getLocationSetQuery = /* GraphQL */ `
   query GetLocationSet($id: ID!) {
     getLocationSet(id: $id) {
+      projectId
       locationCount
     }
   }
@@ -373,6 +374,20 @@ async function startJob(event: AppSyncEvent, context: Context) {
       'This survey has no tiles yet. Create them in Manage Tiles.',
     );
   }
+  const tiledSet = await executeGraphql<{
+    getLocationSet?: {
+      projectId?: string | null;
+      locationCount?: number | null;
+    } | null;
+  }>(getLocationSetQuery, { id: locationSetId });
+  if (tiledSet.getLocationSet?.projectId !== projectId) {
+    console.error('Tiled location set does not belong to the survey', {
+      projectId,
+      locationSetId,
+      setProjectId: tiledSet.getLocationSet?.projectId ?? null,
+    });
+    throw new Error('Tiled location set does not belong to this survey');
+  }
   if (queues.length > 0) {
     throw new Error(
       'A job is already running on this survey. Wait for it to finish or cancel it first.',
@@ -395,10 +410,7 @@ async function startJob(event: AppSyncEvent, context: Context) {
     if (!(percent > 0 && percent <= 100)) {
       throw new Error('Sample size must be between 0 and 100 percent');
     }
-    const locationSet = await executeGraphql<{
-      getLocationSet?: { locationCount?: number | null } | null;
-    }>(getLocationSetQuery, { id: locationSetId });
-    const totalTiles = locationSet.getLocationSet?.locationCount ?? 0;
+    const totalTiles = tiledSet.getLocationSet?.locationCount ?? 0;
     // Before the first launch every tile may still be unreviewed.
     const expectedUnreviewed = summary?.unreviewedTiles || totalTiles;
     const expectedAvailable = summary

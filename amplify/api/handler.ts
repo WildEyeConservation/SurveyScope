@@ -1,4 +1,9 @@
-import { operationReturnsJson, operationType } from '../../shared/operations';
+import { joinableEpochs } from '../../shared/dataChannels';
+import {
+  operationArgsError,
+  operationReturnsJson,
+  operationType,
+} from '../../shared/operations';
 import { Access, type Actor } from './access';
 import { AmplifyAccessStore, AmplifyDataLayer, amplifyData } from './data';
 import { ApiError, badRequest, forbidden } from './errors';
@@ -50,6 +55,7 @@ async function requestContext(actor: Actor) {
   const tasks: TaskContext = {
     access,
     models,
+    data,
     queue: sqsTaskQueue,
     leases: dynamoLeaseTable,
     neighbours: (imageId) => store.neighbours(imageId),
@@ -102,10 +108,12 @@ async function runOperation(ctx: Context, body: Row): Promise<Result> {
   if ((type !== 'query' && type !== 'mutation') || typeof name !== 'string') {
     throw badRequest('Invalid operation');
   }
-  const policy = OPERATIONS[name];
+  const policy = Object.hasOwn(OPERATIONS, name) ? OPERATIONS[name] : undefined;
   if (!policy || operationType(name) !== type)
     throw forbidden(`${name} is not available`);
   const given = isObject(body.args) ? body.args : {};
+  const invalid = operationArgsError(name, given);
+  if (invalid) throw badRequest(invalid);
   const verdict = await policy.authorize(ctx, given);
   const grant = verdict instanceof Authorized ? verdict.grant : {};
   const args = grant.args ?? given;
@@ -168,15 +176,40 @@ async function route(path: string, actor: Actor, body: Row): Promise<Result> {
       return tasks.depth(ctx.tasks, body);
     case '/tasks/test':
       return tasks.test(ctx.tasks, body);
+    case '/tasks/test/submit':
+      return tasks.submitTest(ctx.tasks, body);
     case '/results/link':
       return results.link(ctx, body);
     case '/results/share':
       return results.share(ctx, body);
+    case '/results/revoke':
+      return results.revoke(ctx, body);
     case '/results/redeem':
       return results.redeem(ctx, body);
     default:
       throw new ApiError(404, 'NotFound', `No route ${path}`);
   }
+}
+
+// API Gateway gives up at 30 seconds; answer first so the client does not retry.
+const DEADLINE_MS = 27_000;
+
+function withDeadline<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new ApiError(
+            504,
+            'Timeout',
+            'The request is taking too long and may still finish. Check before trying again.',
+          ),
+        ),
+      DEADLINE_MS,
+    );
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
 
 const json = (statusCode: number, body: unknown) => ({
@@ -200,7 +233,7 @@ async function http(event: HttpEvent) {
       throw badRequest('Invalid JSON');
     }
     if (!isObject(body)) throw badRequest('Invalid request');
-    return json(200, await route(event.rawPath, actor, body));
+    return json(200, await withDeadline(route(event.rawPath, actor, body)));
   } catch (error) {
     if (error instanceof ApiError) {
       return json(error.status, {
@@ -217,10 +250,13 @@ async function http(event: HttpEvent) {
 async function subscribe(event: EventsRequest) {
   try {
     const identity = event.identity;
-    const [namespace, model, field, value] = event.info.channel.segments;
+    const segments = event.info.channel.segments;
+    const [namespace, model, field, value, epoch] = segments;
     if (
       event.info.operation !== 'SUBSCRIBE' ||
       namespace !== 'data' ||
+      segments.length !== 5 ||
+      !joinableEpochs(Date.now()).map(String).includes(epoch) ||
       !identity?.sub
     ) {
       return { error: 'Unauthorized' };

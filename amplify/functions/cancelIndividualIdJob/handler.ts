@@ -4,6 +4,7 @@ import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { finishShadowWorkflowRun } from '../workflowStats/runWriter';
+import { authorizeSurveyAdmin } from '../shared/authorizeSurveyAdmin';
 
 const getJobQuery = /* GraphQL */ `
   query GetIndividualIdJob($id: ID!) {
@@ -21,14 +22,6 @@ const getProjectQuery = /* GraphQL */ `
     getProject(id: $id) {
       id
       organizationId
-    }
-  }
-`;
-
-const getUserProjectMembershipQuery = /* GraphQL */ `
-  query UserProjectMembershipsByUserId($userId: String!, $limit: Int) {
-    userProjectMembershipsByUserId(userId: $userId, limit: $limit) {
-      items { userId projectId isAdmin group }
     }
   }
 `;
@@ -120,26 +113,12 @@ export const handler: CancelIndividualIdJobHandler = async (event) => {
   if (!project) throw new Error(`Project not found: ${job.projectId}`);
 
   const identity = event.identity;
-  if (!identity || !('sub' in identity) || !identity.sub) {
-    throw new Error('Unauthorized: no identity');
-  }
-  const groups = ('groups' in identity ? identity.groups : null) ?? [];
-  if (!groups.includes('sysadmin')) {
-    if (!groups.includes(project.organizationId)) {
-      throw new Error('Unauthorized: user does not belong to this organization');
-    }
-    const membershipData = await executeGraphql<{
-      userProjectMembershipsByUserId?: {
-        items: { projectId: string; isAdmin: boolean | null }[];
-      };
-    }>(getUserProjectMembershipQuery, { userId: identity.sub, limit: 1000 });
-    const membership = membershipData.userProjectMembershipsByUserId?.items?.find(
-      (m) => m.projectId === job.projectId
-    );
-    if (!membership?.isAdmin) {
-      throw new Error('Unauthorized: user is not a project admin');
-    }
-  }
+  await authorizeSurveyAdmin(
+    identity && 'sub' in identity ? identity : null,
+    project,
+    executeGraphql
+  );
+  const sub = (identity as { sub: string }).sub;
 
   if (job.status !== 'active' && job.status !== 'launching') {
     return JSON.stringify({ success: true, alreadyFinished: true });
@@ -162,7 +141,7 @@ export const handler: CancelIndividualIdJobHandler = async (event) => {
     runId: jobId,
     status: 'cancelled',
     reason: 'user',
-    finishedBy: identity.sub,
+    finishedBy: sub,
   });
 
   return JSON.stringify({ success: true });

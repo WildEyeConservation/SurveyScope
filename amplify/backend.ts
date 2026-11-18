@@ -2542,6 +2542,12 @@ backend.cleanupJobs.resources.lambda.addToRolePolicy(
     resources: ['*'],
   })
 );
+backend.deleteProject.resources.lambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['sqs:DeleteQueue'],
+    resources: ['*'],
+  })
+);
 backend.deleteQueue.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: ['sqs:DeleteQueue', 'sqs:GetQueueAttributes'],
@@ -3041,6 +3047,8 @@ const surveyScopeApi = installApi({
   tables: backend.data.resources.tables,
   graphqlApi: backend.data.resources.graphqlApi,
   dispatchTargetsParameterName,
+  reservedConcurrency: Number(process.env.API_RESERVED_CONCURRENCY ?? 0),
+  provisionedConcurrency: Number(process.env.API_PROVISIONED_CONCURRENCY ?? 0),
 });
 
 backend.addOutput({

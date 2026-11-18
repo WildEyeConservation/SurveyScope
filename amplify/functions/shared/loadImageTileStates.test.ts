@@ -78,3 +78,21 @@ test('images not found in the project index fall back to getImage', async () => 
   assert.equal(calls.pages, 2);
   assert.equal(lookup.calls.gets, 4);
 });
+
+test('images of another project are treated as missing', async () => {
+  const foreign: ImageTileState = {
+    id: 'foreign-1',
+    projectId: 'q',
+    tiledAt: '2026-10-01T00:00:00.000Z',
+    originalPath: 'path/foreign.jpg',
+  };
+  const own: ImageTileState = { ...foreign, id: 'own-1', projectId: 'p' };
+  const { executeGraphql } = fakeApi([foreign, own]);
+  const states = await loadImageTileStates(
+    'p',
+    ['foreign-1', 'own-1'],
+    executeGraphql,
+  );
+  assert.ok(states.has('own-1'));
+  assert.ok(!states.has('foreign-1'));
+});

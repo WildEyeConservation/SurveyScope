@@ -5,6 +5,7 @@ const PROJECT_SCAN_THRESHOLD = 500;
 
 export type ImageTileState = {
   id: string;
+  projectId?: string | null;
   tiledAt: string | null;
   originalPath: string | null;
 };
@@ -18,6 +19,7 @@ const getImageQuery = /* GraphQL */ `
   query GetImage($id: ID!) {
     getImage(id: $id) {
       id
+      projectId
       tiledAt
       originalPath
     }
@@ -82,7 +84,14 @@ export async function loadImageTileStates(
           getImageQuery,
           { id },
         );
-        if (data.getImage) states.set(id, data.getImage);
+        // Images of another project count as missing.
+        const image = data.getImage;
+        if (
+          image &&
+          (image.projectId == null || image.projectId === projectId)
+        ) {
+          states.set(id, image);
+        }
       }),
     ),
   );

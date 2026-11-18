@@ -1,4 +1,4 @@
-import { isWithinLocationBounds } from './utils';
+import { isWithinLocationBounds } from './locationGeometry';
 
 export type TestAnnotation = {
   id: string;

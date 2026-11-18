@@ -159,9 +159,19 @@ describe('survey configuration', () => {
     assert.deepEqual(await list('annotator'), ['q1']);
     assert.deepEqual(await list('surveyAdmin'), ['q1', 'q3']);
     const annotator = gateway(data, actor('annotator'), POLICIES).models;
+    const admin = gateway(data, actor('surveyAdmin'), POLICIES).models;
+    // Hidden queues travel on the admin channel, so the plain one is safe to join.
     assert.equal(
       await annotator.canSubscribe('Queue', 'projectId', 'p1'),
+      true,
+    );
+    assert.equal(
+      await annotator.canSubscribe('Queue', 'adminProjectId', 'p1'),
       false,
+    );
+    assert.equal(
+      await admin.canSubscribe('Queue', 'adminProjectId', 'p1'),
+      true,
     );
     await denied(annotator.run('Queue', 'update', [{ id: 'q1', zoom: 3 }]));
   });
