@@ -25,6 +25,7 @@ import {
   isTransactionConflict,
   transactionConflictDelayMs,
 } from '../updateUserStats/core';
+import { isUnder, manifestPrefixFor } from '../shared/s3Keys';
 
 export type InfoTagTables = {
   work: string;
@@ -192,6 +193,8 @@ export function createInfoTagWorkService(options: {
       if (existing) return existing as Task;
       if (typeof queue.locationManifestS3Key !== 'string')
         throw new Error('Queue manifest unavailable');
+      if (!isUnder(queue.locationManifestS3Key, manifestPrefixFor(queue.tag)))
+        throw new Error('Queue manifest key is outside queue manifests');
       const manifest = await readManifest(queue.locationManifestS3Key);
       if (
         manifest.annotationSetId !== queue.annotationSetId ||

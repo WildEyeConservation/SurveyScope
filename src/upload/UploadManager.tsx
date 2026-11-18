@@ -87,28 +87,16 @@ export default function UploadManager() {
     if (uploadOrchestrator.getSnapshot()?.projectId === id) {
       uploadOrchestrator.cancel();
     }
-    setUploadUiState({ deletingProjectId: id, deleteStep: 0, deleteTotal: 3 });
+    setUploadUiState({ deletingProjectId: id, deleteStep: 0, deleteTotal: 1 });
     try {
       console.log(`Deleting project ${id}`);
-      const {
-        data: [imageSet],
-      } = await client.models.ImageSet.imageSetsByProjectId({ projectId: id });
-      await client.models.ImageSet.delete({ id: imageSet.id });
-      setUploadUiState({ deleteStep: 1 });
-
-      const { data: memberships } =
-        await client.models.UserProjectMembership.userProjectMembershipsByProjectId(
-          { projectId: id },
-        );
-      await Promise.all(
-        memberships.map((membership) =>
-          client.models.UserProjectMembership.delete({ id: membership.id }),
-        ),
+      await client.models.Project.update({ id, status: 'deleting' });
+      const { errors } = await client.mutations.deleteProjectInFull(
+        { projectId: id },
+        { retry: false },
       );
-      setUploadUiState({ deleteStep: 2 });
-
-      await client.models.Project.delete({ id });
-      setUploadUiState({ deleteStep: 3 });
+      if (errors?.length) throw new Error(JSON.stringify(errors));
+      setUploadUiState({ deleteStep: 1 });
 
       await clearProjectStores(id);
       await removeDirectoryHandle(id);

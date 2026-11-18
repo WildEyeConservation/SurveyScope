@@ -89,7 +89,15 @@ const launch: Authorize = async (ctx, args) =>
     args: await authorizeLaunch(ctx.access, ctx.launches, args),
   });
 
-const readableImage: Authorize = async ({ access, models }, args) => {
+// Downloads serve the original file, so a chain share does not reach them.
+const surveyImage: Authorize = async ({ models }, args) => {
+  const image = await models.load('Image', { id: stringArg(args, 'imageId') });
+  if (!image || !(await models.allows('Image', 'read', image)))
+    throw forbidden();
+};
+
+const readableImage: Authorize = async (ctx, args) => {
+  const { access, models } = ctx;
   if (args.sharedImageId !== undefined && args.sharedImageId !== null) {
     const shared = await models.load('SharedChainImage', {
       id: stringArg(args, 'sharedImageId'),
@@ -109,9 +117,7 @@ const readableImage: Authorize = async ({ access, models }, args) => {
     }
     return;
   }
-  const image = await models.load('Image', { id: stringArg(args, 'imageId') });
-  if (!image || !(await models.allows('Image', 'read', image)))
-    throw forbidden();
+  return surveyImage(ctx, args);
 };
 
 const transectHolder: Authorize = ({ tasks }, args) =>
@@ -260,9 +266,11 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
     authorize: surveyAdmin('projectId'),
   },
   reportClientError: { fn: 'reportClientError', authorize: signedIn },
+  // Large surveys take longer than a request may last; callers do not wait.
   deleteProjectInFull: {
     fn: 'deleteProject',
     authorize: surveyAdmin('projectId'),
+    async: true,
   },
   recomputeBoundaryStatus: {
     fn: 'recomputeBoundaryStatus',
@@ -354,7 +362,7 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   },
   signImageTiles: { fn: 'imageAccess', authorize: readableImage },
   signImageTilePack: { fn: 'imageAccess', authorize: readableImage },
-  imageDownloadUrl: { fn: 'imageAccess', authorize: readableImage },
+  imageDownloadUrl: { fn: 'imageAccess', authorize: surveyImage },
   generateTile: { fn: 'generateTile', authorize: readableImage },
   incrementQueueCount: {
     authorize: queueWorker,

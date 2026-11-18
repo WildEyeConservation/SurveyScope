@@ -28,6 +28,9 @@ export const shareResults = (
 ) =>
   call<ResultsLink>('/results/share', { surveyId, annotationSetId, expiresAt });
 
+export const revokeResultsLink = (surveyId: string, annotationSetId: string) =>
+  call<boolean>('/results/revoke', { surveyId, annotationSetId });
+
 export const redeemResultsLink = (token: string) =>
   call<{ surveyId: string; annotationSetId: string }>('/results/redeem', {
     token,

@@ -98,7 +98,9 @@ export function statsDeltaFromObservation(
   }
 
   const annotationCount = Math.max(finiteNumber(input.annotationCount), 0);
-  const waitingTime = Math.max(finiteNumber(input.waitingTime), 0);
+  // As for active time, an implausible wait is dropped rather than counted.
+  const rawWait = Math.max(finiteNumber(input.waitingTime), 0);
+  const waitingTime = rawWait > 600 * 1000 ? 0 : rawWait;
   const sightingCount = annotationCount > 0 ? 1 : 0;
   let activeTime = Math.max(finiteNumber(input.timeTaken), 0);
   if (

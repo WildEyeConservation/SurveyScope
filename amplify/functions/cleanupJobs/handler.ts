@@ -14,6 +14,7 @@ import { SQSClient } from "@aws-sdk/client-sqs";
 import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { finishShadowWorkflowRun } from "../workflowStats/runWriter";
+import { isUnder, manifestPrefixFor } from "../shared/s3Keys";
 
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
@@ -26,6 +27,12 @@ const updateQueue = /* GraphQL */ `
 const deleteQueue = /* GraphQL */ `
   mutation DeleteQueue($input: DeleteQueueInput!) {
     deleteQueue(input: $input) { id group }
+  }
+`;
+
+const getAnnotationSetProjectQuery = /* GraphQL */ `
+  query GetAnnotationSetProject($id: ID!) {
+    getAnnotationSet(id: $id) { id projectId }
   }
 `;
 
@@ -214,7 +221,16 @@ export const handler: Handler = async (event, context) => {
         // Delete the S3 manifest if it exists (skip for homography queues —
         // reconcileHomographies reads the manifest for targeted dedup, then deletes it)
         const isHomographyQueue = queue.tag === 'homography';
-        if (queue.locationManifestS3Key && !isHomographyQueue) {
+        if (
+          queue.locationManifestS3Key &&
+          !isHomographyQueue &&
+          !isUnder(queue.locationManifestS3Key, manifestPrefixFor(queue.tag))
+        ) {
+          console.error("Skipping manifest delete outside queue manifests", {
+            queueId: queue.id,
+            key: queue.locationManifestS3Key,
+          });
+        } else if (queue.locationManifestS3Key && !isHomographyQueue) {
           try {
             const bucketName = env.OUTPUTS_BUCKET_NAME;
             if (bucketName) {
@@ -283,7 +299,19 @@ export const handler: Handler = async (event, context) => {
           // Trigger homography reconciliation — pass manifest key for targeted dedup
           try {
             const functionName = (env as any).RECONCILE_HOMOGRAPHIES_FUNCTION_NAME;
-            if (functionName) {
+            const setResponse = (await client.graphql({
+              query: getAnnotationSetProjectQuery,
+              variables: { id: queue.annotationSetId },
+            })) as GraphQLResult<{ getAnnotationSet?: { projectId: string } | null }>;
+            const setProjectId = setResponse.data?.getAnnotationSet?.projectId;
+            if (setProjectId !== queue.projectId) {
+              console.error("Skipping reconciliation: annotation set is not in the queue's project", {
+                queueId: queue.id,
+                annotationSetId: queue.annotationSetId,
+                queueProjectId: queue.projectId,
+                setProjectId,
+              });
+            } else if (functionName) {
               const lambdaClient = new LambdaClient({
                 region: env.AWS_REGION,
                 credentials: {
@@ -300,6 +328,7 @@ export const handler: Handler = async (event, context) => {
                     JSON.stringify({
                       annotationSetId: queue.annotationSetId,
                       queueId: queue.id,
+                      projectId: queue.projectId,
                       manifestS3Key: queue.locationManifestS3Key ?? null,
                     })
                   ),

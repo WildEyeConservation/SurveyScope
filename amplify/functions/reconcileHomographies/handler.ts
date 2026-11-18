@@ -5,6 +5,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import pLimit from 'p-limit';
+import { isUnder, QUEUE_MANIFEST_PREFIX } from '../shared/s3Keys';
 
 Amplify.configure(
   {
@@ -47,6 +48,7 @@ const s3Client = new S3Client({
 
 type ImageMeta = {
   id: string;
+  projectId?: string;
   timestamp: number | null;
   width: number;
   height: number;
@@ -77,6 +79,7 @@ const getImageWithNeighboursQuery = /* GraphQL */ `
   query GetImage($id: ID!) {
     getImage(id: $id) {
       id
+      projectId
       timestamp
       width
       height
@@ -107,6 +110,25 @@ const getImageMetaQuery = /* GraphQL */ `
       width
       height
       originalPath
+    }
+  }
+`;
+
+const getAnnotationSetQuery = /* GraphQL */ `
+  query GetAnnotationSet($id: ID!) {
+    getAnnotationSet(id: $id) {
+      id
+      projectId
+    }
+  }
+`;
+
+const getQueueQuery = /* GraphQL */ `
+  query GetQueue($id: ID!) {
+    getQueue(id: $id) {
+      id
+      projectId
+      annotationSetId
     }
   }
 `;
@@ -196,6 +218,7 @@ async function deleteManifest(manifestS3Key: string): Promise<void> {
 
 type ImageWithNeighbours = {
   id: string;
+  projectId?: string | null;
   timestamp: string | number | null;
   width: number;
   height: number;
@@ -247,6 +270,7 @@ async function fetchAffectedImagesAndGraph(
 
         images.set(item.id, {
           id: item.id,
+          projectId: item.projectId ?? undefined,
           timestamp: item.timestamp ? new Date(item.timestamp as string).getTime() : null,
           width: item.width,
           height: item.height,
@@ -449,10 +473,56 @@ async function batchUpdate(
   console.log(`Completed ${completed}/${updates.length} annotation updates`);
 }
 
+// Resolves the set's project and checks the payload's queue and project claims against it.
+async function resolveProjectId(
+  annotationSetId: string,
+  queueId: string | undefined,
+  claimedProjectId: string | undefined
+): Promise<string | null> {
+  const setRes = (await client.graphql({
+    query: getAnnotationSetQuery,
+    variables: { id: annotationSetId },
+  })) as GraphQLResult<{ getAnnotationSet?: { projectId: string } | null }>;
+  const projectId = setRes.data?.getAnnotationSet?.projectId;
+  if (!projectId) {
+    console.error('AnnotationSet not found', { annotationSetId });
+    return null;
+  }
+  if (claimedProjectId && claimedProjectId !== projectId) {
+    console.error('Payload projectId does not match annotation set project', {
+      annotationSetId,
+      projectId,
+      claimedProjectId,
+    });
+    return null;
+  }
+  if (queueId) {
+    const queueRes = (await client.graphql({
+      query: getQueueQuery,
+      variables: { id: queueId },
+    })) as GraphQLResult<{
+      getQueue?: { projectId: string; annotationSetId: string | null } | null;
+    }>;
+    const queue = queueRes.data?.getQueue;
+    // The queue may already be deleted by the caller; then only the project claim applies.
+    if (queue && (queue.annotationSetId !== annotationSetId || queue.projectId !== projectId)) {
+      console.error('Queue does not match annotation set', {
+        queueId,
+        annotationSetId,
+        projectId,
+        queueProjectId: queue.projectId,
+        queueAnnotationSetId: queue.annotationSetId,
+      });
+      return null;
+    }
+  }
+  return projectId;
+}
+
 export const handler: Handler = async (event) => {
   try {
     const payload = typeof event === 'string' ? JSON.parse(event) : event;
-    const { annotationSetId, manifestS3Key } = payload;
+    const { annotationSetId, manifestS3Key, queueId, projectId: claimedProjectId } = payload;
 
     if (!annotationSetId) {
       console.error('Missing annotationSetId in event');
@@ -464,7 +534,17 @@ export const handler: Handler = async (event) => {
       return { statusCode: 400, body: 'Missing manifestS3Key' };
     }
 
+    if (!isUnder(manifestS3Key, QUEUE_MANIFEST_PREFIX)) {
+      console.error('Rejected manifestS3Key outside queue manifests', { manifestS3Key });
+      return { statusCode: 400, body: 'Invalid manifestS3Key' };
+    }
+
     console.log('reconcileHomographies invoked', { annotationSetId, manifestS3Key });
+
+    const projectId = await resolveProjectId(annotationSetId, queueId, claimedProjectId);
+    if (!projectId) {
+      return { statusCode: 400, body: 'Annotation set, queue and project do not match' };
+    }
 
     const manifestItems = await downloadManifest(manifestS3Key);
     const affectedImageIds = new Set<string>();
@@ -485,6 +565,18 @@ export const handler: Handler = async (event) => {
 
     const { images, graph, missingNeighbourIds } =
       await fetchAffectedImagesAndGraph(affectedImageIds);
+    for (const imageId of affectedImageIds) {
+      const image = images.get(imageId);
+      if (image && image.projectId !== projectId) {
+        console.error('Manifest image belongs to another project', {
+          imageId,
+          imageProjectId: image.projectId,
+          projectId,
+          manifestS3Key,
+        });
+        return { statusCode: 400, body: 'Manifest image outside project' };
+      }
+    }
     console.log('Fetched affected images', {
       fetched: images.size,
       neighboursToFetch: missingNeighbourIds.size,

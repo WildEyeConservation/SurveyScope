@@ -21,7 +21,8 @@ export interface DispatchTargets {
 }
 
 export interface LaunchStore {
-  readJson(key: string): Promise<unknown>;
+  // projectId is the survey the file was uploaded for.
+  readJson(key: string): Promise<{ value: unknown; projectId?: string }>;
   writeJson(prefix: string, value: unknown): Promise<string>;
   remove(key: string): Promise<void>;
   projectsOf(
@@ -138,12 +139,15 @@ export async function authorizeLaunch(
   const payloadKey = request.payloadS3Key
     ? storedKey(request.payloadS3Key, PAYLOAD_PREFIX)
     : undefined;
-  const payload = payloadKey ? await store.readJson(payloadKey) : request;
+  const stored = payloadKey ? await store.readJson(payloadKey) : undefined;
+  const payload = stored ? stored.value : request;
   if (!isObject(payload) || typeof payload.projectId !== 'string') {
     throw badRequest('The request needs a projectId');
   }
   const projectId = payload.projectId;
   await access.requireSurveyAdmin(projectId);
+  if (stored && stored.projectId !== projectId)
+    throw forbidden('The file was uploaded for another survey');
 
   const checked: Row = { ...payload };
   delete checked.payloadS3Key;
@@ -151,7 +155,10 @@ export async function authorizeLaunch(
   for (const field of MANIFEST_KEYS) {
     if (checked[field] === undefined || checked[field] === null) continue;
     const key = storedKey(checked[field], MANIFEST_PREFIX);
-    const manifest = await store.readJson(key);
+    const file = await store.readJson(key);
+    if (file.projectId !== projectId)
+      throw forbidden('The file was uploaded for another survey');
+    const manifest = file.value;
     await requireOneSurvey(store, projectId, manifest);
     checked[field] = await store.writeJson(MANIFEST_PREFIX, manifest);
     replaced.push(key);

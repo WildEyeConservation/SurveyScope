@@ -18,6 +18,7 @@ import {
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import { createShadowWorkflowRun } from '../workflowStats/runWriter';
+import { isUnder, TILING_OUTPUT_PREFIX } from '../shared/s3Keys';
 import {
   tilingTasksByStatus,
   tilingBatchesByTaskId,
@@ -30,6 +31,24 @@ const getProjectOrganizationId = /* GraphQL */ `
     getProject(id: $id) { organizationId }
   }
 `;
+
+const projectOwnershipQueries = {
+  AnnotationSet: /* GraphQL */ `
+    query GetAnnotationSetProject($id: ID!) {
+      getAnnotationSet(id: $id) { id projectId }
+    }
+  `,
+  LocationSet: /* GraphQL */ `
+    query GetLocationSetProject($id: ID!) {
+      getLocationSet(id: $id) { id projectId }
+    }
+  `,
+  Category: /* GraphQL */ `
+    query GetCategoryProject($id: ID!) {
+      getCategory(id: $id) { id projectId }
+    }
+  `,
+} as const;
 
 const createQueueMutation = /* GraphQL */ `
   mutation CreateQueue($input: CreateQueueInput!) {
@@ -207,6 +226,8 @@ async function processTask(task: TilingTaskRecord) {
   console.log('Processing task', { taskId: task.id, projectId: task.projectId });
 
   try {
+    await verifyTaskReferences(task);
+
     // Fetch all batches for this task
     const batches = await fetchBatchesForTask(task.id);
     console.log('Fetched batches', {
@@ -449,6 +470,52 @@ async function processTask(task: TilingTaskRecord) {
   }
 }
 
+async function assertInProject(
+  model: keyof typeof projectOwnershipQueries,
+  id: string,
+  projectId: string
+): Promise<void> {
+  const data = await executeGraphql<Record<string, { projectId: string } | null>>(
+    projectOwnershipQueries[model],
+    { id }
+  );
+  const owner = data[`get${model}`]?.projectId;
+  if (owner !== projectId) {
+    throw new Error(`${model} ${id} does not belong to project ${projectId}`);
+  }
+}
+
+// Every set or category a task names must be in the task's project.
+async function verifyTaskReferences(task: TilingTaskRecord): Promise<void> {
+  const config = JSON.parse(task.launchConfig) as {
+    annotationSetId?: string;
+    locationSetId?: string;
+    categoryIds?: string[];
+  };
+  const annotationSetIds = new Set([task.annotationSetId, config.annotationSetId]);
+  annotationSetIds.delete('tiling-only');
+  const locationSetIds = new Set([task.locationSetId, config.locationSetId]);
+  const categoryIds = new Set(Array.isArray(config.categoryIds) ? config.categoryIds : []);
+  try {
+    for (const id of annotationSetIds) {
+      if (id) await assertInProject('AnnotationSet', id, task.projectId);
+    }
+    for (const id of locationSetIds) {
+      if (id) await assertInProject('LocationSet', id, task.projectId);
+    }
+    for (const id of categoryIds) {
+      await assertInProject('Category', id, task.projectId);
+    }
+  } catch (err) {
+    console.error('Tiling task references data outside its project', {
+      taskId: task.id,
+      projectId: task.projectId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
 async function fetchProcessingTasks(): Promise<TilingTaskRecord[]> {
   const tasks: TilingTaskRecord[] = [];
   let nextToken: string | null | undefined = undefined;
@@ -538,6 +605,9 @@ async function mergeLocations(batches: TilingBatchRecord[]): Promise<any[]> {
         console.warn('Batch missing output S3 key', { batchId: batch.id });
         return [];
       }
+      if (!isUnder(batch.outputS3Key, TILING_OUTPUT_PREFIX)) {
+        throw new Error(`Batch ${batch.id} output key is outside tiling outputs`);
+      }
 
       const response = await s3Client.send(
         new GetObjectCommand({
@@ -573,7 +643,15 @@ async function cleanupBatchOutputs(batches: TilingBatchRecord[]): Promise<void> 
 
   const limit = pLimit(10);
   const deleteTasks = batches
-    .filter((b) => b.outputS3Key)
+    .filter((b) => {
+      if (!b.outputS3Key) return false;
+      if (isUnder(b.outputS3Key, TILING_OUTPUT_PREFIX)) return true;
+      console.error('Skipping batch output delete outside tiling outputs', {
+        batchId: b.id,
+        key: b.outputS3Key,
+      });
+      return false;
+    })
     .map((batch) =>
       limit(async () => {
         await s3Client.send(

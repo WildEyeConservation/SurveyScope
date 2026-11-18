@@ -23,6 +23,7 @@ import {
   annotationsByImageIdAndSetId,
   getProject,
 } from './graphql/queries';
+import { isUnder, manifestPrefixFor } from '../shared/s3Keys';
 
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
@@ -35,6 +36,18 @@ const updateQueue = /* GraphQL */ `
 const createAdminActionLog = /* GraphQL */ `
   mutation CreateAdminActionLog($input: CreateAdminActionLogInput!) {
     createAdminActionLog(input: $input) { id group }
+  }
+`;
+
+const getAnnotationSetProjectQuery = /* GraphQL */ `
+  query GetAnnotationSetProject($id: ID!) {
+    getAnnotationSet(id: $id) { id projectId }
+  }
+`;
+
+const getLocationSetProjectQuery = /* GraphQL */ `
+  query GetLocationSetProject($id: ID!) {
+    getLocationSet(id: $id) { id projectId }
   }
 `;
 
@@ -163,6 +176,7 @@ export const handler: Handler = async () => {
 
     let requeuedTotal = 0;
     for (const queue of candidateQueues) {
+      if (!(await queueRowIsConsistent(queue))) continue;
       const requeued = await processQueue(queue);
       requeuedTotal += requeued;
     }
@@ -245,6 +259,41 @@ async function fetchCandidateQueues(): Promise<QueueRecord[]> {
   } while (nextToken);
 
   return queues;
+}
+
+// Skip queues whose manifest or sets point outside their project.
+async function queueRowIsConsistent(queue: QueueRecord): Promise<boolean> {
+  if (!isUnder(queue.locationManifestS3Key, manifestPrefixFor(queue.tag))) {
+    console.error('Skipping queue: manifest key outside queue manifests', {
+      queueId: queue.id,
+      key: queue.locationManifestS3Key,
+    });
+    return false;
+  }
+  try {
+    const checks: Array<[string, string | null | undefined, string, string]> = [
+      ['annotationSetId', queue.annotationSetId, getAnnotationSetProjectQuery, 'getAnnotationSet'],
+      ['locationSetId', queue.locationSetId, getLocationSetProjectQuery, 'getLocationSet'],
+    ];
+    for (const [field, id, query, resultKey] of checks) {
+      if (!id) continue;
+      const data = await executeGraphql<Record<string, { projectId: string } | null>>(query, { id });
+      if (data[resultKey]?.projectId !== queue.projectId) {
+        console.error('Skipping queue: set belongs to another project', {
+          queueId: queue.id,
+          field,
+          setId: id,
+          queueProjectId: queue.projectId,
+          setProjectId: data[resultKey]?.projectId ?? null,
+        });
+        return false;
+      }
+    }
+  } catch (err) {
+    console.error('Skipping queue: could not verify its sets', { queueId: queue.id, err });
+    return false;
+  }
+  return true;
 }
 
 async function processQueue(queue: QueueRecord): Promise<number> {

@@ -11,10 +11,8 @@ interface UseTaskCompletionProps {
   next?: () => void;
   ack?: TaskAcknowledgement;
   isTest?: boolean;
-  testPresetId?: string;
+  testLeaseId?: string;
   testSetId?: string;
-  /** The job's label names, which test scoring links to the test's labels. */
-  labelNames?: string[];
   queueId?: string;
   observationId?: string;
   observationSource?: string;
@@ -31,9 +29,8 @@ export default function useTaskCompletion({
   next,
   ack,
   isTest,
-  testPresetId,
+  testLeaseId,
   testSetId,
-  labelNames,
   queueId,
   observationId,
   observationSource,
@@ -42,9 +39,8 @@ export default function useTaskCompletion({
     location,
     ack: ack ?? (() => {}),
     isTest,
-    testPresetId,
+    testLeaseId,
     testSetId,
-    labelNames,
     queueId,
     observationId,
     observationSource,

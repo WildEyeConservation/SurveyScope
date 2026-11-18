@@ -65,7 +65,10 @@ export const handler: Handler = async (event) => {
   }
 
   // Extract org IDs (non-system groups)
-  const orgIds = (groups ?? []).filter((g) => !SYSTEM_GROUPS.has(g))
+  // Chain share reviewer groups are not organisations.
+  const orgIds = (groups ?? []).filter(
+    (g) => !SYSTEM_GROUPS.has(g) && !g.startsWith("chainshare-")
+  )
 
   // No org groups → empty list
   if (orgIds.length === 0) {

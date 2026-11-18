@@ -11,7 +11,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { neutraliseCsvRows } from '../shared/csv';
 import { Schema } from './amplify/client-schema';
-import { resultsLink, shareResults } from './api/results';
+import { resultsLink, revokeResultsLink, shareResults } from './api/results';
 import { useUsers } from './apiInterface';
 import { GlobalContext, UserContext } from './Context.tsx';
 import DensityMap from './DensityMap.tsx';
@@ -144,6 +144,19 @@ export default function JollyResults() {
 
     handleCopyLink(shared.token);
     setIsCopying(false);
+  }
+
+  async function handleRevoke() {
+    if (!confirm('Revoke this link? It stops working for anyone who has it.'))
+      return;
+    try {
+      await revokeResultsLink(surveyId!, annotationSetId!);
+      setCurrentToken(null);
+      setTokenExpiry(null);
+    } catch (error) {
+      console.error('Error revoking link', error);
+      alert('Error revoking link');
+    }
   }
 
   async function handleCopyLink(token: string) {
@@ -547,9 +560,15 @@ export default function JollyResults() {
                   keep access until you remove them.
                 </span>
                 {tokenExpiry && tokenExpiry > new Date() && (
-                  <span className='text-sm'>
-                    Current link valid until {tokenExpiry.toLocaleDateString()}
-                  </span>
+                  <div className='flex items-center justify-between gap-2'>
+                    <span className='text-sm'>
+                      Current link valid until{' '}
+                      {tokenExpiry.toLocaleDateString()}
+                    </span>
+                    <Button variant='ghost' onClick={handleRevoke}>
+                      Revoke link
+                    </Button>
+                  </div>
                 )}
                 <div className='flex flex-col gap-2'>
                   <div

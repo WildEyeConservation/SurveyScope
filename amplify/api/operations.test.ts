@@ -53,9 +53,10 @@ class Files implements LaunchStore {
     bucket: 'inputs',
     queues: { runScoutbot: 'scoutbot-queue', runImageRegistration: 'lg-queue' },
   };
+  owners = new Map<string, string>();
   async readJson(key: string) {
     if (!this.files.has(key)) throw new Error(`missing ${key}`);
-    return this.files.get(key);
+    return { value: this.files.get(key), projectId: this.owners.get(key) };
   }
   async writeJson(prefix: string, value: unknown) {
     const key = `${prefix}copy-${this.files.size}.json`;
@@ -168,6 +169,7 @@ describe('operation authorisation', () => {
       projectId: 'p2',
       annotationSetId: 'a2',
     });
+    files.owners.set('launch-payloads/user.json', 'p2');
     await denied(
       authorize(
         'lead',
@@ -178,6 +180,7 @@ describe('operation authorisation', () => {
     );
 
     files.files.set('queue-manifests/m.json', { items: [{ imageId: 'i2' }] });
+    files.owners.set('queue-manifests/m.json', 'p1');
     await denied(
       authorize(
         'lead',
@@ -191,12 +194,31 @@ describe('operation authorisation', () => {
       ),
     );
 
+    // A file uploaded for another survey is neither read nor removed.
+    files.files.set('queue-manifests/theirs.json', { items: [] });
+    files.owners.set('queue-manifests/theirs.json', 'p2');
+    await denied(
+      authorize(
+        'lead',
+        'launchHomography',
+        request({
+          projectId: 'p1',
+          annotationSetId: 'a1',
+          manifestS3Key: 'queue-manifests/theirs.json',
+        }),
+        files,
+      ),
+    );
+    assert.deepEqual(files.removed, []);
+
     files.files.set('queue-manifests/ok.json', { items: [{ imageId: 'i1' }] });
+    files.owners.set('queue-manifests/ok.json', 'p1');
     files.files.set('launch-payloads/ok.json', {
       projectId: 'p1',
       annotationSetId: 'a1',
       locationManifestS3Key: 'queue-manifests/ok.json',
     });
+    files.owners.set('launch-payloads/ok.json', 'p1');
     const verdict = await authorize(
       'lead',
       'launchAnnotationSet',

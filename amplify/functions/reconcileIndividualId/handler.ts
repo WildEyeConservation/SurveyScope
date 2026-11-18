@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/client-s3';
 import pLimit from 'p-limit';
 import { loadImageTileStates } from '../shared/loadImageTileStates';
+import { isUnder, PRETILE_MANIFEST_PREFIX } from '../shared/s3Keys';
 
 // Safety net only: if a per-image decrement is permanently lost (SQS message
 // dropped after the image write but before the counter update), the fanout
@@ -216,8 +217,23 @@ export const handler: Handler = async () => {
         let pretileDone: boolean;
         if (!job.pretileManifestS3Key) {
           pretileDone = true; // nothing to tile (all fresh)
+        } else if (!isUnder(job.pretileManifestS3Key, PRETILE_MANIFEST_PREFIX)) {
+          console.error('manifest key outside pretile manifests, skipping', {
+            jobId: job.id,
+            projectId: job.projectId,
+            key: job.pretileManifestS3Key,
+          });
+          return { job: job.id, action: 'bad-key' };
         } else {
           const manifest = await loadManifest(job.pretileManifestS3Key);
+          if (manifest && manifest.projectId !== job.projectId) {
+            console.error('manifest belongs to another project, skipping', {
+              jobId: job.id,
+              projectId: job.projectId,
+              manifestProjectId: manifest.projectId,
+            });
+            return { job: job.id, action: 'manifest-mismatch' };
+          }
           if (!manifest) {
             pretileDone = true; // manifest gone — treat as done
           } else {

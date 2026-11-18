@@ -12,6 +12,7 @@ import {
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import pLimit from 'p-limit';
 import { getTilingBatch, tilingBatchesByTaskId } from './graphql/queries';
+import { isUnder, TILING_BATCH_PREFIX } from '../shared/s3Keys';
 
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
@@ -129,6 +130,10 @@ export const handler: Handler = async (event) => {
     const batch = await fetchBatchInfo(batchId);
     if (!batch) {
       throw new Error(`Batch ${batchId} not found`);
+    }
+
+    if (!isUnder(batch.inputS3Key, TILING_BATCH_PREFIX)) {
+      throw new Error(`Batch ${batchId} input key is outside tiling batches`);
     }
 
     console.log('Fetched batch info', {

@@ -7,6 +7,7 @@ import {
   SQSClient,
 } from '@aws-sdk/client-sqs';
 import {
+  DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
@@ -20,6 +21,7 @@ export interface QueueMessage {
   messageId: string;
   receiptHandle: string;
   body: string;
+  receiveCount: number;
 }
 
 export interface TaskQueue {
@@ -41,8 +43,23 @@ export interface LeaseTable {
   put(lease: Lease): Promise<void>;
   get(userId: string, leaseId: string): Promise<Lease | null>;
   active(userId: string): Promise<Lease[]>;
-  expire(userId: string, leaseId: string, expiresAt: number): Promise<void>;
+  expire(
+    userId: string,
+    leaseId: string,
+    expiresAt: number,
+    acked?: boolean,
+  ): Promise<void>;
+  // A short exclusive hold, so a check and the writes it allows cannot interleave.
+  lock(userId: string, name: string, seconds: number): Promise<boolean>;
+  fixGrade(
+    userId: string,
+    leaseId: string,
+    grade: NonNullable<NonNullable<Lease['test']>['grade']>,
+  ): Promise<void>;
+  unlock(userId: string, name: string): Promise<void>;
 }
+
+export const LOCK_PREFIX = 'lock#';
 
 const sqs = new SQSClient({});
 const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -61,6 +78,7 @@ export const sqsTaskQueue: TaskQueue = {
         QueueUrl: url,
         MaxNumberOfMessages: max,
         MessageAttributeNames: ['All'],
+        MessageSystemAttributeNames: ['ApproximateReceiveCount'],
         VisibilityTimeout: visibility,
       }),
     );
@@ -71,6 +89,9 @@ export const sqsTaskQueue: TaskQueue = {
               messageId: message.MessageId,
               receiptHandle: message.ReceiptHandle,
               body: message.Body ?? '',
+              receiveCount: Number(
+                message.Attributes?.ApproximateReceiveCount ?? 1,
+              ),
             },
           ]
         : [],
@@ -127,8 +148,9 @@ export const dynamoLeaseTable: LeaseTable = {
       const result: QueryCommandOutput = await dynamo.send(
         new QueryCommand({
           TableName: table(),
-          KeyConditionExpression: 'userId = :user',
-          FilterExpression: 'expiresAt > :now',
+          IndexName: 'byExpiry',
+          KeyConditionExpression: 'userId = :user AND expiresAt > :now',
+          ConsistentRead: true,
           ExpressionAttributeValues: {
             ':user': userId,
             ':now': Math.floor(Date.now() / 1000),
@@ -136,21 +158,80 @@ export const dynamoLeaseTable: LeaseTable = {
           ExclusiveStartKey: start,
         }),
       );
-      leases.push(...((result.Items as Lease[]) ?? []));
+      leases.push(
+        ...((result.Items as Lease[]) ?? []).filter(
+          (l) => !l.leaseId.startsWith(LOCK_PREFIX),
+        ),
+      );
       start = result.LastEvaluatedKey;
     } while (start);
     return leases;
   },
-  async expire(userId, leaseId, expiresAt) {
+  async lock(userId, name, seconds) {
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      await dynamo.send(
+        new PutCommand({
+          TableName: table(),
+          Item: {
+            userId,
+            leaseId: `${LOCK_PREFIX}${name}`,
+            expiresAt: now + seconds,
+            deleteAfter: now + seconds + DELETE_AFTER,
+          },
+          ConditionExpression:
+            'attribute_not_exists(leaseId) OR expiresAt < :now',
+          ExpressionAttributeValues: { ':now': now },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (
+        (error as { name?: string }).name === 'ConditionalCheckFailedException'
+      )
+        return false;
+      throw error;
+    }
+  },
+  async fixGrade(userId, leaseId, grade) {
+    try {
+      await dynamo.send(
+        new UpdateCommand({
+          TableName: table(),
+          Key: { userId, leaseId },
+          UpdateExpression: 'SET #test.#grade = :grade',
+          ConditionExpression:
+            'attribute_exists(#test) AND attribute_not_exists(#test.#grade)',
+          ExpressionAttributeNames: { '#test': 'test', '#grade': 'grade' },
+          ExpressionAttributeValues: { ':grade': grade },
+        }),
+      );
+    } catch (error) {
+      if (
+        (error as { name?: string }).name !== 'ConditionalCheckFailedException'
+      )
+        throw error;
+    }
+  },
+  async unlock(userId, name) {
+    await dynamo.send(
+      new DeleteCommand({
+        TableName: table(),
+        Key: { userId, leaseId: `${LOCK_PREFIX}${name}` },
+      }),
+    );
+  },
+  async expire(userId, leaseId, expiresAt, acked = false) {
     await dynamo.send(
       new UpdateCommand({
         TableName: table(),
         Key: { userId, leaseId },
-        UpdateExpression: 'SET expiresAt = :at, deleteAfter = :del',
+        UpdateExpression: `SET expiresAt = :at, deleteAfter = :del${acked ? ', acked = :acked' : ''}`,
         ConditionExpression: 'attribute_exists(leaseId)',
         ExpressionAttributeValues: {
           ':at': expiresAt,
           ':del': expiresAt + DELETE_AFTER,
+          ...(acked ? { ':acked': true } : {}),
         },
       }),
     );

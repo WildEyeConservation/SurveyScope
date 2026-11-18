@@ -1,4 +1,4 @@
-import { useCallback, useContext, useMemo, useRef } from 'react';
+import { useCallback, useContext, useRef } from 'react';
 import type {
   AnnotationLocation,
   TaskAcknowledgement,
@@ -22,10 +22,9 @@ interface UseCreateObservationProps {
   ack: TaskAcknowledgement;
   location?: AnnotationLocation;
   isTest?: boolean;
-  testPresetId?: string;
+  testLeaseId?: string;
   /** The ephemeral set the user's test annotations were written to. */
   testSetId?: string;
-  labelNames?: string[];
   /** Queue ID persisted on the Observation for server-side progress aggregation. */
   queueId?: string;
   /** Stable SQS message identifier used to make Observation creation retry safe. */
@@ -43,9 +42,8 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
     location,
     isTest,
     ack,
-    testPresetId,
+    testLeaseId,
     testSetId,
-    labelNames,
     queueId,
     observationId,
     observationSource,
@@ -66,34 +64,9 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
   const loadMetricsRef = useRef<ReturnType<typeof tileLoadStats.take>>();
   const plannedRef = useRef(false);
 
-  const grownBox = useMemo(
-    () =>
-      isTest && location?.testBoxGrown
-        ? {
-            x: location.x,
-            y: location.y,
-            width: location.width,
-            height: location.height,
-            imageId: location.image.id,
-          }
-        : undefined,
-    [
-      isTest,
-      location?.testBoxGrown,
-      location?.x,
-      location?.y,
-      location?.width,
-      location?.height,
-      location?.image.id,
-    ],
-  );
   const createTestResult = useCreateTestResult({
-    locationId: id,
-    annotationSetId,
+    testLeaseId: isTest ? testLeaseId : undefined,
     testSetId: isTest ? testSetId : undefined,
-    testPresetId,
-    labelNames,
-    grownBox,
   });
 
   const newAck = useCallback(

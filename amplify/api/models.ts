@@ -1,4 +1,9 @@
-import { DATA_CHANNELS } from '../../shared/dataChannels';
+import { randomUUID } from 'node:crypto';
+import {
+  adminField,
+  DATA_CHANNELS,
+  hasAdminChannel,
+} from '../../shared/dataChannels';
 import type { Access } from './access';
 import { badRequest, forbidden } from './errors';
 import type { Row, SchemaInfo } from './schema';
@@ -54,6 +59,12 @@ export interface ModelPolicy {
   guard?: string;
   // Set to the caller on create, as sub::username, and never changed by them.
   owner?: string;
+  // The only fields an update may change, besides the key; unset allows any.
+  updatable?: string[];
+  // Fields that may only name the caller.
+  selfFields?: string[];
+  // Survey ids are chosen by the server.
+  serverId?: boolean;
 }
 
 export type WriteGuard = (
@@ -168,6 +179,9 @@ function sanitizeOptions(raw: unknown): QueryOptions {
   return options;
 }
 
+const own = <T>(map: Record<string, T>, key: string): T | undefined =>
+  Object.hasOwn(map, key) ? map[key] : undefined;
+
 export class Models {
   private readonly rows = new Map<string, Promise<Row | null>>();
 
@@ -191,7 +205,7 @@ export class Models {
   }
 
   policy(model: string): ModelPolicy {
-    const policy = this.policies[model];
+    const policy = own(this.policies, model);
     if (!policy || !this.schema.hasModel(model))
       throw forbidden(`${model} is not available`);
     return policy;
@@ -237,7 +251,7 @@ export class Models {
   }
 
   private scopeSpec(model: string): ScopeSpec | undefined {
-    const policy = this.policies[model];
+    const policy = own(this.policies, model);
     if (policy) return policy.scope;
     if (!this.schema.hasModel(model)) return undefined;
     for (const field of ['projectId', 'surveyId']) {
@@ -392,7 +406,7 @@ export class Models {
       let prefix = '';
       for (let i = 0; i < segments.length - 1; i++) {
         const relation = this.schema.relation(current, segments[i]);
-        if (!relation || !this.policies[relation.model]?.read?.length) {
+        if (!relation || !own(this.policies, relation.model)?.read?.length) {
           throw forbidden(`Selection ${path} is not available`);
         }
         prefix = prefix ? `${prefix}.${segments[i]}` : segments[i];
@@ -537,20 +551,21 @@ export class Models {
     scope: Scope | null,
     fields?: string[],
   ) {
-    for (const relation of this.schema.belongsTo(model)) {
+    const checks = this.schema.belongsTo(model).map(async (relation) => {
       const [fk] = relation.targetNames;
-      if (relation.targetNames.length !== 1 || !isScalar(row[fk])) continue;
-      if (fields && !fields.includes(fk)) continue;
-      if (this.policies[model]?.crossScope?.includes(fk)) continue;
-      if (!this.scopeSpec(relation.model)) continue;
+      if (relation.targetNames.length !== 1 || !isScalar(row[fk])) return;
+      if (fields && !fields.includes(fk)) return;
+      if (own(this.policies, model)?.crossScope?.includes(fk)) return;
+      if (!this.scopeSpec(relation.model)) return;
       const [pk] = this.schema.primaryKey(relation.model);
       const parent = await this.load(relation.model, { [pk]: row[fk] });
-      if (!parent) continue;
+      if (!parent) return;
       const parentScope = await this.scopeOf(relation.model, parent);
       if (parentScope && !(await this.covers(scope, parentScope))) {
         throw forbidden(`${fk} belongs to another scope`);
       }
-    }
+    });
+    await Promise.all(checks);
   }
 
   private async covers(scope: Scope | null, other: Scope) {
@@ -573,6 +588,27 @@ export class Models {
       return other.organizationId === organizationId;
     }
     return true;
+  }
+
+  private assertSelfFields(model: string, row: Row, touched: string[]) {
+    if (this.access.isSysadmin) return;
+    for (const field of this.policy(model).selfFields ?? []) {
+      if (!touched.includes(field)) continue;
+      const value = row[field];
+      if (value !== null && value !== undefined && !this.access.isSelf(value))
+        throw forbidden(`${field} must name you`);
+    }
+  }
+
+  private assertUpdatable(model: string, changed: string[]) {
+    const allowed = this.policy(model).updatable;
+    if (!allowed) return;
+    const key = this.schema.primaryKey(model);
+    const refused = changed.filter(
+      (f) => !allowed.includes(f) && !key.includes(f),
+    );
+    if (refused.length)
+      throw badRequest(`${model} cannot change ${refused.join(', ')}`);
   }
 
   private async assertRestricted(
@@ -600,6 +636,7 @@ export class Models {
   private async create(model: string, input: unknown, options: QueryOptions) {
     if (!isObject(input)) throw badRequest('Invalid input');
     const row = this.writable(model, input);
+    if (this.policy(model).serverId) row.id = randomUUID();
     const owner = this.policy(model).owner;
     if (owner)
       row[owner] = `${this.access.actor.sub}::${this.access.actor.username}`;
@@ -610,6 +647,7 @@ export class Models {
       (f) => row[f] !== undefined && row[f] !== null,
     );
     await this.assertRestricted(model, set, row, scope, true);
+    this.assertSelfFields(model, row, set);
     await this.assertReferences(model, row, scope);
     if (this.schema.hasField(model, 'group')) {
       const group = await this.groupFor(scope);
@@ -661,7 +699,9 @@ export class Models {
     const changed = Object.keys(changes).filter(
       (f) => !sameValue(changes[f], existing[f]),
     );
+    this.assertUpdatable(model, changed);
     await this.assertRestricted(model, changed, existing, before);
+    this.assertSelfFields(model, merged, changed);
     await this.assertReferences(model, merged, after, changed);
     await this.guarded(model, 'update', changes);
     const result = await this.data.update(model, changes, {
@@ -688,10 +728,22 @@ export class Models {
   }
 
   async canSubscribe(model: string, field: string, value: string) {
-    const channels = DATA_CHANNELS[model] ?? [];
+    const channels = own(DATA_CHANNELS, model) ?? [];
     this.policy(model);
     if (field === 'all' && value === 'all')
       return channels.includes('*') && this.access.isSysadmin;
+    if (hasAdminChannel(model)) {
+      const admin = channels.find((f) => adminField(f) === field);
+      // The admin channel carries rows only admins may read.
+      if (admin) return this.allows(model, 'update', { [admin]: value });
+      // The plain channel only carries rows anyone in scope may read.
+      if (channels.includes(field))
+        return this.allows(model, 'read', {
+          [field]: value,
+          id: '',
+          hidden: false,
+        });
+    }
     if (!channels.includes(field)) return false;
     return this.allows(model, 'read', { [field]: value });
   }

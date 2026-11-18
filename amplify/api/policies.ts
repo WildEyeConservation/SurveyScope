@@ -49,13 +49,6 @@ const testPool = (
   check: async ({ access }, row) => test(await access.testPool(), row),
   fields,
 });
-const inTestPool = testPool(
-  (pool, r) =>
-    r.locationId === undefined || r.annotationSetId === undefined
-      ? undefined
-      : pool.locations.has(`${r.locationId}|${r.annotationSetId}`),
-  ['locationId', 'annotationSetId'],
-);
 const throughParent = (
   model: string,
   field: string,
@@ -84,6 +77,12 @@ const administered = (scope: ScopeSpec, read: Rule[] = []): ModelPolicy => ({
   read: [surveyAdmin, ...read],
   create: [surveyAdmin],
   update: [surveyAdmin],
+  delete: [surveyAdmin],
+});
+// Rows that backend functions write; admins may only read and remove them.
+const backendOwned = (scope: ScopeSpec, read: Rule[] = []): ModelPolicy => ({
+  scope,
+  read: [surveyAdmin, ...read],
   delete: [surveyAdmin],
 });
 
@@ -122,8 +121,20 @@ export const POLICIES: Record<string, ModelPolicy> = {
     read: [surveyMember, organizationAdmin, resultsReader],
     create: [organizationAdmin],
     update: [surveyAdmin],
-    delete: [surveyAdmin],
+    // Surveys are removed with deleteProjectInFull, which removes their rows too.
     restricted: [{ fields: ['tags'], rules: [], onCreate: true }],
+    serverId: true,
+    managed: ['pretileManifestS3Key', 'boundaryRecomputeLeaseUntil', 'hidden'],
+    updatable: [
+      'name',
+      'status',
+      'tags',
+      'tiledLocationSetId',
+      'defaultZoom',
+      'uploadDefaults',
+      'strataNetwork',
+      'boundaryRecomputeRequested',
+    ],
     scan: true,
   },
   Category: {
@@ -149,19 +160,22 @@ export const POLICIES: Record<string, ModelPolicy> = {
         ],
       },
     ],
+    managed: ['annotationCount'],
   },
-  AnnotationSet: administered({ survey: 'projectId' }, [
-    surveyMember,
-    resultsReader,
-  ]),
+  AnnotationSet: {
+    ...administered({ survey: 'projectId' }, [surveyMember, resultsReader]),
+    managed: ['register'],
+  },
   Camera: administered({ survey: 'projectId' }, [surveyMember, resultsReader]),
+  // Launch functions create queues; people only change the zoom.
   Queue: {
-    ...administered({ survey: 'projectId' }, [
+    ...backendOwned({ survey: 'projectId' }, [
       { all: [surveyMember, visibleQueue] },
     ]),
-    managed: ['url'],
+    update: [surveyAdmin],
+    updatable: ['zoom'],
   },
-  IndividualIdJob: administered({ survey: 'projectId' }, [surveyMember]),
+  IndividualIdJob: backendOwned({ survey: 'projectId' }, [surveyMember]),
   ProjectTestConfig: administered({ survey: 'projectId' }, [surveyMember]),
   TestPresetProject: {
     scope: { survey: 'projectId' },
@@ -182,26 +196,46 @@ export const POLICIES: Record<string, ModelPolicy> = {
   ShapefileExclusions: administered({ survey: 'projectId' }, [resultsReader]),
   ImageSet: administered({ survey: 'projectId' }),
   ImageSetMembership: administered({ parent: 'imageSetId' }),
-  LocationSet: administered({ survey: 'projectId' }),
-  LocationSetMembership: administered({ parent: 'locationSetId' }),
-  TasksOnAnnotationSet: administered({ parent: 'annotationSetId' }),
+  LocationSet: {
+    ...administered({ survey: 'projectId' }),
+    updatable: ['name', 'description'],
+  },
+  LocationSetMembership: backendOwned({ parent: 'locationSetId' }),
+  TasksOnAnnotationSet: backendOwned({ parent: 'annotationSetId' }),
   Transect: administered({ survey: 'projectId' }),
   CameraOverlap: administered({ survey: 'projectId' }),
-  TilingTask: administered({ survey: 'projectId' }),
-  TilingBatch: administered({ parent: 'tilingTaskId' }),
-  RegistrationProgress: administered({ survey: 'projectId' }),
-  RegistrationBucketStat: administered({ survey: 'projectId' }),
-  ImageProcessedBy: administered({ survey: 'projectId' }),
-  Object: administered({ survey: 'projectId' }),
-  Image: administered({ survey: 'projectId' }, [taskImage('id')]),
+  TilingTask: backendOwned({ survey: 'projectId' }),
+  TilingBatch: backendOwned({ parent: 'tilingTaskId' }),
+  RegistrationProgress: backendOwned({ survey: 'projectId' }),
+  RegistrationBucketStat: backendOwned({ survey: 'projectId' }),
+  ImageProcessedBy: backendOwned({ survey: 'projectId' }),
+  Object: backendOwned({ survey: 'projectId' }),
+  Image: {
+    ...administered({ survey: 'projectId' }, [taskImage('id')]),
+    managed: ['tiledAt'],
+    updatable: [
+      'transectId',
+      'latitude',
+      'longitude',
+      'cameraId',
+      'boundaryOverride',
+    ],
+  },
   ImageFile: {
     scope: { survey: 'projectId' },
     read: [surveyAdmin, taskImage('imageId')],
     delete: [surveyAdmin],
   },
-  Location: administered({ survey: 'projectId' }, [
-    task((t, r) => t.location(r.id, r.imageId, r.projectId), ['id', 'imageId']),
-  ]),
+  Location: {
+    ...administered({ survey: 'projectId' }, [
+      task(
+        (t, r) => t.location(r.id, r.imageId, r.projectId),
+        ['id', 'imageId'],
+      ),
+    ]),
+    update: undefined,
+    managed: ['confidence'],
+  },
   Annotation: {
     scope: { survey: 'projectId' },
     read: [
@@ -225,16 +259,43 @@ export const POLICIES: Record<string, ModelPolicy> = {
         ['imageId', 'setId'],
       ),
     ],
+    // Annotators remove their own marks; whole-job leases may tidy anyone's.
     delete: [
       surveyAdmin,
-      task(
-        (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
-        ['imageId', 'setId'],
-      ),
+      {
+        all: [
+          task(
+            (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
+            ['imageId', 'setId'],
+          ),
+          {
+            check: async (ctx, r) =>
+              r.owner === undefined
+                ? undefined
+                : r.owner === null ||
+                  ctx.access.isSelf(r.owner) ||
+                  Boolean((await ctx.access.tasks()).wholeSurvey(r.projectId)),
+            fields: ['owner', 'projectId'],
+          },
+        ],
+      },
     ],
     restricted: [
       { fields: ['projectId', 'imageId', 'setId'], rules: [surveyAdmin] },
     ],
+    managed: ['infoTaggedBy', 'infoTagRevision', 'createdAt'],
+    updatable: [
+      'x',
+      'y',
+      'categoryId',
+      'obscured',
+      'oov',
+      'outsideBoundary',
+      'objectId',
+      'reviewCatId',
+      'reviewedBy',
+    ],
+    selfFields: ['reviewedBy'],
     owner: 'owner',
   },
   Observation: {
@@ -243,15 +304,17 @@ export const POLICIES: Record<string, ModelPolicy> = {
     create: [
       surveyAdmin,
       task(
-        (t, r) => t.observes(r.locationId, r.annotationSetId, r.projectId),
-        ['locationId', 'annotationSetId'],
+        (t, r) =>
+          t.observes(r.id, r.locationId, r.annotationSetId, r.projectId),
+        ['id', 'locationId', 'annotationSetId'],
       ),
     ],
     delete: [surveyAdmin],
+    managed: ['createdAt'],
     owner: 'owner',
   },
   ImageNeighbour: {
-    ...administered({ survey: 'projectId' }, [
+    ...backendOwned({ survey: 'projectId' }, [
       task(
         (t, r) =>
           t.image(r.image1Id, r.projectId) || t.image(r.image2Id, r.projectId),
@@ -262,42 +325,29 @@ export const POLICIES: Record<string, ModelPolicy> = {
       surveyAdmin,
       task((t, r) => t.pair(r.image1Id, r.image2Id), ['image1Id', 'image2Id']),
     ],
+    updatable: [
+      'homography',
+      'homographySource',
+      'skipped',
+      'suggestedPointsKept',
+    ],
   },
   InfoTag: administered({ survey: 'projectId' }, [surveyMember]),
-  AnnotationInfoTag: administered({ survey: 'projectId' }, [
+  AnnotationInfoTag: backendOwned({ survey: 'projectId' }, [
     throughParent('Annotation', 'annotationId', 'read'),
   ]),
-  IndividualIdTransect: administered({ survey: 'projectId' }, [
+  IndividualIdTransect: backendOwned({ survey: 'projectId' }, [
     { self: 'assignedUserId' },
   ]),
+  // Written by /tasks/test/submit, which grades on the server.
   TestResult: {
     scope: { survey: 'projectId' },
     read: [{ self: 'userId' }, surveyAdmin],
-    create: [
-      {
-        all: [
-          { self: 'userId' },
-          surveyMember,
-          task((t, r) => t.tested(r.locationId), ['locationId']),
-        ],
-      },
-    ],
-    update: [{ self: 'userId' }, surveyAdmin],
     delete: [surveyAdmin],
-    restricted: [
-      {
-        fields: ['userId', 'locationId', 'annotationSetId', 'testPresetId'],
-        rules: [surveyAdmin],
-      },
-    ],
-    // The tested location belongs to the preset's own survey.
-    crossScope: ['locationId', 'annotationSetId'],
   },
   TestResultCategoryCount: {
     scope: { parent: 'testResultId' },
     read: [throughParent('TestResult', 'testResultId', 'read')],
-    create: [throughParent('TestResult', 'testResultId', 'update')],
-    update: [throughParent('TestResult', 'testResultId', 'update')],
     delete: [surveyAdmin],
   },
   TestPresetLocation: {
@@ -315,16 +365,13 @@ export const POLICIES: Record<string, ModelPolicy> = {
     create: [organizationAdmin],
     delete: [organizationAdmin],
   },
-  LocationAnnotationCount: administered({ parent: 'annotationSetId' }, [
-    inTestPool,
-  ]),
+  LocationAnnotationCount: administered({ parent: 'annotationSetId' }),
   JollyResult: {
     scope: { survey: 'surveyId' },
     read: [
       surveyAdmin,
       { results: { survey: 'surveyId', set: 'annotationSetId' } },
     ],
-    update: [surveyAdmin],
     delete: [surveyAdmin],
   },
   JollyResultsMembership: {

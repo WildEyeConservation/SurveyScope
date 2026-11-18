@@ -457,6 +457,7 @@ export class MemoryData implements DataLayer, AccessStore {
   }
 
   leases: Lease[] = [];
+  locks = new Set<string>();
 
   async activeLeases(userId: string) {
     const now = Math.floor(Date.now() / 1000);
@@ -512,7 +513,9 @@ export class MemoryQueue implements TaskQueue {
   readonly removed: string[] = [];
   readonly visibilities: [string, number][] = [];
   private received = 0;
-  constructor(readonly messages: { body: unknown }[] = []) {}
+  constructor(
+    readonly messages: { body: unknown; receiveCount?: number }[] = [],
+  ) {}
 
   async receive(_url: string, _visibility: number, max: number) {
     return this.messages.splice(0, max).map((next) => {
@@ -521,6 +524,7 @@ export class MemoryQueue implements TaskQueue {
         messageId: id,
         receiptHandle: `receipt-${id}`,
         body: JSON.stringify(next.body),
+        receiveCount: next.receiveCount ?? 1,
       };
     });
   }
@@ -558,16 +562,34 @@ export function operationContext(
       );
     },
     active: (userId) => data.activeLeases(userId),
-    async expire(userId, leaseId, expiresAt) {
+    async lock(userId, name) {
+      if (data.locks.has(`${userId}|${name}`)) return false;
+      data.locks.add(`${userId}|${name}`);
+      return true;
+    },
+    async unlock(userId, name) {
+      data.locks.delete(`${userId}|${name}`);
+    },
+    async fixGrade(userId, leaseId, grade) {
       const lease = data.leases.find(
         (l) => l.userId === userId && l.leaseId === leaseId,
       );
-      if (lease) lease.expiresAt = expiresAt;
+      if (lease?.test && !lease.test.grade) lease.test.grade = grade;
+    },
+    async expire(userId, leaseId, expiresAt, acked = false) {
+      const lease = data.leases.find(
+        (l) => l.userId === userId && l.leaseId === leaseId,
+      );
+      if (lease) {
+        lease.expiresAt = expiresAt;
+        if (acked) lease.acked = true;
+      }
     },
   };
   const tasks: TaskContext = {
     access,
     models,
+    data,
     queue: extra.queue ?? new MemoryQueue(),
     leases,
     neighbours: async (imageId) =>
@@ -580,7 +602,7 @@ export function operationContext(
     models,
     tasks,
     launches: extra.launches ?? {
-      readJson: async () => ({}),
+      readJson: async () => ({ value: {} }),
       writeJson: async () => '',
       remove: async () => {},
       projectsOf: async () => new Map(),

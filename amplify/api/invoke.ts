@@ -13,7 +13,11 @@ function functionName(fn: string) {
     .send(
       new GetParameterCommand({ Name: process.env.API_OPERATION_FUNCTIONS }),
     )
-    .then((r) => JSON.parse(r.Parameter?.Value ?? '{}'));
+    .then((r) => JSON.parse(r.Parameter?.Value ?? '{}'))
+    .catch((error) => {
+      functionNames = undefined;
+      throw error;
+    });
   return functionNames.then((names) => {
     const name = names[fn];
     if (!name) throw new Error(`No function registered for ${fn}`);

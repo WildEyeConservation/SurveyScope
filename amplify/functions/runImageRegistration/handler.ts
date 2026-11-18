@@ -756,6 +756,21 @@ export const handler: RunImageRegistrationHandler = async (event) => {
         >,
       'camerasByProjectId'
     );
+    const projectCameraIds = new Set(cameras.map((camera) => camera.id));
+    const foreignCameraIds = [
+      ...new Set(
+        images
+          .map((image) => image.cameraId)
+          .filter((id): id is string => !!id && !projectCameraIds.has(id))
+      ),
+    ];
+    if (foreignCameraIds.length > 0) {
+      console.error('Images reference cameras outside the project', {
+        projectId,
+        cameraIds: foreignCameraIds.slice(0, 20),
+      });
+      throw new Error('Images reference cameras that do not belong to this project');
+    }
     cameraMasksById = new Map();
     for (const camera of cameras) {
       const parsed = parseCameraMasks(camera.masks);
@@ -766,7 +781,7 @@ export const handler: RunImageRegistrationHandler = async (event) => {
       (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
     );
 
-    const cameraOverlaps = await fetchAllPages<
+    const allCameraOverlaps = await fetchAllPages<
       CameraOverlap,
       'cameraOverlapsByProjectId'
     >(
@@ -779,6 +794,19 @@ export const handler: RunImageRegistrationHandler = async (event) => {
         >,
       'cameraOverlapsByProjectId'
     );
+
+    const cameraOverlaps = allCameraOverlaps.filter((overlap) => {
+      const inProject =
+        projectCameraIds.has(overlap.cameraAId) && projectCameraIds.has(overlap.cameraBId);
+      if (!inProject) {
+        console.error('Skipping camera overlap with a camera outside the project', {
+          projectId,
+          cameraAId: overlap.cameraAId,
+          cameraBId: overlap.cameraBId,
+        });
+      }
+      return inProject;
+    });
 
     const noCamImgs: MinimalImage[] = [];
 

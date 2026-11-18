@@ -117,6 +117,20 @@ describe('results sharing', () => {
     );
   });
 
+  it('lets survey admins revoke a link before it expires', async () => {
+    const data = fixture();
+    const args = { surveyId: 'p1', annotationSetId: 'a1' };
+    const { token } = (
+      await results.share(resultsContext(data, 'admin'), {
+        ...args,
+        expiresAt: Date.now() + 3600_000,
+      })
+    ).data as { token: string };
+    await denied(results.revoke(resultsContext(data, 'member'), args));
+    await results.revoke(resultsContext(data, 'admin'), args);
+    await denied(results.redeem(resultsContext(data, 'reader'), { token }));
+  });
+
   it('shows results readers only their own membership', async () => {
     const data = fixture();
     for (const userId of ['reader', 'other'])

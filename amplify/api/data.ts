@@ -31,7 +31,10 @@ export function amplifyData() {
       introspection: resourceConfig.API.GraphQL
         .modelIntrospection as Introspection,
     };
-  })();
+  })().catch((error) => {
+    setup = undefined;
+    throw error;
+  });
   return setup;
 }
 
@@ -107,6 +110,25 @@ async function all<T>(
   return items;
 }
 
+// Shared across requests in a container. Only grants are kept, so new access is seen at once.
+const CACHE_MS = 30_000;
+const cache = new Map<string, { at: number; value: unknown }>();
+
+function kept(value: unknown) {
+  return Array.isArray(value) ? value.length > 0 : Boolean(value);
+}
+
+async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value as T;
+  const value = await load();
+  if (kept(value)) {
+    if (cache.size > 5000) cache.clear();
+    cache.set(key, { at: Date.now(), value });
+  } else cache.delete(key);
+  return value;
+}
+
 export class AmplifyAccessStore implements AccessStore {
   constructor(
     private readonly client: LooseClient,
@@ -117,104 +139,122 @@ export class AmplifyAccessStore implements AccessStore {
     return this.leases.active(userId);
   }
 
-  async memberProjectIds(userId: string) {
-    const rows = await all<{ projectId: string }>((nextToken) =>
-      this.client.models.UserProjectMembership.userProjectMembershipsByUserId(
-        { userId },
-        { selectionSet: ['projectId'], nextToken },
-      ),
-    );
-    return [...new Set(rows.map((r) => r.projectId))];
+  memberProjectIds(userId: string) {
+    return cached(`memberProjects:${userId}`, async () => {
+      const rows = await all<{ projectId: string }>((nextToken) =>
+        this.client.models.UserProjectMembership.userProjectMembershipsByUserId(
+          { userId },
+          { selectionSet: ['projectId'], nextToken },
+        ),
+      );
+      return [...new Set(rows.map((r) => r.projectId))];
+    });
   }
 
-  async presetIdsOfProject(projectId: string) {
-    const rows = await all<{ testPresetId: string }>((nextToken) =>
-      this.client.models.TestPresetProject.testPresetsByProjectId(
-        { projectId },
-        { selectionSet: ['testPresetId'], nextToken },
-      ),
-    );
-    return rows.map((r) => r.testPresetId);
+  presetIdsOfProject(projectId: string) {
+    return cached(`presets:${projectId}`, async () => {
+      const rows = await all<{ testPresetId: string }>((nextToken) =>
+        this.client.models.TestPresetProject.testPresetsByProjectId(
+          { projectId },
+          { selectionSet: ['testPresetId'], nextToken },
+        ),
+      );
+      return rows.map((r) => r.testPresetId);
+    });
   }
 
   presetLocations(presetId: string) {
-    return all<{ locationId: string; annotationSetId: string }>((nextToken) =>
-      this.client.models.TestPresetLocation.locationsByTestPresetId(
-        { testPresetId: presetId },
-        { selectionSet: ['locationId', 'annotationSetId'], nextToken },
-      ),
-    );
+    return cached(`presetLocations:${presetId}`, async () => {
+      return all<{ locationId: string; annotationSetId: string }>((nextToken) =>
+        this.client.models.TestPresetLocation.locationsByTestPresetId(
+          { testPresetId: presetId },
+          { selectionSet: ['locationId', 'annotationSetId'], nextToken },
+        ),
+      );
+    });
   }
 
-  async neighbours(imageId: string) {
-    const [left, right] = await Promise.all(
-      (
-        ['imageNeighboursByImage1key', 'imageNeighboursByImage2key'] as const
-      ).map((query) =>
-        all<{ image1Id: string; image2Id: string }>((nextToken) =>
-          this.client.models.ImageNeighbour[query](
-            query === 'imageNeighboursByImage1key'
-              ? { image1Id: imageId }
-              : { image2Id: imageId },
-            { selectionSet: ['image1Id', 'image2Id'], nextToken },
+  neighbours(imageId: string) {
+    return cached(`neighbours:${imageId}`, async () => {
+      const [left, right] = await Promise.all(
+        (
+          ['imageNeighboursByImage1key', 'imageNeighboursByImage2key'] as const
+        ).map((query) =>
+          all<{ image1Id: string; image2Id: string }>((nextToken) =>
+            this.client.models.ImageNeighbour[query](
+              query === 'imageNeighboursByImage1key'
+                ? { image1Id: imageId }
+                : { image2Id: imageId },
+              { selectionSet: ['image1Id', 'image2Id'], nextToken },
+            ),
           ),
         ),
-      ),
-    );
-    return [...left, ...right];
+      );
+      return [...left, ...right];
+    });
   }
 
-  async organizationMembership(organizationId: string, userId: string) {
-    const result = await this.client.models.OrganizationMembership.get(
-      { organizationId, userId },
-      { selectionSet: ['organizationId', 'userId', 'isAdmin'] },
-    );
-    if (result.errors?.length) throw new Error(JSON.stringify(result.errors));
-    return result.data as { isAdmin?: boolean | null } | null;
+  organizationMembership(organizationId: string, userId: string) {
+    return cached(`orgMember:${organizationId}:${userId}`, async () => {
+      const result = await this.client.models.OrganizationMembership.get(
+        { organizationId, userId },
+        { selectionSet: ['organizationId', 'userId', 'isAdmin'] },
+      );
+      if (result.errors?.length) throw new Error(JSON.stringify(result.errors));
+      return result.data as { isAdmin?: boolean | null } | null;
+    });
   }
 
-  async organizationIds(userId: string) {
-    const memberships = await all<{ organizationId: string }>((nextToken) =>
-      this.client.models.OrganizationMembership.organizationsByUserId(
-        { userId },
-        { selectionSet: ['organizationId'], nextToken },
-      ),
-    );
-    return memberships.map((m) => m.organizationId);
+  organizationIds(userId: string) {
+    return cached(`orgIds:${userId}`, async () => {
+      const memberships = await all<{ organizationId: string }>((nextToken) =>
+        this.client.models.OrganizationMembership.organizationsByUserId(
+          { userId },
+          { selectionSet: ['organizationId'], nextToken },
+        ),
+      );
+      return memberships.map((m) => m.organizationId);
+    });
   }
 
-  async project(id: string) {
-    const result = await this.client.models.Project.get(
-      { id },
-      { selectionSet: ['id', 'organizationId'] },
-    );
-    if (result.errors?.length) throw new Error(JSON.stringify(result.errors));
-    return result.data as { id: string; organizationId: string } | null;
+  project(id: string) {
+    return cached(`project:${id}`, async () => {
+      const result = await this.client.models.Project.get(
+        { id },
+        { selectionSet: ['id', 'organizationId'] },
+      );
+      if (result.errors?.length) throw new Error(JSON.stringify(result.errors));
+      return result.data as { id: string; organizationId: string } | null;
+    });
   }
 
   projectMemberships(userId: string, projectId: string) {
-    return all<{ isAdmin?: boolean | null }>((nextToken) =>
-      this.client.models.UserProjectMembership.userProjectMembershipsByUserId(
-        { userId },
-        {
-          filter: { projectId: { eq: projectId } },
-          selectionSet: ['id', 'isAdmin'],
-          nextToken,
-        },
-      ),
-    );
+    return cached(`projectMembers:${userId}:${projectId}`, async () => {
+      return all<{ isAdmin?: boolean | null }>((nextToken) =>
+        this.client.models.UserProjectMembership.userProjectMembershipsByUserId(
+          { userId },
+          {
+            filter: { projectId: { eq: projectId } },
+            selectionSet: ['id', 'isAdmin'],
+            nextToken,
+          },
+        ),
+      );
+    });
   }
 
   resultsMemberships(surveyId: string, userId: string) {
-    return all<{ annotationSetId: string }>((nextToken) =>
-      this.client.models.JollyResultsMembership.jollyResultsMembershipsBySurveyId(
-        { surveyId },
-        {
-          filter: { userId: { eq: userId } },
-          selectionSet: ['annotationSetId'],
-          nextToken,
-        },
-      ),
-    );
+    return cached(`results:${surveyId}:${userId}`, async () => {
+      return all<{ annotationSetId: string }>((nextToken) =>
+        this.client.models.JollyResultsMembership.jollyResultsMembershipsBySurveyId(
+          { surveyId },
+          {
+            filter: { userId: { eq: userId } },
+            selectionSet: ['annotationSetId'],
+            nextToken,
+          },
+        ),
+      );
+    });
   }
 }

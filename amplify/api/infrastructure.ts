@@ -64,6 +64,10 @@ export function installApi(props: {
   tables: Record<string, dynamodb.ITable>;
   graphqlApi: IConstruct;
   dispatchTargetsParameterName: string;
+  // Keeps the router's capacity apart from batch pipelines; unset leaves it shared.
+  reservedConcurrency?: number;
+  // Warm instances kept ready; they are billed while idle.
+  provisionedConcurrency?: number;
 }) {
   const { router, publisher } = props;
   const stack = Stack.of(router);
@@ -76,6 +80,10 @@ export function installApi(props: {
     encryption: dynamodb.TableEncryption.AWS_MANAGED,
     timeToLiveAttribute: 'deleteAfter',
     removalPolicy: RemovalPolicy.DESTROY,
+  });
+  leases.addLocalSecondaryIndex({
+    indexName: 'byExpiry',
+    sortKey: { name: 'expiresAt', type: dynamodb.AttributeType.NUMBER },
   });
   leases.grantReadWriteData(router);
   (router as lambda.Function).addEnvironment(
@@ -147,18 +155,31 @@ export function installApi(props: {
     functionsParameter.parameterName,
   );
 
+  if (props.reservedConcurrency) {
+    (
+      router.node.defaultChild as lambda.CfnFunction
+    ).reservedConcurrentExecutions = props.reservedConcurrency;
+  }
+  const target = props.provisionedConcurrency
+    ? (router as lambda.Function).addAlias('live', {
+        provisionedConcurrentExecutions: props.provisionedConcurrency,
+      })
+    : router;
+
   const httpApi = new apigw.HttpApi(stack, 'SurveyScopeApi', {
     corsPreflight: {
       allowOrigins: ['*'],
       allowHeaders: ['authorization', 'content-type'],
       allowMethods: [apigw.CorsHttpMethod.POST],
+      // The client times live-update windows from the server's clock.
+      exposeHeaders: ['date'],
       maxAge: Duration.hours(1),
     },
   });
   httpApi.addRoutes({
     path: '/{proxy+}',
     methods: [apigw.HttpMethod.POST],
-    integration: new HttpLambdaIntegration('Router', router),
+    integration: new HttpLambdaIntegration('Router', target),
     authorizer: new HttpUserPoolAuthorizer('Cognito', props.userPool, {
       userPoolClients: [props.userPoolClient],
     }),

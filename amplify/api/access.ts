@@ -156,18 +156,28 @@ export class Access {
         locations: new Set(),
         setIds: new Set(),
       };
-      for (const projectId of await this.store.memberProjectIds(this.userId)) {
-        if (!(await this.surveyStanding(projectId))) continue;
-        for (const presetId of await this.store.presetIdsOfProject(projectId)) {
-          if (pool.presetIds.has(presetId)) continue;
-          pool.presetIds.add(presetId);
-          for (const location of await this.store.presetLocations(presetId)) {
-            pool.locations.add(
-              `${location.locationId}|${location.annotationSetId}`,
-            );
-            pool.setIds.add(location.annotationSetId);
-          }
-        }
+      const projectIds = await this.store.memberProjectIds(this.userId);
+      const standing = await Promise.all(
+        projectIds.map((id) => this.surveyStanding(id)),
+      );
+      const presetIds = new Set(
+        (
+          await Promise.all(
+            projectIds
+              .filter((_, i) => standing[i])
+              .map((id) => this.store.presetIdsOfProject(id)),
+          )
+        ).flat(),
+      );
+      const locations = await Promise.all(
+        [...presetIds].map((id) => this.store.presetLocations(id)),
+      );
+      for (const presetId of presetIds) pool.presetIds.add(presetId);
+      for (const location of locations.flat()) {
+        pool.locations.add(
+          `${location.locationId}|${location.annotationSetId}`,
+        );
+        pool.setIds.add(location.annotationSetId);
       }
       return pool;
     });

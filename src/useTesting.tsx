@@ -6,7 +6,8 @@ import {
   useState,
   type MutableRefObject,
 } from 'react';
-import { startTest, type TestLocation } from './api/tasks';
+import type { Size } from '../shared/testTileBounds';
+import { startTest } from './api/tasks';
 import { GlobalContext, ProjectContext } from './Context';
 import type { Identifiable } from './TaskBuffer';
 import { fetchAllPaginatedResults } from './utils';
@@ -17,13 +18,14 @@ export type TestCandidate = {
   testPresetId: string;
 };
 
-export type CandidateFilter = (location: TestLocation) => boolean;
+export type TileSample = { tile: Size; image: Size };
+// Set in jobs whose tests are grown to a tile; answers no sample while unknown.
+export type TileSource = () => TileSample | undefined;
 
-// An extra check a candidate must pass; with it, no unfit fallback is served.
 export default function useTesting(
-  acceptRef?: MutableRefObject<CandidateFilter | undefined>,
+  growRef?: MutableRefObject<TileSource | undefined>,
 ) {
-  const { currentPM, project, categoriesHook } = useContext(ProjectContext)!;
+  const { currentPM, project } = useContext(ProjectContext)!;
   const { client } = useContext(GlobalContext)!;
 
   // Use ref for index to prevent race conditions when multiple fetcher calls happen concurrently
@@ -34,14 +36,19 @@ export default function useTesting(
   const primaryCandidates = useRef<TestCandidate[]>([]);
   const currentLocation = useRef<TestCandidate | null>(null);
   const unfitRef = useRef<Set<string>>(new Set());
+  // Tests are answered with this set's labels.
+  const jobSetIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     async function setup() {
       unfitRef.current = new Set();
+      jobSetIdRef.current = undefined;
       if (currentPM.queueId) {
-        client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
-          if (data?.zoom) setZoom(data.zoom);
+        const { data: queue } = await client.models.Queue.get({
+          id: currentPM.queueId,
         });
+        if (queue?.zoom) setZoom(queue.zoom);
+        jobSetIdRef.current = queue?.annotationSetId ?? undefined;
       }
 
       const { data: config } = await client.models.ProjectTestConfig.get({
@@ -154,96 +161,48 @@ export default function useTesting(
     }));
   }
 
+  // The server refuses tests the job's labels cannot answer, or that do not fit a tile.
   const getTestLocation = useCallback(async () => {
     const candidateEntries = [...primaryCandidates.current];
-    if (candidateEntries.length === 0) {
-      throw new Error('No primary candidates available for testing');
-    }
     const length = candidateEntries.length;
-    const accept = acceptRef?.current;
-    // The location is unreadable until its test lease starts.
-    const pick = async (entry: TestCandidate) => {
-      if (!accept) return { entry, started: false };
-      if (unfitRef.current.has(entry.locationId)) return null;
-      const { location } = await startTest({ projectId: project.id, ...entry });
-      if (accept(location)) return { entry, started: true };
-      unfitRef.current.add(entry.locationId);
-      return null;
-    };
+    const jobAnnotationSetId = jobSetIdRef.current;
+    if (length === 0 || !jobAnnotationSetId) return null;
+    const grow = growRef?.current;
+    const tile = grow?.();
+    if (grow && !tile) return null;
 
     // Capture and immediately increment the index to prevent race conditions
     // when multiple concurrent fetcher calls happen
     const startIndex = iRef.current;
     iRef.current = (startIndex + 1) % length;
 
-    // Try each candidate once, wrapping around if necessary
     for (let attempt = 0; attempt < length; attempt++) {
       const currentIndex = (startIndex + attempt) % length;
       const entry = candidateEntries[currentIndex];
-      const categoryCounts = await fetchAllPaginatedResults(
-        client.models.LocationAnnotationCount
-          .categoryCountsByLocationIdAndAnnotationSetId,
-        {
-          locationId: entry.locationId,
-          annotationSetId: { eq: entry.annotationSetId },
-          selectionSet: ['category.name'],
-        },
-      );
-      const testCategories = categoryCounts.map((c) =>
-        c.category.name.toLowerCase(),
-      );
-      const surveyCategories = categoriesHook.data?.map((c) =>
-        c.name.toLowerCase(),
-      );
-      const missingCategories = testCategories.filter(
-        (c) => !surveyCategories?.includes(c),
-      );
-      // Return the first valid test location
-      const picked = missingCategories.length === 0 ? await pick(entry) : null;
-      if (picked) {
-        // Update ref to skip past this entry for next call
+      if (unfitRef.current.has(entry.locationId)) continue;
+      const started = await startTest({
+        projectId: project.id,
+        ...entry,
+        jobAnnotationSetId,
+        ...(tile ? { tile } : {}),
+      });
+      if (started) {
         iRef.current = (currentIndex + 1) % length;
-        return picked;
+        return { entry, started };
       }
+      unfitRef.current.add(entry.locationId);
     }
-    // If no valid candidate found, fallback to the next in sequence
-    if (accept) {
-      for (let attempt = 0; attempt < length; attempt++) {
-        const picked = await pick(
-          candidateEntries[(startIndex + attempt) % length],
-        );
-        if (picked) return picked;
-      }
-      return null;
-    }
-    const fallbackIndex = startIndex % length;
-    console.warn(
-      'No valid test location found, defaulting to candidate',
-      candidateEntries[fallbackIndex],
-    );
-    iRef.current = (fallbackIndex + 1) % length;
-    return { entry: candidateEntries[fallbackIndex], started: false };
-  }, [client, categoriesHook.data, acceptRef, project.id]);
+    return null;
+  }, [growRef, project.id]);
 
   const fetcher = useCallback(async (): Promise<Identifiable | null> => {
     const picked = await getTestLocation();
-    const location = picked?.entry ?? null;
-
-    currentLocation.current = location;
-
-    if (!location) {
+    currentLocation.current = picked?.entry ?? null;
+    if (!picked) {
       console.warn('No location found for testing');
       return null;
     }
-
-    if (!picked?.started) {
-      await startTest({
-        projectId: project.id,
-        testPresetId: location.testPresetId,
-        locationId: location.locationId,
-        annotationSetId: location.annotationSetId,
-      });
-    }
+    const { entry: location, started } = picked;
 
     const id = crypto.randomUUID();
     const body = {
@@ -258,33 +217,22 @@ export default function useTesting(
       skipLocationWithAnnotations: false,
       zoom: zoom,
       testPresetId: location.testPresetId,
+      testLeaseId: started.leaseId,
+      testBox: started.grown ? started.box : undefined,
+      testContext: started.context,
       ack: () => {
         console.log('Ack successful for test');
       },
       isTest: true,
     };
     return body;
-  }, [getTestLocation, zoom, project.id]);
+  }, [getTestLocation, zoom]);
 
   const fetchWhenReady = useCallback(async (): Promise<Identifiable | null> => {
     await setupPromiseRef.current;
     if (primaryCandidates.current.length === 0) return null;
-    /*
-    The survey's categories load asynchronously and read as an empty array until
-    they arrive (useOptimisticUpdates returns `data ?? []`). getTestLocation
-    rejects any candidate using a category the survey does not have, so against
-    an empty list *every* candidate fails and the fallback serves a test that may
-    use labels the annotator has no way to pick.
-
-    Defer instead. Returning null simply leaves the standby slot unfilled, and
-    because this callback depends on categoriesHook.data, its identity changes
-    once the categories land — which re-runs TaskBuffer's standby effect and
-    resolves a test location properly. It also avoids a round of per-candidate
-    LocationAnnotationCount queries whose outcome is a foregone conclusion.
-    */
-    if (categoriesHook.data.length === 0) return null;
     return fetcher();
-  }, [fetcher, categoriesHook.data]);
+  }, [fetcher]);
 
   return {
     fetcher: fetchWhenReady,

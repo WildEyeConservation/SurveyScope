@@ -3,7 +3,7 @@ import type { AttributeValue } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { HttpRequest } from '@smithy/protocol-http';
 import { SignatureV4 } from '@smithy/signature-v4';
-import { channelsFor } from '../../shared/dataChannels';
+import { channelsFor, epochAt } from '../../shared/dataChannels';
 
 interface StreamRecord {
   eventName: 'INSERT' | 'MODIFY' | 'REMOVE';
@@ -56,6 +56,7 @@ function modelOf(record: StreamRecord) {
 }
 
 export const handler = async (event: { Records: StreamRecord[] }) => {
+  const epoch = epochAt(Date.now());
   const byChannel = new Map<string, string[]>();
   const add = (
     channel: string,
@@ -75,9 +76,9 @@ export const handler = async (event: { Records: StreamRecord[] }) => {
     const after = record.dynamodb.NewImage
       ? unmarshall(record.dynamodb.NewImage)
       : undefined;
-    const afterChannels = after ? channelsFor(model, after) : [];
+    const afterChannels = after ? channelsFor(model, after, epoch) : [];
     if (before) {
-      for (const channel of channelsFor(model, before)) {
+      for (const channel of channelsFor(model, before, epoch)) {
         if (!afterChannels.includes(channel)) add(channel, 'delete', before);
       }
     }

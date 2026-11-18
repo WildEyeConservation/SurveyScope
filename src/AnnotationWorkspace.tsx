@@ -30,7 +30,6 @@ import useImageStats from './useImageStats';
 import { useImageInfoTags } from './useInfoTags';
 import { useOptimisticUpdates } from './useOptimisticUpdates';
 import useTaskCompletion, { WaitingOverlay } from './useTaskCompletion';
-import { fetchAllPaginatedResults } from './utils';
 
 interface AnnotationSessionProps {
   location: AnnotationLocation;
@@ -44,7 +43,7 @@ interface AnnotationSessionProps {
   viewBoundsScale?: number;
   hideNavButtons?: boolean;
   isTest?: boolean;
-  testPresetId?: string;
+  testLeaseId?: string;
   testSetId?: string;
   queueId?: string;
   observationId?: string;
@@ -74,7 +73,7 @@ function AnnotationSession(props: AnnotationSessionProps) {
     visible,
     location,
     isTest,
-    testPresetId,
+    testLeaseId,
     testSetId,
     queueId,
     observationId,
@@ -93,16 +92,14 @@ function AnnotationSession(props: AnnotationSessionProps) {
     bearing,
     onBearingChange,
   } = props;
-  const labelNames = useMemo(() => categories.map((c) => c.name), [categories]);
   const { onNext, waiting, waitingMessage } = useTaskCompletion({
     location,
     ack,
     next,
     visible,
     isTest,
-    testPresetId,
+    testLeaseId,
     testSetId,
-    labelNames,
     queueId,
     observationId,
     observationSource,
@@ -149,8 +146,9 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     allowOutside,
     zoom,
     hideNavButtons,
-    testPresetId,
     isTest,
+    testLeaseId,
+    testContext,
     hideZoomSetting = false,
     queueId,
     observationId,
@@ -366,44 +364,6 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   ) as unknown as AnnotationsHook;
   const stats = useImageStats(annotationsHook);
 
-  const [testContext, setTestContext] = useState<{
-    annotations: ExtendedAnnotationType[];
-    categories: { id: string; name: string }[];
-  } | null>(null);
-  useEffect(() => {
-    if (!isTest) return;
-    let cancelled = false;
-    setTestContext(null);
-    Promise.all([
-      fetchAllPaginatedResults(
-        client.models.Annotation.annotationsByImageIdAndSetId,
-        {
-          imageId: location.image.id,
-          setId: { eq: annotationSetId },
-          limit: 10000,
-        },
-      ),
-      fetchAllPaginatedResults(
-        client.models.Category.categoriesByAnnotationSetId,
-        { annotationSetId, selectionSet: ['id', 'name'] },
-      ),
-    ])
-      .then(([annotations, categories]) => {
-        if (cancelled) return;
-        setTestContext({
-          annotations: annotations.filter(Boolean) as ExtendedAnnotationType[],
-          categories: categories.filter(Boolean),
-        });
-      })
-      .catch((error: unknown) => {
-        console.error('Failed to load test context annotations', error);
-        if (!cancelled) setTestContext({ annotations: [], categories: [] });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isTest, client, location.image.id, annotationSetId]);
-
   // Source tag written onto both annotations and observations.
   const source = useMemo(() => {
     const baseSource = taskTag ? `manual-${taskTag}` : 'manual';
@@ -412,8 +372,9 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
 
   // Tags are keyed off the real set: during a test the annotations live in an
   // ephemeral set, so there is nothing to look up there.
+  // A test's reference tags would reveal its answers.
   const infoTagsByAnnotation = useImageInfoTags(
-    location.image.id,
+    isTest ? null : location.image.id,
     annotationSetId,
   );
 
@@ -432,27 +393,11 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     if (!isTest) return undefined;
     if (!testContext || filteredCategories.length === 0) return null;
     return selectTestContextAnnotations({
-      annotations: testContext.annotations,
-      sourceCategories: testContext.categories,
+      annotations: testContext,
       jobCategories: filteredCategories,
-      location: {
-        x: location.x,
-        y: location.y,
-        width: location.width,
-        height: location.height,
-      },
       hideFnAnnotations,
     });
-  }, [
-    isTest,
-    testContext,
-    filteredCategories,
-    location.x,
-    location.y,
-    location.width,
-    location.height,
-    hideFnAnnotations,
-  ]);
+  }, [isTest, testContext, filteredCategories, hideFnAnnotations]);
 
   async function handleShare() {
     const windowUrl = new URL(window.location.href);
@@ -494,8 +439,8 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       next={next}
       ack={ack}
       hideNavButtons={hideNavButtons}
-      testPresetId={testPresetId}
       isTest={isTest}
+      testLeaseId={testLeaseId}
       testSetId={testSetId}
       queueId={queueId}
       observationId={observationId}

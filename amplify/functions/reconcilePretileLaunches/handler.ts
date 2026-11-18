@@ -10,6 +10,7 @@ import {
 } from '@aws-sdk/client-s3';
 import pLimit from 'p-limit';
 import { loadImageTileStates } from '../shared/loadImageTileStates';
+import { isUnder, PRETILE_MANIFEST_PREFIX } from '../shared/s3Keys';
 
 Amplify.configure(
   {
@@ -270,7 +271,22 @@ export const handler: Handler = async () => {
         if (!project.pretileManifestS3Key) {
           return { project: project.id, action: 'no-key' };
         }
+        if (!isUnder(project.pretileManifestS3Key, PRETILE_MANIFEST_PREFIX)) {
+          console.error('manifest key outside pretile manifests, skipping', {
+            projectId: project.id,
+            key: project.pretileManifestS3Key,
+          });
+          return { project: project.id, action: 'bad-key' };
+        }
         const manifest = await loadManifest(project.pretileManifestS3Key);
+        if (manifest && manifest.projectId !== project.id) {
+          console.error('manifest belongs to another project, skipping', {
+            projectId: project.id,
+            manifestProjectId: manifest.projectId,
+            key: project.pretileManifestS3Key,
+          });
+          return { project: project.id, action: 'manifest-mismatch' };
+        }
         if (!manifest) {
           console.warn('manifest missing, clearing pointer', {
             projectId: project.id,

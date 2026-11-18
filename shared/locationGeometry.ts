@@ -1,6 +1,22 @@
 /** A location box; (x, y) is its centre. */
 export type Box = { x: number; y: number; width: number; height: number };
 
+// Locations store a centre plus width/height; the boundary counts as inside.
+export function isWithinLocationBounds(
+  point: { x: number; y: number },
+  location: {
+    x: number;
+    y: number;
+    width?: number | null;
+    height?: number | null;
+  },
+): boolean {
+  return (
+    Math.abs(point.x - location.x) <= (location.width ?? 0) / 2 &&
+    Math.abs(point.y - location.y) <= (location.height ?? 0) / 2
+  );
+}
+
 export function isPointInBox(px: number, py: number, box: Box): boolean {
   const halfW = box.width / 2;
   const halfH = box.height / 2;

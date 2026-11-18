@@ -48,8 +48,8 @@ export async function recordWorkflowTask(
           ...(input.idempotencyKey
             ? { idempotencyKey: input.idempotencyKey }
             : {}),
-          activeTimeMs: input.activeTimeMs ?? 0,
-          waitingTimeMs: input.waitingTimeMs ?? 0,
+          activeTimeMs: Math.round(input.activeTimeMs ?? 0),
+          waitingTimeMs: Math.round(input.waitingTimeMs ?? 0),
           skipped: input.skipped ?? false,
           metrics: JSON.stringify(input.metrics ?? {}),
         },
