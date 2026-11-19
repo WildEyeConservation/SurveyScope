@@ -9,6 +9,7 @@ import { useUsers } from '../apiInterface';
 import { GlobalContext, UserContext } from '../Context';
 import { ensureFalsePositiveCategory } from '../falsePositiveCategory';
 import { loadRows } from '../rowChunks';
+import { extractUserIdFromOwner } from '../sightingQueries';
 import { fetchAllPaginatedResults } from '../utils';
 import { logAdminAction } from '../utils/adminActionLogger';
 import { plural, useLaunchLabel } from './launchLabel';
@@ -94,14 +95,17 @@ export default function QCReview({
   );
 
   const { users } = useUsers();
-  const userMap = useMemo(() => {
-    return users.reduce(
-      (acc, user) => {
-        acc[user.id] = user.name ?? user.email ?? user.id;
-        return acc;
-      },
-      {} as Record<string, string>,
-    );
+  const ownerName = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const u of users) byId.set(u.id, u.name || u.email || u.id);
+    // Owners are sub::username; listUsers ids can match either part.
+    return (owner: string) =>
+      owner
+        .split('::')
+        .map((part) => byId.get(part))
+        .find(Boolean) ??
+      extractUserIdFromOwner(owner) ??
+      owner;
   }, [users]);
 
   // Categories that have annotations, with completion status
@@ -144,9 +148,9 @@ export default function QCReview({
       if (a.owner) ownerIds.add(a.owner);
     }
     return Array.from(ownerIds).sort((a, b) =>
-      (userMap[a] ?? a).localeCompare(userMap[b] ?? b),
+      ownerName(a).localeCompare(ownerName(b)),
     );
-  }, [categoryAnnotations, userMap]);
+  }, [categoryAnnotations, ownerName]);
 
   // Computed sample size (respects annotator filter)
   const filteredUnreviewedCount = useMemo(() => {
@@ -494,7 +498,7 @@ export default function QCReview({
                           )
                         }
                       />
-                      {userMap[ownerId] ?? ownerId}
+                      {ownerName(ownerId)}
                     </label>
                   ))}
                 </div>

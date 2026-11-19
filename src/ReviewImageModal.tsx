@@ -15,11 +15,13 @@ export default function ReviewImageModal({
   show,
   onClose,
   stageRef,
+  onOpenInExplore,
   children,
 }: {
   show: boolean;
   onClose: () => void;
   stageRef: RefObject<HTMLDivElement>;
+  onOpenInExplore?: () => void;
   children: ReactNode;
 }) {
   const titleId = useId();
@@ -101,6 +103,11 @@ export default function ReviewImageModal({
             <Button variant='ghost' onClick={onClose}>
               Close
             </Button>
+            {onOpenInExplore && (
+              <Button className='ml-auto' onClick={onOpenInExplore}>
+                Open in Explore
+              </Button>
+            )}
           </div>
         </div>
       </div>

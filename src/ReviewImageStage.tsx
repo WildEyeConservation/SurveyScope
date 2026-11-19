@@ -1,17 +1,29 @@
-import { useContext, useEffect, type HTMLAttributes } from 'react';
+import {
+  useContext,
+  useEffect,
+  useRef,
+  type HTMLAttributes,
+  type ReactNode,
+} from 'react';
+import type {
+  NeighbourImageLookup,
+  OtherViewsHandler,
+  ViewerFocus,
+} from './annotationTypes';
 import { GlobalContext } from './Context';
-import ReviewImageViewer from './ReviewImageViewer';
 import {
   warmImage,
   type Point,
   type ViewerCount,
   type ViewerImage,
 } from './reviewImageView';
+import ReviewImageViewer from './ReviewImageViewer';
 
 export type StageSlot = {
   image: ViewerImage;
   points: Point[];
   counts: ViewerCount[];
+  annotationSetId?: string;
 };
 
 // Keep neighbouring viewers mounted to avoid loading delays when stepping.
@@ -29,6 +41,11 @@ export default function ReviewImageStage({
   onStep,
   bearingFor,
   onBearingChange,
+  otherViews,
+  neighbourOverlaps,
+  focusFor,
+  rightInset,
+  wrapSlot,
 }: {
   ids: string[];
   currentId: string;
@@ -39,17 +56,30 @@ export default function ReviewImageStage({
   onStep: (delta: number) => void;
   bearingFor?: (id: string) => number;
   onBearingChange?: (id: string, bearing: number) => void;
+  otherViews?: OtherViewsHandler;
+  neighbourOverlaps?: NeighbourImageLookup;
+  focusFor?: (id: string) => ViewerFocus | undefined;
+  rightInset?: number;
+  wrapSlot?: (id: string, viewer: ReactNode) => ReactNode;
 }) {
   const { client } = useContext(GlobalContext)!;
   const index = ids.indexOf(currentId);
+  const lookupRef = useRef(lookup);
+  lookupRef.current = lookup;
 
+  // Keyed on the ids themselves so edits that rebuild the list don't rewarm.
+  const warmKey =
+    index < 0
+      ? ''
+      : WARMED.map((offset) => ids[index + offset] ?? '')
+          .filter(Boolean)
+          .join(',');
   useEffect(() => {
-    if (!visible || !buffer || index < 0) return;
+    if (!visible || !buffer || !warmKey) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      for (const offset of WARMED) {
-        const id = ids[index + offset];
-        const slot = id ? lookup(id) : null;
+      for (const id of warmKey.split(',')) {
+        const slot = lookupRef.current(id);
         if (slot) warmImage(client, slot.image, slot.points, controller.signal);
       }
     }, WARM_DELAY_MS);
@@ -57,8 +87,9 @@ export default function ReviewImageStage({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [client, visible, buffer, index, ids, lookup]);
+  }, [client, visible, buffer, warmKey]);
 
+  const wrap = wrapSlot ?? ((_id: string, viewer: ReactNode) => viewer);
   const mounted = [currentId];
   if (buffer && index >= 0)
     for (const offset of MOUNTED) {
@@ -86,20 +117,27 @@ export default function ReviewImageStage({
               pointerEvents: isCurrent ? undefined : 'none',
             }}
           >
-            <ReviewImageViewer
-              image={slot.image}
-              annotationSetId={annotationSetId}
-              points={slot.points}
-              index={ids.indexOf(id)}
-              total={ids.length}
-              counts={slot.counts}
-              onStep={onStep}
-              visible={visible && isCurrent}
-              bearing={bearingFor?.(id)}
-              onBearingChange={
-                onBearingChange && ((bearing) => onBearingChange(id, bearing))
-              }
-            />
+            {wrap(
+              id,
+              <ReviewImageViewer
+                image={slot.image}
+                annotationSetId={slot.annotationSetId ?? annotationSetId}
+                points={slot.points}
+                index={ids.indexOf(id)}
+                total={ids.length}
+                counts={slot.counts}
+                onStep={onStep}
+                visible={visible && isCurrent}
+                bearing={bearingFor?.(id)}
+                onBearingChange={
+                  onBearingChange && ((bearing) => onBearingChange(id, bearing))
+                }
+                otherViews={otherViews}
+                neighbourOverlaps={neighbourOverlaps}
+                focus={focusFor?.(id)}
+                rightInset={rightInset}
+              />,
+            )}
           </div>
         );
       })}

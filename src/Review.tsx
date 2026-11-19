@@ -6,9 +6,10 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
 } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { AnnotationSetDropdown } from './AnnotationSetDropDown';
 import { GlobalContext, ManagementContext, ProjectContext } from './Context';
 
@@ -26,6 +27,13 @@ import DensityMap, { type DensitySource } from './DensityMap';
 import ReviewImages from './ReviewImages';
 import { CollapsedSidebar, SidebarCollapseButton } from './SidebarCollapse';
 import { useSyncViewerEdits } from './sightingQueries';
+import {
+  LabelPeek,
+  openInNewTab,
+  readExploreParams,
+  registerExplore,
+  type ExploreTarget,
+} from './species-notebook';
 import { Tab, Tabs } from './Tabs';
 import { useInfoTagData } from './useInfoTags';
 import { useSidebarCollapsed } from './useSidebarCollapsed';
@@ -39,8 +47,11 @@ export function Review({ showAnnotationSetDropdown = true }) {
   const [selectedUsers, setSelectedUsers] = useState<Option[]>([]);
   const [tab, setTab] = useState<'images' | 'map'>('map');
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
-  const [selectedAnnotationSet, setSelectedAnnotationSet] =
-    useState<string>('');
+  const [visitRequest, setVisitRequest] = useState<{
+    imageId: string;
+    seq: number;
+  } | null>(null);
+  const [chosenAnnotationSet, setSelectedAnnotationSet] = useState<string>('');
   const [primaryOnly, setPrimaryOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [sidebarCollapsed, toggleSidebar] = useSidebarCollapsed();
@@ -125,11 +136,83 @@ export function Review({ showAnnotationSetDropdown = true }) {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [users, projectMemberships]);
 
+  const routeSet = annotationSets?.some((set) => set.id === annotationSetId)
+    ? annotationSetId
+    : undefined;
+  const selectedAnnotationSet = showAnnotationSetDropdown
+    ? chosenAnnotationSet
+    : (routeSet ?? '');
+
+  const location = useLocation();
+  const visitImage = useCallback((imageId: string) => {
+    setVisitRequest((prev) => ({ imageId, seq: (prev?.seq ?? 0) + 1 }));
+    setTab('images');
+  }, []);
+  const switchToSet = useCallback(
+    (setId: string | null | undefined) => {
+      if (!selectedAnnotationSet && !showAnnotationSetDropdown) return false;
+      if (!setId || setId === selectedAnnotationSet) return true;
+      if (!showAnnotationSetDropdown) return false;
+      if (!annotationSets?.some((set) => set.id === setId)) return false;
+      setSelectedAnnotationSet(setId);
+      setSelectedCategories((selected) =>
+        selected.flatMap((option) => {
+          const match = categories?.find(
+            (c) => c.annotationSetId === setId && c.name === option.label,
+          );
+          return match ? [{ label: match.name, value: match.id }] : [];
+        }),
+      );
+      return true;
+    },
+    [
+      selectedAnnotationSet,
+      annotationSets,
+      categories,
+      showAnnotationSetDropdown,
+    ],
+  );
+  const showExploreTarget = useCallback(
+    (target: ExploreTarget) => {
+      const category = categories?.find((c) => c.id === target.categoryId);
+      if (!switchToSet(target.annotationSetId ?? category?.annotationSetId))
+        return false;
+      if (category) {
+        setSelectedCategories([{ label: category.name, value: category.id }]);
+      }
+      setSelectedUsers([]);
+      setSelectedInfoTags([]);
+      setSelectedTransectIds([]);
+      if (target.imageId) visitImage(target.imageId);
+      return true;
+    },
+    [categories, switchToSet, visitImage],
+  );
+  useEffect(
+    () => registerExplore(project.id, showExploreTarget),
+    [project.id, showExploreTarget],
+  );
+  const shownSearch = useRef<string | null>(null);
+  const categoriesLoaded = (categories?.length ?? 0) > 0;
   useEffect(() => {
-    if (annotationSetId && !showAnnotationSetDropdown) {
-      setSelectedAnnotationSet(annotationSetId);
-    }
-  }, [annotationSetId, showAnnotationSetDropdown]);
+    if (shownSearch.current === location.search) return;
+    const target = readExploreParams(project.id, location.search);
+    if (target?.categoryId && !categoriesLoaded) return;
+    if (
+      (target?.annotationSetId || !showAnnotationSetDropdown) &&
+      !annotationSets?.length
+    )
+      return;
+    shownSearch.current = location.search;
+    if (target) showExploreTarget(target);
+  }, [
+    categoriesLoaded,
+    annotationSets,
+    location.search,
+    project.id,
+    showAnnotationSetDropdown,
+    showExploreTarget,
+  ]);
 
   // --- Surveys of the same organization (cached) --------------------------
   const orgSurveysQuery = useQuery({
@@ -363,6 +446,17 @@ export function Review({ showAnnotationSetDropdown = true }) {
                       })) ?? []
                   }
                   placeholder='All labels'
+                  optionAddon={(option) => (
+                    <LabelPeek
+                      label={{
+                        projectId: project.id,
+                        name: option.label,
+                        color: categories?.find((c) => c.id === option.value)
+                          ?.color,
+                      }}
+                      tone='onLight'
+                    />
+                  )}
                 />
 
                 {/* Only tagged surveys get the filter; others would see an empty control. */}
@@ -496,6 +590,13 @@ export function Review({ showAnnotationSetDropdown = true }) {
               keepMounted
               activeTab={tab === 'map' ? 0 : 1}
               onTabChange={(index) => setTab(index === 0 ? 'map' : 'images')}
+              headerExtra={
+                tab === 'images' && (
+                  <span className='text-xs text-muted-foreground'>
+                    Annotations can only be added with label hotkeys
+                  </span>
+                )
+              }
             >
               <Tab label='Map'>
                 <div className='h-full w-full pt-4'>
@@ -509,10 +610,23 @@ export function Review({ showAnnotationSetDropdown = true }) {
                     onTransectsLoaded={handleTransectsLoaded}
                     primaryOnly={primaryOnly}
                     editable
+                    onOpenImage={({ imageId, surveyId, annotationSetId }) => {
+                      const target = {
+                        projectId: surveyId,
+                        imageId,
+                        annotationSetId,
+                      };
+                      if (
+                        surveyId !== project.id ||
+                        !switchToSet(annotationSetId)
+                      )
+                        openInNewTab(target);
+                      else visitImage(imageId);
+                    }}
                   />
                 </div>
               </Tab>
-              <Tab label='Images'>
+              <Tab label='Explore'>
                 <ReviewImages
                   surveyId={project.id}
                   annotationSetId={selectedAnnotationSet}
@@ -522,6 +636,7 @@ export function Review({ showAnnotationSetDropdown = true }) {
                   transectIds={selectedTransectIds}
                   selectedImageId={selectedImageId}
                   onSelectImage={setSelectedImageId}
+                  visitRequest={visitRequest}
                   visible={tab === 'images'}
                 />
               </Tab>
