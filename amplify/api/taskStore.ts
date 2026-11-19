@@ -60,15 +60,21 @@ export interface LeaseTable {
   unlock(userId: string, name: string): Promise<void>;
   // Small per-user records kept beside the leases, such as test cadence.
   getState(userId: string, name: string): Promise<Row | null>;
-  putState(userId: string, name: string, value: Row): Promise<void>;
+  // Applies a change under a version check, retrying when another wins.
+  updateState(
+    userId: string,
+    name: string,
+    change: (state: Row) => Row,
+  ): Promise<Row>;
 }
 
 // Release and acknowledgement are final; only an open lease can be extended.
 export type LeaseChange =
   | { kind: 'extend' | 'release' | 'ack'; expiresAt: number }
   | { kind: 'done' }
-  // A finished task adds to its queue's count once.
-  | { kind: 'counted' };
+  // A finished task adds to its queue's count once; undone if that write fails.
+  | { kind: 'counted' }
+  | { kind: 'uncounted' };
 
 export const LOCK_PREFIX = 'lock#';
 const STATE_PREFIX = 'state#';
@@ -245,49 +251,80 @@ export const dynamoLeaseTable: LeaseTable = {
     return (result.Item?.value as Row | undefined) ?? null;
   },
   // No expiresAt, so the expiry index never lists it as a lease.
-  async putState(userId, name, value) {
-    await dynamo.send(
-      new PutCommand({
-        TableName: table(),
-        Item: {
-          userId,
-          leaseId: `${STATE_PREFIX}${name}`,
-          value,
-          deleteAfter: Math.floor(Date.now() / 1000) + STATE_SECONDS,
-        },
-      }),
-    );
+  async updateState(userId, name, change) {
+    const key = { userId, leaseId: `${STATE_PREFIX}${name}` };
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const current = await dynamo.send(
+        new GetCommand({ TableName: table(), Key: key, ConsistentRead: true }),
+      );
+      const version = Number(current.Item?.version ?? 0);
+      const value = change((current.Item?.value as Row | undefined) ?? {});
+      try {
+        await dynamo.send(
+          new PutCommand({
+            TableName: table(),
+            Item: {
+              ...key,
+              value,
+              version: version + 1,
+              deleteAfter: Math.floor(Date.now() / 1000) + STATE_SECONDS,
+            },
+            ConditionExpression: !current.Item
+              ? 'attribute_not_exists(leaseId)'
+              : current.Item.version === undefined
+                ? 'attribute_not_exists(version)'
+                : 'version = :version',
+            ...(current.Item?.version !== undefined
+              ? { ExpressionAttributeValues: { ':version': version } }
+              : {}),
+          }),
+        );
+        return value;
+      } catch (error) {
+        if (
+          (error as { name?: string }).name !==
+          'ConditionalCheckFailedException'
+        )
+          throw error;
+      }
+    }
+    throw new Error(`Could not update ${name}`);
   },
   async transition(userId, leaseId, change) {
     const open =
       'attribute_exists(leaseId) AND attribute_not_exists(released) AND attribute_not_exists(acked)';
     const command =
-      change.kind === 'counted'
+      change.kind === 'uncounted'
         ? {
-            UpdateExpression: 'SET counted = :yes',
-            ConditionExpression:
-              'attribute_exists(leaseId) AND attribute_not_exists(counted)',
-            ExpressionAttributeValues: { ':yes': true },
+            UpdateExpression: 'REMOVE counted',
+            ConditionExpression: 'attribute_exists(leaseId)',
           }
-        : change.kind === 'done'
+        : change.kind === 'counted'
           ? {
-              UpdateExpression: 'SET done = :yes',
-              ConditionExpression: open,
+              UpdateExpression: 'SET counted = :yes',
+              ConditionExpression:
+                'attribute_exists(leaseId) AND attribute_not_exists(counted)',
               ExpressionAttributeValues: { ':yes': true },
             }
-          : {
-              UpdateExpression: `SET expiresAt = :at, deleteAfter = :del${
-                change.kind === 'extend'
-                  ? ''
-                  : `, ${change.kind === 'ack' ? 'acked' : 'released'} = :yes`
-              }`,
-              ConditionExpression: open,
-              ExpressionAttributeValues: {
-                ':at': change.expiresAt,
-                ':del': change.expiresAt + DELETE_AFTER,
-                ...(change.kind === 'extend' ? {} : { ':yes': true }),
-              },
-            };
+          : change.kind === 'done'
+            ? {
+                UpdateExpression: 'SET done = :yes',
+                ConditionExpression: open,
+                ExpressionAttributeValues: { ':yes': true },
+              }
+            : {
+                UpdateExpression: `SET expiresAt = :at, deleteAfter = :del${
+                  change.kind === 'extend'
+                    ? ''
+                    : `, ${change.kind === 'ack' ? 'acked' : 'released'} = :yes`
+                }`,
+                ConditionExpression: open,
+                ExpressionAttributeValues: {
+                  ':at': change.expiresAt,
+                  ':del': change.expiresAt + DELETE_AFTER,
+                  ...(change.kind === 'extend' ? {} : { ':yes': true }),
+                },
+              };
     try {
       await dynamo.send(
         new UpdateCommand({

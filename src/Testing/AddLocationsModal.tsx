@@ -29,6 +29,7 @@ import {
 } from './addLocationCandidates';
 import LightLocationView from './LightLocationView';
 import ProjectContext from './ProjectContext';
+import { savedOrThrow } from './savedOrThrow';
 
 type Props = {
   show: boolean;
@@ -425,21 +426,27 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       });
       if (lac) {
         // @ts-ignore: complex union types from generated client
-        await (client as any).models.LocationAnnotationCount.update({
-          locationId: cand.locationId,
-          categoryId,
-          annotationSetId: cand.annotationSetId,
-          count,
-        });
+        savedOrThrow(
+          await (client as any).models.LocationAnnotationCount.update({
+            locationId: cand.locationId,
+            categoryId,
+            annotationSetId: cand.annotationSetId,
+            count,
+          }),
+          'save the answer key',
+        );
       } else {
         // @ts-ignore: complex union types from generated client
-        await (client as any).models.LocationAnnotationCount.create({
-          locationId: cand.locationId,
-          categoryId,
-          annotationSetId: cand.annotationSetId,
-          count,
-          group: organizationId,
-        });
+        savedOrThrow(
+          await (client as any).models.LocationAnnotationCount.create({
+            locationId: cand.locationId,
+            categoryId,
+            annotationSetId: cand.annotationSetId,
+            count,
+            group: organizationId,
+          }),
+          'save the answer key',
+        );
       }
     }
   }
@@ -494,13 +501,16 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 
       // Add the new location to the preset
       // @ts-ignore
-      await client.models.TestPresetLocation.create({
-        testPresetId: preset.id,
-        locationId: newLoc.id,
-        annotationSetId: cand.annotationSetId,
-        sourceLocationId: cand.locationId,
-        group: organizationId,
-      });
+      savedOrThrow(
+        await client.models.TestPresetLocation.create({
+          testPresetId: preset.id,
+          locationId: newLoc.id,
+          annotationSetId: cand.annotationSetId,
+          sourceLocationId: cand.locationId,
+          group: organizationId,
+        }),
+        'add the location to the preset',
+      );
 
       setAddedLocations((prev) => ({
         ...prev,

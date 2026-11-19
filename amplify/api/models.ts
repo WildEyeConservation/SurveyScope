@@ -748,9 +748,7 @@ export class Models {
       selectionSet: this.prepareSelection(model, options.selectionSet),
     });
     if (result.data) await this.afterWrite?.(model, 'create', row);
-    return result.data
-      ? { ...result, data: await this.filterNested(model, result.data) }
-      : result;
+    return this.answer(model, result);
   }
 
   private keyOf(model: string, input: Row): Row {
@@ -772,6 +770,14 @@ export class Models {
         },
       ],
     };
+  }
+
+  // A write returns only what the caller could read.
+  private async answer(model: string, result: Result): Promise<Result> {
+    if (!isObject(result.data)) return result;
+    if (!(await this.allows(model, 'read', result.data)))
+      return { ...result, data: null };
+    return { ...result, data: await this.filterNested(model, result.data) };
   }
 
   private async refuse(model: string, existing: Row): Promise<Result> {
@@ -809,9 +815,7 @@ export class Models {
       selectionSet: this.prepareSelection(model, options.selectionSet),
     });
     if (result.data) await this.afterWrite?.(model, 'update', merged);
-    return result.data
-      ? { ...result, data: await this.filterNested(model, result.data) }
-      : result;
+    return this.answer(model, result);
   }
 
   private async remove(model: string, input: unknown, options: QueryOptions) {
@@ -825,9 +829,7 @@ export class Models {
     const result = await this.data.delete(model, key, {
       selectionSet: this.prepareSelection(model, options.selectionSet),
     });
-    return result.data
-      ? { ...result, data: await this.filterNested(model, result.data) }
-      : result;
+    return this.answer(model, result);
   }
 
   async canSubscribe(model: string, field: string, value: string) {

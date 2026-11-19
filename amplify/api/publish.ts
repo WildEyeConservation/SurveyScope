@@ -3,7 +3,7 @@ import type { AttributeValue } from '@aws-sdk/client-dynamodb';
 import { unmarshall } from '@aws-sdk/util-dynamodb';
 import { HttpRequest } from '@smithy/protocol-http';
 import { SignatureV4 } from '@smithy/signature-v4';
-import { channelsFor, epochAt } from '../../shared/dataChannels';
+import { channelsFor, epochAt, publicFields } from '../../shared/dataChannels';
 
 interface StreamRecord {
   eventName: 'INSERT' | 'MODIFY' | 'REMOVE';
@@ -56,35 +56,52 @@ function modelOf(record: StreamRecord) {
 }
 
 export const handler = async (event: { Records: StreamRecord[] }) => {
-  const epoch = epochAt(Date.now());
-  const byChannel = new Map<string, string[]>();
-  const add = (
-    channel: string,
-    type: string,
-    item: Record<string, unknown>,
-  ) => {
-    let payload = JSON.stringify({ type, item });
-    if (payload.length > MAX_EVENT_BYTES)
-      payload = JSON.stringify({ type, item: { id: item.id } });
-    byChannel.set(channel, [...(byChannel.get(channel) ?? []), payload]);
-  };
+  const changes: {
+    model: string;
+    type: string;
+    item: Record<string, unknown>;
+    channels: (epoch: number) => string[];
+  }[] = [];
   for (const record of event.Records) {
     const model = modelOf(record);
     const before = record.dynamodb.OldImage
-      ? unmarshall(record.dynamodb.OldImage)
+      ? publicFields(model, unmarshall(record.dynamodb.OldImage))
       : undefined;
     const after = record.dynamodb.NewImage
-      ? unmarshall(record.dynamodb.NewImage)
+      ? publicFields(model, unmarshall(record.dynamodb.NewImage))
       : undefined;
-    const afterChannels = after ? channelsFor(model, after, epoch) : [];
     if (before) {
-      for (const channel of channelsFor(model, before, epoch)) {
-        if (!afterChannels.includes(channel)) add(channel, 'delete', before);
-      }
+      changes.push({
+        model,
+        type: 'delete',
+        item: before,
+        // Only channels the row is leaving.
+        channels: (epoch) => {
+          const kept = after ? channelsFor(model, after, epoch) : [];
+          return channelsFor(model, before, epoch).filter(
+            (c) => !kept.includes(c),
+          );
+        },
+      });
     }
-    for (const channel of afterChannels) {
-      add(channel, record.eventName === 'INSERT' ? 'create' : 'update', after!);
+    if (after) {
+      changes.push({
+        model,
+        type: record.eventName === 'INSERT' ? 'create' : 'update',
+        item: after,
+        channels: (epoch) => channelsFor(model, after, epoch),
+      });
     }
+  }
+  // The window is chosen when sending, so a slow batch cannot use an old one.
+  const epoch = epochAt(Date.now());
+  const byChannel = new Map<string, string[]>();
+  for (const { type, item, channels } of changes) {
+    let payload = JSON.stringify({ type, item });
+    if (payload.length > MAX_EVENT_BYTES)
+      payload = JSON.stringify({ type, item: { id: item.id } });
+    for (const channel of channels(epoch))
+      byChannel.set(channel, [...(byChannel.get(channel) ?? []), payload]);
   }
   const posts: Promise<void>[] = [];
   for (const [channel, events] of byChannel) {

@@ -625,13 +625,20 @@ export function operationContext(
     async getState(userId, name) {
       return data.states.get(`${userId}|${name}`) ?? null;
     },
-    async putState(userId, name, value) {
+    async updateState(userId, name, change) {
+      const value = change(data.states.get(`${userId}|${name}`) ?? {});
       data.states.set(`${userId}|${name}`, value);
+      return value;
     },
     async transition(userId, leaseId, change) {
       const lease = data.leases.find(
         (l) => l.userId === userId && l.leaseId === leaseId,
       );
+      if (change.kind === 'uncounted') {
+        if (!lease) return false;
+        lease.counted = false;
+        return true;
+      }
       if (change.kind === 'counted') {
         if (!lease || lease.counted) return false;
         lease.counted = true;

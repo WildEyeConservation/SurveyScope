@@ -5,6 +5,7 @@ import {
   EPOCH_LEAD_MS,
   EPOCH_MS,
   joinableEpochs,
+  PUBLISH_SLACK_MS,
   REVOCATION_MS,
   SKEW_MS,
 } from './dataChannels';
@@ -45,5 +46,7 @@ test('a joined window ends within the revocation bound', () => {
   }
   assert.ok(earliest > start);
   assert.ok(start + 2 * EPOCH_MS - earliest <= REVOCATION_MS);
-  assert.ok(EPOCH_MS + EPOCH_LEAD_MS + SKEW_MS <= REVOCATION_MS);
+  assert.ok(
+    EPOCH_MS + EPOCH_LEAD_MS + SKEW_MS + PUBLISH_SLACK_MS <= REVOCATION_MS,
+  );
 });

@@ -15,6 +15,198 @@ export const DATA_CHANNELS: Record<string, string[]> = {
   UserStats: ['projectId'],
 };
 
+// Fields of each model that events may carry; storage-only attributes stay out.
+export const DATA_FIELDS: Record<string, string[]> = {
+  OrganizationMembership: [
+    'id',
+    'organizationId',
+    'userId',
+    'isAdmin',
+    'isTested',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  OrganizationRegistration: [
+    'id',
+    'organizationName',
+    'briefDescription',
+    'requestedBy',
+    'owner',
+    'status',
+    'createdAt',
+    'updatedAt',
+  ],
+  UserProjectMembership: [
+    'id',
+    'userId',
+    'projectId',
+    'isAdmin',
+    'queueId',
+    'backupQueueId',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  Project: [
+    'id',
+    'organizationId',
+    'name',
+    'tags',
+    'createdBy',
+    'hidden',
+    'status',
+    'tiledLocationSetId',
+    'defaultZoom',
+    'pretileManifestS3Key',
+    'uploadDefaults',
+    'strataNetwork',
+    'boundaryRecomputeRequested',
+    'boundaryRecomputeLeaseUntil',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  Category: [
+    'id',
+    'projectId',
+    'annotationSetId',
+    'name',
+    'color',
+    'shortcutKey',
+    'annotationCount',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  AnnotationSet: [
+    'id',
+    'projectId',
+    'name',
+    'register',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  ImageSet: [
+    'id',
+    'projectId',
+    'name',
+    'imageCount',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  LocationSet: [
+    'id',
+    'projectId',
+    'name',
+    'description',
+    'locationCount',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  Queue: [
+    'id',
+    'projectId',
+    'name',
+    'batchSize',
+    'totalBatches',
+    'url',
+    'zoom',
+    'hidden',
+    'approximateSize',
+    'tag',
+    'requeueAt',
+    'updatedAt',
+    'annotationSetId',
+    'locationSetId',
+    'confidenceThreshold',
+    'launchedCount',
+    'observedCount',
+    'infoTagProtocolVersion',
+    'locationManifestS3Key',
+    'emptyQueueTimestamp',
+    'requeuesCompleted',
+    'lastObservationAt',
+    'lastAccessedAt',
+    'inactivityWarnedAt',
+    'cancelAfter',
+    'group',
+    'createdAt',
+  ],
+  TestPreset: [
+    'id',
+    'organizationId',
+    'name',
+    'ownerProjectId',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  Annotation: [
+    'id',
+    'projectId',
+    'setId',
+    'source',
+    'categoryId',
+    'imageId',
+    'x',
+    'y',
+    'obscured',
+    'oov',
+    'outsideBoundary',
+    'objectId',
+    'reviewCatId',
+    'reviewedBy',
+    'infoTaggedBy',
+    'infoTagRevision',
+    'owner',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  JollyResultsMembership: [
+    'id',
+    'surveyId',
+    'annotationSetId',
+    'userId',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+  UserStats: [
+    'id',
+    'projectId',
+    'setId',
+    'date',
+    'userId',
+    'observationCount',
+    'sightingCount',
+    'annotationTime',
+    'annotationCount',
+    'activeTime',
+    'searchTime',
+    'searchCount',
+    'waitingTime',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
+};
+
+export function publicFields(model: string, item: Record<string, unknown>) {
+  const fields = Object.prototype.hasOwnProperty.call(DATA_FIELDS, model)
+    ? DATA_FIELDS[model]
+    : [];
+  return Object.fromEntries(
+    fields
+      .filter((f) => Object.prototype.hasOwnProperty.call(item, f))
+      .map((f) => [f, item[f]]),
+  );
+}
+
 // Rows only admins may see go to an `admin<Field>` channel instead.
 const ADMIN_ONLY: Record<string, (item: Record<string, unknown>) => boolean> = {
   Queue: (item) => item.hidden === true,
@@ -28,8 +220,10 @@ export function hasAdminChannel(model: string) {
 }
 
 // Subscriptions are re-authorised each window. A window, plus how early it may
-// be joined, stays within REVOCATION_MS, so lost access ends within that.
-export const EPOCH_MS = 4 * 60_000;
+// be joined, plus PUBLISH_SLACK_MS for server clocks and delivery, stays within
+// REVOCATION_MS, so lost access ends within that.
+export const EPOCH_MS = 3.5 * 60_000;
+export const PUBLISH_SLACK_MS = 40_000;
 // Clients join the next window this long before it starts.
 export const EPOCH_LEAD_MS = 30_000;
 export const SKEW_MS = 20_000;

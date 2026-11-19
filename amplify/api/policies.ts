@@ -1,5 +1,5 @@
 import { isWithinLocationBounds } from '../../shared/locationGeometry';
-import type { TestPool } from './access';
+import type { Access, TestPool } from './access';
 import type { TaskScope } from './leases';
 import type { ModelPolicy, Rule, ScopeSpec } from './models';
 import type { Row } from './schema';
@@ -50,14 +50,13 @@ const testPool = (
   check: async ({ access }, row) => test(await access.testPool(), row),
   fields,
 });
-// Leases never show a tester the answers inside their own test boxes.
 // Someone who left the organisation no longer reaches their own old rows; a
-// channel of their own, which names no survey, stays open.
+// channel of their own, which names no survey, needs a current organisation.
 const selfInSurvey = (field: string): Rule => ({
   check: async ({ access }, row, scope) => {
     if (row[field] === undefined) return undefined;
     if (!access.isSelf(row[field])) return false;
-    if (!scope?.projectId) return true;
+    if (!scope?.projectId) return (await access.organizationIds()).length > 0;
     return Boolean(await access.surveyStanding(scope.projectId));
   },
   fields: [field, 'projectId'],
@@ -102,6 +101,19 @@ const notLegacy: Rule = {
     return !(Array.isArray(project?.tags) && project.tags.includes('legacy'));
   },
 };
+// Whether a row sits inside one of the tester's own test boxes, of any set.
+// Unknown without a position, so queries filter rows and channels stay shut.
+async function inOwnTestBox(access: Access, r: Row) {
+  // Their own marks reveal nothing.
+  if (typeof r.imageId !== 'string' || access.isSelf(r.owner)) return false;
+  const boxes = (await access.testPool()).boxes.get(r.imageId);
+  if (!boxes?.length) return false;
+  if (typeof r.x !== 'number' || typeof r.y !== 'number') return undefined;
+  const point = { x: r.x, y: r.y };
+  return boxes.some((b) => isWithinLocationBounds(point, b.box));
+}
+
+// Leases never show a tester the answers inside their own test boxes.
 const leasedAnnotation: Rule = {
   check: async ({ access }, r) => {
     const verdict = (await access.tasks()).readsAnnotation(
@@ -109,19 +121,19 @@ const leasedAnnotation: Rule = {
       r.setId,
       r.projectId,
     );
-    if (!verdict || typeof r.imageId !== 'string') return verdict;
-    const boxes = (await access.testPool()).boxes.get(r.imageId);
-    if (!boxes?.length) return verdict;
-    // Without a position, as for a live channel, the whole image is withheld.
-    if (typeof r.x !== 'number' || typeof r.y !== 'number') return false;
-    const point = { x: r.x, y: r.y };
-    return !boxes.some(
-      (b) =>
-        (r.setId === undefined || b.setId === r.setId) &&
-        isWithinLocationBounds(point, b.box),
-    );
+    if (!verdict) return verdict;
+    const inside = await inOwnTestBox(access, r);
+    return inside === undefined ? undefined : !inside;
   },
-  fields: ['imageId', 'setId', 'projectId', 'x', 'y'],
+  fields: ['imageId', 'setId', 'projectId', 'x', 'y', 'owner'],
+};
+// Nor change them, as that would show them too.
+const outsideOwnTestBox: Rule = {
+  check: async ({ access }, r) => {
+    const inside = await inOwnTestBox(access, r);
+    return inside === undefined ? undefined : !inside;
+  },
+  fields: ['imageId', 'x', 'y', 'owner'],
 };
 const throughParent = (
   model: string,
@@ -325,6 +337,8 @@ export const POLICIES: Record<string, ModelPolicy> = {
   Object: backendOwned({ survey: 'projectId' }),
   Image: {
     ...administered({ survey: 'projectId' }, [taskImage('id')]),
+    // Never reused, so a channel or reference cannot pass to another survey.
+    serverId: true,
     managed: ['tiledAt'],
     restricted: [
       {
@@ -368,10 +382,15 @@ export const POLICIES: Record<string, ModelPolicy> = {
     ],
     update: [
       surveyAdmin,
-      task(
-        (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
-        ['imageId', 'setId'],
-      ),
+      {
+        all: [
+          task(
+            (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
+            ['imageId', 'setId'],
+          ),
+          outsideOwnTestBox,
+        ],
+      },
     ],
     // Annotators remove their own marks; whole-job leases may tidy anyone's.
     delete: [
@@ -382,6 +401,7 @@ export const POLICIES: Record<string, ModelPolicy> = {
             (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
             ['imageId', 'setId'],
           ),
+          outsideOwnTestBox,
           {
             check: async (ctx, r) =>
               r.owner === undefined
@@ -470,9 +490,10 @@ export const POLICIES: Record<string, ModelPolicy> = {
     selfInSurvey('assignedUserId'),
   ]),
   // Written by /tasks/test/submit, which grades on the server.
+  // Admins only: a result's counts are the answer key when a test comes round again.
   TestResult: {
     scope: { survey: 'projectId' },
-    read: [selfInSurvey('userId'), surveyAdmin],
+    read: [surveyAdmin],
     delete: [surveyAdmin],
   },
   TestResultCategoryCount: {

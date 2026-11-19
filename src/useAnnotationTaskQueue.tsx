@@ -1,7 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { GlobalContext, ProjectContext, UserContext } from './Context';
 import type { BeforeNextDecision } from './TaskBuffer';
-import type { Schema } from './amplify/client-schema';
 import type {
   AnnotationTaskPayload,
   TaskAcknowledgement,
@@ -19,7 +18,7 @@ import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
 import { touchQueue } from './touchQueue';
-import useTesting, { type TileSample, type TileSource } from './useTesting';
+import useTesting from './useTesting';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
 
 const LOCATION_SELECTION = [
@@ -82,7 +81,6 @@ interface AnnotationTaskMessage {
 
 export default function useAnnotationTaskQueue() {
   const { currentPM } = useContext(ProjectContext)!;
-  const { myOrganizationHook } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
   const [queueId, setQueueId] = useState<string | undefined>(undefined);
   const [backupQueueId, setBackupQueueId] = useState<string | undefined>(
@@ -95,11 +93,8 @@ export default function useAnnotationTaskQueue() {
   // Use ref instead of state to prevent fetcher reference churn on every new location
   const processedLocationsRef = useRef<Set<string>>(new Set());
 
-  // user testing state
-  const configRef = useRef<Schema['ProjectTestConfig']['type']>();
-  const testUserRef = useRef(false);
+  // Tests: the server decides who is tested, when, and with what.
   const testViewBoundsScaleRef = useRef<number | undefined>(undefined);
-  const testingSetupPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const maxCadenceIndexRef = useRef(-1);
   // The server decides when a test is due and says so on ack or receive.
   const testDueRef = useRef(false);
@@ -109,13 +104,7 @@ export default function useAnnotationTaskQueue() {
     dueWaiterRef.current.resolve();
   }, []);
   const serveTestRef = useRef<() => Promise<AnnotationTaskPayload | null>>();
-  // Taken from the first task of the primary queue.
-  const tileRef = useRef<TileSample | undefined>(undefined);
-  const workReadyRef = useRef(waiter());
-  const tileReadyRef = useRef(waiter());
-  // Set in False Negatives jobs, whose tests are grown to the tile size.
-  const testGrowRef = useRef<TileSource | undefined>(undefined);
-  const { fetcher: testFetcher } = useTesting(testGrowRef);
+  const { fetcher: testFetcher } = useTesting();
   const { currentTaskTag, setCurrentAnnoCount } = useContext(UserContext)!;
 
   // Keep future task fetches on the value saved during this active session.
@@ -150,57 +139,7 @@ export default function useAnnotationTaskQueue() {
       }
     }
 
-    async function setupTesting() {
-      configRef.current = undefined;
-      testUserRef.current = false;
-      testViewBoundsScaleRef.current = undefined;
-      // Keep an unresolved waiter so a pending standby fetch still wakes.
-      if (workReadyRef.current.done) workReadyRef.current = waiter();
-      if (tileReadyRef.current.done) tileReadyRef.current = waiter();
-      tileRef.current = undefined;
-      testGrowRef.current = undefined;
-      const { data: config } = await client.models.ProjectTestConfig.get(
-        {
-          projectId: currentPM.projectId,
-        },
-        {
-          selectionSet: [
-            'projectId',
-            'project.organizationId',
-            'postTestConfirmation',
-            'testType',
-            'random',
-            'deadzone',
-            'interval',
-            'accuracy',
-          ],
-        },
-      );
-
-      if (config?.projectId) {
-        configRef.current = config;
-
-        const { data: queue } = currentPM.queueId
-          ? await client.models.Queue.get(
-              { id: currentPM.queueId },
-              { selectionSet: ['name'] },
-            )
-          : { data: null };
-        const shouldTest =
-          myOrganizationHook.data?.find(
-            (membership) =>
-              membership.organizationId === config.project.organizationId,
-          )?.isTested ?? false;
-        testUserRef.current = shouldTest;
-
-        // False-negative jobs show large tiles, so a small test box stands out.
-        if (shouldTest && queue?.name === FALSE_NEGATIVES_QUEUE) {
-          testGrowRef.current = () => tileRef.current;
-        }
-      }
-    }
-
-    testingSetupPromiseRef.current = setupTesting();
+    testViewBoundsScaleRef.current = undefined;
     // Queue/test configuration is refreshed when the active membership changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPM]);
@@ -399,18 +338,8 @@ export default function useAnnotationTaskQueue() {
     );
     // Tests must open like the job's tiles, or they stand out.
     const sample = source.primary ? ready[0]?.location : undefined;
-    if (sample && !tileRef.current) {
-      tileRef.current = {
-        tile: { width: sample.width, height: sample.height },
-        image: { width: sample.image.width, height: sample.image.height },
-      };
-      if (sample.source === 'manual') {
-        testViewBoundsScaleRef.current = TILE_VIEW_BOUNDS_SCALE;
-      }
-      tileReadyRef.current.resolve();
-    }
-    // Backup work also releases tests; only False Negatives tests need the sample.
-    if (ready.length) workReadyRef.current.resolve();
+    if (sample?.source === 'manual')
+      testViewBoundsScaleRef.current = TILE_VIEW_BOUNDS_SCALE;
     readyRef.current.push(...ready);
     return received.messages.length;
   }, [
@@ -463,27 +392,8 @@ export default function useAnnotationTaskQueue() {
 
   const standbyTestFetcher =
     useCallback(async (): Promise<AnnotationTaskPayload | null> => {
-      try {
-        await testingSetupPromiseRef.current;
-      } catch (error) {
-        console.error('Failed to load test configuration', error);
-        return null;
-      }
-
-      if (
-        !testUserRef.current ||
-        !configRef.current ||
-        configRef.current.testType === 'none'
-      ) {
-        return null;
-      }
-
-      // A due test is served at once, grown only if a tile sample is known.
-      const growTests = Boolean(testGrowRef.current);
-      await Promise.race([
-        (growTests ? tileReadyRef : workReadyRef).current.ready,
-        dueWaiterRef.current.ready,
-      ]);
+      // A test is served only once the server says one is due.
+      await dueWaiterRef.current.ready;
 
       const testLocation = (await testFetcher()) as
         (AnnotationTaskMessage & { testBox?: TestBox }) | null;
@@ -518,13 +428,6 @@ export default function useAnnotationTaskQueue() {
       completedIndex: number,
       { standbyReady }: { standbyReady: boolean },
     ): Promise<BeforeNextDecision<AnnotationTaskPayload>> => {
-      try {
-        await testingSetupPromiseRef.current;
-      } catch (error) {
-        // Testing setup must never prevent ordinary queue navigation.
-        console.error('Failed to load test configuration', error);
-      }
-
       // Going back and forward through retained buffer entries must not count
       // the same visible task more than once.
       if (completedIndex <= maxCadenceIndexRef.current) {
