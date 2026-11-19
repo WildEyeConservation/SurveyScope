@@ -933,13 +933,6 @@ backend.imageAccess.resources.lambda.addToRolePolicy(
     resources: [backend.auth.resources.userPool.userPoolArn],
   })
 );
-// Undoes a group add when the membership row vanished during the sync.
-backend.syncOrganizationGroups.resources.lambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    actions: ['cognito-idp:AdminRemoveUserFromGroup'],
-    resources: [backend.auth.resources.userPool.userPoolArn],
-  })
-);
 for (const model of ['Project', 'AnnotationSet'] as const) {
   const table = backend.data.resources.tables[model];
   backend.workflowFiles.addEnvironment(
