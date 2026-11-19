@@ -634,16 +634,6 @@ export function operationContext(
       const lease = data.leases.find(
         (l) => l.userId === userId && l.leaseId === leaseId,
       );
-      if (change.kind === 'uncounted') {
-        if (!lease) return false;
-        lease.counted = false;
-        return true;
-      }
-      if (change.kind === 'counted') {
-        if (!lease || lease.counted) return false;
-        lease.counted = true;
-        return true;
-      }
       if (!lease || lease.released || lease.acked) return false;
       if (change.kind === 'done') {
         lease.done = true;
@@ -680,7 +670,14 @@ export function operationContext(
       dispatchTargets: async () => null,
     },
     queues: {
-      recordObservation: async () => 1,
+      recordTaskObservation: async (_queueId, lease) => {
+        const held = data.leases.find(
+          (l) => l.userId === lease.userId && l.leaseId === lease.leaseId,
+        );
+        if (!held || held.counted) return false;
+        held.counted = true;
+        return true;
+      },
       touch: async () => true,
     },
     update: (model, input) => data.update(model, input),

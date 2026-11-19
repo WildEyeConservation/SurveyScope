@@ -37,6 +37,10 @@ const MAX_HELD_TASKS = 30;
 const MISSING_ROW_RETRIES = 5;
 const MISSING_ROW_DELAY_SECONDS = 60;
 const now = () => Math.floor(Date.now() / 1000);
+// A review held back for another reviewer waits this long.
+const OTHERS_FIRST_SECONDS = 30;
+// Observations already counted towards test cadence, most recent kept.
+const COUNTED_KEPT = 100;
 const isObject = (v: unknown): v is Row =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
@@ -157,6 +161,18 @@ export async function messageScope(
   };
 }
 
+async function reviewsOwnTestAnswer(ctx: TaskContext, annotationIds: string[]) {
+  const pool = await ctx.access.testPool();
+  for (const id of annotationIds) {
+    const annotation = await ctx.models.load('Annotation', { id });
+    if (!annotation || ctx.access.isSelf(annotation.owner)) continue;
+    const point = { x: Number(annotation.x), y: Number(annotation.y) };
+    const boxes = pool.boxes.get(String(annotation.imageId)) ?? [];
+    if (boxes.some((b) => isWithinLocationBounds(point, b.box))) return true;
+  }
+  return false;
+}
+
 function parsedSkip(body: string) {
   try {
     const parsed = JSON.parse(body) as Row;
@@ -202,6 +218,20 @@ async function leaseMessage(
     await ctx.queue.remove(url, message.receiptHandle);
     return null;
   }
+  // A review of someone else's mark inside the tester's own test box can be
+  // neither seen nor finished by them, so it waits for another reviewer.
+  if (
+    scope.annotationIds.length &&
+    !(await ctx.access.isSurveyAdmin(projectId)) &&
+    (await reviewsOwnTestAnswer(ctx, scope.annotationIds))
+  ) {
+    await ctx.queue.visibility(
+      url,
+      message.receiptHandle,
+      OTHERS_FIRST_SECONDS,
+    );
+    return null;
+  }
   // Someone saved it but the acknowledgement was lost.
   if (
     scope.locationIds.length &&
@@ -245,7 +275,7 @@ async function receiveTasks(ctx: TaskContext, args: Row, max: number) {
     ctx,
     argString(args, 'queueId'),
   );
-  if (!admin && (await testDue(ctx, projectId)))
+  if (!admin && (await testDue(ctx, projectId, String(queue.id))))
     throw new ApiError(409, 'TestDue', 'Take a test before more tasks');
   const url = str(queue.url);
   if (!url) throw badRequest('The queue has no URL');
@@ -402,7 +432,9 @@ async function finishedElsewhere(ctx: TaskContext, lease: Lease) {
           image1Id: image2Id,
           image2Id: image1Id,
         }));
-      if (edge && !edge.skipped && !edge.homography) return false;
+      const saved =
+        Array.isArray(edge?.homography) && edge.homography.length === 9;
+      if (!edge || (edge.skipped !== true && !saved)) return false;
     }
     return true;
   }
@@ -415,7 +447,10 @@ export async function ack(ctx: TaskContext, args: Row) {
     argString(args, 'leaseId'),
   );
   if (previous?.acked)
-    return { data: true, testDue: await testDue(ctx, previous.grantedFor) };
+    return {
+      data: true,
+      testDue: await testDue(ctx, previous.grantedFor, previous.queueId),
+    };
   const lease = await heldQueueLease(ctx, args);
   if (!lease.done && !(await finishedElsewhere(ctx, lease)))
     throw new ApiError(409, 'NotDone', 'Save this task before finishing it');
@@ -427,7 +462,17 @@ export async function ack(ctx: TaskContext, args: Row) {
   )
     throw notFound('No such task');
   await ctx.queue.remove(lease.queueUrl, lease.receiptHandle);
-  return { data: true, testDue: await testDue(ctx, lease.grantedFor) };
+  // Cadence is recorded with the observation; this catches up if that failed.
+  if (lease.messageId && lease.locationIds.length) {
+    const observation = await ctx.models.load('Observation', {
+      id: `queue-message:${lease.messageId}`,
+    });
+    if (observation) await countTowardsTest(ctx, lease, observation);
+  }
+  return {
+    data: true,
+    testDue: await testDue(ctx, lease.grantedFor, lease.queueId),
+  };
 }
 
 export async function visibility(ctx: TaskContext, args: Row) {
@@ -656,13 +701,21 @@ async function countTowardsTest(
   if (!config) return;
   const marked = (await savedMarks(ctx, lease, observation)) > 0;
   const random = Math.random();
+  const observationId = String(observation.id);
   await ctx.leases.updateState(
     lease.userId,
     cadenceState(lease.grantedFor),
     (state) => {
+      // Each observation counts once, whether from its creation or its ack.
+      const seen = Array.isArray(state.observations)
+        ? (state.observations as string[])
+        : [];
+      if (seen.includes(observationId)) return state;
+      const observations = [...seen, observationId].slice(-COUNTED_KEPT);
       let unannotated = Number(state.unannotated ?? 0);
       const completed = Number(state.completed ?? 0) + 1;
-      let due = state.due === true;
+      const wasDue = state.due === true;
+      let due = wasDue;
       if (marked) unannotated = 0;
       else {
         unannotated += 1;
@@ -677,25 +730,61 @@ async function countTowardsTest(
             due = true;
         }
       }
-      return { ...state, unannotated, completed, due };
+      // A new due test is its own occurrence, from the queue whose work made it.
+      const occurrence =
+        due && !wasDue
+          ? { dueId: randomUUID(), dueQueueId: lease.queueId ?? null }
+          : {};
+      return {
+        ...state,
+        ...occurrence,
+        observations,
+        unannotated,
+        completed,
+        due,
+      };
     },
   );
 }
 
-async function clearTestDue(ctx: TaskContext, projectId: string) {
+// Clears one due occurrence only, so a late retry cannot clear a newer one.
+async function clearTestDue(
+  ctx: TaskContext,
+  projectId: string,
+  dueId: unknown,
+) {
   await ctx.leases.updateState(
     ctx.access.userId,
     cadenceState(projectId),
-    (state) => ({ ...state, unannotated: 0, due: false }),
+    (state) =>
+      state.due === true && state.dueId === dueId
+        ? { ...state, unannotated: 0, due: false }
+        : state,
   );
 }
 
-export async function testDue(ctx: TaskContext, projectId: string) {
+async function dueState(ctx: TaskContext, projectId: string) {
   const state = await ctx.leases.getState(
     ctx.access.userId,
     cadenceState(projectId),
   );
-  return state?.due === true && Boolean(await testConfig(ctx, projectId));
+  if (state?.due !== true || !(await testConfig(ctx, projectId))) return null;
+  return state;
+}
+
+// A due test holds back the queue whose work made it due.
+export async function testDue(
+  ctx: TaskContext,
+  projectId: string,
+  queueId?: string,
+) {
+  const state = await dueState(ctx, projectId);
+  return Boolean(
+    state &&
+    (queueId === undefined ||
+      !state.dueQueueId ||
+      state.dueQueueId === queueId),
+  );
 }
 
 interface TestCandidate {
@@ -856,6 +945,7 @@ async function issueTest(
   projectId: string,
   jobSetId: string,
   sample: { tile: Size; image: Size } | undefined,
+  dueId: unknown,
 ) {
   const jobNames = await categoryNames(ctx, jobSetId);
   const labels = new Set([...jobNames.values()].map((n) => n.toLowerCase()));
@@ -875,18 +965,18 @@ async function issueTest(
     };
     let box = answerBox;
     let grown = false;
-    // A test that cannot be grown is still served at its own size.
-    if (sample && imageSize) {
+    // Grown to the queue's tiles; one that will not fit gives way to the next.
+    if (sample) {
+      if (!imageSize) continue;
       const fitted = growTestBox(
         box,
         tileSizeForImage(sample, imageSize),
         imageSize,
         candidate.locationId,
       );
-      if (fitted) {
-        box = fitted;
-        grown = true;
-      }
+      if (!fitted) continue;
+      box = fitted;
+      grown = true;
     }
     const test = {
       ...candidate,
@@ -896,6 +986,7 @@ async function issueTest(
       answerBox,
       grown,
       issuedAt: new Date().toISOString(),
+      dueId: typeof dueId === 'string' ? dueId : undefined,
     };
     const key = await testKey(ctx, test);
     // A tester cannot answer with labels their job lacks.
@@ -934,10 +1025,7 @@ export async function test(ctx: TaskContext, args: Row) {
   const jobSetId = str(queue.annotationSetId);
   if (!jobSetId || !(await testConfig(ctx, projectId))) return { data: null };
 
-  const lock = `test#${projectId}`;
-  if (!(await ctx.leases.lock(ctx.access.userId, lock, 30)))
-    return { data: null };
-  try {
+  return withLock(ctx, `test#${projectId}`, async () => {
     const open = (await ctx.leases.active(ctx.access.userId)).filter(
       (l) =>
         l.kind === 'test' && l.grantedFor === projectId && !l.test?.submitted,
@@ -952,7 +1040,9 @@ export async function test(ctx: TaskContext, args: Row) {
       });
       if (location) return serveTest(ctx, reused, location, sizeArg(image));
     }
-    if (!(await testDue(ctx, projectId))) return { data: null };
+    const due = await dueState(ctx, projectId);
+    if (!due || (due.dueQueueId && due.dueQueueId !== queue.id))
+      return { data: null };
     // A test opened for another job is withdrawn ungraded, so only one counts.
     for (const other of open)
       await ctx.leases.put({ ...other, expiresAt: now() });
@@ -960,14 +1050,12 @@ export async function test(ctx: TaskContext, args: Row) {
       queue.name === FALSE_NEGATIVES_QUEUE
         ? await queueTile(ctx, queue)
         : undefined;
-    const served = await issueTest(ctx, projectId, jobSetId, sample);
+    const served = await issueTest(ctx, projectId, jobSetId, sample, due.dueId);
     if (served) return served;
-    // No test this job can answer, so the tester is not held up.
-    await clearTestDue(ctx, projectId);
+    // No test this queue's job can answer, so the tester is not held up.
+    await clearTestDue(ctx, projectId, due.dueId);
     return { data: null };
-  } finally {
-    await ctx.leases.unlock(ctx.access.userId, lock);
-  }
+  });
 }
 
 const MAX_TEST_MARKS = 2000;
@@ -1050,17 +1138,43 @@ async function upsert(ctx: TaskContext, model: string, key: Row, row: Row) {
     );
 }
 
-// The first submission stands.
+// Waits briefly for a per-user lock, so racing requests take turns.
+async function withLock<T>(
+  ctx: TaskContext,
+  name: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (await ctx.leases.lock(ctx.access.userId, name, 30)) {
+      try {
+        return await work();
+      } finally {
+        await ctx.leases.unlock(ctx.access.userId, name);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new ApiError(409, 'Busy', 'Another request is in progress');
+}
+
+// The first submission stands. Submitting takes the same lock as issuing, so a
+// test withdrawn for another is never graded.
 export async function submitTest(ctx: TaskContext, args: Row) {
-  const lease = await ctx.leases.get(
-    ctx.access.userId,
-    argString(args, 'leaseId'),
+  const leaseId = argString(args, 'leaseId');
+  const first = await ctx.leases.get(ctx.access.userId, leaseId);
+  if (!first?.test || first.kind !== 'test') throw notFound('No such test');
+  await ctx.access.requireSurveyMember(first.grantedFor);
+  return withLock(ctx, `test#${first.grantedFor}`, () =>
+    gradeAndRecord(ctx, leaseId, args),
   );
+}
+
+async function gradeAndRecord(ctx: TaskContext, leaseId: string, args: Row) {
+  const lease = await ctx.leases.get(ctx.access.userId, leaseId);
   if (!lease?.test || lease.kind !== 'test' || lease.expiresAt <= now())
     throw notFound('No such test');
-  await ctx.access.requireSurveyMember(lease.grantedFor);
   if (lease.test.submitted) {
-    await clearTestDue(ctx, lease.grantedFor);
+    await clearTestDue(ctx, lease.grantedFor, lease.test.dueId);
     return { data: { testResultId: lease.leaseId } };
   }
   // One graded attempt per serving: a location the server did not choose to
@@ -1122,7 +1236,7 @@ export async function submitTest(ctx: TaskContext, args: Row) {
       ),
     ),
   );
-  await clearTestDue(ctx, lease.grantedFor);
+  await clearTestDue(ctx, lease.grantedFor, test.dueId);
   await ctx.leases.put({ ...current, test: { ...test, submitted: true } });
   return { data: { testResultId: lease.leaseId } };
 }

@@ -70,11 +70,7 @@ export interface LeaseTable {
 
 // Release and acknowledgement are final; only an open lease can be extended.
 export type LeaseChange =
-  | { kind: 'extend' | 'release' | 'ack'; expiresAt: number }
-  | { kind: 'done' }
-  // A finished task adds to its queue's count once; undone if that write fails.
-  | { kind: 'counted' }
-  | { kind: 'uncounted' };
+  { kind: 'extend' | 'release' | 'ack'; expiresAt: number } | { kind: 'done' };
 
 export const LOCK_PREFIX = 'lock#';
 const STATE_PREFIX = 'state#';
@@ -294,37 +290,25 @@ export const dynamoLeaseTable: LeaseTable = {
     const open =
       'attribute_exists(leaseId) AND attribute_not_exists(released) AND attribute_not_exists(acked)';
     const command =
-      change.kind === 'uncounted'
+      change.kind === 'done'
         ? {
-            UpdateExpression: 'REMOVE counted',
-            ConditionExpression: 'attribute_exists(leaseId)',
+            UpdateExpression: 'SET done = :yes',
+            ConditionExpression: open,
+            ExpressionAttributeValues: { ':yes': true },
           }
-        : change.kind === 'counted'
-          ? {
-              UpdateExpression: 'SET counted = :yes',
-              ConditionExpression:
-                'attribute_exists(leaseId) AND attribute_not_exists(counted)',
-              ExpressionAttributeValues: { ':yes': true },
-            }
-          : change.kind === 'done'
-            ? {
-                UpdateExpression: 'SET done = :yes',
-                ConditionExpression: open,
-                ExpressionAttributeValues: { ':yes': true },
-              }
-            : {
-                UpdateExpression: `SET expiresAt = :at, deleteAfter = :del${
-                  change.kind === 'extend'
-                    ? ''
-                    : `, ${change.kind === 'ack' ? 'acked' : 'released'} = :yes`
-                }`,
-                ConditionExpression: open,
-                ExpressionAttributeValues: {
-                  ':at': change.expiresAt,
-                  ':del': change.expiresAt + DELETE_AFTER,
-                  ...(change.kind === 'extend' ? {} : { ':yes': true }),
-                },
-              };
+        : {
+            UpdateExpression: `SET expiresAt = :at, deleteAfter = :del${
+              change.kind === 'extend'
+                ? ''
+                : `, ${change.kind === 'ack' ? 'acked' : 'released'} = :yes`
+            }`,
+            ConditionExpression: open,
+            ExpressionAttributeValues: {
+              ':at': change.expiresAt,
+              ':del': change.expiresAt + DELETE_AFTER,
+              ...(change.kind === 'extend' ? {} : { ':yes': true }),
+            },
+          };
     try {
       await dynamo.send(
         new UpdateCommand({

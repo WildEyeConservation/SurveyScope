@@ -46,6 +46,8 @@ export interface Lease {
     // Served again after every location was tested, and when it was issued.
     repeat?: boolean;
     issuedAt?: string;
+    // The due occurrence it was served for.
+    dueId?: string;
     // Fixed by the first submission.
     grade?: {
       testAnimals: number;

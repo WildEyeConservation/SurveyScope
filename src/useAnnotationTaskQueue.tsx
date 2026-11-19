@@ -99,11 +99,16 @@ export default function useAnnotationTaskQueue() {
   // The server decides when a test is due and says so on ack or receive.
   const testDueRef = useRef(false);
   const dueWaiterRef = useRef(waiter());
-  const markTestDue = useCallback(() => {
+  // The queue whose work made the test due; its job sets the test.
+  const dueQueueRef = useRef<string | undefined>(undefined);
+  const markTestDue = useCallback((queue?: string) => {
+    if (queue) dueQueueRef.current = queue;
     testDueRef.current = true;
     dueWaiterRef.current.resolve();
   }, []);
-  const serveTestRef = useRef<() => Promise<AnnotationTaskPayload | null>>();
+  // Each test lease is shown once, however often it is fetched.
+  const shownTestsRef = useRef(new Set<string>());
+  const fetchTestRef = useRef<() => Promise<AnnotationTaskPayload | null>>();
   const { fetcher: testFetcher } = useTesting();
   const { currentTaskTag, setCurrentAnnoCount } = useContext(UserContext)!;
 
@@ -226,6 +231,7 @@ export default function useAnnotationTaskQueue() {
       queueZoom: number | undefined,
       isFalseNegatives: boolean,
       receiveMs: number,
+      sourceQueueId: string,
     ): Promise<AnnotationTaskPayload | null> => {
       const body = JSON.parse(received.body) as AnnotationTaskMessage;
       body.observationId = `queue-message:${received.messageId}`;
@@ -233,7 +239,7 @@ export default function useAnnotationTaskQueue() {
       body.isFalseNegatives = isFalseNegatives;
       const ack = async () => {
         try {
-          if (await ackTask(received.leaseId)) markTestDue();
+          if (await ackTask(received.leaseId)) markTestDue(sourceQueueId);
           if (body.location?.id) {
             processedLocationsRef.current.add(body.location.id);
           }
@@ -301,7 +307,12 @@ export default function useAnnotationTaskQueue() {
       return { messages, receiveMs: performance.now() - startedAt };
     };
 
-    let source = { zoom, isFalseNegatives: isFnQueue, primary: true };
+    let source = {
+      zoom,
+      isFalseNegatives: isFnQueue,
+      primary: true,
+      queueId: queueId!,
+    };
     let received;
     try {
       received = await receive(queueId!);
@@ -310,13 +321,14 @@ export default function useAnnotationTaskQueue() {
           zoom: backupZoom,
           isFalseNegatives: backupIsFnQueue,
           primary: false,
+          queueId: backupQueueId,
         };
         received = await receive(backupQueueId);
         if (received.messages.length > 0) touchQueue(client, backupQueueId);
       }
     } catch (error) {
       if (!(error instanceof TestDueError)) throw error;
-      markTestDue();
+      markTestDue(source.queueId);
       return 0;
     }
 
@@ -327,6 +339,7 @@ export default function useAnnotationTaskQueue() {
           source.zoom,
           source.isFalseNegatives,
           received.receiveMs,
+          source.queueId,
         ).catch((error: unknown) => {
           console.error('Failed to prepare annotation task', error);
           return null;
@@ -380,8 +393,8 @@ export default function useAnnotationTaskQueue() {
       const received = await receive();
       if (readyRef.current.length > 0) continue;
       // Work is held back until the due test is taken.
-      if (testDueRef.current && serveTestRef.current) {
-        const test = await serveTestRef.current();
+      if (testDueRef.current && fetchTestRef.current) {
+        const test = await fetchTestRef.current();
         testDueRef.current = false;
         dueWaiterRef.current = waiter();
         if (test) return test;
@@ -390,16 +403,24 @@ export default function useAnnotationTaskQueue() {
     }
   }, [queueId, receive]);
 
-  const standbyTestFetcher =
+  // The due test, for the queue that made it due.
+  const fetchTest =
     useCallback(async (): Promise<AnnotationTaskPayload | null> => {
-      // A test is served only once the server says one is due.
-      await dueWaiterRef.current.ready;
-
-      const testLocation = (await testFetcher()) as
+      const testLocation = (await testFetcher(dueQueueRef.current)) as
         (AnnotationTaskMessage & { testBox?: TestBox }) | null;
-      if (!testLocation) return null;
-      const task = await prepareTask(testLocation);
-      if (!task) return null;
+      if (!testLocation?.testLeaseId) return null;
+      const leaseId = testLocation.testLeaseId;
+      const prepared = await prepareTask(testLocation);
+      if (!prepared) return null;
+      // Shown once: a second copy is dropped when it would become visible.
+      const task = {
+        ...prepared,
+        revalidate: async () => {
+          if (shownTestsRef.current.has(leaseId)) return false;
+          shownTestsRef.current.add(leaseId);
+          return true;
+        },
+      };
       const grown = testLocation.testBox;
       if (!grown) {
         return { ...task, viewBoundsScale: testViewBoundsScaleRef.current };
@@ -420,7 +441,16 @@ export default function useAnnotationTaskQueue() {
         viewBoundsScale: testViewBoundsScaleRef.current,
       };
     }, [prepareTask, testFetcher]);
-  serveTestRef.current = standbyTestFetcher;
+  fetchTestRef.current = fetchTest;
+
+  // Warms the due test; afterwards it waits for the next one to fall due.
+  const standbyTestFetcher =
+    useCallback(async (): Promise<AnnotationTaskPayload | null> => {
+      await dueWaiterRef.current.ready;
+      const test = await fetchTest();
+      if (test) dueWaiterRef.current = waiter();
+      return test;
+    }, [fetchTest]);
 
   const beforeNext = useCallback(
     async (

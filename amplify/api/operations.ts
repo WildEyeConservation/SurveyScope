@@ -165,20 +165,8 @@ const countObservation = async (
       lease.locationIds.length
     )
       continue;
-    if (
-      !(await ctx.tasks.leases.transition(lease.userId, lease.leaseId, {
-        kind: 'counted',
-      }))
-    )
-      continue;
-    try {
-      return { data: await ctx.queues.recordObservation(id) };
-    } catch (error) {
-      await ctx.tasks.leases.transition(lease.userId, lease.leaseId, {
-        kind: 'uncounted',
-      });
-      throw error;
-    }
+    if (await ctx.queues.recordTaskObservation(id, lease))
+      return { data: true };
   }
   return { data: null };
 };
@@ -247,7 +235,8 @@ async function holdsItem(
     );
   }
   if (type !== 'annotation') return false;
-  if (lease.annotationIds?.includes(itemId)) return true;
+  // A review task covers exactly its annotations.
+  if (lease.annotationIds?.length) return lease.annotationIds.includes(itemId);
   // Info Tags tasks name an image; their records name its annotations.
   const annotation = await ctx.models.load('Annotation', { id: itemId });
   return (
@@ -257,6 +246,14 @@ async function holdsItem(
   );
 }
 
+// One spelling per pair, so a pair is recorded once however it is named.
+function canonicalItem(type: string, itemId: string) {
+  const pair = type === 'image-pair' ? pairOf(itemId) : null;
+  if (!pair) return itemId;
+  const separator = itemId.includes('::') ? '::' : '__';
+  return [...pair].sort().join(separator);
+}
+
 // Workflow records come only from work the caller holds: a queue task, or an
 // Individual ID job, whose run id is the job id.
 const workflowWorker: Authorize = async (ctx, args) => {
@@ -264,12 +261,15 @@ const workflowWorker: Authorize = async (ctx, args) => {
   const runId = stringArg(args, 'workflowRunId');
   const type = stringArg(args, 'workItemType');
   const itemId = stringArg(args, 'workItemId');
+  const grant = new Authorized({
+    args: { ...args, workItemId: canonicalItem(type, itemId) },
+  });
   const queue = await models.load('Queue', { id: runId });
   if (typeof queue?.projectId === 'string') {
     await access.requireSurveyMember(queue.projectId);
-    if (await access.isSurveyAdmin(queue.projectId)) return;
+    if (await access.isSurveyAdmin(queue.projectId)) return grant;
     for (const lease of (await access.tasks()).leases)
-      if (await holdsItem(ctx, lease, runId, type, itemId)) return;
+      if (await holdsItem(ctx, lease, runId, type, itemId)) return grant;
     throw forbidden();
   }
   const job = await models.load('IndividualIdJob', { id: runId });
@@ -278,6 +278,7 @@ const workflowWorker: Authorize = async (ctx, args) => {
   if (await access.isSurveyAdmin(job.projectId)) return;
   if (!(await access.tasks()).leases.some((l) => l.leaseId === `job-${runId}`))
     throw forbidden();
+  return grant;
 };
 
 const ping = async (ctx: OperationContext, args: Row): Promise<Result> => {
@@ -543,20 +544,8 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
       );
     },
   },
-  recordWorkflowTask: {
-    fn: 'recordWorkflowTask',
-    authorize: workflowWorker,
-    after: async (ctx, args) => {
-      const runId = String(args.workflowRunId);
-      const type = String(args.workItemType);
-      const itemId = String(args.workItemId);
-      const held: string[] = [];
-      for (const lease of (await ctx.access.tasks()).leases)
-        if (await holdsItem(ctx, lease, runId, type, itemId))
-          held.push(lease.leaseId);
-      await markDone(ctx.tasks, (l) => held.includes(l.leaseId));
-    },
-  },
+  // Statistics only: completion comes from the work itself being saved.
+  recordWorkflowTask: { fn: 'recordWorkflowTask', authorize: workflowWorker },
   claimIndividualIdTransect: {
     fn: 'claimIndividualIdTransect',
     authorize: async ({ access, models }, args) => {

@@ -843,12 +843,21 @@ describe('review fixes', () => {
       (await fresh.models.run('Annotation', 'get', [{ id: 'free' }])).data,
     );
     assert.equal(
-      await fresh.models.canSubscribe('Annotation', 'imageId', 'img1'),
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img1_a1'),
+      false,
+    );
+    assert.equal(
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a1'),
+      true,
+    );
+    // Channels are per set, so another set on the same image stays shut.
+    assert.equal(
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a2'),
       false,
     );
     assert.equal(
       await fresh.models.canSubscribe('Annotation', 'imageId', 'img2'),
-      true,
+      false,
     );
     // Someone not tested sees the image as before.
     data.tables.OrganizationMembership.find(
@@ -1059,9 +1068,11 @@ describe('review fixes', () => {
     const counted: string[] = [];
     const count = async () => {
       const op = as(data, 'annotator', queue);
-      op.queues.recordObservation = async (id: string) => {
-        counted.push(id);
-        return counted.length;
+      const record = op.queues.recordTaskObservation;
+      op.queues.recordTaskObservation = async (id, lease) => {
+        const added = await record(id, lease);
+        if (added) counted.push(id);
+        return added;
       };
       await OPERATIONS.incrementQueueCount.run!(op, { id: 'q1' });
     };
@@ -1283,5 +1294,99 @@ describe('review fixes', () => {
         imageId: 'img2',
       }),
     );
+  });
+
+  it('keeps a due test to the queue that made it due and to its own occurrence', async () => {
+    const data = fixture();
+    const ctx = as(data, 'annotator').tasks;
+    data.states.set('annotator|cadence#p1', {
+      due: true,
+      dueId: 'd1',
+      dueQueueId: 'q1',
+    });
+    // Another queue neither serves it nor clears it.
+    assert.equal(
+      (await tasks.test(ctx, { projectId: 'p1', queueId: 'qa2' })).data,
+      null,
+    );
+    assert.equal(data.states.get('annotator|cadence#p1')?.due, true);
+    const first = (await tasks.test(ctx, { projectId: 'p1', queueId: 'q1' }))
+      .data!;
+    await tasks.submitTest(ctx, { leaseId: first.leaseId, annotations: [] });
+    assert.equal(data.states.get('annotator|cadence#p1')?.due, false);
+    // A later due test survives a retry of the earlier submission.
+    data.states.set('annotator|cadence#p1', {
+      due: true,
+      dueId: 'd2',
+      dueQueueId: 'q1',
+    });
+    await tasks.submitTest(ctx, { leaseId: first.leaseId, annotations: [] });
+    assert.equal(data.states.get('annotator|cadence#p1')?.due, true);
+  });
+
+  it('counts an observation towards cadence once, catching up on ack', async () => {
+    const data = testedFixture();
+    data.tables.Location.find((l) => l.id === 'loc1')!.width = 10;
+    data.tables.Location.find((l) => l.id === 'loc1')!.height = 10;
+    const queue = new MemoryQueue([work('loc1')]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
+      .data as {
+      leaseId: string;
+      messageId: string;
+    }[];
+    // The observation lands without its hook, as when the cadence write failed.
+    data.tables.Observation = [
+      ...(data.tables.Observation ?? []),
+      {
+        id: `queue-message:${task.messageId}`,
+        projectId: 'p1',
+        locationId: 'loc1',
+        annotationSetId: 'a1',
+      },
+    ];
+    data.leases[0].done = true;
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: task.leaseId,
+    });
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: task.leaseId,
+    });
+    assert.equal(data.states.get('annotator|cadence#p1')?.unannotated, 1);
+  });
+
+  it("holds back a review of someone else's mark inside the tester's own test box", async () => {
+    const data = testedFixture();
+    const queue = new MemoryQueue([{ body: { annotation: { id: 'ans' } } }]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    assert.deepEqual(
+      (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data,
+      [],
+    );
+    assert.deepEqual(queue.visibilities, [['receipt-msg-0', 30]]);
+  });
+
+  it('lets a pair go only once it is saved or skipped', async () => {
+    const data = testedFixture();
+    const queue = new MemoryQueue([
+      {
+        body: { primaryImage: { id: 'img1' }, secondaryImage: { id: 'img2' } },
+      },
+    ]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
+      .data as {
+      leaseId: string;
+    }[];
+    const edge = data.tables.ImageNeighbour.find((n) => n.image1Id === 'img1')!;
+    edge.homography = [];
+    await assert.rejects(
+      tasks.ack(ctx, { leaseId: task.leaseId }),
+      (e: unknown) => e instanceof ApiError && e.status === 409,
+    );
+    edge.homography = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: task.leaseId,
+    });
   });
 });

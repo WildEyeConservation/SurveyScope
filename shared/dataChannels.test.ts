@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
+  channelRow,
   channelsFor,
   EPOCH_LEAD_MS,
   EPOCH_MS,
@@ -49,4 +50,17 @@ test('a joined window ends within the revocation bound', () => {
   assert.ok(
     EPOCH_MS + EPOCH_LEAD_MS + SKEW_MS + PUBLISH_SLACK_MS <= REVOCATION_MS,
   );
+});
+
+test('annotations are published per image and set', () => {
+  assert.deepEqual(
+    channelsFor('Annotation', { imageId: 'i-1', setId: 's-1' }, 7),
+    ['/data/Annotation/imageSet/i-1_s-1/7'],
+  );
+  assert.deepEqual(channelsFor('Annotation', { imageId: 'i-1' }, 7), []);
+  assert.deepEqual(channelRow('Annotation', 'imageSet', 'i-1_s-1'), {
+    imageId: 'i-1',
+    setId: 's-1',
+  });
+  assert.equal(channelRow('Annotation', 'imageSet', 'i-1'), undefined);
 });

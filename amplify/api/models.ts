@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   adminField,
+  channelRow,
   DATA_CHANNELS,
   hasAdminChannel,
 } from '../../shared/dataChannels';
@@ -850,6 +851,7 @@ export class Models {
         });
     }
     if (!channels.includes(field)) return false;
-    return this.allows(model, 'read', { [field]: value });
+    const row = channelRow(model, field, value);
+    return Boolean(row) && this.allows(model, 'read', row!);
   }
 }

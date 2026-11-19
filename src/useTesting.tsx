@@ -17,34 +17,34 @@ export default function useTesting() {
     );
   }, [client, currentPM.queueId]);
 
-  const fetcher = useCallback(async (): Promise<Identifiable | null> => {
-    if (!currentPM.queueId) return null;
-    const started = await startTest({
-      projectId: project.id,
-      queueId: currentPM.queueId,
-    });
-    if (!started) return null;
+  const fetcher = useCallback(
+    async (dueQueueId?: string): Promise<Identifiable | null> => {
+      const queueId = dueQueueId ?? currentPM.queueId;
+      if (!queueId) return null;
+      const started = await startTest({ projectId: project.id, queueId });
+      if (!started) return null;
 
-    const id = crypto.randomUUID();
-    return {
-      id,
-      message_id: id,
-      location: {
-        id: started.location.id,
-        annotationSetId: started.annotationSetId,
-      },
-      allowOutside: true,
-      taskTag: '',
-      skipLocationWithAnnotations: false,
-      zoom,
-      testPresetId: started.testPresetId,
-      testLeaseId: started.leaseId,
-      testBox: started.grown ? started.box : undefined,
-      testContext: started.context,
-      ack: () => {},
-      isTest: true,
-    } as Identifiable;
-  }, [currentPM.queueId, project.id, zoom]);
+      return {
+        id: started.leaseId,
+        message_id: started.leaseId,
+        location: {
+          id: started.location.id,
+          annotationSetId: started.annotationSetId,
+        },
+        allowOutside: true,
+        taskTag: '',
+        skipLocationWithAnnotations: false,
+        zoom,
+        testPresetId: started.testPresetId,
+        testLeaseId: started.leaseId,
+        testBox: started.grown ? started.box : undefined,
+        testContext: started.context,
+        ack: () => {},
+        isTest: true,
+      } as Identifiable;
+    },
+    [currentPM.queueId, project.id, zoom],
+  );
 
   return { fetcher };
 }
