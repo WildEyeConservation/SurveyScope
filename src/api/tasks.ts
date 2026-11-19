@@ -72,15 +72,9 @@ export interface StartedTest {
   context: TestContextAnnotation[];
 }
 
-// The server picks the test; null when there is none for this job.
-export const startTest = (test: {
-  projectId: string;
-  jobAnnotationSetId: string;
-  tile?: {
-    tile: { width: number; height: number };
-    image: { width: number; height: number };
-  };
-}) => call<StartedTest | null>('/tasks/test', test);
+// The server picks a test for this queue's job; null unless one is due.
+export const startTest = (test: { projectId: string; queueId: string }) =>
+  call<StartedTest | null>('/tasks/test', test);
 
 export const submitTest = (
   leaseId: string,

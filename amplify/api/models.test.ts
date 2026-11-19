@@ -518,9 +518,10 @@ describe('review fixes', () => {
       (await former.run('UserProjectMembership', 'get', [{ id: 'm2' }])).data,
       null,
     );
+    // With no organisation left, their own membership channel closes too.
     assert.equal(
       await former.canSubscribe('UserProjectMembership', 'userId', 'annotator'),
-      true,
+      false,
     );
   });
 

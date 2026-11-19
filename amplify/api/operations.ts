@@ -115,9 +115,9 @@ const surveyImage: Authorize = async ({ access, models }, args) => {
       )
       .map((l) => l.expiresAt - now),
   );
-  return new Authorized({
-    args: { ...args, maxExpiresIn: Math.max(60, remaining) },
-  });
+  // Signed links last at least a minute, so a task about to end gets none.
+  if (remaining < 60) throw forbidden('The task has ended');
+  return new Authorized({ args: { ...args, maxExpiresIn: remaining } });
 };
 
 const readableImage: Authorize = async (ctx, args) => {
@@ -149,21 +149,24 @@ const queueWorker: Authorize = async ({ access, models }, args) => {
   await access.requireSurveyMember(queue.projectId);
 };
 
-// Each held task adds to its queue's count once, however often it is sent.
+// Each finished task adds to its queue's count once, however often it is sent.
+// Location tasks are counted from their observation, so only others count here.
 const countObservation = async (
   ctx: OperationContext,
   args: Row,
 ): Promise<Result> => {
   const id = stringArg(args, 'id');
   for (const lease of (await ctx.access.tasks()).leases) {
-    if (lease.kind !== 'queue' || lease.queueId !== id || lease.counted)
-      continue;
     if (
-      await ctx.tasks.leases.transition(lease.userId, lease.leaseId, {
-        kind: 'counted',
-      })
+      lease.kind !== 'queue' ||
+      lease.queueId !== id ||
+      !lease.done ||
+      lease.counted ||
+      lease.locationIds.length
     )
-      return { data: await ctx.queues.recordObservation(id) };
+      continue;
+    if (await ctx.queues.recordTaskObservation(id, lease))
+      return { data: true };
   }
   return { data: null };
 };
@@ -205,22 +208,77 @@ function parsedRequest(args: Row): Row {
   }
 }
 
-const holdsItem = (lease: Lease, queueId: string, itemId: string) =>
-  lease.kind === 'queue' &&
-  lease.queueId === queueId &&
-  (Boolean(lease.annotationIds?.includes(itemId)) ||
-    lease.locationIds.includes(itemId));
+// Image pairs are recorded as `a::b` or `a__b`; leases hold `a|b`.
+function pairOf(key: string): [string, string] | null {
+  for (const separator of ['::', '__']) {
+    const parts = key.split(separator);
+    if (parts.length === 2 && parts.every(Boolean)) return [parts[0], parts[1]];
+  }
+  return null;
+}
 
-// Workflow counts come only from work on a task the caller holds.
-const workflowWorker: Authorize = async ({ access, models }, args) => {
-  const queueId = stringArg(args, 'workflowRunId');
-  const queue = await models.load('Queue', { id: queueId });
-  if (typeof queue?.projectId !== 'string') throw forbidden();
-  await access.requireSurveyMember(queue.projectId);
-  if (await access.isSurveyAdmin(queue.projectId)) return;
+// Whether a queue lease covers the work item a workflow record names.
+async function holdsItem(
+  ctx: OperationContext,
+  lease: Lease,
+  queueId: string,
+  type: string,
+  itemId: string,
+) {
+  if (lease.kind !== 'queue' || lease.queueId !== queueId) return false;
+  if (type === 'image-pair') {
+    const pair = pairOf(itemId);
+    return Boolean(
+      pair &&
+      (lease.pairs.includes(`${pair[0]}|${pair[1]}`) ||
+        lease.pairs.includes(`${pair[1]}|${pair[0]}`)),
+    );
+  }
+  if (type !== 'annotation') return false;
+  // A review task covers exactly its annotations.
+  if (lease.annotationIds?.length) return lease.annotationIds.includes(itemId);
+  // Info Tags tasks name an image; their records name its annotations.
+  const annotation = await ctx.models.load('Annotation', { id: itemId });
+  return (
+    typeof annotation?.imageId === 'string' &&
+    annotation.projectId === lease.grantedFor &&
+    (lease.writeImageIds ?? lease.imageIds).includes(annotation.imageId)
+  );
+}
+
+// One spelling per pair, so a pair is recorded once however it is named.
+function canonicalItem(type: string, itemId: string) {
+  const pair = type === 'image-pair' ? pairOf(itemId) : null;
+  if (!pair) return itemId;
+  const separator = itemId.includes('::') ? '::' : '__';
+  return [...pair].sort().join(separator);
+}
+
+// Workflow records come only from work the caller holds: a queue task, or an
+// Individual ID job, whose run id is the job id.
+const workflowWorker: Authorize = async (ctx, args) => {
+  const { access, models } = ctx;
+  const runId = stringArg(args, 'workflowRunId');
+  const type = stringArg(args, 'workItemType');
   const itemId = stringArg(args, 'workItemId');
-  if (!(await access.tasks()).leases.some((l) => holdsItem(l, queueId, itemId)))
+  const grant = new Authorized({
+    args: { ...args, workItemId: canonicalItem(type, itemId) },
+  });
+  const queue = await models.load('Queue', { id: runId });
+  if (typeof queue?.projectId === 'string') {
+    await access.requireSurveyMember(queue.projectId);
+    if (await access.isSurveyAdmin(queue.projectId)) return grant;
+    for (const lease of (await access.tasks()).leases)
+      if (await holdsItem(ctx, lease, runId, type, itemId)) return grant;
     throw forbidden();
+  }
+  const job = await models.load('IndividualIdJob', { id: runId });
+  if (typeof job?.projectId !== 'string') throw forbidden();
+  await access.requireSurveyMember(job.projectId);
+  if (await access.isSurveyAdmin(job.projectId)) return;
+  if (!(await access.tasks()).leases.some((l) => l.leaseId === `job-${runId}`))
+    throw forbidden();
+  return grant;
 };
 
 const ping = async (ctx: OperationContext, args: Row): Promise<Result> => {
@@ -476,8 +534,8 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
       const request = parsedRequest(args);
       const response =
         typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
-      if (request.action !== 'complete' || response?.status !== 'completed')
-        return;
+      // Completing it, or a claim on an image someone already finished.
+      if (response?.status !== 'completed') return;
       await markDone(
         ctx.tasks,
         (l) =>
@@ -486,15 +544,8 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
       );
     },
   },
-  recordWorkflowTask: {
-    fn: 'recordWorkflowTask',
-    authorize: workflowWorker,
-    after: async (ctx, args) => {
-      const queueId = String(args.workflowRunId);
-      const itemId = String(args.workItemId);
-      await markDone(ctx.tasks, (l) => holdsItem(l, queueId, itemId));
-    },
-  },
+  // Statistics only: completion comes from the work itself being saved.
+  recordWorkflowTask: { fn: 'recordWorkflowTask', authorize: workflowWorker },
   claimIndividualIdTransect: {
     fn: 'claimIndividualIdTransect',
     authorize: async ({ access, models }, args) => {

@@ -625,18 +625,15 @@ export function operationContext(
     async getState(userId, name) {
       return data.states.get(`${userId}|${name}`) ?? null;
     },
-    async putState(userId, name, value) {
+    async updateState(userId, name, change) {
+      const value = change(data.states.get(`${userId}|${name}`) ?? {});
       data.states.set(`${userId}|${name}`, value);
+      return value;
     },
     async transition(userId, leaseId, change) {
       const lease = data.leases.find(
         (l) => l.userId === userId && l.leaseId === leaseId,
       );
-      if (change.kind === 'counted') {
-        if (!lease || lease.counted) return false;
-        lease.counted = true;
-        return true;
-      }
       if (!lease || lease.released || lease.acked) return false;
       if (change.kind === 'done') {
         lease.done = true;
@@ -673,7 +670,14 @@ export function operationContext(
       dispatchTargets: async () => null,
     },
     queues: {
-      recordObservation: async () => 1,
+      recordTaskObservation: async (_queueId, lease) => {
+        const held = data.leases.find(
+          (l) => l.userId === lease.userId && l.leaseId === lease.leaseId,
+        );
+        if (!held || held.counted) return false;
+        held.counted = true;
+        return true;
+      },
       touch: async () => true,
     },
     update: (model, input) => data.update(model, input),

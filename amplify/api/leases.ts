@@ -46,6 +46,8 @@ export interface Lease {
     // Served again after every location was tested, and when it was issued.
     repeat?: boolean;
     issuedAt?: string;
+    // The due occurrence it was served for.
+    dueId?: string;
     // Fixed by the first submission.
     grade?: {
       testAnimals: number;
@@ -92,12 +94,17 @@ export class TaskScope {
   }
 
   // A test lease never reads annotations: they include the answers.
+  // A lease reads its own sets on its images; one without sets reads any.
   readsAnnotation(imageId: unknown, setId: unknown, projectId?: unknown) {
     if (!str(imageId) && !str(setId)) return undefined;
+    const inSets = (l: Lease) =>
+      !str(setId) ||
+      l.readSetIds.length === 0 ||
+      l.readSetIds.includes(String(setId));
     return this.some(
       (l) =>
         l.kind !== 'test' &&
-        (l.imageIds.includes(String(imageId)) ||
+        ((l.imageIds.includes(String(imageId)) && inSets(l)) ||
           (this.inSurvey(l, projectId) &&
             l.readSetIds.includes(String(setId)))),
     );
@@ -129,10 +136,12 @@ export class TaskScope {
   ) {
     if (!str(locationId) || !str(setId)) return undefined;
     const noQueue = queueId === undefined || queueId === null;
+    // queue-message ids belong to queue tasks alone.
+    const queueMessage = String(id ?? '').startsWith('queue-message:');
     return this.some(
       (l) =>
         l.writeSetIds.includes(String(setId)) &&
-        ((this.inSurvey(l, projectId) && noQueue) ||
+        ((this.inSurvey(l, projectId) && noQueue && !queueMessage) ||
           (l.locationIds.includes(String(locationId)) &&
             id === `queue-message:${l.messageId}` &&
             (noQueue || queueId === l.queueId))),

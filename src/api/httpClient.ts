@@ -4,6 +4,7 @@ import outputs from '../../amplify_outputs.json';
 import {
   adminField,
   channelBase,
+  channelValue,
   DATA_CHANNELS,
   EPOCH_LEAD_MS,
   EPOCH_MS,
@@ -96,12 +97,12 @@ export function channelsForFilter(
 ): { base: string; optional: boolean }[] {
   const fields = DATA_CHANNELS[model] ?? [];
   const pins = eqPins(filter);
-  const field = fields.find((f) => typeof pins[f] === 'string');
+  const field = fields.find((f) => channelValue(model, f, pins) !== undefined);
   if (!field)
     return fields.includes('*')
       ? [{ base: channelBase(model, 'all', 'all'), optional: false }]
       : [];
-  const value = pins[field] as string;
+  const value = channelValue(model, field, pins)!;
   return [
     { base: channelBase(model, field, value), optional: false },
     ...(hasAdminChannel(model)

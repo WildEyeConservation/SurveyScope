@@ -11,6 +11,7 @@ import { type FetcherType, type TaskPayload, TaskBuffer } from '../TaskBuffer';
 import { fetchAllPaginatedResults } from '../utils';
 import LightLocationView from './LightLocationView';
 import ProjectContext from './ProjectContext';
+import { savedOrThrow } from './savedOrThrow';
 
 type Props = {
   show: boolean;
@@ -272,20 +273,26 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
       } as any);
 
       if (locationAnnotationCount) {
-        await (client as any).models.LocationAnnotationCount.update({
-          locationId: cLocation.locationId,
-          categoryId,
-          annotationSetId: cLocation.annotationSetId,
-          count,
-        } as any);
+        savedOrThrow(
+          await (client as any).models.LocationAnnotationCount.update({
+            locationId: cLocation.locationId,
+            categoryId,
+            annotationSetId: cLocation.annotationSetId,
+            count,
+          } as any),
+          'save the answer key',
+        );
       } else {
-        await (client as any).models.LocationAnnotationCount.create({
-          locationId: cLocation.locationId,
-          categoryId,
-          annotationSetId: cLocation.annotationSetId,
-          count,
-          group: organizationId,
-        } as any);
+        savedOrThrow(
+          await (client as any).models.LocationAnnotationCount.create({
+            locationId: cLocation.locationId,
+            categoryId,
+            annotationSetId: cLocation.annotationSetId,
+            count,
+            group: organizationId,
+          } as any),
+          'save the answer key',
+        );
       }
     }
 
@@ -301,11 +308,14 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
     );
     for (const { categoryId } of stored) {
       if (categoryId in annotationCounts) continue;
-      await countModel.delete({
-        locationId: cLocation.locationId,
-        categoryId,
-        annotationSetId: cLocation.annotationSetId,
-      });
+      savedOrThrow(
+        await countModel.delete({
+          locationId: cLocation.locationId,
+          categoryId,
+          annotationSetId: cLocation.annotationSetId,
+        }),
+        'update the answer key',
+      );
     }
 
     setCurrentAnnoCount({});

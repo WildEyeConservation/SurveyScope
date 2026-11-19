@@ -45,9 +45,29 @@ function fixture() {
         annotationSetId: 'a1',
       },
       { id: 'hidden', projectId: 'p1', url: 'https://queue/h', hidden: true },
+      {
+        id: 'qa2',
+        projectId: 'p1',
+        url: 'https://queue/qa2',
+        annotationSetId: 'a2',
+      },
+      {
+        id: 'qp2',
+        projectId: 'p2',
+        url: 'https://queue/qp2',
+        annotationSetId: 'pool',
+      },
+      {
+        id: 'fn',
+        projectId: 'p1',
+        name: 'False Negatives',
+        url: 'https://queue/fn',
+        annotationSetId: 'a1',
+        locationSetId: 'tiles',
+      },
     ],
     Image: [
-      { id: 'img1', projectId: 'p1' },
+      { id: 'img1', projectId: 'p1', width: 600, height: 400 },
       { id: 'img2', projectId: 'p1' },
       { id: 'img3', projectId: 'p1' },
       { id: 'poolImage', projectId: 'p2', width: 600, height: 400 },
@@ -55,6 +75,14 @@ function fixture() {
     ImageNeighbour: [{ image1Id: 'img1', image2Id: 'img2', projectId: 'p1' }],
     Location: [
       { id: 'loc1', projectId: 'p1', imageId: 'img1' },
+      {
+        id: 'tile1',
+        projectId: 'p1',
+        setId: 'tiles',
+        imageId: 'img1',
+        width: 100,
+        height: 100,
+      },
       {
         id: 'foreign',
         projectId: 'p2',
@@ -114,6 +142,17 @@ const as = (data: MemoryData, user: string, queue = new MemoryQueue()) =>
   operationContext(data, actor(user), POLICIES, { queue });
 
 const denied = (promise: Promise<unknown>) => refused(promise);
+
+// Tests are served only when one is due; these start one directly.
+async function startTest(
+  data: MemoryData,
+  ctx: Parameters<typeof tasks.test>[0],
+  queueId = 'q1',
+  user = 'annotator',
+) {
+  data.states.set(`${user}|cadence#p1`, { due: true });
+  return tasks.test(ctx, { projectId: 'p1', queueId });
+}
 
 describe('task leases', () => {
   it('opens only the received task to its holder', async () => {
@@ -424,33 +463,36 @@ describe('task leases', () => {
       },
     ];
     const ctx = as(data, 'annotator');
-    const args = {
-      projectId: 'p1',
-      testPresetId: 'preset',
-      locationId: 'foreign',
-      annotationSetId: 'pool',
-      jobAnnotationSetId: 'a1',
-    };
     await denied(ctx.models.run('Location', 'get', [{ id: 'foreign' }]));
-    const started = (await tasks.test(ctx.tasks, args)).data!;
-    assert.deepEqual(started.box, { x: 10, y: 20, width: 30, height: 40 });
+    // Nothing is served until a test is due.
+    assert.equal(
+      (await tasks.test(ctx.tasks, { projectId: 'p1', queueId: 'q1' })).data,
+      null,
+    );
+    const first = (await startTest(data, ctx.tasks)).data!;
+    assert.deepEqual(first.box, { x: 10, y: 20, width: 30, height: 40 });
     assert.deepEqual(
-      started.context.map((a) => [a.id, a.categoryName]),
+      first.context.map((a) => [a.id, a.categoryName]),
       [['out', 'Elephant']],
     );
-    const again = (await tasks.test(ctx.tasks, args)).data!;
-    assert.equal(again.leaseId, started.leaseId);
-    // Another job grades with its own labels, so it gets its own lease.
+    const again = (
+      await tasks.test(ctx.tasks, { projectId: 'p1', queueId: 'q1' })
+    ).data!;
+    assert.equal(again.leaseId, first.leaseId);
+    // Another job grades with its own labels; the first test is withdrawn.
     data.tables.Category.push({
       id: 'j2',
       projectId: 'p1',
       annotationSetId: 'a2',
       name: 'Elephant',
     });
-    const otherJob = (
-      await tasks.test(ctx.tasks, { ...args, jobAnnotationSetId: 'a2' })
-    ).data!;
-    assert.notEqual(otherJob.leaseId, started.leaseId);
+    const otherJob = (await startTest(data, ctx.tasks, 'qa2')).data!;
+    assert.notEqual(otherJob.leaseId, first.leaseId);
+    await assert.rejects(
+      tasks.submitTest(ctx.tasks, { leaseId: first.leaseId, annotations: [] }),
+      (e: unknown) => e instanceof ApiError && e.status === 404,
+    );
+    const started = (await startTest(data, ctx.tasks)).data!;
 
     const fresh = as(data, 'annotator');
     await fresh.models.run('Location', 'get', [{ id: 'foreign' }]);
@@ -506,15 +548,7 @@ describe('task leases', () => {
   it('finishes a partly saved test on retry with its first grade', async () => {
     const data = fixture();
     const ctx = as(data, 'annotator').tasks;
-    const { leaseId } = (
-      await tasks.test(ctx, {
-        projectId: 'p1',
-        testPresetId: 'preset',
-        locationId: 'foreign',
-        annotationSetId: 'pool',
-        jobAnnotationSetId: 'a1',
-      })
-    ).data!;
+    const { leaseId } = (await startTest(data, ctx)).data!;
     const create = data.create.bind(data);
     let failed = false;
     data.create = (async (model: string, input: Record<string, unknown>) => {
@@ -539,15 +573,7 @@ describe('task leases', () => {
   it('keeps one grade when submissions race', async () => {
     const data = fixture();
     const ctx = as(data, 'annotator').tasks;
-    const { leaseId } = (
-      await tasks.test(ctx, {
-        projectId: 'p1',
-        testPresetId: 'preset',
-        locationId: 'foreign',
-        annotationSetId: 'pool',
-        jobAnnotationSetId: 'a1',
-      })
-    ).data!;
+    const { leaseId } = (await startTest(data, ctx)).data!;
     const mark = { x: 12, y: 22, categoryId: 'j1' };
     await Promise.all([
       tasks.submitTest(ctx, { leaseId, annotations: [mark] }),
@@ -600,15 +626,7 @@ describe('task leases', () => {
         y: 50,
       },
     ];
-    const started = (
-      await tasks.test(as(data, 'annotator').tasks, {
-        projectId: 'p1',
-        testPresetId: 'preset',
-        locationId: 'foreign',
-        annotationSetId: 'pool',
-        jobAnnotationSetId: 'a1',
-      })
-    ).data!;
+    const started = (await startTest(data, as(data, 'annotator').tasks)).data!;
     assert.deepEqual(
       started.context.map((a) => a.id),
       ['context'],
@@ -638,22 +656,8 @@ describe('task leases', () => {
       },
     ];
     const ctx = as(data, 'annotator').tasks;
-    const args = {
-      projectId: 'p1',
-      testPresetId: 'preset',
-      locationId: 'foreign',
-      annotationSetId: 'pool',
-      jobAnnotationSetId: 'a1',
-    };
-    const tiled = (
-      await tasks.test(ctx, {
-        ...args,
-        tile: {
-          tile: { width: 100, height: 100 },
-          image: { width: 600, height: 400 },
-        },
-      })
-    ).data!;
+    // A False Negatives queue grows its tests to its own tiles.
+    const tiled = (await startTest(data, ctx, 'fn')).data!;
     assert.deepEqual(tiled.box, { x: 50, y: 50, width: 100, height: 100 });
     // The margin is context, never an answer, whichever way the test is served.
     assert.deepEqual(
@@ -675,26 +679,14 @@ describe('task leases', () => {
   it('refuses tests the job cannot answer or that name another survey', async () => {
     const data = fixture();
     const ctx = as(data, 'annotator').tasks;
-    const args = {
-      projectId: 'p1',
-      testPresetId: 'preset',
-      locationId: 'foreign',
-      annotationSetId: 'pool',
-    };
-    assert.equal(
-      (await tasks.test(ctx, { ...args, jobAnnotationSetId: 'a2' })).data,
-      null,
-    );
+    // The job lacks the test's label, so nothing is served and the due test lapses.
+    assert.equal((await startTest(data, ctx, 'qa2')).data, null);
     assert.equal(data.leases.length, 0);
-    await denied(tasks.test(ctx, { ...args, jobAnnotationSetId: 'pool' }));
+    assert.equal(data.states.get('annotator|cadence#p1')?.due, false);
+    await denied(startTest(data, ctx, 'qp2'));
     // Only organisations that test someone hand them tests.
     assert.equal(
-      (
-        await tasks.test(as(data, 'other').tasks, {
-          ...args,
-          jobAnnotationSetId: 'a1',
-        })
-      ).data,
+      (await startTest(data, as(data, 'other').tasks, 'q1', 'other')).data,
       null,
     );
   });
@@ -851,12 +843,21 @@ describe('review fixes', () => {
       (await fresh.models.run('Annotation', 'get', [{ id: 'free' }])).data,
     );
     assert.equal(
-      await fresh.models.canSubscribe('Annotation', 'imageId', 'img1'),
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img1_a1'),
+      false,
+    );
+    assert.equal(
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a1'),
+      true,
+    );
+    // Channels are per set, so another set on the same image stays shut.
+    assert.equal(
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a2'),
       false,
     );
     assert.equal(
       await fresh.models.canSubscribe('Annotation', 'imageId', 'img2'),
-      true,
+      false,
     );
     // Someone not tested sees the image as before.
     data.tables.OrganizationMembership.find(
@@ -951,9 +952,7 @@ describe('review fixes', () => {
       name: 'Zebra',
     });
     const ctx = as(data, 'annotator').tasks;
-    const started = (
-      await tasks.test(ctx, { projectId: 'p1', jobAnnotationSetId: 'a1' })
-    ).data!;
+    const started = (await startTest(data, ctx)).data!;
     await tasks.submitTest(ctx, {
       leaseId: started.leaseId,
       annotations: [
@@ -978,9 +977,7 @@ describe('review fixes', () => {
       ],
     );
     // Every location is tested, so the server starts round again.
-    const again = (
-      await tasks.test(ctx, { projectId: 'p1', jobAnnotationSetId: 'a1' })
-    ).data!;
+    const again = (await startTest(data, ctx)).data!;
     assert.equal(again.location.id, started.location.id);
     await tasks.submitTest(ctx, { leaseId: again.leaseId, annotations: [] });
     assert.equal(data.tables.TestResult.length, 2);
@@ -1005,7 +1002,8 @@ describe('review fixes', () => {
           projectId: 'p1',
           locationId: 'loc1',
           annotationSetId: 'a1',
-          annotationCount: 0,
+          // The browser's count is not trusted; no marks were saved.
+          annotationCount: 5,
         },
       ]);
       due = (
@@ -1019,9 +1017,7 @@ describe('review fixes', () => {
       tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }),
       (e: unknown) => e instanceof ApiError && e.status === 409,
     );
-    const started = (
-      await tasks.test(ctx, { projectId: 'p1', jobAnnotationSetId: 'a1' })
-    ).data!;
+    const started = (await startTest(data, ctx)).data!;
     await tasks.submitTest(ctx, { leaseId: started.leaseId, annotations: [] });
     assert.equal(
       (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data.length,
@@ -1059,16 +1055,32 @@ describe('review fixes', () => {
     await models.run('Observation', 'create', [
       { ...observation, queueId: 'q1' },
     ]);
-    const counted: string[] = [];
-    const op = as(data, 'annotator', queue);
-    op.queues.recordObservation = async (id: string) => {
-      counted.push(id);
-      return counted.length;
-    };
-    await OPERATIONS.incrementQueueCount.run!(op, { id: 'q1' });
-    await OPERATIONS.incrementQueueCount.run!(as(data, 'annotator', queue), {
-      id: 'q1',
+    // Location work is counted from its observation; review work from here,
+    // once it is saved, and once per task however often it is sent.
+    data.leases.push({
+      ...data.leases[0],
+      leaseId: 'review',
+      messageId: 'review-message',
+      locationIds: [],
+      annotationIds: ['a-under-review'],
+      done: false,
     });
+    const counted: string[] = [];
+    const count = async () => {
+      const op = as(data, 'annotator', queue);
+      const record = op.queues.recordTaskObservation;
+      op.queues.recordTaskObservation = async (id, lease) => {
+        const added = await record(id, lease);
+        if (added) counted.push(id);
+        return added;
+      };
+      await OPERATIONS.incrementQueueCount.run!(op, { id: 'q1' });
+    };
+    await count();
+    assert.deepEqual(counted, []);
+    data.leases.find((l) => l.leaseId === 'review')!.done = true;
+    await count();
+    await count();
     assert.deepEqual(counted, ['q1']);
   });
 
@@ -1115,5 +1127,266 @@ describe('review fixes', () => {
     const { tasks: ctx } = as(data, 'annotator', new MemoryQueue([work()]));
     await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 });
     assert.deepEqual(data.leases[0].imageIds.sort(), ['img1', 'img2']);
+  });
+
+  it('records workflow work for pairs, jobs and Info Tags images it holds', async () => {
+    const data = testedFixture();
+    const pairQueue = new MemoryQueue([
+      {
+        body: { primaryImage: { id: 'img1' }, secondaryImage: { id: 'img2' } },
+      },
+    ]);
+    const ctx = as(data, 'annotator', pairQueue);
+    await tasks.receiveBatch(ctx.tasks, { queueId: 'q1', max: 1 });
+    const record = (args: Record<string, unknown>) =>
+      OPERATIONS.recordWorkflowTask.authorize(as(data, 'annotator'), {
+        outcome: 'saved',
+        ...args,
+      });
+    await record({
+      workflowRunId: 'q1',
+      workItemType: 'image-pair',
+      workItemId: 'img2::img1',
+    });
+    await denied(
+      record({
+        workflowRunId: 'q1',
+        workItemType: 'image-pair',
+        workItemId: 'img1::img3',
+      }),
+    );
+    // Individual ID runs are jobs, recorded by whoever holds the job.
+    await OPERATIONS.pingIndividualIdTransect.run!(as(data, 'annotator'), {
+      id: 't1',
+    });
+    await record({
+      workflowRunId: 'job1',
+      workItemType: 'image-pair',
+      workItemId: 'img1::img2',
+    });
+    await denied(
+      OPERATIONS.recordWorkflowTask.authorize(as(data, 'other'), {
+        workflowRunId: 'job1',
+        workItemType: 'image-pair',
+        workItemId: 'img1::img2',
+        outcome: 'saved',
+      }),
+    );
+  });
+
+  it('lets a duplicate review go once someone has made it', async () => {
+    const data = testedFixture();
+    data.tables.Annotation.push({
+      id: 'review-me',
+      projectId: 'p1',
+      imageId: 'img2',
+      setId: 'a1',
+      categoryId: 'j1',
+      x: 300,
+      y: 300,
+    });
+    const queue = new MemoryQueue([
+      { body: { annotation: { id: 'review-me' } } },
+    ]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
+      .data as {
+      leaseId: string;
+    }[];
+    await assert.rejects(
+      tasks.ack(ctx, { leaseId: task.leaseId }),
+      (e: unknown) => e instanceof ApiError && e.status === 409,
+    );
+    data.tables.Annotation.find((a) => a.id === 'review-me')!.reviewedBy =
+      'other';
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: task.leaseId,
+    });
+  });
+
+  it('filters image queries row by row and keeps hidden answers unchangeable', async () => {
+    const data = testedFixture();
+    const { tasks: ctx } = as(
+      data,
+      'annotator',
+      new MemoryQueue([work('overlap')]),
+    );
+    await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 });
+    const fresh = as(data, 'annotator').models;
+    const rows = await fresh.run('Annotation', 'annotationsByImageIdAndSetId', [
+      { imageId: 'img1', setId: { eq: 'a1' } },
+    ]);
+    assert.deepEqual(
+      (rows.data as { id: string }[]).map((a) => a.id),
+      ['free'],
+    );
+    await refused(
+      fresh.run('Annotation', 'update', [{ id: 'ans', categoryId: 'j1' }]),
+    );
+    await refused(fresh.run('Annotation', 'delete', [{ id: 'ans' }]));
+    // The tester's own marks inside the box stay theirs to see and change.
+    const mine = await fresh.run('Annotation', 'create', [
+      {
+        projectId: 'p1',
+        setId: 'a1',
+        imageId: 'img1',
+        categoryId: 'j1',
+        x: 51,
+        y: 51,
+      },
+    ]);
+    const id = (mine.data as { id: string }).id;
+    assert.ok(
+      (await as(data, 'annotator').models.run('Annotation', 'get', [{ id }]))
+        .data,
+    );
+  });
+
+  it('treats labels that differ in case as one answer', async () => {
+    const data = fixture();
+    data.tables.Category.push({
+      id: 'c2',
+      projectId: 'p2',
+      annotationSetId: 'pool',
+      name: 'elephant',
+    });
+    data.tables.LocationAnnotationCount.push({
+      locationId: 'foreign',
+      categoryId: 'c2',
+      annotationSetId: 'pool',
+      count: 1,
+    });
+    const ctx = as(data, 'annotator').tasks;
+    const started = (await startTest(data, ctx)).data!;
+    await tasks.submitTest(ctx, {
+      leaseId: started.leaseId,
+      annotations: [{ x: 12, y: 22, categoryId: 'j1' }],
+    });
+    const [result] = data.tables.TestResult;
+    assert.equal(result.testAnimals, 3);
+    assert.equal(result.totalMissedAnimals, 2);
+  });
+
+  it("reads only a lease's own sets and signs no links for a task about to end", async () => {
+    const data = testedFixture();
+    data.tables.Annotation.push({
+      id: 'other-set',
+      projectId: 'p1',
+      imageId: 'img2',
+      setId: 'a2',
+      categoryId: 'j1',
+      x: 5,
+      y: 5,
+    });
+    const { tasks: ctx } = as(data, 'annotator', new MemoryQueue([work()]));
+    await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 });
+    assert.equal(
+      (
+        await as(data, 'annotator').models.run('Annotation', 'get', [
+          { id: 'other-set' },
+        ])
+      ).data,
+      null,
+    );
+    data.leases[0].expiresAt = Math.floor(Date.now() / 1000) + 30;
+    await denied(
+      OPERATIONS.imageDownloadUrl.authorize(as(data, 'annotator'), {
+        imageId: 'img2',
+      }),
+    );
+  });
+
+  it('keeps a due test to the queue that made it due and to its own occurrence', async () => {
+    const data = fixture();
+    const ctx = as(data, 'annotator').tasks;
+    data.states.set('annotator|cadence#p1', {
+      due: true,
+      dueId: 'd1',
+      dueQueueId: 'q1',
+    });
+    // Another queue neither serves it nor clears it.
+    assert.equal(
+      (await tasks.test(ctx, { projectId: 'p1', queueId: 'qa2' })).data,
+      null,
+    );
+    assert.equal(data.states.get('annotator|cadence#p1')?.due, true);
+    const first = (await tasks.test(ctx, { projectId: 'p1', queueId: 'q1' }))
+      .data!;
+    await tasks.submitTest(ctx, { leaseId: first.leaseId, annotations: [] });
+    assert.equal(data.states.get('annotator|cadence#p1')?.due, false);
+    // A later due test survives a retry of the earlier submission.
+    data.states.set('annotator|cadence#p1', {
+      due: true,
+      dueId: 'd2',
+      dueQueueId: 'q1',
+    });
+    await tasks.submitTest(ctx, { leaseId: first.leaseId, annotations: [] });
+    assert.equal(data.states.get('annotator|cadence#p1')?.due, true);
+  });
+
+  it('counts an observation towards cadence once, catching up on ack', async () => {
+    const data = testedFixture();
+    data.tables.Location.find((l) => l.id === 'loc1')!.width = 10;
+    data.tables.Location.find((l) => l.id === 'loc1')!.height = 10;
+    const queue = new MemoryQueue([work('loc1')]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
+      .data as {
+      leaseId: string;
+      messageId: string;
+    }[];
+    // The observation lands without its hook, as when the cadence write failed.
+    data.tables.Observation = [
+      ...(data.tables.Observation ?? []),
+      {
+        id: `queue-message:${task.messageId}`,
+        projectId: 'p1',
+        locationId: 'loc1',
+        annotationSetId: 'a1',
+      },
+    ];
+    data.leases[0].done = true;
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: task.leaseId,
+    });
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: task.leaseId,
+    });
+    assert.equal(data.states.get('annotator|cadence#p1')?.unannotated, 1);
+  });
+
+  it("holds back a review of someone else's mark inside the tester's own test box", async () => {
+    const data = testedFixture();
+    const queue = new MemoryQueue([{ body: { annotation: { id: 'ans' } } }]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    assert.deepEqual(
+      (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data,
+      [],
+    );
+    assert.deepEqual(queue.visibilities, [['receipt-msg-0', 30]]);
+  });
+
+  it('lets a pair go only once it is saved or skipped', async () => {
+    const data = testedFixture();
+    const queue = new MemoryQueue([
+      {
+        body: { primaryImage: { id: 'img1' }, secondaryImage: { id: 'img2' } },
+      },
+    ]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
+      .data as {
+      leaseId: string;
+    }[];
+    const edge = data.tables.ImageNeighbour.find((n) => n.image1Id === 'img1')!;
+    edge.homography = [];
+    await assert.rejects(
+      tasks.ack(ctx, { leaseId: task.leaseId }),
+      (e: unknown) => e instanceof ApiError && e.status === 409,
+    );
+    edge.homography = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: task.leaseId,
+    });
   });
 });
