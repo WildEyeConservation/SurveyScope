@@ -99,6 +99,21 @@ test('a shortcut stored as a shifted character still matches', () => {
   );
 });
 
+test('Shift+letter prefers its own shortcut over the plain letter', () => {
+  const categories: Category[] = [
+    { id: 'elephant', shortcutKey: 'e' },
+    { id: 'carcass', shortcutKey: 'shift+e' },
+  ];
+  assert.equal(
+    findShortcutMatch(
+      keyEvent('E', 'KeyE', { shiftKey: true }),
+      categories,
+      (c) => c.shortcutKey,
+    )?.id,
+    'carcass',
+  );
+});
+
 test('modifier presses no longer trigger an unmodified shortcut', () => {
   const categories: Category[] = [{ id: 'hippo', shortcutKey: 'h' }];
   assert.equal(

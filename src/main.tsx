@@ -38,6 +38,7 @@ import Permissions from './Permissions.tsx';
 import ProjectView from './ProjectView';
 import QCReviewTask from './QCReviewTask';
 import RegisterOrganization from './RegisterOrganization';
+import RequireExploreAccess from './RequireExploreAccess';
 import { Review } from './Review';
 import SharedChains from './SharedChains.tsx';
 import SharedResults from './SharedResults.tsx';
@@ -130,7 +131,11 @@ const router = createBrowserRouter([
           },
           {
             path: 'review',
-            element: <Review />,
+            element: (
+              <RequireExploreAccess>
+                <Review />
+              </RequireExploreAccess>
+            ),
           },
           {
             // Transect/category are claimed on the Jobs page and passed via
@@ -181,7 +186,11 @@ const router = createBrowserRouter([
         children: [
           {
             path: 'review',
-            element: <Review showAnnotationSetDropdown={false} />,
+            element: (
+              <RequireExploreAccess>
+                <Review showAnnotationSetDropdown={false} />
+              </RequireExploreAccess>
+            ),
           },
           {
             path: 'chain-viewer',

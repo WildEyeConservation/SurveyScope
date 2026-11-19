@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useContext } from 'react';
 import { ProjectContext } from './Context';
+import { LabelPeek, toLabelRef } from './species-notebook';
 import { formatShortcutKey } from './utils/hotkeys';
 
 /**
@@ -35,6 +36,7 @@ export function SideLegend({
     setCurrentCategory,
   } = useContext(ProjectContext)!;
   const cats = categoriesOverride ?? categories;
+  const legendCats = cats?.filter((c) => c.annotationSetId === annotationSetId);
 
   if (collapsed) {
     return (
@@ -71,9 +73,8 @@ export function SideLegend({
           </span>
         </CardHeader>
         <CardContent className='flex flex-col gap-2 overflow-auto'>
-          {cats
-            ?.filter((c) => c.annotationSetId === annotationSetId)
-            .sort((a, b) => a.name.localeCompare(b.name))
+          {legendCats
+            ?.sort((a, b) => a.name.localeCompare(b.name))
             .map((category) => (
               <Button
                 variant={
@@ -91,7 +92,13 @@ export function SideLegend({
                   ></div>
                   <div>{category.name}</div>
                 </div>
-                <div>({formatShortcutKey(category.shortcutKey)})</div>
+                <div className='flex items-center'>
+                  ({formatShortcutKey(category.shortcutKey)})
+                  <LabelPeek
+                    label={toLabelRef(category)}
+                    className='-my-1.5 ms-1 -me-2'
+                  />
+                </div>
               </Button>
             ))}
         </CardContent>

@@ -16,7 +16,10 @@ import { Schema } from './amplify/client-schema';
 import type {
   AnnotationLocation,
   AnnotationWorkspaceProps,
+  NeighbourImageLookup,
+  OtherViewsHandler,
   TaskAcknowledgement,
+  ViewerFocus,
 } from './annotationTypes';
 import MapLibreAnnotator from './annotator/MapLibreAnnotator';
 import { selectTestContextAnnotations } from './annotator/testContextAnnotations';
@@ -56,6 +59,10 @@ interface AnnotationSessionProps {
   showMapLegend?: boolean;
   infoTags?: Map<string, string[]>;
   embedded?: boolean;
+  clickToCreate?: boolean;
+  otherViews?: OtherViewsHandler;
+  neighbourOverlaps?: NeighbourImageLookup;
+  focus?: ViewerFocus;
   bearing?: number;
   onBearingChange?: (bearing: number) => void;
 }
@@ -90,6 +97,10 @@ function AnnotationSession(props: AnnotationSessionProps) {
     viewBoundsScale,
     hideNavButtons,
     embedded,
+    clickToCreate,
+    otherViews,
+    neighbourOverlaps,
+    focus,
     bearing,
     onBearingChange,
   } = props;
@@ -131,6 +142,10 @@ function AnnotationSession(props: AnnotationSessionProps) {
         showMapLegend={showMapLegend}
         infoTags={infoTags}
         embedded={embedded}
+        clickToCreate={clickToCreate}
+        otherViews={otherViews}
+        neighbourOverlaps={neighbourOverlaps}
+        focus={focus}
         bearing={bearing}
         onBearingChange={onBearingChange}
       />
@@ -159,6 +174,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     isFalseNegatives,
     viewBoundsScale,
     embedded = false,
+    clickToCreate,
+    otherViews,
+    neighbourOverlaps,
+    focus,
     bearing,
     onBearingChange,
   } = props;
@@ -506,6 +525,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       showMapLegend={embedded || legendCollapsed}
       infoTags={infoTagsByAnnotation}
       embedded={embedded}
+      clickToCreate={clickToCreate}
+      otherViews={otherViews}
+      neighbourOverlaps={neighbourOverlaps}
+      focus={focus}
       bearing={bearing}
       onBearingChange={onBearingChange}
     />

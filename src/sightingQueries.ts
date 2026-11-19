@@ -109,7 +109,7 @@ type SetAnnotations = Awaited<
 >;
 
 // Viewer query keys scope annotations by set and image.
-function viewerScope(queryKey: readonly unknown[]) {
+export function viewerScope(queryKey: readonly unknown[]) {
   if (queryKey[0] !== 'Annotation') return null;
   const conditions = (
     queryKey[1] as { filter?: { and?: Record<string, { eq?: string }>[] } }

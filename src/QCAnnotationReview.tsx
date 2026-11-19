@@ -40,6 +40,7 @@ import {
 } from './infoTags';
 import { recordWorkflowTask } from './recordWorkflowTask';
 import { reviewWorkflowTask } from './reviewWorkflowTask';
+import { LabelPeek } from './species-notebook';
 import { getTileBlob, imageTileContext } from './StorageLayer';
 import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
 import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
@@ -1274,9 +1275,16 @@ export default function QCAnnotationReview({
                       }}
                     >
                       <div>{cat.name}</div>
-                      {cat.shortcutKey && (
-                        <div>({formatShortcutKey(cat.shortcutKey)})</div>
-                      )}
+                      <div className='flex items-center'>
+                        {cat.shortcutKey &&
+                          `(${formatShortcutKey(cat.shortcutKey)})`}
+                        {projectId && (
+                          <LabelPeek
+                            label={{ projectId, name: cat.name }}
+                            className='-my-1.5 ms-1 -me-2'
+                          />
+                        )}
+                      </div>
                     </Button>
                   ))}
               </CardContent>
