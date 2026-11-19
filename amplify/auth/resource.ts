@@ -59,7 +59,7 @@ export const auth = defineAuth({
     allow.resource(inviteUserToOrganization).to(["listUsers"]),
     allow.resource(respondToInvite).to(["addUserToGroup"]),
     allow.resource(removeUserFromOrganization).to(["removeUserFromGroup"]),
-    allow.resource(syncOrganizationGroups).to(["addUserToGroup", "listGroupsForUser"]),
+    allow.resource(syncOrganizationGroups).to(["addUserToGroup", "removeUserFromGroup", "listGroupsForUser"]),
     allow.resource(reportClientError).to(["getUser"]),
     allow.resource(expireInactiveQueues).to(["getUser"]),
   ],
