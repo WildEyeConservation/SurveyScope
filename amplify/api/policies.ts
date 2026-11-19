@@ -1,3 +1,4 @@
+import { isWithinLocationBounds } from '../../shared/locationGeometry';
 import type { TestPool } from './access';
 import type { TaskScope } from './leases';
 import type { ModelPolicy, Rule, ScopeSpec } from './models';
@@ -49,6 +50,79 @@ const testPool = (
   check: async ({ access }, row) => test(await access.testPool(), row),
   fields,
 });
+// Leases never show a tester the answers inside their own test boxes.
+// Someone who left the organisation no longer reaches their own old rows; a
+// channel of their own, which names no survey, stays open.
+const selfInSurvey = (field: string): Rule => ({
+  check: async ({ access }, row, scope) => {
+    if (row[field] === undefined) return undefined;
+    if (!access.isSelf(row[field])) return false;
+    if (!scope?.projectId) return true;
+    return Boolean(await access.surveyStanding(scope.projectId));
+  },
+  fields: [field, 'projectId'],
+});
+// Annotators mark by hand; other sources come from admins and backends.
+const annotatorSource: Rule = {
+  check: (_ctx, row) =>
+    row.source === undefined ||
+    row.source === null ||
+    row.source === 'manual' ||
+    row.source === 'individual-id' ||
+    row.source === 'projected-overlap' ||
+    (typeof row.source === 'string' && row.source.startsWith('manual-')),
+  fields: ['source'],
+};
+// An annotation's labels come from its own annotation set.
+const categoriesInSet: Rule = {
+  check: async ({ models }, row) => {
+    for (const field of ['categoryId', 'reviewCatId']) {
+      const id = row[field];
+      if (id === undefined || id === null) continue;
+      const category = await models.load('Category', { id: String(id) });
+      if (!category || category.annotationSetId !== row.setId) return false;
+    }
+    return true;
+  },
+  fields: ['categoryId', 'reviewCatId', 'setId'],
+};
+// Survey members come from the survey's own organisation.
+const memberOfOrganization: Rule = {
+  check: async ({ access }, row, scope) =>
+    typeof row.userId !== 'string' || !scope?.projectId
+      ? undefined
+      : access.inSurveyOrganization(scope.projectId, row.userId),
+  fields: ['userId'],
+};
+// Legacy surveys keep raw storage keys, which only sysadmins may name.
+const notLegacy: Rule = {
+  check: async ({ models }, _row, scope) => {
+    if (!scope?.projectId) return undefined;
+    const project = await models.load('Project', { id: scope.projectId });
+    return !(Array.isArray(project?.tags) && project.tags.includes('legacy'));
+  },
+};
+const leasedAnnotation: Rule = {
+  check: async ({ access }, r) => {
+    const verdict = (await access.tasks()).readsAnnotation(
+      r.imageId,
+      r.setId,
+      r.projectId,
+    );
+    if (!verdict || typeof r.imageId !== 'string') return verdict;
+    const boxes = (await access.testPool()).boxes.get(r.imageId);
+    if (!boxes?.length) return verdict;
+    // Without a position, as for a live channel, the whole image is withheld.
+    if (typeof r.x !== 'number' || typeof r.y !== 'number') return false;
+    const point = { x: r.x, y: r.y };
+    return !boxes.some(
+      (b) =>
+        (r.setId === undefined || b.setId === r.setId) &&
+        isWithinLocationBounds(point, b.box),
+    );
+  },
+  fields: ['imageId', 'setId', 'projectId', 'x', 'y'],
+};
 const throughParent = (
   model: string,
   field: string,
@@ -62,9 +136,15 @@ const throughParent = (
   fields: [field],
 });
 
+// Reviewers read a share only while it is active.
 const shareReviewer: Rule = {
-  check: ({ access }, _row, scope) =>
-    scope?.shareId ? access.reviewsShare(scope.shareId) : undefined,
+  check: async ({ access, models }, _row, scope) => {
+    if (!scope?.shareId) return undefined;
+    if (access.isSysadmin) return true;
+    if (!access.reviewsShare(scope.shareId)) return false;
+    const share = await models.load('ChainShare', { shareId: scope.shareId });
+    return share?.status === 'active';
+  },
 };
 const snapshot: ModelPolicy = {
   scope: { share: 'shareId' },
@@ -110,11 +190,18 @@ export const POLICIES: Record<string, ModelPolicy> = {
   },
   UserProjectMembership: {
     scope: { survey: 'projectId' },
-    read: [{ self: 'userId' }, surveyAdmin],
-    create: [surveyAdmin],
-    update: [{ self: 'userId' }, surveyAdmin],
+    read: [selfInSurvey('userId'), surveyAdmin],
+    create: [{ all: [surveyAdmin, memberOfOrganization] }],
+    update: [selfInSurvey('userId'), surveyAdmin],
     delete: [surveyAdmin],
-    restricted: [{ fields: ['isAdmin', 'userId'], rules: [surveyAdmin] }],
+    restricted: [
+      { fields: ['isAdmin', 'userId'], rules: [surveyAdmin] },
+      {
+        fields: ['userId'],
+        rules: [{ all: [surveyAdmin, memberOfOrganization] }],
+        onCreate: true,
+      },
+    ],
   },
   Project: {
     scope: { survey: 'id' },
@@ -124,6 +211,7 @@ export const POLICIES: Record<string, ModelPolicy> = {
     // Surveys are removed with deleteProjectInFull, which removes their rows too.
     restricted: [{ fields: ['tags'], rules: [], onCreate: true }],
     serverId: true,
+    creator: 'createdBy',
     managed: ['pretileManifestS3Key', 'boundaryRecomputeLeaseUntil', 'hidden'],
     updatable: [
       'name',
@@ -156,15 +244,38 @@ export const POLICIES: Record<string, ModelPolicy> = {
         all: [
           surveyMember,
           task((t, r) => t.writesSet(r.annotationSetId), ['annotationSetId']),
-          { check: (_ctx, r) => r.name === 'False Positive' },
+          // Only the standard label, and only while the set lacks one.
+          {
+            check: async ({ models }, r) => {
+              if (
+                r.name !== 'False Positive' ||
+                (r.shortcutKey ?? '+') !== '+' ||
+                (r.color ?? '#888888') !== '#888888' ||
+                typeof r.annotationSetId !== 'string'
+              )
+                return false;
+              const existing = await models.run(
+                'Category',
+                'categoriesByAnnotationSetId',
+                [{ annotationSetId: r.annotationSetId }],
+              );
+              return !(existing.data as Row[]).some(
+                (c) => String(c.name).trim().toLowerCase() === 'false positive',
+              );
+            },
+            fields: ['name', 'shortcutKey', 'color', 'annotationSetId'],
+          },
         ],
       },
     ],
     managed: ['annotationCount'],
   },
+  // Parents of parent-scoped rows get server ids, so a deleted one's children
+  // cannot be adopted by recreating its id elsewhere.
   AnnotationSet: {
     ...administered({ survey: 'projectId' }, [surveyMember, resultsReader]),
     managed: ['register'],
+    serverId: true,
   },
   Camera: administered({ survey: 'projectId' }, [surveyMember, resultsReader]),
   // Launch functions create queues; people only change the zoom.
@@ -185,6 +296,7 @@ export const POLICIES: Record<string, ModelPolicy> = {
   },
   TestPreset: {
     scope: { organization: 'organizationId' },
+    serverId: true,
     read: [organizationAdmin, ownerSurveyAdmin],
     create: [organizationAdmin],
     update: [organizationAdmin, ownerSurveyAdmin],
@@ -194,11 +306,12 @@ export const POLICIES: Record<string, ModelPolicy> = {
   Stratum: administered({ survey: 'projectId' }, [resultsReader]),
   Shapefile: administered({ survey: 'projectId' }, [resultsReader]),
   ShapefileExclusions: administered({ survey: 'projectId' }, [resultsReader]),
-  ImageSet: administered({ survey: 'projectId' }),
+  ImageSet: { ...administered({ survey: 'projectId' }), serverId: true },
   ImageSetMembership: administered({ parent: 'imageSetId' }),
   LocationSet: {
     ...administered({ survey: 'projectId' }),
     updatable: ['name', 'description'],
+    serverId: true,
   },
   LocationSetMembership: backendOwned({ parent: 'locationSetId' }),
   TasksOnAnnotationSet: backendOwned({ parent: 'annotationSetId' }),
@@ -213,6 +326,13 @@ export const POLICIES: Record<string, ModelPolicy> = {
   Image: {
     ...administered({ survey: 'projectId' }, [taskImage('id')]),
     managed: ['tiledAt'],
+    restricted: [
+      {
+        fields: ['originalPath'],
+        rules: [{ all: [surveyAdmin, notLegacy] }],
+        onCreate: true,
+      },
+    ],
     updatable: [
       'transectId',
       'latitude',
@@ -238,13 +358,7 @@ export const POLICIES: Record<string, ModelPolicy> = {
   },
   Annotation: {
     scope: { survey: 'projectId' },
-    read: [
-      surveyAdmin,
-      task(
-        (t, r) => t.readsAnnotation(r.imageId, r.setId, r.projectId),
-        ['imageId', 'setId'],
-      ),
-    ],
+    read: [surveyAdmin, leasedAnnotation],
     create: [
       surveyAdmin,
       task(
@@ -282,6 +396,16 @@ export const POLICIES: Record<string, ModelPolicy> = {
     ],
     restricted: [
       { fields: ['projectId', 'imageId', 'setId'], rules: [surveyAdmin] },
+      {
+        fields: ['categoryId', 'reviewCatId', 'setId'],
+        rules: [categoriesInSet],
+        onCreate: true,
+      },
+      {
+        fields: ['source'],
+        rules: [surveyAdmin, annotatorSource],
+        onCreate: true,
+      },
     ],
     managed: ['infoTaggedBy', 'infoTagRevision', 'createdAt'],
     updatable: [
@@ -300,13 +424,19 @@ export const POLICIES: Record<string, ModelPolicy> = {
   },
   Observation: {
     scope: { survey: 'projectId' },
-    read: [surveyAdmin, { self: 'owner' }],
+    read: [surveyAdmin, selfInSurvey('owner')],
     create: [
       surveyAdmin,
       task(
         (t, r) =>
-          t.observes(r.id, r.locationId, r.annotationSetId, r.projectId),
-        ['id', 'locationId', 'annotationSetId'],
+          t.observes(
+            r.id,
+            r.locationId,
+            r.annotationSetId,
+            r.projectId,
+            r.queueId,
+          ),
+        ['id', 'locationId', 'annotationSetId', 'queueId'],
       ),
     ],
     delete: [surveyAdmin],
@@ -337,12 +467,12 @@ export const POLICIES: Record<string, ModelPolicy> = {
     throughParent('Annotation', 'annotationId', 'read'),
   ]),
   IndividualIdTransect: backendOwned({ survey: 'projectId' }, [
-    { self: 'assignedUserId' },
+    selfInSurvey('assignedUserId'),
   ]),
   // Written by /tasks/test/submit, which grades on the server.
   TestResult: {
     scope: { survey: 'projectId' },
-    read: [{ self: 'userId' }, surveyAdmin],
+    read: [selfInSurvey('userId'), surveyAdmin],
     delete: [surveyAdmin],
   },
   TestResultCategoryCount: {
@@ -352,16 +482,8 @@ export const POLICIES: Record<string, ModelPolicy> = {
   },
   TestPresetLocation: {
     scope: { parent: 'testPresetId' },
-    read: [
-      organizationAdmin,
-      testPool(
-        (pool, r) =>
-          r.testPresetId === undefined
-            ? undefined
-            : pool.presetIds.has(String(r.testPresetId)),
-        ['testPresetId'],
-      ),
-    ],
+    // The server picks tests, so testers never list where they are.
+    read: [organizationAdmin],
     create: [organizationAdmin],
     delete: [organizationAdmin],
   },
@@ -386,7 +508,7 @@ export const POLICIES: Record<string, ModelPolicy> = {
   },
   UserStats: {
     scope: { survey: 'projectId' },
-    read: [surveyAdmin, { self: 'userId' }],
+    read: [surveyAdmin, selfInSurvey('userId')],
   },
   ClientLog: {
     scope: { global: true },

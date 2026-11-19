@@ -7,8 +7,11 @@ const SEPARATOR = '---';
 const isObject = (v: unknown): v is Row =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const isLegacy = (project: Row) =>
+  Array.isArray(project.tags) && project.tags.includes('legacy');
+
 export function imageKey(project: Row, originalPath: string) {
-  const legacy = Array.isArray(project.tags) && project.tags.includes('legacy');
+  const legacy = isLegacy(project);
   return !legacy && typeof project.organizationId === 'string'
     ? `${project.organizationId}/${project.id}/${originalPath}`
     : originalPath;
@@ -27,10 +30,37 @@ async function surveyImages(
   return found;
 }
 
+// Files registered to an image, as the storage handler verified them.
+export type ImageFiles = (imageId: string) => Promise<Row[]>;
+
+const normalize = (value: string) =>
+  value.replace(/\\/g, '/').replace(/^images\//, '');
+
+// A legacy key has no project prefix, so it must be a file registered to that
+// image in that survey.
+async function requireRegisteredKey(
+  files: ImageFiles,
+  projectId: string,
+  imageId: string,
+  path: string,
+) {
+  const wanted = normalize(path);
+  const registered = (await files(imageId)).some(
+    (f) =>
+      f.projectId === projectId &&
+      f.imageId === imageId &&
+      typeof f.key === 'string' &&
+      normalize(f.key) === wanted,
+  );
+  if (!registered)
+    throw forbidden(`Image ${imageId} has no file registered to this survey`);
+}
+
 export async function requireDetectorImages(
   store: LaunchStore,
   project: Row,
   images: unknown,
+  files?: ImageFiles,
 ) {
   if (images === undefined || images === null) return;
   if (!Array.isArray(images)) throw badRequest('Invalid images');
@@ -51,6 +81,10 @@ export async function requireDetectorImages(
     const path = found.get(id)!.originalPath;
     if (!path || key !== imageKey(project, path))
       throw forbidden(`The key for image ${id} must be its stored key`);
+    if (isLegacy(project)) {
+      if (!files) throw forbidden('Legacy keys cannot be checked here');
+      await requireRegisteredKey(files, String(project.id), id, path);
+    }
   }
 }
 

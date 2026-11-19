@@ -4,10 +4,8 @@ import {
   GetCommand,
   QueryCommand,
 } from '@aws-sdk/lib-dynamodb';
-import {
-  CognitoIdentityProviderClient,
-  AdminListGroupsForUserCommand,
-} from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
+import { listUserGroups } from '../shared/chainShareAccess';
 import { createGuard } from './core';
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -46,21 +44,6 @@ export const handler = createGuard({
     } while (cursor);
     return undefined;
   },
-  async groups(username) {
-    const groups: string[] = [];
-    let nextToken: string | undefined;
-    do {
-      const page = await cognito.send(
-        new AdminListGroupsForUserCommand({
-          UserPoolId: process.env.USER_POOL_ID,
-          Username: username,
-          NextToken: nextToken,
-        })
-      );
-      for (const group of page.Groups ?? [])
-        if (group.GroupName) groups.push(group.GroupName);
-      nextToken = page.NextToken;
-    } while (nextToken);
-    return groups;
-  },
+  groups: (username) =>
+    listUserGroups(cognito, process.env.USER_POOL_ID, username),
 });

@@ -14,16 +14,32 @@ export interface Lifetime {
   expiresAt: number;
 }
 
-/** One hour, capped by the signing credentials' own expiry. */
-export async function signingLifetime(s3: S3Client): Promise<Lifetime> {
+const DEFAULT_EXPIRY = 3600;
+const MIN_EXPIRY = 60;
+
+// Lease-only access may ask for a shorter expiry; anything invalid is ignored.
+export function requestedExpiry(maxExpiresIn: unknown): number {
+  return typeof maxExpiresIn === 'number' &&
+    Number.isInteger(maxExpiresIn) &&
+    maxExpiresIn >= MIN_EXPIRY
+    ? Math.min(DEFAULT_EXPIRY, maxExpiresIn)
+    : DEFAULT_EXPIRY;
+}
+
+/** One hour (or maxExpiresIn if shorter), capped by the signing credentials' own expiry. */
+export async function signingLifetime(
+  s3: S3Client,
+  maxExpiresIn?: unknown
+): Promise<Lifetime> {
   const credentials = await s3.config.credentials();
+  const limit = requestedExpiry(maxExpiresIn);
   const expiresIn = Math.min(
-    3600,
+    limit,
     credentials.expiration
       ? Math.floor((credentials.expiration.getTime() - Date.now()) / 1000) - 30
-      : 3600
+      : limit
   );
-  if (expiresIn < 60) {
+  if (expiresIn < MIN_EXPIRY) {
     throw new Error('Signing session is expiring; retry shortly');
   }
   return { expiresIn, expiresAt: Date.now() + expiresIn * 1000 };

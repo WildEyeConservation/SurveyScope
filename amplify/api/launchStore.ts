@@ -33,6 +33,10 @@ const bucket = () => {
   return name;
 };
 
+const MAX_ATTEMPTS = 8;
+const MAX_FILE_BYTES = 64 * 1024 * 1024;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function batchGet(
   model: string,
   ids: string[],
@@ -51,7 +55,11 @@ async function batchGet(
         let keys: Record<string, unknown>[] | undefined = chunk.map((id) => ({
           id,
         }));
-        while (keys?.length) {
+        for (let attempt = 0; keys?.length; attempt++) {
+          if (attempt === MAX_ATTEMPTS)
+            throw new Error(`${model} lookups were not processed`);
+          if (attempt > 0)
+            await sleep(Math.random() * 50 * 2 ** Math.min(attempt, 6));
           const result: BatchGetCommandOutput = await dynamo.send(
             new BatchGetCommand({
               RequestItems: {
@@ -69,13 +77,22 @@ async function batchGet(
 }
 
 export const launchStore: LaunchStore = {
-  async readJson(key) {
+  async readJson(key, beforeParse) {
     const object = await s3.send(
       new GetObjectCommand({ Bucket: bucket(), Key: key }),
     );
+    const projectId = object.Metadata?.['project-id'];
+    try {
+      await beforeParse?.(projectId);
+      if ((object.ContentLength ?? 0) > MAX_FILE_BYTES)
+        throw new Error('The file is too large');
+    } catch (error) {
+      (object.Body as { destroy?: () => void } | undefined)?.destroy?.();
+      throw error;
+    }
     return {
       value: JSON.parse(await object.Body!.transformToString()),
-      projectId: object.Metadata?.['project-id'],
+      projectId,
     };
   },
 

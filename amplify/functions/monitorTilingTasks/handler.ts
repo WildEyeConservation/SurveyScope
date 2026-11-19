@@ -17,8 +17,14 @@ import {
 } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
+import { assertNewQueueUrl, buildQueueName, queueTags } from '../shared/queueNames';
 import { createShadowWorkflowRun } from '../workflowStats/runWriter';
-import { isUnder, TILING_OUTPUT_PREFIX } from '../shared/s3Keys';
+import {
+  annotationQueueTag,
+  isUnder,
+  manifestPrefixFor,
+  TILING_OUTPUT_PREFIX,
+} from '../shared/s3Keys';
 import {
   tilingTasksByStatus,
   tilingBatchesByTaskId,
@@ -321,6 +327,10 @@ async function processTask(task: TilingTaskRecord) {
 
     // Parse launch config
     const launchConfig = JSON.parse(task.launchConfig) as LaunchConfig;
+    launchConfig.taskTag = annotationQueueTag(
+      launchConfig.taskTag,
+      launchConfig.queueOptions.name
+    );
 
     let finalLocationIds = allLocationIds;
 
@@ -691,9 +701,8 @@ async function createQueue(
   locations: any[],
   group: string
 ): Promise<QueueRecord> {
-  const queueNameSeed = `${queueOptions.name}-${randomUUID()}`;
-  const safeBaseName = makeSafeQueueName(queueNameSeed);
-  const finalName = queueOptions.fifo ? `${safeBaseName}.fifo` : safeBaseName;
+  const queueId = randomUUID();
+  const finalName = buildQueueName(queueOptions.name, queueId, queueOptions.fifo);
 
   const createResult = await sqsClient.send(
     new CreateQueueCommand({
@@ -702,6 +711,7 @@ async function createQueue(
         MessageRetentionPeriod: '1209600',
         FifoQueue: queueOptions.fifo ? 'true' : undefined,
       },
+      tags: queueTags(projectId, queueId),
     })
   );
 
@@ -709,12 +719,10 @@ async function createQueue(
   if (!queueUrl) {
     throw new Error('Unable to determine created queue URL');
   }
-
-  // Generate a unique ID for the queue record before creating it
-  const queueId = randomUUID();
+  await assertNewQueueUrl(queueUrl, finalName, executeGraphql);
 
   // Write S3 manifest with all location info for requeue detection
-  const manifestKey = `queue-manifests/${queueId}.json`;
+  const manifestKey = `${manifestPrefixFor(launchConfig.taskTag)}${queueId}.json`;
   await writeLocationManifest(manifestKey, locations);
   console.log('Wrote location manifest to S3', { manifestKey, locationCount: locations.length });
 
@@ -855,15 +863,6 @@ async function getQueueType(queueUrl: string): Promise<'FIFO' | 'Standard'> {
     console.warn('Unable to determine queue type, defaulting to Standard', error);
     return 'Standard';
   }
-}
-
-function makeSafeQueueName(input: string): string {
-  let sanitized = input.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const maxMainLength = 75;
-  if (sanitized.length > maxMainLength) {
-    sanitized = sanitized.substring(0, maxMainLength);
-  }
-  return sanitized;
 }
 
 async function setProjectStatus(projectId: string, status: string) {

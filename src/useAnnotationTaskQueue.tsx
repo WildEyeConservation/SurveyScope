@@ -9,11 +9,15 @@ import type {
 import { primeTask } from './annotator/prefetchTask';
 import { TILE_VIEW_BOUNDS_SCALE } from './annotator/viewTiles';
 import type { TestBox, TestContextAnnotation } from './api/tasks';
-import { ackTask, receiveTasks, type ReceivedTask } from './api/tasks';
+import {
+  ackTask,
+  receiveTasks,
+  TestDueError,
+  type ReceivedTask,
+} from './api/tasks';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
-import { decideTestCadence } from './testCadence';
 import { touchQueue } from './touchQueue';
 import useTesting, { type TileSample, type TileSource } from './useTesting';
 import { fetchAllPaginatedResults, isWithinLocationBounds } from './utils';
@@ -97,6 +101,14 @@ export default function useAnnotationTaskQueue() {
   const testViewBoundsScaleRef = useRef<number | undefined>(undefined);
   const testingSetupPromiseRef = useRef<Promise<void>>(Promise.resolve());
   const maxCadenceIndexRef = useRef(-1);
+  // The server decides when a test is due and says so on ack or receive.
+  const testDueRef = useRef(false);
+  const dueWaiterRef = useRef(waiter());
+  const markTestDue = useCallback(() => {
+    testDueRef.current = true;
+    dueWaiterRef.current.resolve();
+  }, []);
+  const serveTestRef = useRef<() => Promise<AnnotationTaskPayload | null>>();
   // Taken from the first task of the primary queue.
   const tileRef = useRef<TileSample | undefined>(undefined);
   const workReadyRef = useRef(waiter());
@@ -104,14 +116,7 @@ export default function useAnnotationTaskQueue() {
   // Set in False Negatives jobs, whose tests are grown to the tile size.
   const testGrowRef = useRef<TileSource | undefined>(undefined);
   const { fetcher: testFetcher } = useTesting(testGrowRef);
-  const {
-    jobsCompleted,
-    currentAnnoCount,
-    currentTaskTag,
-    setCurrentAnnoCount,
-    unannotatedJobs,
-    setUnannotatedJobs,
-  } = useContext(UserContext)!;
+  const { currentTaskTag, setCurrentAnnoCount } = useContext(UserContext)!;
 
   // Keep future task fetches on the value saved during this active session.
   useEffect(
@@ -289,7 +294,7 @@ export default function useAnnotationTaskQueue() {
       body.isFalseNegatives = isFalseNegatives;
       const ack = async () => {
         try {
-          await ackTask(received.leaseId);
+          if (await ackTask(received.leaseId)) markTestDue();
           if (body.location?.id) {
             processedLocationsRef.current.add(body.location.id);
           }
@@ -343,7 +348,7 @@ export default function useAnnotationTaskQueue() {
         revalidate: async () => Boolean(await prepareTask(body)),
       };
     },
-    [client, prepareTask, leases],
+    [client, prepareTask, leases, markTestDue],
   );
 
   const receiveBatch = useCallback(async (): Promise<number> => {
@@ -358,15 +363,22 @@ export default function useAnnotationTaskQueue() {
     };
 
     let source = { zoom, isFalseNegatives: isFnQueue, primary: true };
-    let received = await receive(queueId!);
-    if (received.messages.length === 0 && backupQueueId) {
-      source = {
-        zoom: backupZoom,
-        isFalseNegatives: backupIsFnQueue,
-        primary: false,
-      };
-      received = await receive(backupQueueId);
-      if (received.messages.length > 0) touchQueue(client, backupQueueId);
+    let received;
+    try {
+      received = await receive(queueId!);
+      if (received.messages.length === 0 && backupQueueId) {
+        source = {
+          zoom: backupZoom,
+          isFalseNegatives: backupIsFnQueue,
+          primary: false,
+        };
+        received = await receive(backupQueueId);
+        if (received.messages.length > 0) touchQueue(client, backupQueueId);
+      }
+    } catch (error) {
+      if (!(error instanceof TestDueError)) throw error;
+      markTestDue();
+      return 0;
     }
 
     const tasks = await Promise.all(
@@ -410,6 +422,7 @@ export default function useAnnotationTaskQueue() {
     backupIsFnQueue,
     prepareMessage,
     client,
+    markTestDue,
   ]);
 
   const receive = useCallback(() => {
@@ -437,6 +450,13 @@ export default function useAnnotationTaskQueue() {
 
       const received = await receive();
       if (readyRef.current.length > 0) continue;
+      // Work is held back until the due test is taken.
+      if (testDueRef.current && serveTestRef.current) {
+        const test = await serveTestRef.current();
+        testDueRef.current = false;
+        dueWaiterRef.current = waiter();
+        if (test) return test;
+      }
       await sleep(received === 0 ? 5000 : 1000);
     }
   }, [queueId, receive]);
@@ -458,8 +478,12 @@ export default function useAnnotationTaskQueue() {
         return null;
       }
 
+      // A due test is served at once, grown only if a tile sample is known.
       const growTests = Boolean(testGrowRef.current);
-      await (growTests ? tileReadyRef : workReadyRef).current.ready;
+      await Promise.race([
+        (growTests ? tileReadyRef : workReadyRef).current.ready,
+        dueWaiterRef.current.ready,
+      ]);
 
       const testLocation = (await testFetcher()) as
         (AnnotationTaskMessage & { testBox?: TestBox }) | null;
@@ -486,6 +510,7 @@ export default function useAnnotationTaskQueue() {
         viewBoundsScale: testViewBoundsScaleRef.current,
       };
     }, [prepareTask, testFetcher]);
+  serveTestRef.current = standbyTestFetcher;
 
   const beforeNext = useCallback(
     async (
@@ -507,53 +532,22 @@ export default function useAnnotationTaskQueue() {
         return null;
       }
 
-      const userAnnotated = Object.values(currentAnnoCount).some(
-        (annotations) => annotations.length > 0,
-      );
-      const decision = decideTestCadence({
-        unannotatedJobs,
-        userAnnotated,
-        isTestTask: Boolean(completedTask.isTest),
-        testingEnabled: testUserRef.current,
-        config: configRef.current,
-        jobsCompleted,
-      });
-
       // The acknowledgement callback captures this task's annotation state
       // before navigation. Clear the shared working set for the next task.
       setCurrentAnnoCount({});
-
-      if (!decision.shouldInsertTest) {
-        maxCadenceIndexRef.current = completedIndex;
-        setUnannotatedJobs(decision.nextUnannotatedJobs);
-        return null;
-      }
-
-      if (standbyReady) {
-        maxCadenceIndexRef.current = completedIndex;
-        setUnannotatedJobs(0);
-        return {
-          kind: 'promote-standby',
-          overrides: {
-            taskTag: completedTask.taskTag || currentTaskTag,
-          },
-        };
-      }
-
-      // The threshold remains reached if warming has not finished. Navigation
-      // continues normally and the next newly completed task retries.
       maxCadenceIndexRef.current = completedIndex;
-      setUnannotatedJobs(decision.nextUnannotatedJobs);
-      return null;
+      if (completedTask.isTest || !testDueRef.current || !standbyReady)
+        return null;
+      testDueRef.current = false;
+      dueWaiterRef.current = waiter();
+      return {
+        kind: 'promote-standby',
+        overrides: {
+          taskTag: completedTask.taskTag || currentTaskTag,
+        },
+      };
     },
-    [
-      currentAnnoCount,
-      currentTaskTag,
-      jobsCompleted,
-      setCurrentAnnoCount,
-      setUnannotatedJobs,
-      unannotatedJobs,
-    ],
+    [currentTaskTag, setCurrentAnnoCount],
   );
 
   return {

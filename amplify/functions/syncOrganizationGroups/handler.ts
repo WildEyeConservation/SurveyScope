@@ -7,6 +7,7 @@ import {
   CognitoIdentityProviderClient,
   AdminAddUserToGroupCommand,
   AdminListGroupsForUserCommand,
+  AdminRemoveUserFromGroupCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 
 const listMembershipsByUserId = /* GraphQL */ `
@@ -16,6 +17,14 @@ const listMembershipsByUserId = /* GraphQL */ `
         organizationId
       }
       nextToken
+    }
+  }
+`;
+
+const getMembershipQuery = /* GraphQL */ `
+  query GetOrganizationMembership($organizationId: ID!, $userId: String!) {
+    getOrganizationMembership(organizationId: $organizationId, userId: $userId) {
+      organizationId
     }
   }
 `;
@@ -58,6 +67,17 @@ type MembershipPage = {
   };
 };
 
+async function membershipExists(organizationId: string, userId: string) {
+  const response = (await gqlClient.graphql({
+    query: getMembershipQuery,
+    variables: { organizationId, userId },
+  })) as GraphQLResult<{ getOrganizationMembership: { organizationId: string } | null }>;
+  if (response.errors?.length || !response.data) {
+    throw new Error(`GraphQL error: ${JSON.stringify(response.errors)}`);
+  }
+  return Boolean(response.data.getOrganizationMembership);
+}
+
 export const handler: SyncOrganizationGroupsHandler = async (event) => {
   const userId = event.identity?.username;
   if (!userId) throw new Error('User identity not found');
@@ -93,6 +113,7 @@ export const handler: SyncOrganizationGroupsHandler = async (event) => {
   } while (groupsToken);
 
   const missing = organizationIds.filter((id) => !groups.has(id));
+  let added = 0;
   for (const organizationId of missing) {
     await cognitoClient.send(
       new AdminAddUserToGroupCommand({
@@ -101,11 +122,21 @@ export const handler: SyncOrganizationGroupsHandler = async (event) => {
         UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
       }),
     );
+    // A concurrent removal may have deleted the row after it was listed.
+    if (await membershipExists(organizationId, userId)) {
+      added++;
+    } else {
+      await cognitoClient.send(
+        new AdminRemoveUserFromGroupCommand({
+          Username: userId,
+          GroupName: organizationId,
+          UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
+        }),
+      );
+    }
   }
-  if (missing.length) {
-    console.log(
-      `Added user ${userId} to ${missing.length} organisation group(s)`,
-    );
+  if (added) {
+    console.log(`Added user ${userId} to ${added} organisation group(s)`);
   }
-  return missing.length > 0;
+  return added > 0;
 };

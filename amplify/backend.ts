@@ -922,6 +922,24 @@ backend.data.resources.tables.ImageFile.grant(
   backend.imageAccess.resources.lambda,
   'dynamodb:PutItem'
 );
+// Shared image access checks live chain-share reviewer membership.
+backend.imageAccess.addEnvironment(
+  'USER_POOL_ID',
+  backend.auth.resources.userPool.userPoolId
+);
+backend.imageAccess.resources.lambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['cognito-idp:AdminListGroupsForUser'],
+    resources: [backend.auth.resources.userPool.userPoolArn],
+  })
+);
+// Undoes a group add when the membership row vanished during the sync.
+backend.syncOrganizationGroups.resources.lambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['cognito-idp:AdminRemoveUserFromGroup'],
+    resources: [backend.auth.resources.userPool.userPoolArn],
+  })
+);
 for (const model of ['Project', 'AnnotationSet'] as const) {
   const table = backend.data.resources.tables[model];
   backend.workflowFiles.addEnvironment(
@@ -1287,6 +1305,44 @@ new iam.Policy(workflowStatsStack, 'FalseNegativeLaunchDataAccess', {
       resources: [
         falseNegativeTables.Observation.tableArn,
         falseNegativeTables.Annotation.tableArn,
+      ],
+    }),
+  ],
+});
+
+// Transect completion and its job decrement run as one DynamoDB transaction.
+const individualIdTables = {
+  IndividualIdJob: backend.data.resources.tables['IndividualIdJob'],
+  IndividualIdTransect: backend.data.resources.tables['IndividualIdTransect'],
+};
+const individualIdTablesParameterName = `/detweb/${workflowStatsEnvName}/individual-id-tables`;
+const individualIdTablesParameter = new ssm.StringParameter(
+  workflowStatsStack,
+  'IndividualIdTables',
+  {
+    parameterName: individualIdTablesParameterName,
+    stringValue: JSON.stringify({
+      IndividualIdJob: individualIdTables.IndividualIdJob.tableName,
+      IndividualIdTransect: individualIdTables.IndividualIdTransect.tableName,
+    }),
+  }
+);
+backend.completeIndividualIdTransect.addEnvironment(
+  'INDIVIDUAL_ID_TABLES_PARAMETER',
+  individualIdTablesParameterName
+);
+new iam.Policy(workflowStatsStack, 'CompleteTransectDataAccess', {
+  roles: [backend.completeIndividualIdTransect.resources.lambda.role!],
+  statements: [
+    new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [individualIdTablesParameter.parameterArn],
+    }),
+    new iam.PolicyStatement({
+      actions: ['dynamodb:GetItem', 'dynamodb:UpdateItem'],
+      resources: [
+        individualIdTables.IndividualIdJob.tableArn,
+        individualIdTables.IndividualIdTransect.tableArn,
       ],
     }),
   ],
@@ -2538,19 +2594,19 @@ backend.runMadDetector.resources.lambda.addToRolePolicy(
 );
 backend.cleanupJobs.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
-    actions: ['sqs:DeleteQueue', 'sqs:GetQueueAttributes'],
+    actions: ['sqs:DeleteQueue', 'sqs:GetQueueUrl', 'sqs:ListQueueTags', 'sqs:GetQueueAttributes'],
     resources: ['*'],
   })
 );
 backend.deleteProject.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
-    actions: ['sqs:DeleteQueue'],
+    actions: ['sqs:DeleteQueue', 'sqs:GetQueueUrl', 'sqs:ListQueueTags'],
     resources: ['*'],
   })
 );
 backend.deleteQueue.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
-    actions: ['sqs:DeleteQueue', 'sqs:GetQueueAttributes'],
+    actions: ['sqs:DeleteQueue', 'sqs:GetQueueUrl', 'sqs:ListQueueTags', 'sqs:GetQueueAttributes'],
     resources: ['*'],
   })
 );
@@ -2579,6 +2635,7 @@ backend.launchAnnotationSet.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: [
       'sqs:CreateQueue',
+      'sqs:TagQueue',
       'sqs:SendMessage',
       'sqs:GetQueueAttributes',
       'sqs:GetQueueUrl',
@@ -2590,6 +2647,7 @@ backend.launchFalseNegatives.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: [
       'sqs:CreateQueue',
+      'sqs:TagQueue',
       'sqs:SendMessage',
       'sqs:GetQueueAttributes',
       'sqs:GetQueueUrl',
@@ -2624,6 +2682,7 @@ backend.launchQCReview.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: [
       'sqs:CreateQueue',
+      'sqs:TagQueue',
       'sqs:SendMessage',
       'sqs:GetQueueAttributes',
       'sqs:GetQueueUrl',
@@ -2644,6 +2703,7 @@ backend.launchInfoTags.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: [
       'sqs:CreateQueue',
+      'sqs:TagQueue',
       'sqs:SendMessage',
       'sqs:GetQueueAttributes',
       'sqs:GetQueueUrl',
@@ -2664,6 +2724,7 @@ backend.launchHomography.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: [
       'sqs:CreateQueue',
+      'sqs:TagQueue',
       'sqs:SendMessage',
       'sqs:GetQueueAttributes',
       'sqs:GetQueueUrl',
@@ -2709,6 +2770,7 @@ backend.monitorTilingTasks.resources.lambda.addToRolePolicy(
   new iam.PolicyStatement({
     actions: [
       'sqs:CreateQueue',
+      'sqs:TagQueue',
       'sqs:SendMessage',
       'sqs:GetQueueAttributes',
       'sqs:GetQueueUrl',
@@ -2846,7 +2908,7 @@ backend.extendTileLifecycles.addEnvironment('REFRESH_TILES_QUEUE_URL', refreshTi
 const expireInactiveQueuesFunction = backend.expireInactiveQueues.resources.lambda;
 expireInactiveQueuesFunction.addToRolePolicy(
   new iam.PolicyStatement({
-    actions: ['sqs:DeleteQueue'],
+    actions: ['sqs:DeleteQueue', 'sqs:GetQueueUrl', 'sqs:ListQueueTags'],
     resources: ['*'],
   })
 );

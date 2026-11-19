@@ -3,7 +3,8 @@ import { env } from '$amplify/env/expireInactiveQueues';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
-import { SQSClient, DeleteQueueCommand } from '@aws-sdk/client-sqs';
+import { SQSClient } from '@aws-sdk/client-sqs';
+import { deleteBoundQueue } from '../shared/queueNames';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import {
@@ -380,12 +381,9 @@ async function cancelQueue(queue: QueueRow): Promise<boolean> {
 
   if (queue.url) {
     try {
-      await sqs.send(new DeleteQueueCommand({ QueueUrl: queue.url }));
+      await deleteBoundQueue(sqs, queue, executeGraphql);
     } catch (err) {
-      const name = (err as { name?: string } | null)?.name;
-      if (name !== 'QueueDoesNotExist' && name !== 'AWS.SimpleQueueService.NonExistentQueue') {
-        console.error(JSON.stringify({ msg: 'sqs_delete_failed', queueId: queue.id, error: String(err) }));
-      }
+      console.error(JSON.stringify({ msg: 'sqs_delete_failed', queueId: queue.id, error: String(err) }));
     }
   }
 

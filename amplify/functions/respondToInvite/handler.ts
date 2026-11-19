@@ -17,8 +17,15 @@ const getOrganizationInviteQuery = /* GraphQL */ `
 `;
 
 const updateOrganizationInviteMutation = /* GraphQL */ `
-  mutation UpdateOrganizationInvite($input: UpdateOrganizationInviteInput!) {
-    updateOrganizationInvite(input: $input) { id status group }
+  mutation UpdateOrganizationInvite(
+    $input: UpdateOrganizationInviteInput!
+    $condition: ModelOrganizationInviteConditionInput
+  ) {
+    updateOrganizationInvite(input: $input, condition: $condition) {
+      id
+      status
+      group
+    }
   }
 `;
 
@@ -78,13 +85,61 @@ async function executeGraphql<T>(
   return response.data;
 }
 
+type ErrorLike = { message?: string; errors?: { message?: string }[] };
+
+function isConditionFailure(error: unknown): boolean {
+  const e = (error ?? {}) as ErrorLike;
+  return [e.message, ...(e.errors ?? []).map((inner) => inner?.message)].some(
+    (message) => /conditional request failed|ConditionalCheckFailed/i.test(message ?? ''),
+  );
+}
+
+// Moves the invite only if it is still in one of the given states.
+async function transition(
+  inviteId: string,
+  from: string[],
+  to: string,
+): Promise<boolean> {
+  try {
+    await executeGraphql(updateOrganizationInviteMutation, {
+      input: { id: inviteId, status: to },
+      condition: { or: from.map((status) => ({ status: { eq: status } })) },
+    });
+    return true;
+  } catch (error) {
+    if (isConditionFailure(error)) return false;
+    throw error;
+  }
+}
+
+async function currentStatus(inviteId: string): Promise<string> {
+  const data = await executeGraphql<{
+    getOrganizationInvite?: { status: string } | null;
+  }>(getOrganizationInviteQuery, { id: inviteId });
+  return data.getOrganizationInvite?.status ?? 'removed';
+}
+
+// Returns false when the membership already existed.
+async function createMembership(organizationId: string, userId: string) {
+  try {
+    await executeGraphql(createOrganizationMembershipMutation, {
+      input: { organizationId, userId, isAdmin: false, group: organizationId },
+    });
+    return true;
+  } catch (error) {
+    if (isConditionFailure(error)) return false;
+    throw error;
+  }
+}
+
+// pending -> accepting -> accepted, or pending -> declined. An accept that
+// fails after its claim leaves "accepting", which a repeated accept finishes.
 export const handler: RespondToInviteHandler = async (event) => {
   try {
     console.log('Invoked respondToInvite with event:', JSON.stringify(event));
     const { inviteId, accept } = event.arguments;
     const callerSub = event.identity!.sub;
 
-    // 1. Fetch invite
     const inviteData = await executeGraphql<{
       getOrganizationInvite?: {
         id: string;
@@ -99,35 +154,33 @@ export const handler: RespondToInviteHandler = async (event) => {
     if (!invite) {
       throw new Error('Invite not found');
     }
-
-    // 2. Verify caller owns this invite and it's still pending
     if (invite.username !== callerSub) {
       throw new Error('Unauthorized: this invite belongs to another user');
     }
-    if (invite.status !== 'pending') {
-      throw new Error(`Invite has already been ${invite.status}`);
-    }
 
     if (!accept) {
-      // 3. Declining
-      await executeGraphql(updateOrganizationInviteMutation, {
-        input: { id: inviteId, status: 'declined' },
-      });
+      if (!(await transition(inviteId, ['pending'], 'declined'))) {
+        throw new Error(`Invite has already been ${await currentStatus(inviteId)}`);
+      }
       console.log(`Invite ${inviteId} declined`);
       return JSON.stringify({ success: true, action: 'declined' });
     }
 
-    // 4. Accepting: create membership
-    await executeGraphql(createOrganizationMembershipMutation, {
-      input: {
-        organizationId: invite.organizationId,
-        userId: callerSub,
-        isAdmin: false,
-        group: invite.organizationId,
-      },
-    });
+    if (!(await transition(inviteId, ['pending', 'accepting'], 'accepting'))) {
+      throw new Error(`Invite has already been ${await currentStatus(inviteId)}`);
+    }
 
-    // 5. Add user to Cognito group
+    let created: boolean;
+    try {
+      created = await createMembership(invite.organizationId, callerSub);
+    } catch (error) {
+      // Nothing was granted, so the invite can go back to pending.
+      await transition(inviteId, ['accepting'], 'pending').catch((rollback) =>
+        console.error('Could not return the invite to pending', rollback),
+      );
+      throw error;
+    }
+
     await cognitoClient.send(
       new AdminAddUserToGroupCommand({
         Username: callerSub,
@@ -136,12 +189,15 @@ export const handler: RespondToInviteHandler = async (event) => {
       })
     );
 
-    // 6. Update invite status
-    await executeGraphql(updateOrganizationInviteMutation, {
-      input: { id: inviteId, status: 'accepted' },
-    });
+    if (!(await transition(inviteId, ['accepting'], 'accepted'))) {
+      // A concurrent accept may have finished first.
+      const status = await currentStatus(inviteId);
+      if (status !== 'accepted') throw new Error(`Invite has already been ${status}`);
+    }
 
-    console.log(`Invite ${inviteId} accepted, user ${callerSub} added to org ${invite.organizationId}`);
+    console.log(
+      `Invite ${inviteId} accepted, user ${callerSub} ${created ? 'added to' : 'already in'} org ${invite.organizationId}`
+    );
     return JSON.stringify({ success: true, action: 'accepted' });
   } catch (err) {
     console.error('respondToInvite failed:', err instanceof Error ? err.message : String(err));

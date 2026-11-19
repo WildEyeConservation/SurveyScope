@@ -4,8 +4,15 @@ import {
   GetCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { Logger } from '@aws-lambda-powertools/logger';
+import type { GraphQLResult } from '@aws-amplify/api-graphql';
+import { Amplify } from 'aws-amplify';
+import { generateClient } from 'aws-amplify/data';
 import type { RecordWorkflowTaskHandler } from '../../data/resource';
-import { authorizeRequest } from '../shared/authorizeRequest';
+import {
+  authorizeWorkflowTask,
+  workflowTaskKey,
+  type WorkflowTaskLookups,
+} from './authorize';
 import {
   parseRecordWorkflowTaskEventInput,
   prepareWorkflowTaskEvent,
@@ -13,14 +20,9 @@ import {
 } from '../workflowStats/core';
 import { writeWorkflowTaskEvent } from '../workflowStats/store';
 
-/**
- * Records one completed unit of work for a browser-driven workflow.
- *
- * The caller names the run and the work item only. Workflow type, project,
- * annotation set and organization are read from the durable Workflow Run, and
- * the credited user comes from the request identity, so a client cannot
- * attribute work to another user, project or organization.
- */
+// The run supplies workflow, survey and organisation; the caller must be in
+// that survey, the work item must belong to the run, and the dedupe key is
+// derived here rather than taken from the client.
 
 const logger = new Logger({
   serviceName: 'record-workflow-task',
@@ -43,6 +45,103 @@ const documentClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: process.env.AWS_REGION, maxAttempts: 5 }),
   { marshallOptions: { removeUndefinedValues: true } }
 );
+
+Amplify.configure(
+  {
+    API: {
+      GraphQL: {
+        endpoint: requiredEnvironmentVariable('AMPLIFY_DATA_GRAPHQL_ENDPOINT'),
+        region: requiredEnvironmentVariable('AWS_REGION'),
+        defaultAuthMode: 'iam',
+      },
+    },
+  },
+  {
+    Auth: {
+      credentialsProvider: {
+        getCredentialsAndIdentityId: async () => ({
+          credentials: {
+            accessKeyId: requiredEnvironmentVariable('AWS_ACCESS_KEY_ID'),
+            secretAccessKey: requiredEnvironmentVariable('AWS_SECRET_ACCESS_KEY'),
+            sessionToken: process.env.AWS_SESSION_TOKEN,
+          },
+        }),
+        clearCredentialsAndIdentityId: () => {},
+      },
+    },
+  }
+);
+
+const gqlClient = generateClient({ authMode: 'iam' });
+
+async function executeGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>
+): Promise<T> {
+  const response = (await gqlClient.graphql({
+    query,
+    variables,
+  } as never)) as GraphQLResult<T>;
+  if (response.errors?.length) {
+    throw new Error(
+      `GraphQL error: ${JSON.stringify(response.errors.map((e) => e.message))}`
+    );
+  }
+  if (!response.data) throw new Error('GraphQL response missing data');
+  return response.data;
+}
+
+const lookups: WorkflowTaskLookups = {
+  isSurveyMember: async (projectId, userId) => {
+    let nextToken: string | null | undefined;
+    do {
+      const data = await executeGraphql<{
+        userProjectMembershipsByUserId?: {
+          items: { projectId: string }[];
+          nextToken?: string | null;
+        };
+      }>(
+        `query Memberships($userId: String!, $nextToken: String) {
+          userProjectMembershipsByUserId(userId: $userId, limit: 1000, nextToken: $nextToken) {
+            items { projectId }
+            nextToken
+          }
+        }`,
+        { userId, nextToken }
+      );
+      const page = data.userProjectMembershipsByUserId;
+      if (page?.items.some((m) => m.projectId === projectId)) return true;
+      nextToken = page?.nextToken;
+    } while (nextToken);
+    return false;
+  },
+  isOrganizationAdmin: async (organizationId, userId) =>
+    !!(
+      await executeGraphql<{
+        getOrganizationMembership?: { isAdmin?: boolean | null } | null;
+      }>(
+        `query GetOrganizationMembership($organizationId: ID!, $userId: String!) {
+          getOrganizationMembership(organizationId: $organizationId, userId: $userId) { isAdmin }
+        }`,
+        { organizationId, userId }
+      )
+    ).getOrganizationMembership?.isAdmin,
+  annotation: async (id) =>
+    (
+      await executeGraphql<{
+        getAnnotation?: { projectId?: string | null; setId?: string | null } | null;
+      }>(`query GetAnnotation($id: ID!) { getAnnotation(id: $id) { projectId setId } }`, {
+        id,
+      })
+    ).getAnnotation ?? null,
+  imageProject: async (id) =>
+    (
+      await executeGraphql<{ getImage?: { projectId?: string | null } | null }>(
+        `query GetImage($id: ID!) { getImage(id: $id) { projectId } }`,
+        { id }
+      )
+    ).getImage?.projectId ?? null,
+};
 
 function parsedMetrics(raw: unknown): Record<string, number> {
   if (raw === undefined || raw === null || raw === '') return {};
@@ -78,15 +177,30 @@ export const handler: RecordWorkflowTaskHandler = async (event) => {
   if (typeof organizationId !== 'string' || organizationId === '') {
     throw new Error('Workflow run has no organization');
   }
-  // The organization comes from the run, so this checks the caller against the
-  // owning organization rather than one the caller supplied.
-  authorizeRequest(event.identity, organizationId);
+  const groups = Array.isArray(event.identity?.groups)
+    ? event.identity.groups.filter((g): g is string => typeof g === 'string')
+    : [];
+  await authorizeWorkflowTask(
+    { sub: userId, groups },
+    {
+      runId: String(run.runId),
+      workflowType: String(run.workflowType),
+      projectId: String(run.projectId),
+      annotationSetId: String(run.annotationSetId),
+      organizationId,
+    },
+    event.arguments.workItemType,
+    event.arguments.workItemId,
+    lookups
+  );
 
   const actor = { userId, organizationId };
   const task = parseRecordWorkflowTaskEventInput({
-    idempotencyKey:
-      event.arguments.idempotencyKey ??
-      `${event.arguments.workItemType}:${event.arguments.workItemId}`,
+    idempotencyKey: workflowTaskKey(
+      event.arguments.workItemType,
+      event.arguments.workItemId,
+      userId
+    ),
     workflowType: run.workflowType,
     workflowRunId: run.runId,
     projectId: run.projectId,

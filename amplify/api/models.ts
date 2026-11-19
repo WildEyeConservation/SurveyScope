@@ -59,6 +59,8 @@ export interface ModelPolicy {
   guard?: string;
   // Set to the caller on create, as sub::username, and never changed by them.
   owner?: string;
+  // Set to the caller on create.
+  creator?: string;
   // The only fields an update may change, besides the key; unset allows any.
   updatable?: string[];
   // Fields that may only name the caller.
@@ -120,6 +122,14 @@ export interface DataLayer {
 type Action = 'read' | 'create' | 'update' | 'delete';
 
 const MANAGED = ['group', 'updatedAt', '__typename'];
+const MAX_LIMIT = 10_000;
+const OPTION_KEYS = [
+  'selectionSet',
+  'filter',
+  'limit',
+  'nextToken',
+  'sortDirection',
+];
 const isScalar = (v: unknown): v is string | number =>
   (typeof v === 'string' && v !== '') || typeof v === 'number';
 const isObject = (v: unknown): v is Row =>
@@ -165,7 +175,13 @@ function sanitizeOptions(raw: unknown): QueryOptions {
   }
   if (raw.filter !== undefined) options.filter = raw.filter;
   if (raw.limit !== undefined) {
-    if (typeof raw.limit !== 'number') throw badRequest('Invalid limit');
+    if (
+      typeof raw.limit !== 'number' ||
+      !Number.isInteger(raw.limit) ||
+      raw.limit < 1 ||
+      raw.limit > MAX_LIMIT
+    )
+      throw badRequest('Invalid limit');
     options.limit = raw.limit;
   }
   if (raw.nextToken !== undefined && raw.nextToken !== null) {
@@ -184,6 +200,12 @@ const own = <T>(map: Record<string, T>, key: string): T | undefined =>
 
 export class Models {
   private readonly rows = new Map<string, Promise<Row | null>>();
+  // Runs after a write succeeds, e.g. to note which task it finished.
+  afterWrite?: (
+    model: string,
+    op: 'create' | 'update',
+    row: Row,
+  ) => Promise<void>;
 
   constructor(
     readonly access: Access,
@@ -250,6 +272,13 @@ export class Models {
     return this.rows.get(cacheKey)!;
   }
 
+  // A parent written a moment ago may not be readable yet.
+  private async reload(model: string, key: Row): Promise<Row | null> {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    this.rows.delete(`${model}:${JSON.stringify(key)}`);
+    return this.load(model, key);
+  }
+
   private scopeSpec(model: string): ScopeSpec | undefined {
     const policy = own(this.policies, model);
     if (policy) return policy.scope;
@@ -269,7 +298,11 @@ export class Models {
     if ('global' in spec) return {};
     if ('survey' in spec && isScalar(row[spec.survey])) {
       const scope: Scope = { projectId: String(row[spec.survey]) };
-      if (spec.survey !== 'organizationId' && isScalar(row.organizationId)) {
+      if (
+        spec.survey !== 'organizationId' &&
+        this.schema.hasField(model, 'organizationId') &&
+        isScalar(row.organizationId)
+      ) {
         scope.organizationId = String(row.organizationId);
       }
       return scope;
@@ -453,10 +486,12 @@ export class Models {
   }
 
   private async readable(model: string, rows: Row[]): Promise<Row[]> {
+    // AppSync returns null for rows it cannot shape; they are dropped.
+    const present = rows.filter(isObject);
     const verdicts = await Promise.all(
-      rows.map((row) => this.allows(model, 'read', row)),
+      present.map((row) => this.allows(model, 'read', row)),
     );
-    return rows.filter((_, i) => verdicts[i]);
+    return present.filter((_, i) => verdicts[i]);
   }
 
   private async present(model: string, rows: Row[]): Promise<Row[]> {
@@ -476,7 +511,8 @@ export class Models {
       selectionSet: this.prepareSelection(model, options.selectionSet),
     });
     if (!result.data) return result;
-    if (!(await this.allows(model, 'read', result.data))) throw forbidden();
+    // Rows the caller may not read look the same as missing ones.
+    if (!(await this.allows(model, 'read', result.data))) return { data: null };
     return { ...result, data: await this.filterNested(model, result.data) };
   }
 
@@ -499,19 +535,40 @@ export class Models {
     options: QueryOptions,
   ) {
     if (!isObject(input)) throw badRequest('Invalid query input');
+    // Browsers may pass options inside the input, as the Amplify client allows.
+    const inline: Row = {};
+    for (const name of OPTION_KEYS)
+      if (name in input) inline[name] = input[name];
+    options = { ...sanitizeOptions(inline), ...options };
+    // Only the index's own key reaches the client, and only it sets the pins.
+    const [partition, ...sortKeys] =
+      this.schema.indexFields(model, field) ?? [];
+    const key: Row = {};
+    for (const [name, value] of Object.entries(input)) {
+      if (OPTION_KEYS.includes(name)) continue;
+      if (name === partition && isScalar(value)) key[name] = value;
+      else if (sortKeys.includes(name) && (isScalar(value) || isObject(value)))
+        key[name] = value;
+      else throw badRequest(`${field} has no key ${name}`);
+    }
+    if (!partition || !isScalar(key[partition]))
+      throw badRequest(`Missing ${partition}`);
     const pins: Row = { ...eqPins(options.filter) };
-    for (const [key, value] of Object.entries(input)) {
-      if (isScalar(value)) pins[key] = value;
-      else if (isObject(value) && isScalar(value.eq)) pins[key] = value.eq;
+    for (const [name, value] of Object.entries(key)) {
+      if (isScalar(value)) pins[name] = value;
+      else if (isObject(value) && isScalar(value.eq)) pins[name] = value.eq;
     }
     // A key that names no scope cannot be refused up front; its rows are filtered.
     const allowed = await this.allows(model, 'read', pins, false);
     if (!allowed && (await this.scopeOf(model, pins))) throw forbidden();
-    const result = await this.data.query(model, field, input, {
+    const result = await this.data.query(model, field, key, {
       ...options,
       selectionSet: this.prepareSelection(model, options.selectionSet),
     });
-    return { ...result, data: await this.present(model, result.data ?? []) };
+    const data = await this.present(model, result.data ?? []);
+    // An unscoped page with nothing readable must not reveal that more exist.
+    const nextToken = !allowed && data.length === 0 ? null : result.nextToken;
+    return { ...result, data, nextToken };
   }
 
   private writable(model: string, input: Row): Row {
@@ -524,7 +581,33 @@ export class Models {
     ]) {
       delete out[field];
     }
+    // The client turns relation objects into foreign keys after these checks.
+    const anchored = this.anchoredFields(model);
+    for (const field of Object.keys(out)) {
+      if (
+        !this.schema.hasField(model, field) ||
+        this.schema.relation(model, field)
+      )
+        throw badRequest(`${model} has no writable field ${field}`);
+      const value = out[field];
+      if (
+        (value === null || value === '') &&
+        (anchored.has(field) || this.schema.isRequired(model, field))
+      )
+        throw badRequest(`${model}.${field} needs a value`);
+    }
     return out;
+  }
+
+  // Keys and scope must never be emptied; optional references may be cleared.
+  private anchoredFields(model: string) {
+    const spec = this.policy(model).scope as Record<string, unknown>;
+    return new Set<string>([
+      ...this.schema.primaryKey(model),
+      ...['survey', 'organization', 'share', 'parent']
+        .map((k) => spec[k])
+        .filter((v): v is string => typeof v === 'string'),
+    ]);
   }
 
   private async groupFor(scope: Scope): Promise<string | undefined> {
@@ -558,10 +641,15 @@ export class Models {
       if (own(this.policies, model)?.crossScope?.includes(fk)) return;
       if (!this.scopeSpec(relation.model)) return;
       const [pk] = this.schema.primaryKey(relation.model);
-      const parent = await this.load(relation.model, { [pk]: row[fk] });
-      if (!parent) return;
+      // A row may name itself, as a primary annotation does.
+      if (relation.model === model && row[pk] === row[fk]) return;
+      const parent =
+        (await this.load(relation.model, { [pk]: row[fk] })) ??
+        (await this.reload(relation.model, { [pk]: row[fk] }));
+      if (!parent) throw badRequest(`${fk} names no ${relation.model}`);
       const parentScope = await this.scopeOf(relation.model, parent);
-      if (parentScope && !(await this.covers(scope, parentScope))) {
+      if (!parentScope) throw forbidden(`${fk} has no known scope`);
+      if (!(await this.covers(scope, parentScope))) {
         throw forbidden(`${fk} belongs to another scope`);
       }
     });
@@ -637,6 +725,8 @@ export class Models {
     if (!isObject(input)) throw badRequest('Invalid input');
     const row = this.writable(model, input);
     if (this.policy(model).serverId) row.id = randomUUID();
+    const creator = this.policy(model).creator;
+    if (creator) row[creator] = this.access.userId;
     const owner = this.policy(model).owner;
     if (owner)
       row[owner] = `${this.access.actor.sub}::${this.access.actor.username}`;
@@ -657,6 +747,7 @@ export class Models {
     const result = await this.data.create(model, row, {
       selectionSet: this.prepareSelection(model, options.selectionSet),
     });
+    if (result.data) await this.afterWrite?.(model, 'create', row);
     return result.data
       ? { ...result, data: await this.filterNested(model, result.data) }
       : result;
@@ -683,12 +774,18 @@ export class Models {
     };
   }
 
+  private async refuse(model: string, existing: Row): Promise<Result> {
+    if (await this.allows(model, 'read', existing)) throw forbidden();
+    return this.missing(model);
+  }
+
   private async update(model: string, input: unknown, options: QueryOptions) {
     if (!isObject(input)) throw badRequest('Invalid input');
     const key = this.keyOf(model, input);
     const existing = (await this.data.get(model, key, {})).data;
     if (!existing) return this.missing(model);
-    if (!(await this.allows(model, 'update', existing))) throw forbidden();
+    if (!(await this.allows(model, 'update', existing)))
+      return this.refuse(model, existing);
     const changes = this.writable(model, input);
     const merged = { ...existing, ...changes };
     const before = await this.scopeOf(model, existing);
@@ -700,13 +797,18 @@ export class Models {
       (f) => !sameValue(changes[f], existing[f]),
     );
     this.assertUpdatable(model, changed);
-    await this.assertRestricted(model, changed, existing, before);
+    await this.assertRestricted(model, changed, merged, before);
     this.assertSelfFields(model, merged, changed);
     await this.assertReferences(model, merged, after, changed);
-    await this.guarded(model, 'update', changes);
-    const result = await this.data.update(model, changes, {
+    // Only what changes is written, so a stale copy of a checked field cannot
+    // overwrite a newer value.
+    const written: Row = { ...key };
+    for (const f of changed) written[f] = changes[f];
+    await this.guarded(model, 'update', written);
+    const result = await this.data.update(model, written, {
       selectionSet: this.prepareSelection(model, options.selectionSet),
     });
+    if (result.data) await this.afterWrite?.(model, 'update', merged);
     return result.data
       ? { ...result, data: await this.filterNested(model, result.data) }
       : result;
@@ -717,7 +819,8 @@ export class Models {
     const key = this.keyOf(model, input);
     const existing = (await this.data.get(model, key, {})).data;
     if (!existing) return this.missing(model);
-    if (!(await this.allows(model, 'delete', existing))) throw forbidden();
+    if (!(await this.allows(model, 'delete', existing)))
+      return this.refuse(model, existing);
     await this.guarded(model, 'delete', key);
     const result = await this.data.delete(model, key, {
       selectionSet: this.prepareSelection(model, options.selectionSet),

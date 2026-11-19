@@ -108,7 +108,8 @@ export function createImageAccessHandler(s3 = presignClient()) {
   };
 
   const objectKey = (sourceKey: string) => `images/${sourceKey}`;
-  const signingLifetime = () => sharedSigningLifetime(s3);
+  const signingLifetime = (maxExpiresIn?: unknown) =>
+    sharedSigningLifetime(s3, maxExpiresIn);
 
   async function headObject(
     name: 'INPUTS' | 'OUTPUTS',
@@ -205,7 +206,7 @@ export function createImageAccessHandler(s3 = presignClient()) {
         (tiles as TileCoordinate[]).map((t) => [tileId(t), t])
       ).values(),
     ];
-    const lifetime = await signingLifetime();
+    const lifetime = await signingLifetime(args.maxExpiresIn);
     const urls = await Promise.all(
       unique.map(async (t) => ({
         ...t,
@@ -230,7 +231,7 @@ export function createImageAccessHandler(s3 = presignClient()) {
       sharedImageId: optionalString(args, 'sharedImageId'),
     });
     const key = tilePackKey(access.sourceKey);
-    const lifetime = await signingLifetime();
+    const lifetime = await signingLifetime(args.maxExpiresIn);
     if (!(await headObject('OUTPUTS', key))) {
       return { url: null, expiresAt: lifetime.expiresAt };
     }
@@ -254,7 +255,7 @@ export function createImageAccessHandler(s3 = presignClient()) {
       },
       false
     );
-    const lifetime = await signingLifetime();
+    const lifetime = await signingLifetime(args.maxExpiresIn);
     return {
       url: await getSignedUrl(
         s3,

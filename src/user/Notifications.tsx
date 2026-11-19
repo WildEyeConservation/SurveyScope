@@ -31,8 +31,11 @@ export default function Notifications() {
     gcTime: 0,
   });
 
+  // An interrupted accept leaves "accepting"; accepting again finishes it.
   const pendingInvites =
-    allInvites?.filter((inv) => inv.status === 'pending') ?? [];
+    allInvites?.filter(
+      (inv) => inv.status === 'pending' || inv.status === 'accepting',
+    ) ?? [];
   const totalNotifications = pendingInvites.length;
 
   return (
@@ -159,6 +162,7 @@ function Invite({
   const { client } = useContext(GlobalContext)!;
   const queryClient = useQueryClient();
   const [responding, setResponding] = useState(false);
+  const unfinished = invite.status === 'accepting';
 
   function updateCacheStatus(status: 'accepted' | 'declined') {
     queryClient.setQueryData<Schema['OrganizationInvite']['type'][]>(
@@ -222,14 +226,31 @@ function Invite({
           <b>{(invite as any).organizationName ?? 'Unknown Organization'}</b>{' '}
           invited you to their organisation.
         </p>
+        {unfinished && (
+          <p className='mb-0 mt-1 text-muted-foreground'>
+            Joining did not finish. Accept again to complete it.
+          </p>
+        )}
       </div>
       <div className='flex gap-1'>
-        <Button variant='success' onClick={acceptInvite} disabled={responding}>
+        <Button
+          variant='success'
+          onClick={acceptInvite}
+          disabled={responding}
+          title={unfinished ? 'Finish joining' : 'Accept'}
+        >
           <Check />
         </Button>
-        <Button variant='danger' onClick={declineInvite} disabled={responding}>
-          <X />
-        </Button>
+        {!unfinished && (
+          <Button
+            variant='danger'
+            onClick={declineInvite}
+            disabled={responding}
+            title='Decline'
+          >
+            <X />
+          </Button>
+        )}
       </div>
     </div>
   );

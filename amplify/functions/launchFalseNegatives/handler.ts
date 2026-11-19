@@ -15,6 +15,8 @@ import { generateClient } from 'aws-amplify/data';
 import type { Context } from 'aws-lambda';
 import { randomUUID } from 'node:crypto';
 import pLimit from 'p-limit';
+import { assertNewQueueUrl, buildQueueName, queueTags } from '../shared/queueNames';
+import { annotationQueueTag, manifestPrefixFor } from '../shared/s3Keys';
 import { createTileMarker } from '../falseNegativeSamples/marking';
 import {
   isCoveredByPrimaryWork,
@@ -331,7 +333,10 @@ async function startJob(event: AppSyncEvent, context: Context) {
     startedAt: new Date().toISOString(),
     launchedBy: workflowLaunchUserId(event.identity),
     percent: 0,
-    queueTag: request.queueTag || FALSE_NEGATIVES_QUEUE,
+    queueTag: annotationQueueTag(
+      request.queueTag || FALSE_NEGATIVES_QUEUE,
+      FALSE_NEGATIVES_QUEUE,
+    ),
     batchSize: request.batchSize || 200,
     zoom: request.zoom ?? null,
     seed: randomUUID(),
@@ -878,19 +883,20 @@ async function createQueue(
   rows: SampleRow[],
 ) {
   const queueId = randomUUID();
+  const queueName = buildQueueName(FALSE_NEGATIVES_QUEUE, queueId);
   const created = await sqsClient.send(
     new CreateQueueCommand({
-      QueueName: `${FALSE_NEGATIVES_QUEUE}-${queueId}`
-        .replace(/[^a-zA-Z0-9-_]/g, '_')
-        .substring(0, 75),
+      QueueName: queueName,
       Attributes: { MessageRetentionPeriod: '1209600' },
+      tags: queueTags(summary.projectId, queueId),
     }),
   );
   if (!created.QueueUrl)
     throw new Error('Unable to determine created queue URL');
+  await assertNewQueueUrl(created.QueueUrl, queueName, executeGraphql);
 
   // Read by findAndRequeueMissingLocations.
-  const manifestKey = `queue-manifests/${queueId}.json`;
+  const manifestKey = `${manifestPrefixFor(job.queueTag)}${queueId}.json`;
   await s3Client.send(
     new PutObjectCommand({
       Bucket: requiredEnv('OUTPUTS_BUCKET_NAME'),

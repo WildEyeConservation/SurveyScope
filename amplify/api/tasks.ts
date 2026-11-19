@@ -59,12 +59,20 @@ export async function workableQueue(ctx: TaskContext, queueId: string) {
   };
 }
 
-async function withNeighbours(ctx: TaskContext, imageIds: string[]) {
+// Only neighbours in the same survey join a lease, whatever an edge says.
+async function withNeighbours(
+  ctx: TaskContext,
+  imageIds: string[],
+  projectId: string,
+) {
   const all = new Set(imageIds);
   for (const imageId of imageIds) {
     for (const n of await ctx.neighbours(imageId)) {
-      all.add(n.image1Id);
-      all.add(n.image2Id);
+      for (const id of [n.image1Id, n.image2Id]) {
+        if (all.has(id)) continue;
+        const image = await ctx.models.load('Image', { id });
+        if (image?.projectId === projectId) all.add(id);
+      }
     }
   }
   return [...all];
@@ -93,6 +101,7 @@ export async function messageScope(
   if (!isObject(body)) throw badRequest('Unreadable task');
   const imageIds = new Set<string>();
   const locationIds: string[] = [];
+  const annotationIds: string[] = [];
   const pairs: string[] = [];
   let setId = str(queue.annotationSetId);
   const acceptSet = (id: unknown) => {
@@ -121,6 +130,7 @@ export async function messageScope(
       String(body.annotation.id),
       projectId,
     );
+    annotationIds.push(String(annotation.id));
     if (str(annotation.imageId)) imageIds.add(String(annotation.imageId));
     acceptSet(annotation.setId);
   }
@@ -138,11 +148,22 @@ export async function messageScope(
   if (setId) await inSurvey(ctx, 'AnnotationSet', setId, projectId);
   return {
     projectId,
-    imageIds: await withNeighbours(ctx, [...imageIds]),
+    imageIds: await withNeighbours(ctx, [...imageIds], projectId),
+    writeImageIds: [...imageIds],
     locationIds,
+    annotationIds,
     pairs,
     setIds: setId ? [setId] : [],
   };
+}
+
+function parsedSkip(body: string) {
+  try {
+    const parsed = JSON.parse(body) as Row;
+    return parsed.skipLocationWithAnnotations === true;
+  } catch {
+    return false;
+  }
 }
 
 async function leaseMessage(
@@ -202,10 +223,13 @@ async function leaseMessage(
     receiptHandle: message.receiptHandle,
     messageId: message.messageId,
     imageIds: scope.imageIds,
+    writeImageIds: scope.writeImageIds,
     locationIds: scope.locationIds,
+    annotationIds: scope.annotationIds,
     pairs: scope.pairs,
     readSetIds: scope.setIds,
     writeSetIds: scope.setIds,
+    skipIfAnnotated: parsedSkip(message.body),
     expiresAt: now() + visibility + UNACKED_GRACE_SECONDS,
   };
   await ctx.leases.put(lease);
@@ -217,7 +241,12 @@ async function leaseMessage(
 }
 
 async function receiveTasks(ctx: TaskContext, args: Row, max: number) {
-  const { queue } = await workableQueue(ctx, argString(args, 'queueId'));
+  const { queue, projectId, admin } = await workableQueue(
+    ctx,
+    argString(args, 'queueId'),
+  );
+  if (!admin && (await testDue(ctx, projectId)))
+    throw new ApiError(409, 'TestDue', 'Take a test before more tasks');
   const url = str(queue.url);
   if (!url) throw badRequest('The queue has no URL');
   const visibility = Number(args.visibility ?? 600);
@@ -288,6 +317,8 @@ async function heldQueueLease(ctx: TaskContext, args: Row) {
     lease.kind !== 'queue' ||
     !lease.queueUrl ||
     !lease.receiptHandle ||
+    lease.released ||
+    lease.acked ||
     lease.expiresAt <= now()
   ) {
     throw notFound('No such task');
@@ -296,16 +327,95 @@ async function heldQueueLease(ctx: TaskContext, args: Row) {
   return lease as Lease & { queueUrl: string; receiptHandle: string };
 }
 
-export async function ack(ctx: TaskContext, args: Row) {
-  const lease = await heldQueueLease(ctx, args);
-  await ctx.queue.remove(lease.queueUrl, lease.receiptHandle);
-  await ctx.leases.expire(
-    lease.userId,
-    lease.leaseId,
-    now() + ACKED_HOLD_SECONDS,
-    true,
+// Work saved under another lease, or a task the client may rightly skip.
+async function finishedElsewhere(ctx: TaskContext, lease: Lease) {
+  if (lease.messageId && lease.locationIds.length) {
+    if (
+      await ctx.models.load('Observation', {
+        id: `queue-message:${lease.messageId}`,
+      })
+    )
+      return true;
+    for (const locationId of lease.locationIds) {
+      const observations = await queryAll(
+        ctx,
+        'Observation',
+        'observationsByLocationId',
+        { locationId },
+      );
+      if (
+        observations.some((o) =>
+          lease.writeSetIds.includes(String(o.annotationSetId)),
+        )
+      )
+        return true;
+      const location = await ctx.models.load('Location', { id: locationId });
+      if (
+        !location ||
+        !str(location.imageId) ||
+        location.width == null ||
+        location.height == null
+      )
+        return true;
+      if (lease.skipIfAnnotated && lease.writeSetIds.length) {
+        const annotations = await queryAll(
+          ctx,
+          'Annotation',
+          'annotationsByImageIdAndSetId',
+          {
+            imageId: String(location.imageId),
+            setId: { eq: lease.writeSetIds[0] },
+          },
+        );
+        const box = {
+          x: Number(location.x),
+          y: Number(location.y),
+          width: Number(location.width),
+          height: Number(location.height),
+        };
+        if (
+          annotations.some(
+            (a) =>
+              !String(a.source ?? '').includes('false-negative') &&
+              isWithinLocationBounds({ x: Number(a.x), y: Number(a.y) }, box),
+          )
+        )
+          return true;
+      }
+    }
+    return false;
+  }
+  // A duplicate of work this user already finished under another lease.
+  const others = (await ctx.leases.active(ctx.access.userId)).filter(
+    (l) => l.leaseId !== lease.leaseId && l.done && l.queueId === lease.queueId,
   );
-  return { data: true };
+  const same = (a: string[] = [], b: string[] = []) =>
+    a.length > 0 && a.every((id) => b.includes(id));
+  return others.some(
+    (l) =>
+      same(lease.annotationIds, l.annotationIds) || same(lease.pairs, l.pairs),
+  );
+}
+
+export async function ack(ctx: TaskContext, args: Row) {
+  const previous = await ctx.leases.get(
+    ctx.access.userId,
+    argString(args, 'leaseId'),
+  );
+  if (previous?.acked) return { data: true, testDue: false };
+  const lease = await heldQueueLease(ctx, args);
+  if (!lease.done && !(await finishedElsewhere(ctx, lease)))
+    throw new ApiError(409, 'NotDone', 'Save this task before finishing it');
+  if (
+    !(await ctx.leases.transition(lease.userId, lease.leaseId, {
+      kind: 'ack',
+      expiresAt: now() + ACKED_HOLD_SECONDS,
+    }))
+  )
+    throw notFound('No such task');
+  await ctx.queue.remove(lease.queueUrl, lease.receiptHandle);
+  const testDue = await countTowardsTest(ctx, lease);
+  return { data: true, testDue };
 }
 
 export async function visibility(ctx: TaskContext, args: Row) {
@@ -318,13 +428,65 @@ export async function visibility(ctx: TaskContext, args: Row) {
   ) {
     throw badRequest('Invalid seconds');
   }
-  await ctx.queue.visibility(lease.queueUrl, lease.receiptHandle, seconds);
-  const expiresAt =
+  // The lease changes first, so a release cannot be undone by an extension.
+  const changed =
     seconds === 0
-      ? now()
-      : Math.max(lease.expiresAt, now() + seconds + UNACKED_GRACE_SECONDS);
-  await ctx.leases.expire(lease.userId, lease.leaseId, expiresAt);
+      ? await ctx.leases.transition(lease.userId, lease.leaseId, {
+          kind: 'release',
+          expiresAt: now(),
+        })
+      : await ctx.leases.transition(lease.userId, lease.leaseId, {
+          kind: 'extend',
+          expiresAt: Math.max(
+            lease.expiresAt,
+            now() + seconds + UNACKED_GRACE_SECONDS,
+          ),
+        });
+  if (!changed) throw notFound('No such task');
+  await ctx.queue.visibility(lease.queueUrl, lease.receiptHandle, seconds);
   return { data: true };
+}
+
+// Saving a task's work through the router marks the leases it came from.
+export async function markDone(
+  ctx: TaskContext,
+  match: (lease: Lease) => boolean,
+) {
+  const leases = (await ctx.leases.active(ctx.access.userId)).filter(
+    (l) => l.kind === 'queue' && !l.acked && !l.released && !l.done && match(l),
+  );
+  await Promise.all(
+    leases.map((l) =>
+      ctx.leases.transition(l.userId, l.leaseId, { kind: 'done' }),
+    ),
+  );
+}
+
+// Writes that finish a task let its lease be acknowledged.
+export async function noteSavedWork(
+  ctx: TaskContext,
+  model: string,
+  op: 'create' | 'update',
+  row: Row,
+) {
+  if (model === 'Observation' && op === 'create') {
+    const id = str(row.id);
+    if (id?.startsWith('queue-message:')) {
+      const messageId = id.slice('queue-message:'.length);
+      await markDone(ctx, (l) => l.messageId === messageId);
+    }
+  } else if (model === 'Annotation' && op === 'update' && row.reviewedBy) {
+    await markDone(ctx, (l) =>
+      Boolean(l.annotationIds?.includes(String(row.id))),
+    );
+  } else if (model === 'ImageNeighbour' && op === 'update') {
+    const pair = `${row.image1Id}|${row.image2Id}`;
+    const reverse = `${row.image2Id}|${row.image1Id}`;
+    await markDone(
+      ctx,
+      (l) => l.pairs.includes(pair) || l.pairs.includes(reverse),
+    );
+  }
 }
 
 export async function depth(ctx: TaskContext, args: Row) {
@@ -416,139 +578,165 @@ async function testKey(
     }));
 }
 
-export async function test(ctx: TaskContext, args: Row) {
-  const projectId = argString(args, 'projectId');
-  const testPresetId = argString(args, 'testPresetId');
-  const locationId = argString(args, 'locationId');
-  const annotationSetId = argString(args, 'annotationSetId');
-  const jobSetId = argString(args, 'jobAnnotationSetId');
-  await ctx.access.requireSurveyMember(projectId);
-  const [link, entry, jobSet] = await Promise.all([
-    ctx.models.load('TestPresetProject', { testPresetId, projectId }),
-    ctx.models.load('TestPresetLocation', {
-      testPresetId,
-      locationId,
-      annotationSetId,
-    }),
-    ctx.models.load('AnnotationSet', { id: jobSetId }),
-  ]);
-  if (!link || !entry) throw forbidden('Not a test of this survey');
-  if (jobSet?.projectId !== projectId)
-    throw forbidden('The job set is not in this survey');
-  const location = await ctx.models.load('Location', { id: locationId });
-  if (!location || !str(location.imageId))
-    throw notFound('Test location not found');
-  const imageId = String(location.imageId);
-  const image = await ctx.models.load('Image', { id: imageId });
-  const imageSize = sizeArg(image);
-  const tile = isObject(args.tile)
-    ? { tile: sizeArg(args.tile.tile), image: sizeArg(args.tile.image) }
-    : undefined;
-  if (tile && (!tile.tile || !tile.image || !imageSize))
-    throw badRequest('Invalid tile');
+async function testConfig(ctx: TaskContext, projectId: string) {
+  if (!(await ctx.access.isTested(projectId))) return null;
+  const config = await ctx.models.load('ProjectTestConfig', { projectId });
+  if (!config || !str(config.testType) || config.testType === 'none')
+    return null;
+  return config;
+}
 
-  // An open lease is reused, so a location keeps one box per job.
-  const reused = (await ctx.leases.active(ctx.access.userId)).find(
-    (l) =>
-      l.kind === 'test' &&
-      l.grantedFor === projectId &&
-      l.test?.locationId === locationId &&
-      l.test.annotationSetId === annotationSetId &&
-      l.test.testPresetId === testPresetId &&
-      l.test.jobSetId === jobSetId &&
-      !l.test.submitted,
-  );
-  let box: Box;
-  let grown = false;
-  const answerBox: Box = {
-    x: Number(location.x),
-    y: Number(location.y),
-    width: Number(location.width),
-    height: Number(location.height),
-  };
-  if (reused?.test) {
-    box = reused.test.box;
-    grown = reused.test.grown;
-  } else {
-    box = answerBox;
-    if (tile) {
-      const sample = { tile: tile.tile!, image: tile.image! };
-      const fitted = growTestBox(
-        box,
-        tileSizeForImage(sample, imageSize!),
-        imageSize!,
-        locationId,
-      );
-      if (!fitted) return { data: null };
-      grown = true;
-      box = fitted;
+const cadenceState = (projectId: string) => `cadence#${projectId}`;
+
+// Tests fall due on the server, from the work the tester finishes.
+async function countTowardsTest(ctx: TaskContext, lease: Lease) {
+  if (!lease.messageId || !lease.locationIds.length) return false;
+  const config = await testConfig(ctx, lease.grantedFor);
+  if (!config) return false;
+  const observation = await ctx.models.load('Observation', {
+    id: `queue-message:${lease.messageId}`,
+  });
+  // Skipped tasks do not count, as in the browser.
+  if (!observation) return false;
+  const name = cadenceState(lease.grantedFor);
+  const state = (await ctx.leases.getState(lease.userId, name)) ?? {};
+  let unannotated = Number(state.unannotated ?? 0);
+  const completed = Number(state.completed ?? 0) + 1;
+  let due = state.due === true;
+  if (Number(observation.annotationCount ?? 0) > 0) unannotated = 0;
+  else {
+    unannotated += 1;
+    if (config.testType === 'interval') {
+      const interval = Number(config.interval ?? 0);
+      if (interval > 0 && unannotated >= interval) due = true;
+    } else if (config.testType === 'random') {
+      if (
+        completed > Number(config.deadzone ?? 0) &&
+        Math.random() < Number(config.random ?? 0) / 100
+      )
+        due = true;
     }
   }
+  await ctx.leases.putState(lease.userId, name, {
+    unannotated,
+    completed,
+    due,
+  });
+  return due;
+}
 
-  const test = {
-    testPresetId,
-    annotationSetId,
-    jobSetId,
-    locationId,
-    imageId,
-    box,
-    answerBox,
-    grown,
-  };
-  const [key, jobNames] = await Promise.all([
-    testKey(ctx, test),
-    categoryNames(ctx, jobSetId),
-  ]);
-  const labels = new Set([...jobNames.values()].map((n) => n.toLowerCase()));
-  // A tester cannot answer with labels their job lacks.
-  if (key.some((k) => !labels.has(k.category.name.toLowerCase())))
-    return { data: null };
+async function clearTestDue(ctx: TaskContext, projectId: string) {
+  const name = cadenceState(projectId);
+  const state = await ctx.leases.getState(ctx.access.userId, name);
+  if (!state?.due) return;
+  await ctx.leases.putState(ctx.access.userId, name, {
+    ...state,
+    unannotated: 0,
+    due: false,
+  });
+}
 
-  const lease: Lease = reused ?? {
-    userId: ctx.access.userId,
-    leaseId: randomUUID(),
-    kind: 'test',
-    projectId: String(location.projectId),
-    grantedFor: projectId,
-    imageIds: await withNeighbours(ctx, [imageId]),
-    locationIds: [locationId],
-    pairs: [],
-    readSetIds: [],
-    writeSetIds: [],
-    test,
-    expiresAt: now() + HOLD_SECONDS,
-  };
-  if (!reused) await ctx.leases.put(lease);
+export async function testDue(ctx: TaskContext, projectId: string) {
+  const state = await ctx.leases.getState(
+    ctx.access.userId,
+    cadenceState(projectId),
+  );
+  return state?.due === true && Boolean(await testConfig(ctx, projectId));
+}
 
-  // Answers are only ever inside test boxes, so those are all that is hidden.
-  const [referenceNames, pool, onImage, annotations] = await Promise.all([
-    categoryNames(ctx, annotationSetId),
-    ctx.access.testPool(),
-    queryAll(ctx, 'Location', 'locationsByImageKey', { imageId }),
-    queryAll(ctx, 'Annotation', 'annotationsByImageIdAndSetId', {
-      imageId,
-      setId: { eq: annotationSetId },
+interface TestCandidate {
+  testPresetId: string;
+  locationId: string;
+  annotationSetId: string;
+  // Served again because every location has been tested.
+  repeat: boolean;
+}
+
+// Untested locations newest first; once all are tested, the least recently
+// tested come round again.
+async function testCandidates(
+  ctx: TaskContext,
+  projectId: string,
+): Promise<TestCandidate[]> {
+  const [links, taken] = await Promise.all([
+    queryAll(ctx, 'TestPresetProject', 'testPresetsByProjectId', {
+      projectId,
+    }),
+    queryAll(ctx, 'TestResult', 'testResultsByUserId', {
+      userId: ctx.access.userId,
     }),
   ]);
+  const lastTested = new Map<string, string>();
+  for (const r of taken) {
+    const id = String(r.locationId);
+    const at = String(r.createdAt ?? '');
+    if (!lastTested.has(id) || at > lastTested.get(id)!) lastTested.set(id, at);
+  }
+  const entries = (
+    await Promise.all(
+      links.map((link) =>
+        queryAll(ctx, 'TestPresetLocation', 'locationsByTestPresetId', {
+          testPresetId: link.testPresetId,
+        }),
+      ),
+    )
+  ).flat();
+  const unique = new Map<string, Row>();
+  for (const entry of entries) {
+    const id = String(entry.locationId);
+    if (!unique.has(id)) unique.set(id, entry);
+  }
+  const all = [...unique.values()];
+  const fresh = all
+    .filter((e) => !lastTested.has(String(e.locationId)))
+    .sort((a, b) =>
+      String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')),
+    );
+  const again = all
+    .filter((e) => lastTested.has(String(e.locationId)))
+    .sort((a, b) =>
+      lastTested
+        .get(String(a.locationId))!
+        .localeCompare(lastTested.get(String(b.locationId))!),
+    );
+  const candidate = (e: Row, repeat: boolean) => ({
+    testPresetId: String(e.testPresetId),
+    locationId: String(e.locationId),
+    annotationSetId: String(e.annotationSetId),
+    repeat,
+  });
+  return [
+    ...fresh.map((e) => candidate(e, false)),
+    ...again.map((e) => candidate(e, true)),
+  ];
+}
+
+async function serveTest(
+  ctx: TaskContext,
+  lease: Lease,
+  location: Row,
+  imageSize: Size | undefined,
+) {
+  const test = lease.test!;
+  const [referenceNames, pool, annotations] = await Promise.all([
+    categoryNames(ctx, test.annotationSetId),
+    ctx.access.testPool(),
+    queryAll(ctx, 'Annotation', 'annotationsByImageIdAndSetId', {
+      imageId: test.imageId,
+      setId: { eq: test.annotationSetId },
+    }),
+  ]);
+  // Every test box on the image is hidden, wherever its location row is indexed.
   const hidden: Box[] = [
-    answerBox,
-    ...onImage
-      .filter(
-        (other) =>
-          other.imageId === imageId &&
-          pool.locations.has(`${other.id}|${annotationSetId}`),
-      )
-      .map((other) => ({
-        x: Number(other.x),
-        y: Number(other.y),
-        width: Number(other.width),
-        height: Number(other.height),
-      })),
+    test.answerBox,
+    ...(pool.boxes.get(test.imageId) ?? [])
+      .filter((b) => b.setId === test.annotationSetId)
+      .map((b) => b.box),
   ];
   const context = annotations
     .filter(
       (a) =>
-        a.setId === annotationSetId &&
+        a.setId === test.annotationSetId &&
         !hidden.some((b) =>
           isWithinLocationBounds({ x: Number(a.x), y: Number(a.y) }, b),
         ),
@@ -563,19 +751,119 @@ export async function test(ctx: TaskContext, args: Row) {
   return {
     data: {
       leaseId: lease.leaseId,
+      testPresetId: test.testPresetId,
+      annotationSetId: test.annotationSetId,
       location: {
-        id: locationId,
+        id: test.locationId,
         x: location.x,
         y: location.y,
         width: location.width,
         height: location.height,
         image: imageSize,
       },
-      box,
-      grown,
+      box: test.box,
+      grown: test.grown,
       context,
     },
   };
+}
+
+// The server picks the test; the browser only says which job it is for.
+export async function test(ctx: TaskContext, args: Row) {
+  const projectId = argString(args, 'projectId');
+  const jobSetId = argString(args, 'jobAnnotationSetId');
+  await ctx.access.requireSurveyMember(projectId);
+  if (!(await testConfig(ctx, projectId))) return { data: null };
+  const jobSet = await ctx.models.load('AnnotationSet', { id: jobSetId });
+  if (jobSet?.projectId !== projectId)
+    throw forbidden('The job set is not in this survey');
+  const tile = isObject(args.tile)
+    ? { tile: sizeArg(args.tile.tile), image: sizeArg(args.tile.image) }
+    : undefined;
+  if (tile && (!tile.tile || !tile.image)) throw badRequest('Invalid tile');
+
+  // An open test is served again until it is submitted.
+  const reused = (await ctx.leases.active(ctx.access.userId)).find(
+    (l) =>
+      l.kind === 'test' &&
+      l.grantedFor === projectId &&
+      l.test?.jobSetId === jobSetId &&
+      !l.test.submitted,
+  );
+  if (reused?.test) {
+    const location = await ctx.models.load('Location', {
+      id: reused.test.locationId,
+    });
+    const image = await ctx.models.load('Image', { id: reused.test.imageId });
+    if (location) return serveTest(ctx, reused, location, sizeArg(image));
+  }
+
+  const jobNames = await categoryNames(ctx, jobSetId);
+  const labels = new Set([...jobNames.values()].map((n) => n.toLowerCase()));
+  for (const candidate of await testCandidates(ctx, projectId)) {
+    const location = await ctx.models.load('Location', {
+      id: candidate.locationId,
+    });
+    if (!location || !str(location.imageId)) continue;
+    const imageId = String(location.imageId);
+    const image = await ctx.models.load('Image', { id: imageId });
+    const imageSize = sizeArg(image);
+    const answerBox: Box = {
+      x: Number(location.x),
+      y: Number(location.y),
+      width: Number(location.width),
+      height: Number(location.height),
+    };
+    let box = answerBox;
+    let grown = false;
+    if (tile) {
+      if (!imageSize) continue;
+      const fitted = growTestBox(
+        box,
+        tileSizeForImage({ tile: tile.tile!, image: tile.image! }, imageSize),
+        imageSize,
+        candidate.locationId,
+      );
+      if (!fitted) continue;
+      box = fitted;
+      grown = true;
+    }
+    const test = {
+      ...candidate,
+      jobSetId,
+      imageId,
+      box,
+      answerBox,
+      grown,
+      issuedAt: new Date().toISOString(),
+    };
+    const key = await testKey(ctx, test);
+    // A tester cannot answer with labels their job lacks.
+    if (key.some((k) => !labels.has(k.category.name.toLowerCase()))) continue;
+    const lease: Lease = {
+      userId: ctx.access.userId,
+      leaseId: randomUUID(),
+      kind: 'test',
+      projectId: String(location.projectId),
+      grantedFor: projectId,
+      imageIds: await withNeighbours(
+        ctx,
+        [imageId],
+        String(location.projectId),
+      ),
+      locationIds: [candidate.locationId],
+      pairs: [],
+      readSetIds: [],
+      writeSetIds: [],
+      test,
+      expiresAt: now() + HOLD_SECONDS,
+    };
+    await ctx.leases.put(lease);
+    return serveTest(ctx, lease, location, imageSize);
+  }
+  // Nothing left to test with, so the tester is not held up.
+  await clearTestDue(ctx, projectId);
+  return { data: null };
 }
 
 const MAX_TEST_MARKS = 2000;
@@ -602,25 +890,48 @@ async function gradeTest(
     categoryNames(ctx, test.jobSetId),
   ]);
   const userCounts: Record<string, number> = {};
+  // The same label at the same spot counts once.
+  const placed = new Set<string>();
   for (const mark of marks as { x: number; y: number; categoryId: string }[]) {
     const name = jobNames.get(mark.categoryId)?.toLowerCase();
     if (name === undefined || !isWithinLocationBounds(mark, test.answerBox))
       continue;
+    const spot = `${name}|${Math.round(mark.x)}|${Math.round(mark.y)}`;
+    if (placed.has(spot)) continue;
+    placed.add(spot);
     userCounts[name] = (userCounts[name] ?? 0) + 1;
   }
-  const userTotal = Object.values(userCounts).reduce((a, b) => a + b, 0);
   const testAnimals = key.reduce((a, k) => a + k.count, 0);
-  const labels = new Set([...jobNames.values()].map((n) => n.toLowerCase()));
+  const keyed = new Map(key.map((k) => [k.category.name.toLowerCase(), k]));
+  // Labels the key lacks are wrong answers, kept with a test count of nought.
+  const counts = [
+    ...key.map((k) => ({
+      categoryName: k.category.name,
+      userCount: userCounts[k.category.name.toLowerCase()] ?? 0,
+      testCount: k.count,
+    })),
+    ...Object.entries(userCounts)
+      .filter(([name]) => !keyed.has(name))
+      .map(([name, userCount]) => ({
+        categoryName:
+          [...jobNames.values()].find((n) => n.toLowerCase() === name) ?? name,
+        userCount,
+        testCount: 0,
+      })),
+  ];
+  const matched = counts.reduce(
+    (a, c) => a + Math.min(c.userCount, c.testCount),
+    0,
+  );
   return {
     testAnimals,
-    totalMissedAnimals: testAnimals - userTotal,
-    counts: key
-      .filter((k) => labels.has(k.category.name.toLowerCase()))
-      .map((k) => ({
-        categoryName: k.category.name,
-        userCount: userCounts[k.category.name.toLowerCase()] ?? 0,
-        testCount: k.count,
-      })),
+    // Wrongly labelled marks do not make up for missed animals.
+    totalMissedAnimals: testAnimals - matched,
+    falsePositives: counts.reduce(
+      (a, c) => a + Math.max(0, c.userCount - c.testCount),
+      0,
+    ),
+    counts,
   };
 }
 
@@ -645,6 +956,21 @@ export async function submitTest(ctx: TaskContext, args: Row) {
     throw notFound('No such test');
   await ctx.access.requireSurveyMember(lease.grantedFor);
   if (lease.test.submitted) return { data: { testResultId: lease.leaseId } };
+  // One graded attempt per serving: a location the server did not choose to
+  // repeat, or one graded since this lease was issued, is not graded again.
+  const earlier = await queryAll(ctx, 'TestResult', 'testResultsByUserId', {
+    userId: ctx.access.userId,
+  });
+  const issuedAt = lease.test.issuedAt ?? '';
+  if (
+    earlier.some(
+      (r) =>
+        r.locationId === lease.test!.locationId &&
+        r.id !== lease.leaseId &&
+        (!lease.test!.repeat || String(r.createdAt ?? '') >= issuedAt),
+    )
+  )
+    throw forbidden('This test was already taken');
   let current = lease;
   if (!lease.test.grade) {
     await ctx.leases.fixGrade(
@@ -673,6 +999,7 @@ export async function submitTest(ctx: TaskContext, args: Row) {
       annotationSetId: test.annotationSetId,
       testAnimals: grade.testAnimals,
       totalMissedAnimals: grade.totalMissedAnimals,
+      falsePositives: grade.falsePositives ?? 0,
       passedOnTotal: false,
       labelsLinked: true,
       group,
@@ -689,6 +1016,7 @@ export async function submitTest(ctx: TaskContext, args: Row) {
     ),
   );
   await ctx.leases.put({ ...current, test: { ...test, submitted: true } });
+  await clearTestDue(ctx, lease.grantedFor);
   return { data: { testResultId: lease.leaseId } };
 }
 

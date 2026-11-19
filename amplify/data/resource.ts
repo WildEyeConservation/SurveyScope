@@ -8,6 +8,7 @@ import { runScoutbot } from '../functions/runScoutbot/resource';
 import { deleteProject } from '../functions/deleteProject/resource';
 import { generateSurveyResults } from '../functions/generateSurveyResults/resource';
 import { queryWorkflowEvents } from '../functions/queryWorkflowEvents/resource';
+import { recordWorkflowTask } from '../functions/recordWorkflowTask/resource';
 import { api } from '../api/resource';
 import { runMadDetector } from '../functions/runMadDetector/resource';
 import { runStormflyDetector } from '../functions/runStormflyDetector/resource';
@@ -609,6 +610,8 @@ export const schema = a
         annotationSetId: a.id().required(),
         testAnimals: a.integer().required(),
         totalMissedAnimals: a.integer().required(),
+        // Marks beyond the answer key for their label, wrong labels included.
+        falsePositives: a.integer(),
         passedOnTotal: a.boolean().required(),
         // Set when per-label counts were recorded for every linked label.
         labelsLinked: a.boolean(),
@@ -1171,6 +1174,7 @@ export const schema = a
     allow.resource(updateOrganizationMemberAdmin),
     allow.resource(deleteQueue),
     allow.resource(queryWorkflowEvents),
+    allow.resource(recordWorkflowTask),
     allow.resource(cancelIndividualIdJob),
     allow.resource(syncOrganizationGroups),
     allow.resource(launchIndividualId),

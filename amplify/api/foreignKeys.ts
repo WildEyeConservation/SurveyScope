@@ -4,7 +4,7 @@ export const FOREIGN_KEYS: Record<string, Record<string, string>> = {
   Annotation: {
     categoryId: 'Category',
     imageId: 'Image',
-    objectId: 'Object',
+    objectId: 'Annotation',
     projectId: 'Project',
     reviewCatId: 'Category',
     setId: 'AnnotationSet',
@@ -93,7 +93,7 @@ export const FOREIGN_KEYS: Record<string, Record<string, string>> = {
     testPresetId: 'TestPreset',
   },
   TestPresetProject: {
-    projectId: 'ProjectTestConfig',
+    projectId: 'Project',
     testPresetId: 'TestPreset',
   },
   TestResult: {

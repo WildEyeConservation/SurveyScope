@@ -289,6 +289,25 @@ export default function EditLocationsModal({ show, preset, surveyId }: Props) {
       }
     }
 
+    // Labels no longer in the box leave the answer key.
+    const countModel = client.models.LocationAnnotationCount;
+    const stored = await fetchAllPaginatedResults(
+      countModel.categoryCountsByLocationIdAndAnnotationSetId,
+      {
+        locationId: cLocation.locationId,
+        annotationSetId: { eq: cLocation.annotationSetId },
+        selectionSet: ['categoryId'] as const,
+      },
+    );
+    for (const { categoryId } of stored) {
+      if (categoryId in annotationCounts) continue;
+      await countModel.delete({
+        locationId: cLocation.locationId,
+        categoryId,
+        annotationSetId: cLocation.annotationSetId,
+      });
+    }
+
     setCurrentAnnoCount({});
   }
 

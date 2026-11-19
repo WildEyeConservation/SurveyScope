@@ -3,6 +3,11 @@ import { Amplify } from 'aws-amplify';
 import { generateClient, GraphQLResult } from 'aws-amplify/data';
 import type { CreateChainShareHandler } from '../../data/resource';
 import { checkedGraph, shareLifecycle, mapWithConcurrency } from '../../chain-shares/lifecycle';
+import {
+  assertFileOwnership,
+  type ImageFileRow as OwnedFileRow,
+  type ImageRow as OwnedImageRow,
+} from '../../storage/imageAccess/authorization';
 
 /**
  * Snapshot one annotation set's chain-viewer data into the read-only
@@ -25,13 +30,13 @@ const getAnnotationSet = /* GraphQL */ `
 `;
 const getProject = /* GraphQL */ `
   query GetProject($id: ID!) {
-    getProject(id: $id) { id name organizationId }
+    getProject(id: $id) { id name organizationId tags }
   }
 `;
 const annotationsByAnnotationSetId = /* GraphQL */ `
   query AnnotationsBySet($setId: ID!, $nextToken: String) {
     annotationsByAnnotationSetId(setId: $setId, nextToken: $nextToken, limit: 1000) {
-      items { id x y imageId objectId categoryId obscured oov }
+      items { id x y imageId projectId objectId categoryId obscured oov }
       nextToken
     }
   }
@@ -79,14 +84,19 @@ const camerasByProjectId = /* GraphQL */ `
 const getImage = /* GraphQL */ `
   query GetImage($id: ID!) {
     getImage(id: $id) {
-      id width height originalPath timestamp cameraId cameraSerial
+      id projectId group width height originalPath timestamp cameraId cameraSerial
     }
+  }
+`;
+const getImageProject = /* GraphQL */ `
+  query GetImageProject($id: ID!) {
+    getImage(id: $id) { id projectId }
   }
 `;
 const imageFilesByImageId = /* GraphQL */ `
   query ImageFilesByImageId($imageId: ID!, $nextToken: String) {
     imagesByimageId(imageId: $imageId, nextToken: $nextToken, limit: 1000) {
-      items { key path type }
+      items { id key path type projectId imageId group }
       nextToken
     }
   }
@@ -94,7 +104,7 @@ const imageFilesByImageId = /* GraphQL */ `
 const locationsByImageId = /* GraphQL */ `
   query LocationsByImageId($imageId: ID!, $nextToken: String) {
     locationsByImageKey(imageId: $imageId, nextToken: $nextToken, limit: 1000) {
-      items { id imageId x y width height confidence source }
+      items { id imageId projectId x y width height confidence source }
       nextToken
     }
   }
@@ -102,7 +112,7 @@ const locationsByImageId = /* GraphQL */ `
 const neighboursByImage1 = /* GraphQL */ `
   query NeighboursByImage1($image1Id: ID!, $nextToken: String) {
     imageNeighboursByImage1key(image1Id: $image1Id, nextToken: $nextToken, limit: 1000) {
-      items { image1Id image2Id homography homographySource skipped }
+      items { image1Id image2Id projectId homography homographySource skipped }
       nextToken
     }
   }
@@ -110,7 +120,7 @@ const neighboursByImage1 = /* GraphQL */ `
 const neighboursByImage2 = /* GraphQL */ `
   query NeighboursByImage2($image2Id: ID!, $nextToken: String) {
     imageNeighboursByImage2key(image2Id: $image2Id, nextToken: $nextToken, limit: 1000) {
-      items { image1Id image2Id homography homographySource skipped }
+      items { image1Id image2Id projectId homography homographySource skipped }
       nextToken
     }
   }
@@ -144,9 +154,13 @@ const createSharedChainCategory = /* GraphQL */ `
 // --- src/chain-viewer/utils/imageSourceKey.ts; src cannot be imported here) ---
 
 interface ImageFileRow {
+  id?: string;
   key?: string | null;
   path?: string | null;
   type?: string | null;
+  projectId?: string | null;
+  imageId?: string | null;
+  group?: string | null;
 }
 function normalizeImagePath(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -258,6 +272,7 @@ interface AnnotationRow {
   x: number;
   y: number;
   imageId: string;
+  projectId?: string | null;
   objectId?: string | null;
   categoryId: string;
   obscured?: boolean | null;
@@ -279,6 +294,8 @@ interface InfoTagRow {
 }
 interface ImageRow {
   id: string;
+  projectId?: string | null;
+  group?: string | null;
   width: number;
   height: number;
   originalPath?: string | null;
@@ -289,6 +306,7 @@ interface ImageRow {
 interface LocationRow {
   id: string;
   imageId: string;
+  projectId?: string | null;
   x: number;
   y: number;
   width?: number | null;
@@ -299,6 +317,7 @@ interface LocationRow {
 interface NeighbourRow {
   image1Id: string;
   image2Id: string;
+  projectId?: string | null;
   homography?: number[] | null;
   homographySource?: string | null;
   skipped?: boolean | null;
@@ -331,7 +350,12 @@ export const handler: CreateChainShareHandler = async (event) => {
     });
     const project = (
       projectResp as GraphQLResult<{
-        getProject: { id: string; name: string; organizationId: string } | null;
+        getProject: {
+          id: string;
+          name: string;
+          organizationId: string;
+          tags?: string[] | null;
+        } | null;
       }>
     ).data?.getProject;
     if (!project) throw new Error(`Project ${annotationSet.projectId} not found`);
@@ -348,7 +372,7 @@ export const handler: CreateChainShareHandler = async (event) => {
     });
 
     // --- Read source data ----------------------------------------------------
-    const annotations = await fetchAllPages<AnnotationRow, 'annotationsByAnnotationSetId'>(
+    const setAnnotations = await fetchAllPages<AnnotationRow, 'annotationsByAnnotationSetId'>(
       (nextToken) =>
         graphql({
           query: annotationsByAnnotationSetId,
@@ -418,7 +442,16 @@ export const handler: CreateChainShareHandler = async (event) => {
     );
     const cameraNameById = new Map(cameras.map((c) => [c.id, c.name]));
 
-    const annotatedImageIds = Array.from(new Set(annotations.map((a) => a.imageId)));
+    const projectRow = {
+      id: project.id,
+      organizationId: project.organizationId,
+      tags: project.tags ?? undefined,
+    };
+    const candidateImageIds = Array.from(
+      new Set(
+        setAnnotations.filter((a) => a.projectId === project.id).map((a) => a.imageId)
+      )
+    );
 
     // Per annotated image: full fields, source key, incident neighbours.
     const imagesById = new Map<string, ImageRow>();
@@ -426,7 +459,9 @@ export const handler: CreateChainShareHandler = async (event) => {
     const neighbourByPair = new Map<string, NeighbourRow>();
     const locations: LocationRow[] = [];
 
-    await mapWithConcurrency(annotatedImageIds, 20, async (imageId) => {
+    const refusedImageIds = new Set<string>();
+
+    await mapWithConcurrency(candidateImageIds, 20, async (imageId) => {
       const imgResp = await graphql({
         query: getImage,
         variables: { id: imageId },
@@ -434,7 +469,16 @@ export const handler: CreateChainShareHandler = async (event) => {
       const image = (
         imgResp as GraphQLResult<{ getImage: ImageRow | null }>
       ).data?.getImage;
-      if (image) imagesById.set(imageId, image);
+      // Inconsistent references never reach the snapshot, so reviewers get no tiles for them.
+      if (
+        !image ||
+        image.projectId !== project.id ||
+        image.group !== project.organizationId
+      ) {
+        refusedImageIds.add(imageId);
+        return;
+      }
+      imagesById.set(imageId, image);
 
       const files = await fetchAllPages<ImageFileRow, 'imagesByimageId'>(
         (nextToken) =>
@@ -444,7 +488,26 @@ export const handler: CreateChainShareHandler = async (event) => {
           }) as Promise<GraphQLResult<{ imagesByimageId: PagedList<ImageFileRow> }>>,
         'imagesByimageId'
       );
-      sourceKeyById.set(imageId, selectSourceKeyForImage(files, image?.originalPath));
+      const ownedFiles = files.filter((file) => {
+        try {
+          assertFileOwnership(
+            file as OwnedFileRow,
+            image as OwnedImageRow,
+            projectRow,
+            file.key ?? ''
+          );
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (ownedFiles.length < files.length) {
+        console.warn('Skipping image files outside the shared project', {
+          imageId,
+          skipped: files.length - ownedFiles.length,
+        });
+      }
+      sourceKeyById.set(imageId, selectSourceKeyForImage(ownedFiles, image.originalPath));
 
       const imageLocations = await fetchAllPages<LocationRow, 'locationsByImageKey'>(
         (nextToken) =>
@@ -455,7 +518,13 @@ export const handler: CreateChainShareHandler = async (event) => {
         'locationsByImageKey'
       );
       for (const loc of imageLocations) {
-        if (CHAIN_LOCATION_SOURCES.has(loc.source)) locations.push(loc);
+        if (
+          CHAIN_LOCATION_SOURCES.has(loc.source) &&
+          loc.projectId === project.id &&
+          loc.imageId === imageId
+        ) {
+          locations.push(loc);
+        }
       }
       const incident = [
         ...(await fetchAllPages<NeighbourRow, 'imageNeighboursByImage1key'>(
@@ -477,9 +546,46 @@ export const handler: CreateChainShareHandler = async (event) => {
       ];
       for (const n of incident) {
         if (n.skipped) continue;
+        if (n.projectId && n.projectId !== project.id) continue;
         neighbourByPair.set(`${n.image1Id}::${n.image2Id}`, n);
       }
     });
+
+    // Older neighbour rows lack projectId; check their far image instead.
+    const imageInProject = new Map<string, Promise<boolean>>();
+    const inProject = (imageId: string) => {
+      if (imagesById.has(imageId)) return Promise.resolve(true);
+      if (refusedImageIds.has(imageId)) return Promise.resolve(false);
+      let known = imageInProject.get(imageId);
+      if (!known) {
+        known = graphql({ query: getImageProject, variables: { id: imageId } }).then(
+          (resp) =>
+            (resp as GraphQLResult<{ getImage: { projectId?: string | null } | null }>)
+              .data?.getImage?.projectId === project.id
+        );
+        imageInProject.set(imageId, known);
+      }
+      return known;
+    };
+    await mapWithConcurrency(Array.from(neighbourByPair.entries()), 20, async ([pair, n]) => {
+      const kept =
+        !refusedImageIds.has(n.image1Id) &&
+        !refusedImageIds.has(n.image2Id) &&
+        (n.projectId === project.id ||
+          ((await inProject(n.image1Id)) && (await inProject(n.image2Id))));
+      if (!kept) neighbourByPair.delete(pair);
+    });
+
+    const annotations = setAnnotations.filter(
+      (a) => a.projectId === project.id && imagesById.has(a.imageId)
+    );
+    if (annotations.length < setAnnotations.length) {
+      console.warn('Skipping annotations outside the shared project', {
+        annotationSetId,
+        skipped: setAnnotations.length - annotations.length,
+        refusedImages: refusedImageIds.size,
+      });
+    }
 
     // --- Write snapshot rows -------------------------------------------------
     await mapWithConcurrency(Array.from(imagesById.values()), 20, async (image) => {

@@ -1,7 +1,12 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { presignClient } from '../shared/presign';
-import { clearAccessCache, db, resolveImageAccess } from './repository';
+import { presignClient, requestedExpiry } from '../shared/presign';
+import {
+  clearAccessCache,
+  db,
+  resolveImageAccess,
+  reviewerGroups,
+} from './repository';
 import {
   createImageAccessHandler,
   MAX_SIGNED_PARTS,
@@ -239,6 +244,38 @@ test('signs the tile pack only when it exists', async (t) => {
   );
 });
 
+test('lease-only callers get URLs no longer than maxExpiresIn', async (t) => {
+  const { handler } = fixture(t);
+  const expiry = (url: string) => Number(new URL(url).searchParams.get('X-Amz-Expires'));
+  const base = { imageId: 'i', sourceKey: file.key };
+  const tiles = (await handler(
+    event('signImageTiles', { ...base, tiles: [{ z: 2, row: 1, col: 1 }], maxExpiresIn: 120 })
+  )) as { expiresAt: number; tiles: { url: string }[] };
+  assert.equal(expiry(tiles.tiles[0].url), 120);
+  assert(tiles.expiresAt <= Date.now() + 120000);
+  const pack = (await handler(
+    event('signImageTilePack', { ...base, maxExpiresIn: 300 })
+  )) as { url: string };
+  assert.equal(expiry(pack.url), 300);
+  const download = (await handler(
+    event('imageDownloadUrl', { ...base, maxExpiresIn: 90 })
+  )) as { url: string };
+  assert.equal(expiry(download.url), 90);
+  const ignored = (await handler(
+    event('imageDownloadUrl', { ...base, maxExpiresIn: 10 })
+  )) as { url: string };
+  assert.equal(expiry(ignored.url), 3600);
+});
+
+test('requestedExpiry ignores absent or invalid caps', () => {
+  assert.equal(requestedExpiry(undefined), 3600);
+  assert.equal(requestedExpiry('120'), 3600);
+  assert.equal(requestedExpiry(59), 3600);
+  assert.equal(requestedExpiry(90.5), 3600);
+  assert.equal(requestedExpiry(60), 60);
+  assert.equal(requestedExpiry(7200), 3600);
+});
+
 test('access decisions are cached briefly per identity and never across users', async (t) => {
   const { calls } = fixture(t);
   const args = { imageId: 'i', sourceKey: file.key as string };
@@ -268,7 +305,13 @@ test('shared reviewers get only the snapshot image while active; no original dow
     width: 1024,
     height: 768,
   });
-  records.ChainShare.push({ shareId: 's', status: 'active' });
+  records.ChainShare.push({
+    shareId: 's',
+    status: 'active',
+    group: 'chainshare-s',
+  });
+  let liveGroups = ['chainshare-s'];
+  t.mock.method(reviewerGroups, 'lookup', async () => liveGroups);
   const reviewer = { sub: 'reviewer', groups: ['chainshare-s'] };
   const args = {
     imageId: 'i',
@@ -284,6 +327,11 @@ test('shared reviewers get only the snapshot image while active; no original dow
     resolveImageAccess(reviewer, { ...args, sourceKey: 'other.jpg' }),
     /Unauthorized/
   );
+  // Removal applies even though the token still carries the group.
+  liveGroups = [];
+  clearAccessCache();
+  await assert.rejects(resolveImageAccess(reviewer, args), /Unauthorized/);
+  liveGroups = ['chainshare-s'];
   records.ChainShare[0].status = 'revoked';
   clearAccessCache();
   await assert.rejects(resolveImageAccess(reviewer, args), /Unauthorized/);

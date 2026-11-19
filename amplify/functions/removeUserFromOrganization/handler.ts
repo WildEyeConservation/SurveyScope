@@ -99,6 +99,16 @@ async function executeGraphql<T>(
   return response.data;
 }
 
+// A retry after a partial failure finds some rows already deleted.
+async function ignoreAlreadyGone(work: Promise<unknown>): Promise<void> {
+  try {
+    await work;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/conditional request failed|ConditionalCheckFailed/i.test(message)) throw err;
+  }
+}
+
 interface PagedList<T> {
   items: T[];
   nextToken: string | null | undefined;
@@ -138,16 +148,7 @@ export const handler: RemoveUserFromOrganizationHandler = async (event) => {
       throw new Error('Cannot remove yourself from the organization');
     }
 
-    // 3. Remove user from Cognito group
-    await cognitoClient.send(
-      new AdminRemoveUserFromGroupCommand({
-        Username: userId,
-        GroupName: organizationId,
-        UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
-      })
-    );
-
-    // 4. Fetch org projects and user's project memberships, delete matching ones
+    // 3. Rows go before the group: syncOrganizationGroups re-adds groups from rows.
     const orgProjects = await fetchAllPages<
       { id: string },
       'listProjects'
@@ -166,15 +167,27 @@ export const handler: RemoveUserFromOrganizationHandler = async (event) => {
     const toDelete = userMemberships.filter((m) => orgProjectIds.has(m.projectId));
 
     for (const membership of toDelete) {
-      await executeGraphql(deleteUserProjectMembershipMutation, {
-        input: { id: membership.id },
-      });
+      await ignoreAlreadyGone(
+        executeGraphql(deleteUserProjectMembershipMutation, {
+          input: { id: membership.id },
+        })
+      );
     }
 
-    // 5. Delete OrganizationMembership
-    await executeGraphql(deleteOrganizationMembershipMutation, {
-      input: { organizationId, userId },
-    });
+    await ignoreAlreadyGone(
+      executeGraphql(deleteOrganizationMembershipMutation, {
+        input: { organizationId, userId },
+      })
+    );
+
+    // 4. Remove user from Cognito group
+    await cognitoClient.send(
+      new AdminRemoveUserFromGroupCommand({
+        Username: userId,
+        GroupName: organizationId,
+        UserPoolId: env.AMPLIFY_AUTH_USERPOOL_ID,
+      })
+    );
 
     console.log(`User ${userId} removed from org ${organizationId}`);
     return JSON.stringify({ success: true });

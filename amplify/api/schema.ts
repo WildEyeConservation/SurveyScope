@@ -6,6 +6,7 @@ interface FieldInfo {
   name: string;
   type: unknown;
   isArray?: boolean;
+  isRequired?: boolean;
   association?: {
     connectionType: 'BELONGS_TO' | 'HAS_MANY' | 'HAS_ONE';
     targetNames?: string[];
@@ -41,17 +42,24 @@ export class SchemaInfo {
   ) {}
 
   model(name: string) {
-    const model = this.introspection.models[name];
-    if (!model) throw new Error(`Unknown model ${name}`);
-    return model;
+    if (!Object.hasOwn(this.introspection.models, name))
+      throw new Error(`Unknown model ${name}`);
+    return this.introspection.models[name];
   }
 
   hasModel(name: string) {
-    return Boolean(this.introspection.models[name]);
+    return Object.hasOwn(this.introspection.models, name);
   }
 
   hasField(model: string, field: string) {
-    return Boolean(this.model(model).fields[field]);
+    return Object.hasOwn(this.model(model).fields, field);
+  }
+
+  isRequired(model: string, field: string) {
+    return (
+      this.hasField(model, field) &&
+      Boolean(this.model(model).fields[field].isRequired)
+    );
   }
 
   primaryKey(model: string) {
@@ -60,7 +68,9 @@ export class SchemaInfo {
   }
 
   relation(model: string, field: string): Relation | undefined {
-    const info = this.model(model).fields[field];
+    const info = this.hasField(model, field)
+      ? this.model(model).fields[field]
+      : undefined;
     const association = info?.association;
     const type = info?.type as { model?: string } | undefined;
     if (!association || !type?.model) return undefined;
@@ -79,9 +89,11 @@ export class SchemaInfo {
         (r): r is Relation =>
           r?.kind === 'BELONGS_TO' && r.targetNames.length === 1,
       );
-    for (const [fk, target] of Object.entries(this.foreignKeys[model] ?? {})) {
-      if (!this.introspection.models[target] || !this.hasField(model, fk))
-        continue;
+    const keys = Object.hasOwn(this.foreignKeys, model)
+      ? this.foreignKeys[model]
+      : {};
+    for (const [fk, target] of Object.entries(keys)) {
+      if (!this.hasModel(target) || !this.hasField(model, fk)) continue;
       if (relations.some((r) => r.targetNames[0] === fk)) continue;
       relations.push({
         name: fk,

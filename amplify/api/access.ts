@@ -1,3 +1,4 @@
+import type { Box } from '../../shared/locationGeometry';
 import { forbidden, notFound } from './errors';
 import { type Lease, TaskScope } from './leases';
 
@@ -15,7 +16,7 @@ export interface AccessStore {
   organizationMembership(
     organizationId: string,
     userId: string,
-  ): Promise<{ isAdmin?: boolean | null } | null>;
+  ): Promise<{ isAdmin?: boolean | null; isTested?: boolean | null } | null>;
   organizationIds(userId: string): Promise<string[]>;
   project(id: string): Promise<{ id: string; organizationId: string } | null>;
   projectMemberships(
@@ -29,15 +30,37 @@ export interface AccessStore {
   activeLeases(userId: string): Promise<Lease[]>;
   memberProjectIds(userId: string): Promise<string[]>;
   presetIdsOfProject(projectId: string): Promise<string[]>;
-  presetLocations(
-    presetId: string,
-  ): Promise<{ locationId: string; annotationSetId: string }[]>;
+  presetLocations(presetId: string): Promise<PresetLocation[]>;
+  // The job is active and the user still holds one of its transects.
+  holdsJob(jobId: string, userId: string): Promise<boolean>;
+}
+
+export interface PresetLocation {
+  locationId: string;
+  annotationSetId: string;
+  createdAt?: string | null;
+  location?: {
+    imageId?: string | null;
+    x?: number | null;
+    y?: number | null;
+    width?: number | null;
+    height?: number | null;
+  } | null;
+}
+
+export interface TestBox {
+  testPresetId: string;
+  locationId: string;
+  setId: string;
+  box: Box;
 }
 
 export interface TestPool {
   presetIds: Set<string>;
   locations: Set<string>;
   setIds: Set<string>;
+  // Test boxes by image, kept from the tester's leases.
+  boxes: Map<string, TestBox[]>;
 }
 
 export interface SurveyStanding {
@@ -139,14 +162,36 @@ export class Access {
 
   tasks(): Promise<TaskScope> {
     return this.once('tasks', async () => {
-      const leases = await this.store.activeLeases(this.userId);
+      const leases = (await this.store.activeLeases(this.userId)).filter(
+        (l) => !l.released,
+      );
+      // A job grant ends with the job or the tester's last transect.
+      const jobs = await Promise.all(
+        leases.map((l) =>
+          l.kind === 'job' && l.leaseId.startsWith('job-')
+            ? this.store.holdsJob(l.leaseId.slice(4), this.userId)
+            : true,
+        ),
+      );
       const standing = await Promise.all(
         leases.map((l) =>
           this.surveyStanding(l.grantedFor ?? l.projectId).catch(() => null),
         ),
       );
-      return new TaskScope(leases.filter((_, i) => standing[i]));
+      return new TaskScope(leases.filter((_, i) => standing[i] && jobs[i]));
     });
+  }
+
+  // Only organisations that test this user hand them tests.
+  async isTested(projectId: string): Promise<boolean> {
+    const organizationId = await this.organizationOfProject(projectId);
+    if (!organizationId) return false;
+    return this.once(`tested:${organizationId}`, async () =>
+      Boolean(
+        (await this.store.organizationMembership(organizationId, this.userId))
+          ?.isTested,
+      ),
+    );
   }
 
   testPool(): Promise<TestPool> {
@@ -155,29 +200,45 @@ export class Access {
         presetIds: new Set(),
         locations: new Set(),
         setIds: new Set(),
+        boxes: new Map(),
       };
       const projectIds = await this.store.memberProjectIds(this.userId);
-      const standing = await Promise.all(
-        projectIds.map((id) => this.surveyStanding(id)),
+      const eligible = await Promise.all(
+        projectIds.map(
+          async (id) =>
+            Boolean(await this.surveyStanding(id)) && this.isTested(id),
+        ),
       );
       const presetIds = new Set(
         (
           await Promise.all(
             projectIds
-              .filter((_, i) => standing[i])
+              .filter((_, i) => eligible[i])
               .map((id) => this.store.presetIdsOfProject(id)),
           )
         ).flat(),
       );
-      const locations = await Promise.all(
-        [...presetIds].map((id) => this.store.presetLocations(id)),
-      );
-      for (const presetId of presetIds) pool.presetIds.add(presetId);
-      for (const location of locations.flat()) {
-        pool.locations.add(
-          `${location.locationId}|${location.annotationSetId}`,
-        );
-        pool.setIds.add(location.annotationSetId);
+      for (const presetId of presetIds) {
+        pool.presetIds.add(presetId);
+        for (const entry of await this.store.presetLocations(presetId)) {
+          pool.locations.add(`${entry.locationId}|${entry.annotationSetId}`);
+          pool.setIds.add(entry.annotationSetId);
+          const at = entry.location;
+          if (!at?.imageId) continue;
+          const boxes = pool.boxes.get(at.imageId) ?? [];
+          boxes.push({
+            testPresetId: presetId,
+            locationId: entry.locationId,
+            setId: entry.annotationSetId,
+            box: {
+              x: Number(at.x),
+              y: Number(at.y),
+              width: Number(at.width),
+              height: Number(at.height),
+            },
+          });
+          pool.boxes.set(at.imageId, boxes);
+        }
       }
       return pool;
     });
@@ -208,6 +269,19 @@ export class Access {
     const standing = await this.surveyStanding(projectId);
     if (!standing) throw forbidden();
     return standing;
+  }
+
+  // Whether someone else belongs to the survey's organisation.
+  async inSurveyOrganization(projectId: string, userId: string) {
+    const organizationId = await this.organizationOfProject(projectId);
+    if (!organizationId) return false;
+    return Boolean(
+      await this.store.organizationMembership(organizationId, userId),
+    );
+  }
+
+  async isSurveyAdmin(projectId: string) {
+    return (await this.surveyStanding(projectId))?.role === 'admin';
   }
 
   async requireSurveyAdmin(projectId: string) {

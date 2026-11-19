@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import { loadImageTileStates, type ImageTileState } from './loadImageTileStates';
+import { registeredLegacyImages } from './legacyImageKeys';
 
 const MANIFEST_PREFIX = 'pretile-launch-manifests';
 
@@ -169,9 +170,21 @@ export async function enqueuePretile(
     return row;
   });
 
+  const found = imageRows.filter((r): r is ImageRow => r !== null);
+  // Unverified legacy paths are treated as having no source.
+  const usable = isLegacy
+    ? (
+        await registeredLegacyImages(
+          projectId,
+          found.filter((r) => r.originalPath),
+          executeGraphql
+        )
+      ).kept
+    : found;
+  const usableIds = new Set(usable.map((r) => r.id));
   const { needsTiling, needsRefresh, skippedFresh, skippedNoSource } =
     partitionTileStates(
-      imageRows.filter((r): r is ImageRow => r !== null),
+      found.map((r) => (usableIds.has(r.id) ? r : { ...r, originalPath: null })),
       Date.now()
     );
 

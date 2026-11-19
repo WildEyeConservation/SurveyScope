@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isUnder, manifestPrefixFor, QUEUE_MANIFEST_PREFIX } from './s3Keys';
+import {
+  annotationQueueTag,
+  isUnder,
+  KIND_TAGS,
+  manifestPrefixFor,
+  QUEUE_MANIFEST_PREFIX,
+  queueKindOf,
+} from './s3Keys';
 
 test('accepts keys under the prefix', () => {
   assert.equal(
@@ -50,4 +57,20 @@ test('each queue tag keeps its manifest under its own prefix', () => {
     isUnder('qc-review-manifests/s1/c1/1.json', manifestPrefixFor(null)),
     false,
   );
+});
+
+test('job names cannot claim another queue kind', () => {
+  for (const tag of Object.values(KIND_TAGS)) {
+    assert.throws(() => annotationQueueTag(tag, 'fallback'), /reserved/);
+  }
+  assert.equal(annotationQueueTag('Elephant pass', 'x'), 'Elephant pass');
+  assert.equal(annotationQueueTag(undefined, 'Default'), 'Default');
+  assert.equal(annotationQueueTag('', 'Default'), '');
+});
+
+test('inherited names map to annotation queues', () => {
+  for (const tag of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    assert.equal(queueKindOf(tag), 'annotation');
+    assert.equal(manifestPrefixFor(tag), QUEUE_MANIFEST_PREFIX);
+  }
 });

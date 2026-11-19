@@ -7,12 +7,14 @@ import {
 } from './dispatch';
 import { badRequest, forbidden } from './errors';
 import { authorizeLaunch, type LaunchStore } from './launch';
+import type { Lease } from './leases';
 import type { Models, Result } from './models';
 import type { QueueActivity } from './queueStore';
 import type { Row } from './schema';
 import {
   assignedTransect,
   holdJob,
+  markDone,
   workableQueue,
   type TaskContext,
 } from './tasks';
@@ -41,6 +43,8 @@ export interface OperationPolicy {
   // A Lambda that the AppSync pipeline runs before `fn` and that must answer true.
   guard?: { fn: string; when: (args: Row) => boolean };
   async?: boolean;
+  // Destructive or role-changing work reads access afresh, not from the cache.
+  fresh?: boolean;
   after?: (ctx: OperationContext, args: Row, result: Result) => Promise<void>;
 }
 
@@ -90,10 +94,30 @@ const launch: Authorize = async (ctx, args) =>
   });
 
 // Downloads serve the original file, so a chain share does not reach them.
-const surveyImage: Authorize = async ({ models }, args) => {
+// Access that comes only from a task lasts no longer than the task.
+const surveyImage: Authorize = async ({ access, models }, args) => {
   const image = await models.load('Image', { id: stringArg(args, 'imageId') });
   if (!image || !(await models.allows('Image', 'read', image)))
     throw forbidden();
+  if (
+    access.isSysadmin ||
+    (await access.isSurveyAdmin(String(image.projectId)))
+  )
+    return;
+  const now = Math.floor(Date.now() / 1000);
+  const remaining = Math.max(
+    0,
+    ...(await access.tasks()).leases
+      .filter(
+        (l) =>
+          l.imageIds.includes(String(image.id)) ||
+          (l.wholeSurvey && l.projectId === image.projectId),
+      )
+      .map((l) => l.expiresAt - now),
+  );
+  return new Authorized({
+    args: { ...args, maxExpiresIn: Math.max(60, remaining) },
+  });
 };
 
 const readableImage: Authorize = async (ctx, args) => {
@@ -109,12 +133,7 @@ const readableImage: Authorize = async (ctx, args) => {
       throw forbidden();
     const share = await models.load('ChainShare', { shareId: shared.shareId });
     if (share?.status !== 'active') throw forbidden();
-    if (
-      !access.isSysadmin &&
-      !access.actor.groups.includes(`chainshare-${shared.shareId}`)
-    ) {
-      throw forbidden();
-    }
+    if (!access.reviewsShare(shared.shareId)) throw forbidden();
     return;
   }
   return surveyImage(ctx, args);
@@ -127,9 +146,26 @@ const queueWorker: Authorize = async ({ access, models }, args) => {
   const id = stringArg(args, 'id');
   const queue = await models.load('Queue', { id });
   if (typeof queue?.projectId !== 'string') throw forbidden();
-  if ((await access.surveyStanding(queue.projectId))?.role === 'admin') return;
-  if (!(await access.tasks()).leases.some((l) => l.queueId === id))
-    throw forbidden();
+  await access.requireSurveyMember(queue.projectId);
+};
+
+// Each held task adds to its queue's count once, however often it is sent.
+const countObservation = async (
+  ctx: OperationContext,
+  args: Row,
+): Promise<Result> => {
+  const id = stringArg(args, 'id');
+  for (const lease of (await ctx.access.tasks()).leases) {
+    if (lease.kind !== 'queue' || lease.queueId !== id || lease.counted)
+      continue;
+    if (
+      await ctx.tasks.leases.transition(lease.userId, lease.leaseId, {
+        kind: 'counted',
+      })
+    )
+      return { data: await ctx.queues.recordObservation(id) };
+  }
+  return { data: null };
 };
 
 const infoTagWorker: Authorize = async (ctx, args) => {
@@ -145,14 +181,46 @@ const infoTagWorker: Authorize = async (ctx, args) => {
   if (typeof queue?.projectId !== 'string') throw forbidden();
   if ((await ctx.access.surveyStanding(queue.projectId))?.role === 'admin')
     return;
+  // The image must come from a task of this very queue.
   const tasks = await ctx.access.tasks();
   if (
     !tasks.leases.some(
-      (l) => l.queueId === queue.id && tasks.image(request.imageId),
+      (l) =>
+        l.kind === 'queue' &&
+        l.queueId === queue.id &&
+        typeof request.imageId === 'string' &&
+        (l.writeImageIds ?? l.imageIds).includes(request.imageId),
     )
   ) {
     throw forbidden();
   }
+};
+
+function parsedRequest(args: Row): Row {
+  try {
+    const request = JSON.parse(String(args.request));
+    return typeof request === 'object' && request ? request : {};
+  } catch {
+    return {};
+  }
+}
+
+const holdsItem = (lease: Lease, queueId: string, itemId: string) =>
+  lease.kind === 'queue' &&
+  lease.queueId === queueId &&
+  (Boolean(lease.annotationIds?.includes(itemId)) ||
+    lease.locationIds.includes(itemId));
+
+// Workflow counts come only from work on a task the caller holds.
+const workflowWorker: Authorize = async ({ access, models }, args) => {
+  const queueId = stringArg(args, 'workflowRunId');
+  const queue = await models.load('Queue', { id: queueId });
+  if (typeof queue?.projectId !== 'string') throw forbidden();
+  await access.requireSurveyMember(queue.projectId);
+  if (await access.isSurveyAdmin(queue.projectId)) return;
+  const itemId = stringArg(args, 'workItemId');
+  if (!(await access.tasks()).leases.some((l) => holdsItem(l, queueId, itemId)))
+    throw forbidden();
 };
 
 const ping = async (ctx: OperationContext, args: Row): Promise<Result> => {
@@ -173,9 +241,9 @@ const RESULTS_SOURCES = new Set([
 ]);
 
 const rowChunk: Authorize = async ({ access, models }, args) => {
-  const source =
-    ROW_SOURCES[stringArg(args, 'source') as keyof typeof ROW_SOURCES];
-  if (!source) throw badRequest('Unknown source');
+  const name = stringArg(args, 'source');
+  if (!Object.hasOwn(ROW_SOURCES, name)) throw badRequest('Unknown source');
+  const source = ROW_SOURCES[name as keyof typeof ROW_SOURCES];
   const scopeId = stringArg(args, 'scopeId');
   let projectId = scopeId;
   if (source.scope !== 'project') {
@@ -217,10 +285,32 @@ const detector =
     await requireInSurvey(ctx, projectId, [['LocationSet', args.setId]]);
     const project = await ctx.models.load('Project', { id: projectId });
     if (!project) throw forbidden();
-    await requireDetectorImages(ctx.launches, project, args.images);
+    await requireDetectorImages(ctx.launches, project, args.images, (imageId) =>
+      imageFiles(ctx, imageId),
+    );
     const target = await dispatchTarget(ctx.launches, operation);
     return new Authorized({ args: { ...args, ...target } });
   };
+
+async function imageFiles(ctx: OperationContext, imageId: string) {
+  const rows: Row[] = [];
+  let nextToken: string | null | undefined;
+  do {
+    const page = await ctx.tasks.data.query(
+      'ImageFile',
+      'imagesByimageId',
+      { imageId },
+      { nextToken, limit: 100 },
+    );
+    if (page.errors?.length && !page.data)
+      throw new Error(
+        `Could not read image files: ${JSON.stringify(page.errors)}`,
+      );
+    rows.push(...(page.data ?? []));
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return rows;
+}
 
 const registration: Authorize = async (ctx, args) => {
   const projectId = stringArg(args, 'projectId');
@@ -250,20 +340,24 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   inviteUserToOrganization: {
     fn: 'inviteUserToOrganization',
     authorize: organizationAdmin('organizationId'),
+    fresh: true,
   },
   respondToInvite: { fn: 'respondToInvite', authorize: signedIn },
   removeUserFromOrganization: {
     fn: 'removeUserFromOrganization',
     authorize: organizationAdmin('organizationId'),
+    fresh: true,
   },
   updateOrganizationMemberAdmin: {
     fn: 'updateOrganizationMemberAdmin',
     authorize: organizationAdmin('organizationId'),
+    fresh: true,
   },
   syncOrganizationGroups: { fn: 'syncOrganizationGroups', authorize: signedIn },
   updateProjectMemberships: {
     fn: 'updateProjectMemberships',
     authorize: surveyAdmin('projectId'),
+    fresh: true,
   },
   reportClientError: { fn: 'reportClientError', authorize: signedIn },
   // Large surveys take longer than a request may last; callers do not wait.
@@ -271,6 +365,7 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
     fn: 'deleteProject',
     authorize: surveyAdmin('projectId'),
     async: true,
+    fresh: true,
   },
   recomputeBoundaryStatus: {
     fn: 'recomputeBoundaryStatus',
@@ -280,10 +375,12 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   deleteQueueMutation: {
     fn: 'deleteQueue',
     authorize: surveyAdminOf('Queue', 'queueId'),
+    fresh: true,
   },
   cancelIndividualIdJob: {
     fn: 'cancelIndividualIdJob',
     authorize: surveyAdminOf('IndividualIdJob', 'jobId'),
+    fresh: true,
   },
   launchAnnotationSet: { fn: 'launchAnnotationSet', authorize: launch },
   launchFalseNegatives: { fn: 'launchFalseNegatives', authorize: launch },
@@ -364,12 +461,7 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   signImageTilePack: { fn: 'imageAccess', authorize: readableImage },
   imageDownloadUrl: { fn: 'imageAccess', authorize: surveyImage },
   generateTile: { fn: 'generateTile', authorize: readableImage },
-  incrementQueueCount: {
-    authorize: queueWorker,
-    run: async (ctx, args) => ({
-      data: await ctx.queues.recordObservation(stringArg(args, 'id')),
-    }),
-  },
+  incrementQueueCount: { authorize: queueWorker, run: countObservation },
   // Opening a queue counts as activity, before any task is held.
   touchQueue: {
     authorize: (ctx, args) => workableQueue(ctx.tasks, stringArg(args, 'id')),
@@ -377,8 +469,32 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
       data: await ctx.queues.touch(stringArg(args, 'id')),
     }),
   },
-  infoTagWork: { fn: 'infoTagWork', authorize: infoTagWorker },
-  recordWorkflowTask: { fn: 'recordWorkflowTask', authorize: signedIn },
+  infoTagWork: {
+    fn: 'infoTagWork',
+    authorize: infoTagWorker,
+    after: async (ctx, args, result) => {
+      const request = parsedRequest(args);
+      const response =
+        typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
+      if (request.action !== 'complete' || response?.status !== 'completed')
+        return;
+      await markDone(
+        ctx.tasks,
+        (l) =>
+          l.queueId === request.queueId &&
+          (l.writeImageIds ?? l.imageIds).includes(String(request.imageId)),
+      );
+    },
+  },
+  recordWorkflowTask: {
+    fn: 'recordWorkflowTask',
+    authorize: workflowWorker,
+    after: async (ctx, args) => {
+      const queueId = String(args.workflowRunId);
+      const itemId = String(args.workItemId);
+      await markDone(ctx.tasks, (l) => holdsItem(l, queueId, itemId));
+    },
+  },
   claimIndividualIdTransect: {
     fn: 'claimIndividualIdTransect',
     authorize: async ({ access, models }, args) => {

@@ -5,7 +5,6 @@ import { generateClient } from "aws-amplify/data";
 import { listQueues, getProject } from "./graphql/queries";
 import type { GraphQLResult } from "@aws-amplify/api-graphql";
 import {
-  DeleteQueueCommand,
   type GetQueueAttributesCommandInput,
   GetQueueAttributesCommand,
 } from "@aws-sdk/client-sqs";
@@ -15,6 +14,7 @@ import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { finishShadowWorkflowRun } from "../workflowStats/runWriter";
 import { isUnder, manifestPrefixFor } from "../shared/s3Keys";
+import { deleteBoundQueue } from "../shared/queueNames";
 
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
@@ -85,6 +85,21 @@ const s3Client = new S3Client({
     sessionToken: env.AWS_SESSION_TOKEN,
   },
 });
+
+async function executeGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>
+): Promise<T> {
+  const response = (await client.graphql({
+    query,
+    variables,
+  } as Parameters<typeof client.graphql>[0])) as GraphQLResult<T>;
+  if (response.errors?.length) {
+    throw new Error(`GraphQL error: ${JSON.stringify(response.errors.map((e) => e.message))}`);
+  }
+  if (!response.data) throw new Error("GraphQL response missing data");
+  return response.data;
+}
 
 interface PagedList<T> {
   items: T[];
@@ -260,7 +275,7 @@ export const handler: Handler = async (event, context) => {
           },
         });
 
-        await sqsClient.send(new DeleteQueueCommand({ QueueUrl: queue.url }));
+        await deleteBoundQueue(sqsClient, queue, executeGraphql);
 
         // Log the cleanup action
         const queueName = queue.tag || queue.name || "Unknown";

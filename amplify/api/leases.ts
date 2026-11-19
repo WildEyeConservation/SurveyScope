@@ -11,6 +11,10 @@ export interface Lease {
   // The message a queue lease came from; its observation is named after it.
   messageId?: string;
   imageIds: string[];
+  // Images whose annotations it may change; neighbours are only shown.
+  writeImageIds?: string[];
+  // Annotations a review task is about.
+  annotationIds?: string[];
   locationIds: string[];
   // Image pairs as `${image1Id}|${image2Id}`.
   pairs: string[];
@@ -20,6 +24,14 @@ export interface Lease {
   wholeSurvey?: boolean;
   // Finished; kept briefly so the annotator can page back to it.
   acked?: boolean;
+  // Handed back to the queue; it grants nothing more.
+  released?: boolean;
+  // Its work was saved, so it may be acknowledged.
+  done?: boolean;
+  // It has added to its queue's observed count.
+  counted?: boolean;
+  // The task asked to be skipped when its location already holds annotations.
+  skipIfAnnotated?: boolean;
   // A test lease's fixed box and answer key, graded by the server.
   test?: {
     testPresetId: string;
@@ -31,10 +43,14 @@ export interface Lease {
     box: { x: number; y: number; width: number; height: number };
     answerBox: { x: number; y: number; width: number; height: number };
     grown: boolean;
+    // Served again after every location was tested, and when it was issued.
+    repeat?: boolean;
+    issuedAt?: string;
     // Fixed by the first submission.
     grade?: {
       testAnimals: number;
       totalMissedAnimals: number;
+      falsePositives?: number;
       counts: { categoryName: string; userCount: number; testCount: number }[];
     };
     submitted?: boolean;
@@ -63,13 +79,15 @@ export class TaskScope {
     );
   }
 
+  // A test lease shows only its own location, not detector boxes near the answers.
   location(id: unknown, imageId: unknown, projectId?: unknown) {
     if (!str(id) && !str(imageId)) return undefined;
     return this.some(
       (l) =>
         l.locationIds.includes(String(id)) ||
-        l.imageIds.includes(String(imageId)) ||
-        this.inSurvey(l, projectId),
+        (l.kind !== 'test' &&
+          (l.imageIds.includes(String(imageId)) ||
+            this.inSurvey(l, projectId))),
     );
   }
 
@@ -90,7 +108,8 @@ export class TaskScope {
     return this.some(
       (l) =>
         l.writeSetIds.includes(String(setId)) &&
-        (l.imageIds.includes(String(imageId)) || this.inSurvey(l, projectId)),
+        ((l.writeImageIds ?? l.imageIds).includes(String(imageId)) ||
+          this.inSurvey(l, projectId)),
     );
   }
 
@@ -99,20 +118,24 @@ export class TaskScope {
     return this.some((l) => l.writeSetIds.includes(String(setId)));
   }
 
-  // One observation per received message, named queue-message:<messageId>.
+  // One observation per received message, named queue-message:<messageId>,
+  // credited to the queue that message came from.
   observes(
     id: unknown,
     locationId: unknown,
     setId: unknown,
     projectId?: unknown,
+    queueId?: unknown,
   ) {
     if (!str(locationId) || !str(setId)) return undefined;
+    const noQueue = queueId === undefined || queueId === null;
     return this.some(
       (l) =>
         l.writeSetIds.includes(String(setId)) &&
-        (this.inSurvey(l, projectId) ||
+        ((this.inSurvey(l, projectId) && noQueue) ||
           (l.locationIds.includes(String(locationId)) &&
-            id === `queue-message:${l.messageId}`)),
+            id === `queue-message:${l.messageId}` &&
+            (noQueue || queueId === l.queueId))),
     );
   }
 

@@ -27,10 +27,13 @@ export function hasAdminChannel(model: string) {
   return Object.prototype.hasOwnProperty.call(ADMIN_ONLY, model);
 }
 
-// Subscriptions are re-authorised each window, so lost access ends within one.
-export const EPOCH_MS = 5 * 60_000;
+// Subscriptions are re-authorised each window. A window, plus how early it may
+// be joined, stays within REVOCATION_MS, so lost access ends within that.
+export const EPOCH_MS = 4 * 60_000;
 // Clients join the next window this long before it starts.
-export const EPOCH_LEAD_MS = 45_000;
+export const EPOCH_LEAD_MS = 30_000;
+export const SKEW_MS = 20_000;
+export const REVOCATION_MS = 5 * 60_000;
 
 export const epochAt = (ms: number) => Math.floor(ms / EPOCH_MS);
 
@@ -66,7 +69,7 @@ export function channelsFor(
 }
 
 // Epochs a subscriber may join at `now`, allowing for clock drift.
-export function joinableEpochs(now: number, skewMs = 30_000): number[] {
+export function joinableEpochs(now: number, skewMs = SKEW_MS): number[] {
   const current = epochAt(now);
   const epochs = new Set([current]);
   if (now + EPOCH_LEAD_MS + skewMs >= (current + 1) * EPOCH_MS)

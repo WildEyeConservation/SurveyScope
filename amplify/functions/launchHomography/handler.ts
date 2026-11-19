@@ -14,6 +14,8 @@ import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import { enqueuePretile } from '../shared/enqueuePretile';
 import { createShadowWorkflowRun, workflowLaunchUserId } from '../workflowStats/runWriter';
+import { assertNewQueueUrl, buildQueueName, queueTags } from '../shared/queueNames';
+import { isUnder, KIND_TAGS, manifestPrefixFor } from '../shared/s3Keys';
 
 // ── GraphQL queries & mutations ──
 
@@ -184,6 +186,9 @@ export const handler: LaunchHomographyHandler = async (event) => {
 
 async function handleLaunch(payload: LaunchHomographyPayload, organizationId: string, launchedBy: string) {
   const { projectId, annotationSetId, batchSize, hidden, manifestS3Key, launchedCount, queueName } = payload;
+  if (!isUnder(manifestS3Key, manifestPrefixFor(KIND_TAGS.homography))) {
+    throw new Error('Manifest is outside the homography manifest prefix');
+  }
 
   // 1. Download the pre-computed manifest from S3
   console.log('Downloading manifest from S3', { manifestS3Key });
@@ -210,16 +215,18 @@ async function handleLaunch(payload: LaunchHomographyPayload, organizationId: st
   // 2. Create SQS queue
   const queueId = randomUUID();
   const queueDisplayName = queueName;
-  const safeQueueName = makeSafeQueueName(`Homography-${queueId}`);
+  const safeQueueName = buildQueueName('Homography', queueId);
 
   const createResult = await sqsClient.send(
     new CreateQueueCommand({
       QueueName: safeQueueName,
       Attributes: { MessageRetentionPeriod: '1209600' },
+      tags: queueTags(projectId, queueId),
     })
   );
   const queueUrl = createResult.QueueUrl;
   if (!queueUrl) throw new Error('Unable to determine created queue URL');
+  await assertNewQueueUrl(queueUrl, safeQueueName, executeGraphql);
 
   // 3. Create Queue DynamoDB record
   const timestamp = new Date().toISOString();
@@ -231,7 +238,7 @@ async function handleLaunch(payload: LaunchHomographyPayload, organizationId: st
       projectId,
       batchSize,
       hidden,
-      tag: 'homography',
+      tag: KIND_TAGS.homography,
       approximateSize: 1,
       updatedAt: timestamp,
       requeueAt: timestamp,
@@ -376,12 +383,6 @@ async function executeGraphql<T>(
   }
   if (!response.data) throw new Error('GraphQL response missing data');
   return response.data;
-}
-
-function makeSafeQueueName(input: string): string {
-  let sanitized = input.replace(/[^a-zA-Z0-9-_]/g, '_');
-  if (sanitized.length > 75) sanitized = sanitized.substring(0, 75);
-  return sanitized;
 }
 
 async function setProjectStatus(projectId: string, status: string) {
