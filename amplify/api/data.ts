@@ -2,7 +2,7 @@ import { env } from '$amplify/env/api';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
-import type { AccessStore } from './access';
+import type { AccessStore, PresetLocation } from './access';
 import type { DataLayer, QueryOptions, Result } from './models';
 import type { Introspection, Row } from './schema';
 import type { LeaseTable } from './taskStore';
@@ -133,14 +133,20 @@ export class AmplifyAccessStore implements AccessStore {
   constructor(
     private readonly client: LooseClient,
     private readonly leases: LeaseTable,
+    // Subscription checks read grants afresh, so revocation is not delayed.
+    private readonly fresh = false,
   ) {}
+
+  private cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+    return this.fresh ? load() : cached(key, load);
+  }
 
   activeLeases(userId: string) {
     return this.leases.active(userId);
   }
 
   memberProjectIds(userId: string) {
-    return cached(`memberProjects:${userId}`, async () => {
+    return this.cached(`memberProjects:${userId}`, async () => {
       const rows = await all<{ projectId: string }>((nextToken) =>
         this.client.models.UserProjectMembership.userProjectMembershipsByUserId(
           { userId },
@@ -152,7 +158,7 @@ export class AmplifyAccessStore implements AccessStore {
   }
 
   presetIdsOfProject(projectId: string) {
-    return cached(`presets:${projectId}`, async () => {
+    return this.cached(`presets:${projectId}`, async () => {
       const rows = await all<{ testPresetId: string }>((nextToken) =>
         this.client.models.TestPresetProject.testPresetsByProjectId(
           { projectId },
@@ -164,18 +170,55 @@ export class AmplifyAccessStore implements AccessStore {
   }
 
   presetLocations(presetId: string) {
-    return cached(`presetLocations:${presetId}`, async () => {
-      return all<{ locationId: string; annotationSetId: string }>((nextToken) =>
+    return this.cached(`presetLocations:${presetId}`, async () => {
+      return all<PresetLocation>((nextToken) =>
         this.client.models.TestPresetLocation.locationsByTestPresetId(
           { testPresetId: presetId },
-          { selectionSet: ['locationId', 'annotationSetId'], nextToken },
+          {
+            selectionSet: [
+              'locationId',
+              'annotationSetId',
+              'createdAt',
+              'location.imageId',
+              'location.x',
+              'location.y',
+              'location.width',
+              'location.height',
+            ],
+            nextToken,
+          },
         ),
       );
     });
   }
 
+  holdsJob(jobId: string, userId: string) {
+    return this.cached(`job:${jobId}:${userId}`, async () => {
+      const job = await this.client.models.IndividualIdJob.get(
+        { id: jobId },
+        { selectionSet: ['id', 'status'] },
+      );
+      if ((job.data as { status?: string } | null)?.status !== 'active')
+        return false;
+      const transects = await all<{ status?: string; assignedUserId?: string }>(
+        (nextToken) =>
+          this.client.models.IndividualIdTransect.individualIdTransectsByJobId(
+            { jobId },
+            {
+              filter: { assignedUserId: { eq: userId } },
+              selectionSet: ['status', 'assignedUserId'],
+              nextToken,
+            },
+          ),
+      );
+      return transects.some(
+        (t) => t.status === 'assigned' && t.assignedUserId === userId,
+      );
+    });
+  }
+
   neighbours(imageId: string) {
-    return cached(`neighbours:${imageId}`, async () => {
+    return this.cached(`neighbours:${imageId}`, async () => {
       const [left, right] = await Promise.all(
         (
           ['imageNeighboursByImage1key', 'imageNeighboursByImage2key'] as const
@@ -195,18 +238,21 @@ export class AmplifyAccessStore implements AccessStore {
   }
 
   organizationMembership(organizationId: string, userId: string) {
-    return cached(`orgMember:${organizationId}:${userId}`, async () => {
+    return this.cached(`orgMember:${organizationId}:${userId}`, async () => {
       const result = await this.client.models.OrganizationMembership.get(
         { organizationId, userId },
-        { selectionSet: ['organizationId', 'userId', 'isAdmin'] },
+        { selectionSet: ['organizationId', 'userId', 'isAdmin', 'isTested'] },
       );
       if (result.errors?.length) throw new Error(JSON.stringify(result.errors));
-      return result.data as { isAdmin?: boolean | null } | null;
+      return result.data as {
+        isAdmin?: boolean | null;
+        isTested?: boolean | null;
+      } | null;
     });
   }
 
   organizationIds(userId: string) {
-    return cached(`orgIds:${userId}`, async () => {
+    return this.cached(`orgIds:${userId}`, async () => {
       const memberships = await all<{ organizationId: string }>((nextToken) =>
         this.client.models.OrganizationMembership.organizationsByUserId(
           { userId },
@@ -218,7 +264,7 @@ export class AmplifyAccessStore implements AccessStore {
   }
 
   project(id: string) {
-    return cached(`project:${id}`, async () => {
+    return this.cached(`project:${id}`, async () => {
       const result = await this.client.models.Project.get(
         { id },
         { selectionSet: ['id', 'organizationId'] },
@@ -229,7 +275,7 @@ export class AmplifyAccessStore implements AccessStore {
   }
 
   projectMemberships(userId: string, projectId: string) {
-    return cached(`projectMembers:${userId}:${projectId}`, async () => {
+    return this.cached(`projectMembers:${userId}:${projectId}`, async () => {
       return all<{ isAdmin?: boolean | null }>((nextToken) =>
         this.client.models.UserProjectMembership.userProjectMembershipsByUserId(
           { userId },
@@ -244,7 +290,7 @@ export class AmplifyAccessStore implements AccessStore {
   }
 
   resultsMemberships(surveyId: string, userId: string) {
-    return cached(`results:${surveyId}:${userId}`, async () => {
+    return this.cached(`results:${surveyId}:${userId}`, async () => {
       return all<{ annotationSetId: string }>((nextToken) =>
         this.client.models.JollyResultsMembership.jollyResultsMembershipsBySurveyId(
           { surveyId },

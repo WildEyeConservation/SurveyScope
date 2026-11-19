@@ -18,6 +18,8 @@ import { randomUUID } from 'crypto';
 import pLimit from 'p-limit';
 import { enqueuePretile } from '../shared/enqueuePretile';
 import { createShadowWorkflowRun, workflowLaunchUserId } from '../workflowStats/runWriter';
+import { assertNewQueueUrl, buildQueueName, queueTags } from '../shared/queueNames';
+import { KIND_TAGS, manifestPrefixFor } from '../shared/s3Keys';
 
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
@@ -310,7 +312,7 @@ async function handleLaunch(payload: LaunchQCReviewPayload, organizationId: stri
   };
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const manifestKey = `qc-review-manifests/${annotationSetId}/${categoryId}/${timestamp}.json`;
+  const manifestKey = `${manifestPrefixFor(KIND_TAGS['qc-review'])}${annotationSetId}/${categoryId}/${timestamp}.json`;
   const bucketName = env.OUTPUTS_BUCKET_NAME;
   if (!bucketName) {
     throw new Error('OUTPUTS_BUCKET_NAME environment variable not set');
@@ -350,7 +352,7 @@ async function handleLaunch(payload: LaunchQCReviewPayload, organizationId: stri
     payload.queueName || payload.categoryName || 'QC Review';
   const queue = await createQueue(
     { name: queueDisplayName, hidden, fifo: false },
-    'qc-review',
+    KIND_TAGS['qc-review'],
     projectId,
     batchSize,
     organizationId,
@@ -473,8 +475,7 @@ async function createQueue(
   }
 ) {
   const queueId = randomUUID();
-  const safeBaseName = makeSafeQueueName(`${queueOptions.name}-${queueId}`);
-  const finalName = queueOptions.fifo ? `${safeBaseName}.fifo` : safeBaseName;
+  const finalName = buildQueueName(queueOptions.name, queueId, queueOptions.fifo);
 
   const createResult = await sqsClient.send(
     new CreateQueueCommand({
@@ -483,6 +484,7 @@ async function createQueue(
         MessageRetentionPeriod: '1209600',
         FifoQueue: queueOptions.fifo ? 'true' : undefined,
       },
+      tags: queueTags(projectId, queueId),
     })
   );
 
@@ -490,6 +492,7 @@ async function createQueue(
   if (!queueUrl) {
     throw new Error('Unable to determine created queue URL');
   }
+  await assertNewQueueUrl(queueUrl, finalName, executeGraphql);
 
   // Write queue manifest to S3 for requeue tracking.
   // For QC queues, manifest items reference annotations (not locations).
@@ -661,15 +664,6 @@ async function executeGraphql<T>(
     throw new Error('GraphQL response missing data');
   }
   return response.data;
-}
-
-function makeSafeQueueName(input: string): string {
-  let sanitized = input.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const maxMainLength = 75;
-  if (sanitized.length > maxMainLength) {
-    sanitized = sanitized.substring(0, maxMainLength);
-  }
-  return sanitized;
 }
 
 async function setProjectStatus(

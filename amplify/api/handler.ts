@@ -1,3 +1,7 @@
+import {
+  AdminListGroupsForUserCommand,
+  CognitoIdentityProviderClient,
+} from '@aws-sdk/client-cognito-identity-provider';
 import { joinableEpochs } from '../../shared/dataChannels';
 import {
   operationArgsError,
@@ -14,9 +18,9 @@ import { Authorized, OPERATIONS } from './operations';
 import { POLICIES } from './policies';
 import { dynamoQueueActivity } from './queueStore';
 import * as results from './results';
-import { type Row, SchemaInfo } from './schema';
-import type { TaskContext } from './tasks';
+import { SchemaInfo, type Row } from './schema';
 import * as tasks from './tasks';
+import { noteSavedWork, type TaskContext } from './tasks';
 import { dynamoLeaseTable, sqsTaskQueue } from './taskStore';
 
 interface HttpEvent {
@@ -24,7 +28,10 @@ interface HttpEvent {
   headers?: Record<string, string | undefined>;
   body?: string;
   isBase64Encoded?: boolean;
-  requestContext: { http: { method: string } };
+  requestContext: {
+    http: { method: string };
+    authorizer?: { jwt?: { claims?: Record<string, unknown> } };
+  };
 }
 
 interface EventsRequest {
@@ -40,10 +47,36 @@ interface EventsRequest {
 const isObject = (v: unknown): v is Row =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-async function requestContext(actor: Actor) {
+const cognito = new CognitoIdentityProviderClient({});
+
+// Token groups can outlive a removal by up to an hour, so privileged ones are rechecked.
+const LIVE_GROUP = (group: string) =>
+  group === 'sysadmin' || group.startsWith('chainshare-');
+
+async function liveGroups(actor: Actor): Promise<string[]> {
+  if (!actor.groups.some(LIVE_GROUP)) return actor.groups;
+  const current = new Set<string>();
+  let nextToken: string | undefined;
+  do {
+    const page = await cognito.send(
+      new AdminListGroupsForUserCommand({
+        UserPoolId: process.env.USER_POOL_ID,
+        Username: actor.username,
+        NextToken: nextToken,
+      }),
+    );
+    for (const group of page.Groups ?? [])
+      if (group.GroupName) current.add(group.GroupName);
+    nextToken = page.NextToken;
+  } while (nextToken);
+  return actor.groups.filter((g) => !LIVE_GROUP(g) || current.has(g));
+}
+
+async function requestContext(token: Actor, fresh = false) {
+  const actor = { ...token, groups: await liveGroups(token) };
   const { client, introspection } = await amplifyData();
   const schema = new SchemaInfo(introspection);
-  const store = new AmplifyAccessStore(client, dynamoLeaseTable);
+  const store = new AmplifyAccessStore(client, dynamoLeaseTable, fresh);
   const access = new Access(actor, store);
   const data = new AmplifyDataLayer(client);
   const guard: WriteGuard = async (fn, fieldName, input) => {
@@ -60,6 +93,7 @@ async function requestContext(actor: Actor) {
     leases: dynamoLeaseTable,
     neighbours: (imageId) => store.neighbours(imageId),
   };
+  models.afterWrite = (model, op, row) => noteSavedWork(tasks, model, op, row);
   return {
     schema,
     access,
@@ -78,27 +112,33 @@ async function requestContext(actor: Actor) {
 
 type Context = Awaited<ReturnType<typeof requestContext>>;
 
-function decodeClaims(token: string): Record<string, unknown> {
-  const payload = token.split('.')[1];
-  if (!payload) throw new ApiError(401, 'Unauthorized', 'Missing token');
-  return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+// HTTP APIs pass list claims as "[a b]".
+function claimList(value: unknown): string[] {
+  if (Array.isArray(value))
+    return value.filter((g): g is string => typeof g === 'string');
+  if (typeof value !== 'string') return [];
+  const inner = value.trim().replace(/^\[/, '').replace(/\]$/, '').trim();
+  return inner ? inner.split(/\s+/).filter(Boolean) : [];
 }
 
-// Token verification is delegated to API Gateway's JWT authorizer.
-function actorFromHeaders(headers: HttpEvent['headers'] = {}): Actor {
-  const header = headers.authorization ?? headers.Authorization ?? '';
-  const claims = decodeClaims(header.replace(/^Bearer\s+/i, ''));
-  if (claims.token_use !== 'access' || typeof claims.sub !== 'string') {
+// Only claims API Gateway's authorizer has verified are used.
+function actorFromEvent(event: HttpEvent): Actor {
+  const claims = event.requestContext.authorizer?.jwt?.claims;
+  if (
+    !claims ||
+    claims.token_use !== 'access' ||
+    typeof claims.sub !== 'string' ||
+    claims.sub === ''
+  ) {
     throw new ApiError(401, 'Unauthorized', 'An access token is required');
   }
-  const groups = claims['cognito:groups'];
   return {
     sub: claims.sub,
     username:
-      typeof claims.username === 'string' ? claims.username : claims.sub,
-    groups: Array.isArray(groups)
-      ? groups.filter((g): g is string => typeof g === 'string')
-      : [],
+      typeof claims.username === 'string' && claims.username !== ''
+        ? claims.username
+        : claims.sub,
+    groups: claimList(claims['cognito:groups']),
     claims,
   };
 }
@@ -153,8 +193,27 @@ async function runOperation(ctx: Context, body: Row): Promise<Result> {
   return result;
 }
 
+// Writes that grant or remove access are checked without the grant cache.
+const FRESH_MODELS = new Set([
+  'UserProjectMembership',
+  'OrganizationMembership',
+  'Project',
+  'TestPreset',
+  'TestPresetProject',
+  'JollyResultsMembership',
+  'ResultSharingToken',
+]);
+
 async function route(path: string, actor: Actor, body: Row): Promise<Result> {
-  const ctx = await requestContext(actor);
+  const name = path === '/operation' ? body.name : undefined;
+  const fresh =
+    (typeof name === 'string' &&
+      Object.hasOwn(OPERATIONS, name) &&
+      Boolean(OPERATIONS[name].fresh)) ||
+    (path === '/data' &&
+      ['create', 'update', 'delete'].includes(String(body.op)) &&
+      FRESH_MODELS.has(String(body.model)));
+  const ctx = await requestContext(actor, fresh);
   switch (path) {
     case '/data': {
       const { model, op, args } = body;
@@ -222,7 +281,7 @@ async function http(event: HttpEvent) {
   try {
     if (event.requestContext.http.method !== 'POST')
       throw new ApiError(405, 'BadRequest', 'POST only');
-    const actor = actorFromHeaders(event.headers);
+    const actor = actorFromEvent(event);
     const raw = event.isBase64Encoded
       ? Buffer.from(event.body ?? '', 'base64').toString('utf8')
       : (event.body ?? '');
@@ -261,12 +320,15 @@ async function subscribe(event: EventsRequest) {
     ) {
       return { error: 'Unauthorized' };
     }
-    const ctx = await requestContext({
-      sub: identity.sub,
-      username: identity.username ?? identity.sub,
-      groups: identity.groups ?? [],
-      claims: identity.claims ?? {},
-    });
+    const ctx = await requestContext(
+      {
+        sub: identity.sub,
+        username: identity.username ?? identity.sub,
+        groups: identity.groups ?? [],
+        claims: identity.claims ?? {},
+      },
+      true,
+    );
     const allowed =
       Boolean(model && field && value) &&
       (await ctx.models.canSubscribe(model, field, value));

@@ -1,12 +1,17 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { authorizeRequest } from '../functions/shared/authorizeRequest';
-import { ApiError } from './errors';
 import { resolverIdentity } from './invoke';
 import { Authorized, OPERATIONS } from './operations';
 import { POLICIES } from './policies';
 import * as results from './results';
-import { actor, gateway, MemoryData, operationContext } from './testing';
+import {
+  actor,
+  gateway,
+  MemoryData,
+  operationContext,
+  refused,
+} from './testing';
 
 function fixture() {
   return new MemoryData({
@@ -26,6 +31,7 @@ function fixture() {
     ],
     JollyResultsMembership: [],
     ResultSharingToken: [],
+    ChainShare: [{ shareId: 's1', status: 'active' }],
     ChainReviewFeedback: [
       { id: 'f1', shareId: 's1', owner: 'someone::someone', kind: 'comment' },
     ],
@@ -38,11 +44,7 @@ const resultsContext = (data: MemoryData, user: string) => ({
   secret: () => 'test-secret',
 });
 
-const denied = (promise: Promise<unknown>) =>
-  assert.rejects(
-    promise,
-    (e: unknown) => e instanceof ApiError && e.status === 403,
-  );
+const denied = (promise: Promise<unknown>) => refused(promise);
 
 describe('results sharing', () => {
   it('signs links for survey admins and grants the set to whoever redeems one', async () => {

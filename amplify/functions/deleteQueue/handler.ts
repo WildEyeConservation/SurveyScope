@@ -3,10 +3,11 @@ import { env } from '$amplify/env/deleteQueue';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
-import { SQSClient, DeleteQueueCommand } from '@aws-sdk/client-sqs';
+import { SQSClient } from '@aws-sdk/client-sqs';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { finishShadowWorkflowRun } from '../workflowStats/runWriter';
 import { authorizeSurveyAdmin } from '../shared/authorizeSurveyAdmin';
+import { deleteBoundQueue } from '../shared/queueNames';
 
 const getQueueQuery = /* GraphQL */ `
   query GetQueue($id: ID!) {
@@ -129,20 +130,9 @@ export const handler: DeleteQueueHandler = async (event) => {
     );
     const sub = (identity as { sub: string }).sub;
 
-    // 4. Delete the SQS queue if it has a URL
-    if (queue.url) {
-      try {
-        await sqsClient.send(new DeleteQueueCommand({ QueueUrl: queue.url }));
-        console.log(`Deleted SQS queue: ${queue.url}`);
-      } catch (err: any) {
-        // Queue may already be deleted (e.g. by cleanup) — log but don't fail
-        if (err.name === 'QueueDoesNotExist' || err.name === 'AWS.SimpleQueueService.NonExistentQueue') {
-          console.warn(`SQS queue already gone: ${queue.url}`);
-        } else {
-          throw err;
-        }
-      }
-    }
+    // 4. Delete the SQS queue if it is bound to this row
+    const outcome = await deleteBoundQueue(sqsClient, queue, executeGraphql);
+    console.log('SQS queue deletion', { queueId, outcome });
 
     // 5. Delete the Queue DynamoDB record
     await executeGraphql(deleteQueueMutation, {

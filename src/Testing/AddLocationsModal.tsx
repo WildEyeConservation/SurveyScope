@@ -78,10 +78,6 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
   const [addedLocations, setAddedLocations] = useState<Record<string, boolean>>(
     {},
   );
-  const lastAddedRef = useRef<{
-    annotationSetId: string;
-    locationId: string;
-  } | null>(null);
 
   const fetcher: FetcherType<LocationReferenceTask> = useCallback(async () => {
     const cand = candidatesRef.current[candidateIndexRef.current];
@@ -383,7 +379,7 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       id: cand.locationId,
       selectionSet: ['imageId', 'width', 'height', 'x', 'y'] as const,
     } as any);
-    if (!location) return;
+    if (!location) throw new Error('Testing location not found');
     const annotations = (await fetchAllPaginatedResults(
       // @ts-ignore: complex union types from generated client
       (client as any).models.Annotation.annotationsByImageIdAndSetId,
@@ -394,7 +390,8 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         limit: 10000,
       },
     )) as any[];
-    if (location.width == null || location.height == null) return;
+    if (location.width == null || location.height == null)
+      throw new Error('Testing location has no size');
     const boundsxy: [number, number][] = [
       [
         location.x - (location.width as number) / 2,
@@ -488,6 +485,13 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
 
       if (!newLoc?.id) throw new Error('Failed to create testing location');
 
+      // The answer key is written before the location joins the preset, so a
+      // published test always has its key.
+      await saveAnnotations({
+        annotationSetId: cand.annotationSetId,
+        locationId: newLoc.id,
+      });
+
       // Add the new location to the preset
       // @ts-ignore
       await client.models.TestPresetLocation.create({
@@ -498,11 +502,6 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
         group: organizationId,
       });
 
-      // mark for effect using the new location
-      lastAddedRef.current = {
-        annotationSetId: cand.annotationSetId,
-        locationId: newLoc.id,
-      };
       setAddedLocations((prev) => ({
         ...prev,
         [`${cand.annotationSetId}_${cand.locationId}`]: true,
@@ -511,13 +510,6 @@ export default function AddLocationsModal({ show, preset, surveyId }: Props) {
       setAdding(false);
     }
   }
-
-  useEffect(() => {
-    if (lastAddedRef.current) {
-      saveAnnotations(lastAddedRef.current);
-      lastAddedRef.current = null;
-    }
-  }, [addedLocations]);
 
   return (
     <ProjectContext surveyId={surveyId}>

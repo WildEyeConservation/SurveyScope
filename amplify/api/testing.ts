@@ -1,4 +1,9 @@
-import { Access, type AccessStore, type Actor } from './access';
+import {
+  Access,
+  type AccessStore,
+  type Actor,
+  type PresetLocation,
+} from './access';
 import type { LaunchStore } from './launch';
 import type { Lease } from './leases';
 import {
@@ -10,7 +15,7 @@ import {
 } from './models';
 import type { OperationContext } from './operations';
 import { SchemaInfo, type Introspection, type Row } from './schema';
-import type { TaskContext } from './tasks';
+import { noteSavedWork, type TaskContext } from './tasks';
 import type { LeaseTable, TaskQueue } from './taskStore';
 
 type Field = Introspection['models'][string]['fields'][string];
@@ -119,6 +124,10 @@ export const introspection: Introspection = {
     Location: model('Location', [
       scalar('projectId'),
       scalar('imageId'),
+      scalar('x'),
+      scalar('y'),
+      scalar('width'),
+      scalar('height'),
       scalar('group'),
       belongsTo('image', 'Image', 'imageId'),
     ]),
@@ -129,6 +138,10 @@ export const introspection: Introspection = {
         scalar('imageId'),
         scalar('setId'),
         scalar('objectId'),
+        scalar('categoryId'),
+        scalar('x'),
+        scalar('y'),
+        scalar('source'),
         scalar('owner'),
         scalar('group'),
         belongsTo('image', 'Image', 'imageId'),
@@ -204,6 +217,7 @@ export const introspection: Introspection = {
         scalar('projectId'),
         scalar('locationId'),
         scalar('annotationSetId'),
+        scalar('annotationCount'),
         scalar('owner'),
         scalar('group'),
         belongsTo('location', 'Location', 'locationId'),
@@ -458,6 +472,7 @@ export class MemoryData implements DataLayer, AccessStore {
 
   leases: Lease[] = [];
   locks = new Set<string>();
+  states = new Map<string, Row>();
 
   async activeLeases(userId: string) {
     const now = Math.floor(Date.now() / 1000);
@@ -476,14 +491,45 @@ export class MemoryData implements DataLayer, AccessStore {
       .map((p) => p.testPresetId as string);
   }
 
-  async presetLocations(presetId: string) {
-    return this.rows('TestPresetLocation').filter(
-      (p) => p.testPresetId === presetId,
-    ) as {
-      locationId: string;
-      annotationSetId: string;
-    }[];
+  async holdsJob(jobId: string, userId: string) {
+    const job = this.find('IndividualIdJob', { id: jobId });
+    return (
+      job?.status === 'active' &&
+      this.rows('IndividualIdTransect').some(
+        (t) =>
+          t.jobId === jobId &&
+          t.assignedUserId === userId &&
+          t.status === 'assigned',
+      )
+    );
   }
+
+  async presetLocations(presetId: string): Promise<PresetLocation[]> {
+    return this.rows('TestPresetLocation')
+      .filter((p) => p.testPresetId === presetId)
+      .map((p) => ({
+        locationId: String(p.locationId),
+        annotationSetId: String(p.annotationSetId),
+        createdAt: (p.createdAt as string | undefined) ?? null,
+        location: this.find('Location', { id: p.locationId }) as
+          PresetLocation['location'] | undefined,
+      }));
+  }
+}
+
+// Refused: an ApiError with the status, or a row the caller sees as missing.
+export async function refused(promise: Promise<unknown>, status = 403) {
+  let outcome: unknown;
+  try {
+    outcome = await promise;
+  } catch (e) {
+    const err = e as { status?: number };
+    if (err?.status === status) return;
+    throw e;
+  }
+  const result = outcome as { data?: unknown } | undefined;
+  if (status !== 403 || result?.data !== null)
+    throw new Error(`Expected a refusal, got ${JSON.stringify(outcome)}`);
 }
 
 export function actor(username: string, groups: string[] = []): Actor {
@@ -576,14 +622,30 @@ export function operationContext(
       );
       if (lease?.test && !lease.test.grade) lease.test.grade = grade;
     },
-    async expire(userId, leaseId, expiresAt, acked = false) {
+    async getState(userId, name) {
+      return data.states.get(`${userId}|${name}`) ?? null;
+    },
+    async putState(userId, name, value) {
+      data.states.set(`${userId}|${name}`, value);
+    },
+    async transition(userId, leaseId, change) {
       const lease = data.leases.find(
         (l) => l.userId === userId && l.leaseId === leaseId,
       );
-      if (lease) {
-        lease.expiresAt = expiresAt;
-        if (acked) lease.acked = true;
+      if (change.kind === 'counted') {
+        if (!lease || lease.counted) return false;
+        lease.counted = true;
+        return true;
       }
+      if (!lease || lease.released || lease.acked) return false;
+      if (change.kind === 'done') {
+        lease.done = true;
+        return true;
+      }
+      lease.expiresAt = change.expiresAt;
+      if (change.kind === 'ack') lease.acked = true;
+      if (change.kind === 'release') lease.released = true;
+      return true;
     },
   };
   const tasks: TaskContext = {
@@ -597,6 +659,7 @@ export function operationContext(
         (n) => n.image1Id === imageId || n.image2Id === imageId,
       ) as { image1Id: string; image2Id: string }[],
   };
+  models.afterWrite = (model, op, row) => noteSavedWork(tasks, model, op, row);
   return {
     access,
     models,

@@ -5,7 +5,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import pLimit from 'p-limit';
-import { isUnder, QUEUE_MANIFEST_PREFIX } from '../shared/s3Keys';
+import { isUnder, KIND_TAGS, manifestPrefixFor } from '../shared/s3Keys';
 
 Amplify.configure(
   {
@@ -534,7 +534,7 @@ export const handler: Handler = async (event) => {
       return { statusCode: 400, body: 'Missing manifestS3Key' };
     }
 
-    if (!isUnder(manifestS3Key, QUEUE_MANIFEST_PREFIX)) {
+    if (!isUnder(manifestS3Key, manifestPrefixFor(KIND_TAGS.homography))) {
       console.error('Rejected manifestS3Key outside queue manifests', { manifestS3Key });
       return { statusCode: 400, body: 'Invalid manifestS3Key' };
     }

@@ -53,6 +53,7 @@ type TestResult = {
   createdAt: string;
   testAnimals: number;
   totalMissedAnimals: number;
+  falsePositives?: number | null;
   locationId: string;
   annotationSetId: string;
   testPreset: { name: string; ownerProjectId?: string | null };
@@ -87,6 +88,21 @@ const dailyChart = {
   passed: { label: 'Passed', color: '#5cb85c' },
   failed: { label: 'Failed', color: '#d9534f' },
 } satisfies ChartConfig;
+// Animals found and extra marks. Older results kept overcounts as negative misses.
+function tally(result: TestResult) {
+  if (result.falsePositives != null) {
+    return {
+      found: result.testAnimals - result.totalMissedAnimals,
+      over: result.falsePositives,
+    };
+  }
+  const counted = result.testAnimals - result.totalMissedAnimals;
+  return {
+    found: Math.min(counted, result.testAnimals),
+    over: Math.max(0, counted - result.testAnimals),
+  };
+}
+
 const accuracyChart = {
   difference: { label: 'Over/under count' },
 } satisfies ChartConfig;
@@ -146,6 +162,7 @@ export default function Results() {
                 'createdAt',
                 'testAnimals',
                 'totalMissedAnimals',
+                'falsePositives',
                 'locationId',
                 'annotationSetId',
                 'testPreset.name',
@@ -215,10 +232,13 @@ export default function Results() {
 
   const passed = (result: TestResult) => {
     const total = result.testAnimals;
-    let counted = total - result.totalMissedAnimals;
-    if (ignoreOvercounts && counted > total) counted = total;
+    const { found, over } = tally(result);
     const band = accuracy / 100;
-    return counted >= total * band && counted <= total * (2 - band);
+    // Wrong labels count against the upper bound, never towards the lower one.
+    return (
+      found >= total * band &&
+      (ignoreOvercounts || found + over <= total * (2 - band))
+    );
   };
 
   const inRange = (day: string) =>
@@ -377,13 +397,13 @@ export default function Results() {
         meta: { className: 'text-right tabular-nums' },
       },
       {
-        accessorFn: (r) => Math.max(r.totalMissedAnimals, 0),
+        accessorFn: (r) => r.testAnimals - tally(r).found,
         id: 'missed',
         header: 'Missed',
         meta: { className: 'text-right tabular-nums' },
       },
       {
-        accessorFn: (r) => Math.max(-r.totalMissedAnimals, 0),
+        accessorFn: (r) => tally(r).over,
         id: 'over',
         header: 'Overcounted',
         meta: { className: 'text-right tabular-nums' },
@@ -462,7 +482,8 @@ export default function Results() {
           date: r.createdAt,
           testFrom: r.testPreset.name,
           testAnimals: r.testAnimals,
-          missedAnimals: r.totalMissedAnimals,
+          missedAnimals: r.testAnimals - tally(r).found,
+          overcounted: tally(r).over,
           passed: passed(r),
         })),
       ),

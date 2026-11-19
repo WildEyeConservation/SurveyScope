@@ -1,8 +1,24 @@
 import { jwtVerify, SignJWT } from 'jose';
 import type { Access } from './access';
 import { badRequest, forbidden } from './errors';
-import type { DataLayer, Models } from './models';
+import type { DataLayer, Models, Result } from './models';
 import type { Row } from './schema';
+
+// Writes report errors as values; a link is only reported once it is stored.
+function written(result: Result, what: string) {
+  if (result.errors?.length && !result.data)
+    throw new Error(`Could not ${what}: ${JSON.stringify(result.errors)}`);
+}
+
+// Deleting a row that is already gone counts as done.
+function removed(result: Result, what: string) {
+  const missing = result.errors?.every((e) =>
+    String((e as { errorType?: unknown }).errorType ?? '').includes(
+      'ConditionalCheckFailed',
+    ),
+  );
+  if (result.errors?.length && !missing) written(result, what);
+}
 
 export interface ResultsContext {
   access: Access;
@@ -79,11 +95,17 @@ export async function share(ctx: ResultsContext, args: Row) {
     .sign(new TextEncoder().encode(ctx.secret()));
   const organizationId = await ctx.access.organizationOfProject(surveyId);
   const key = { surveyId, annotationSetId };
-  await ctx.data.delete('ResultSharingToken', key, {});
-  await ctx.data.create(
-    'ResultSharingToken',
-    { ...key, jwt: token, group: organizationId },
-    {},
+  removed(
+    await ctx.data.delete('ResultSharingToken', key, {}),
+    'replace the results link',
+  );
+  written(
+    await ctx.data.create(
+      'ResultSharingToken',
+      { ...key, jwt: token, group: organizationId },
+      {},
+    ),
+    'store the results link',
   );
   return { data: { token, expiresAt: Math.floor(expiresAt / 1000) * 1000 } };
 }
@@ -91,7 +113,10 @@ export async function share(ctx: ResultsContext, args: Row) {
 // Existing members keep access; the link just stops working.
 export async function revoke(ctx: ResultsContext, args: Row) {
   const key = await administeredSet(ctx, args);
-  await ctx.data.delete('ResultSharingToken', key, {});
+  removed(
+    await ctx.data.delete('ResultSharingToken', key, {}),
+    'revoke the results link',
+  );
   return { data: true };
 }
 
@@ -117,7 +142,10 @@ export async function redeem(ctx: ResultsContext, args: Row) {
   const existing = (await ctx.data.get('JollyResultsMembership', key, {})).data;
   if (!existing) {
     const group = await ctx.access.organizationOfProject(surveyId);
-    await ctx.data.create('JollyResultsMembership', { ...key, group }, {});
+    written(
+      await ctx.data.create('JollyResultsMembership', { ...key, group }, {}),
+      'grant the results',
+    );
   }
   return { data: { surveyId, annotationSetId } };
 }

@@ -1,45 +1,13 @@
 import { env } from '$amplify/env/deleteProject';
 import { Amplify } from 'aws-amplify';
 import type { DeleteProjectInFullHandler } from '../../data/resource';
-import { authorizeRequest } from '../shared/authorizeRequest';
-import {
-  getProject,
-  listImageSets,
-  listProjects,
-  listUserProjectMemberships,
-  categoriesByProjectId,
-  locationSetsByProjectId,
-  annotationSetsByProjectId,
-  imagesByProjectId,
-  listObjects,
-  locationSetsByAnnotationSetId,
-  imageSetMembershipsByImageSetId,
-  annotationsByAnnotationSetId,
-  listLocations,
-} from './graphql/queries';
+import { assertSysadmin, authorizeRequest } from '../shared/authorizeRequest';
+import { getProject, listProjects, listObjects } from './graphql/queries';
 import { generateClient, GraphQLResult } from 'aws-amplify/data';
-import { DeleteQueueCommand, SQSClient } from '@aws-sdk/client-sqs';
-import {
-  Category,
-  AnnotationSet,
-  LocationSet,
-  Project,
-  UserProjectMembership,
-  Image,
-  Object as ObjectRow,
-  TasksOnAnnotationSet,
-  ImageSetMembership,
-  Annotation,
-  Location,
-} from './graphql/API';
-
-// Inline minimal mutations – return key fields + `group` to avoid nested-resolver
-// auth failures while still enabling subscription delivery via groupDefinedIn('group').
-const deleteProject = /* GraphQL */ `
-  mutation DeleteProject($input: DeleteProjectInput!) {
-    deleteProject(input: $input) { id group }
-  }
-`;
+import { SQSClient } from '@aws-sdk/client-sqs';
+import { authorizeSurveyAdmin } from '../shared/authorizeSurveyAdmin';
+import { deleteBoundQueue } from '../shared/queueNames';
+import type { Project, Object as ObjectRow } from './graphql/API';
 
 const deleteUserProjectMembership = /* GraphQL */ `
   mutation DeleteUserProjectMembership($input: DeleteUserProjectMembershipInput!) {
@@ -53,95 +21,6 @@ const deleteUserProjectMembership = /* GraphQL */ `
       group
       createdAt
       updatedAt
-    }
-  }
-`;
-const deleteCategory = /* GraphQL */ `
-  mutation DeleteCategory($input: DeleteCategoryInput!) {
-    deleteCategory(input: $input) { id group }
-  }
-`;
-const deleteImageSet = /* GraphQL */ `
-  mutation DeleteImageSet($input: DeleteImageSetInput!) {
-    deleteImageSet(input: $input) { id group }
-  }
-`;
-const deleteLocationSet = /* GraphQL */ `
-  mutation DeleteLocationSet($input: DeleteLocationSetInput!) {
-    deleteLocationSet(input: $input) { id group }
-  }
-`;
-const deleteAnnotationSet = /* GraphQL */ `
-  mutation DeleteAnnotationSet($input: DeleteAnnotationSetInput!) {
-    deleteAnnotationSet(input: $input) { id group }
-  }
-`;
-const deleteImage = /* GraphQL */ `
-  mutation DeleteImage($input: DeleteImageInput!) {
-    deleteImage(input: $input) { id group }
-  }
-`;
-const deleteObject = /* GraphQL */ `
-  mutation DeleteObject($input: DeleteObjectInput!) {
-    deleteObject(input: $input) { id group }
-  }
-`;
-const deleteTasksOnAnnotationSet = /* GraphQL */ `
-  mutation DeleteTasksOnAnnotationSet($input: DeleteTasksOnAnnotationSetInput!) {
-    deleteTasksOnAnnotationSet(input: $input) { id group }
-  }
-`;
-const deleteImageSetMembership = /* GraphQL */ `
-  mutation DeleteImageSetMembership($input: DeleteImageSetMembershipInput!) {
-    deleteImageSetMembership(input: $input) { id group }
-  }
-`;
-const deleteAnnotation = /* GraphQL */ `
-  mutation DeleteAnnotation($input: DeleteAnnotationInput!) {
-    deleteAnnotation(input: $input) { id group }
-  }
-`;
-const deleteLocation = /* GraphQL */ `
-  mutation DeleteLocation($input: DeleteLocationInput!) {
-    deleteLocation(input: $input) { id group }
-  }
-`;
-const deleteInfoTag = /* GraphQL */ `
-  mutation DeleteInfoTag($input: DeleteInfoTagInput!) {
-    deleteInfoTag(input: $input) { id group }
-  }
-`;
-const deleteAnnotationInfoTag = /* GraphQL */ `
-  mutation DeleteAnnotationInfoTag($input: DeleteAnnotationInfoTagInput!) {
-    deleteAnnotationInfoTag(input: $input) { annotationId infoTagId group }
-  }
-`;
-
-// These models are newer than the checked-in generated queries.
-const infoTagsByAnnotationSetId = /* GraphQL */ `
-  query InfoTagsByAnnotationSetId($annotationSetId: ID!, $nextToken: String) {
-    infoTagsByAnnotationSetId(
-      annotationSetId: $annotationSetId
-      nextToken: $nextToken
-      limit: 1000
-    ) {
-      items { id }
-      nextToken
-    }
-  }
-`;
-const annotationInfoTagsByAnnotationSetId = /* GraphQL */ `
-  query AnnotationInfoTagsByAnnotationSetId(
-    $annotationSetId: ID!
-    $nextToken: String
-  ) {
-    annotationInfoTagsByAnnotationSetId(
-      annotationSetId: $annotationSetId
-      nextToken: $nextToken
-      limit: 1000
-    ) {
-      items { annotationId infoTagId }
-      nextToken
     }
   }
 `;
@@ -204,6 +83,18 @@ async function fetchAllPages<T, K extends string>(
     `Completed fetching all ${queryName} pages. Total items: ${allItems.length}`
   );
   return allItems;
+}
+
+async function executeGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T> {
+  const response = (await client.graphql({ query, variables } as any)) as GraphQLResult<T>;
+  if (response.errors?.length) {
+    throw new Error(`GraphQL error: ${JSON.stringify(response.errors.map((e) => e.message))}`);
+  }
+  if (!response.data) throw new Error('GraphQL response missing data');
+  return response.data;
 }
 
 type Row = Record<string, string>;
@@ -310,7 +201,7 @@ async function sweep(
   return rows;
 }
 
-// Steps run independently: the project row is gone, so this cannot be retried.
+// Steps in a phase run independently; the caller throws if any failed.
 async function runSteps(
   steps: [string, () => Promise<void>][],
 ): Promise<string[]> {
@@ -444,13 +335,11 @@ async function deleteIndexedSurveyRows(
         // Without its row nothing could find the SQS queue later.
         const sqs = new SQSClient({});
         await mapLimit(queues, async (queue) => {
-          if (typeof queue.url !== 'string' || !queue.url) return;
-          try {
-            await sqs.send(new DeleteQueueCommand({ QueueUrl: queue.url }));
-          } catch (error) {
-            const name = (error as { name?: string }).name ?? '';
-            if (!/NonExistentQueue|QueueDoesNotExist/.test(name)) throw error;
-          }
+          await deleteBoundQueue(
+            sqs,
+            { id: queue.id, url: queue.url, projectId },
+            executeGraphql,
+          );
         });
         await deleteRows(spec('Queue'), queues);
       },
@@ -519,11 +408,12 @@ async function deleteIndexedSurveyRows(
       'Observation',
       async () => {
         for (const setId of annotationSetIds) {
-          await sweep(
+          await sweepOwned(
             spec('Observation'),
             'observationsByAnnotationSetId',
             'annotationSetId',
             setId,
+            projectId,
           );
         }
       },
@@ -637,449 +527,249 @@ async function deleteLocationChildren(
   ]);
 }
 
-export const handler: DeleteProjectInFullHandler = async (event) => {
-  try {
-    const projectId = event.arguments.projectId;
-
-    console.log(`Deleting project ${projectId}`);
-
-    const project = (
-      await client.graphql({
-        query: getProject,
-        variables: {
-          id: projectId,
-        },
-      })
-    ).data?.getProject;
-
-    if (!project) {
-      throw new Error(`Project ${projectId} not found`);
-    }
-
-    authorizeRequest(event.identity, project.organizationId);
-
-    //delete project
-    await client.graphql({
-      query: deleteProject,
-      variables: {
-        input: {
-          id: projectId,
-        },
-      },
-    });
-
-    // Delete user memberships immediately after the project record so other
-    // clients' project lists update right away, instead of waiting for the
-    // rest of the cascading cleanup (which can take minutes).
-    const userMemberships = await fetchAllPages<
-      UserProjectMembership,
-      'listUserProjectMemberships'
-    >(
-      (nextToken) =>
-        client.graphql({
-          query: listUserProjectMemberships,
-          variables: { filter: { projectId: { eq: projectId } }, nextToken },
-        }) as Promise<
-          GraphQLResult<{
-            listUserProjectMemberships: PagedList<UserProjectMembership>;
-          }>
-        >,
-      'listUserProjectMemberships'
-    );
-
-    await Promise.all(
-      userMemberships.map(async (membership) => {
-        await client.graphql({
-          query: deleteUserProjectMembership,
-          variables: { input: { id: membership.id } },
-        });
-      })
-    );
-
-    // get all projects for the same organization
-    const allProjectsInOrganization = await fetchAllPages<
-      Project,
-      'listProjects'
-    >(
-      (nextToken) =>
-        client.graphql({
-          query: listProjects,
-          variables: {
-            filter: {
-              organizationId: {
-                eq: project.organizationId,
-              },
-            },
-            nextToken,
-          },
-        }) as Promise<GraphQLResult<{ listProjects: PagedList<Project> }>>,
-      'listProjects'
-    );
-
-    // get the image set for the project we want to delete
-    const [imageSet] = (
-      await client.graphql({
-        query: listImageSets,
-        variables: {
-          filter: {
-            projectId: { eq: projectId },
-          },
-        },
-      })
-    ).data?.listImageSets.items;
-
-    // delete the image set for the project
-    await client.graphql({
-      query: deleteImageSet,
-      variables: { input: { id: imageSet.id } },
-    });
-
-    // if there are other projects in the organization, check if they have an image set with the same name - this means they're sharing S3 data
-    let deleteS3Data = true;
-    if (allProjectsInOrganization.length !== 1) {
-      for (const project of allProjectsInOrganization) {
-        if (project.id === projectId) {
-          continue;
-        }
-
-        const [otherImageSet] = (
-          await client.graphql({
-            query: listImageSets,
-            variables: {
-              filter: {
-                projectId: { eq: project.id },
-              },
-            },
-          })
-        ).data?.listImageSets.items;
-
-        // can't delete S3 data since another project references it
-        if (otherImageSet?.name === imageSet?.name) {
-          deleteS3Data = false;
-          break;
-        }
-      }
-    }
-
-    if (deleteS3Data) {
-      console.log(`Deleting S3 data for project ${projectId}`);
-      console.warn('S3 data deletion is not implemented yet');
-      //TODO: We can't wait for the delete to complete within a lambda - need to rethink how we handle this
-    } else {
-      console.log(
-        `Not deleting S3 data for project ${projectId} since it's shared with other projects`
-      );
-    }
-
-    // delete all categories for the project
-    const categories = await fetchAllPages<Category, 'categoriesByProjectId'>(
-      (nextToken) =>
-        client.graphql({
-          query: categoriesByProjectId,
-          variables: { projectId: projectId, nextToken },
-        }) as Promise<
-          GraphQLResult<{ categoriesByProjectId: PagedList<Category> }>
-        >,
-      'categoriesByProjectId'
-    );
-
-    await Promise.all(
-      categories.map(async (category) => {
-        await client.graphql({
-          query: deleteCategory,
-          variables: { input: { id: category.id } },
-        });
-      })
-    );
-
-    // delete all location sets
-    const locationSets = await fetchAllPages<
-      LocationSet,
-      'locationSetsByProjectId'
-    >(
-      (nextToken) =>
-        client.graphql({
-          query: locationSetsByProjectId,
-          variables: { projectId: projectId, nextToken },
-        }) as Promise<
-          GraphQLResult<{ locationSetsByProjectId: PagedList<LocationSet> }>
-        >,
-      'locationSetsByProjectId'
-    );
-
-    await Promise.all(
-      locationSets.map(async (locationSet) => {
-        await client.graphql({
-          query: deleteLocationSet,
-          variables: { input: { id: locationSet.id } },
-        });
-      })
-    );
-
-    // delete all annotation sets
-    const annotationSets = await fetchAllPages<
-      AnnotationSet,
-      'annotationSetsByProjectId'
-    >(
-      (nextToken) =>
-        client.graphql({
-          query: annotationSetsByProjectId,
-          variables: { projectId: projectId, nextToken },
-        }) as Promise<
-          GraphQLResult<{ annotationSetsByProjectId: PagedList<AnnotationSet> }>
-        >,
-      'annotationSetsByProjectId'
-    );
-
-    await Promise.all(
-      annotationSets.map(async (annotationSet) => {
-        await client.graphql({
-          query: deleteAnnotationSet,
-          variables: { input: { id: annotationSet.id } },
-        });
-      })
-    );
-
-    const cleanupErrors = await deleteIndexedSurveyRows(
-      projectId,
-      annotationSets.map((annotationSet) => annotationSet.id),
-      userMemberships.map((membership) => membership.userId)
-    );
-
-    // delete all images
-    const images = await fetchAllPages<Image, 'imagesByProjectId'>(
-      (nextToken) =>
-        client.graphql({
-          query: imagesByProjectId,
-          variables: { projectId: projectId, nextToken },
-        }) as Promise<GraphQLResult<{ imagesByProjectId: PagedList<Image> }>>,
-      'imagesByProjectId'
-    );
-
-    await Promise.all(
-      images.map(async (image) => {
-        await client.graphql({
-          query: deleteImage,
-          variables: { input: { id: image.id } },
-        });
-      })
-    );
-
-    // delete all tasks on annotation sets
-    for (const annotationSet of annotationSets) {
-      const tasksOnAnnotationSet = await fetchAllPages<
-        TasksOnAnnotationSet,
-        'locationSetsByAnnotationSetId'
-      >(
-        (nextToken) =>
-          client.graphql({
-            query: locationSetsByAnnotationSetId,
-            variables: { annotationSetId: annotationSet.id, nextToken },
-          }) as Promise<
-            GraphQLResult<{
-              locationSetsByAnnotationSetId: PagedList<TasksOnAnnotationSet>;
-            }>
-          >,
-        'locationSetsByAnnotationSetId'
-      );
-
-      await Promise.all(
-        tasksOnAnnotationSet.map(async (task) => {
-          await client.graphql({
-            query: deleteTasksOnAnnotationSet,
-            variables: { input: { id: task.id } },
-          });
-        })
-      );
-    }
-
-    // delete image set memberships
-    const imageSetMemberships = await fetchAllPages<
-      ImageSetMembership,
-      'imageSetMembershipsByImageSetId'
-    >(
-      (nextToken) =>
-        client.graphql({
-          query: imageSetMembershipsByImageSetId,
-          variables: { imageSetId: imageSet.id, nextToken },
-        }) as Promise<
-          GraphQLResult<{
-            imageSetMembershipsByImageSetId: PagedList<ImageSetMembership>;
-          }>
-        >,
-      'imageSetMembershipsByImageSetId'
-    );
-
-    await Promise.all(
-      imageSetMemberships.map(async (imageSetMembership) => {
-        await client.graphql({
-          query: deleteImageSetMembership,
-          variables: { input: { id: imageSetMembership.id } },
-        });
-      })
-    );
-
-    // delete all image files
-    await mapLimit(images, async (image) => {
-      await sweep(spec('ImageFile'), 'imagesByimageId', 'imageId', image.id);
-    });
-
-    // delete all objects
-    const objects = await fetchAllPages<ObjectRow, 'listObjects'>(
-      (nextToken) =>
-        client.graphql({
-          query: listObjects,
-          variables: { filter: { projectId: { eq: projectId } }, nextToken },
-        }) as Promise<GraphQLResult<{ listObjects: PagedList<ObjectRow> }>>,
-      'listObjects'
-    );
-
-    await Promise.all(
-      objects.map(async (object) => {
-        await client.graphql({
-          query: deleteObject,
-          variables: { input: { id: object.id } },
-        });
-      })
-    );
-
-    for (const annotationSet of annotationSets) {
-      const infoTagLinks = await fetchAllPages<
-        { annotationId: string; infoTagId: string },
-        'annotationInfoTagsByAnnotationSetId'
-      >(
-        (nextToken) =>
-          client.graphql({
-            query: annotationInfoTagsByAnnotationSetId,
-            variables: { annotationSetId: annotationSet.id, nextToken },
-          }) as Promise<
-            GraphQLResult<{
-              annotationInfoTagsByAnnotationSetId: PagedList<{
-                annotationId: string;
-                infoTagId: string;
-              }>;
-            }>
-          >,
-        'annotationInfoTagsByAnnotationSetId'
-      );
-
-      await Promise.all(
-        infoTagLinks.map(async (link) => {
-          await client.graphql({
-            query: deleteAnnotationInfoTag,
-            variables: {
-              input: {
-                annotationId: link.annotationId,
-                infoTagId: link.infoTagId,
-              },
-            },
-          });
-        })
-      );
-
-      const infoTags = await fetchAllPages<
-        { id: string },
-        'infoTagsByAnnotationSetId'
-      >(
-        (nextToken) =>
-          client.graphql({
-            query: infoTagsByAnnotationSetId,
-            variables: { annotationSetId: annotationSet.id, nextToken },
-          }) as Promise<
-            GraphQLResult<{
-              infoTagsByAnnotationSetId: PagedList<{ id: string }>;
-            }>
-          >,
-        'infoTagsByAnnotationSetId'
-      );
-
-      await Promise.all(
-        infoTags.map(async (infoTag) => {
-          await client.graphql({
-            query: deleteInfoTag,
-            variables: { input: { id: infoTag.id } },
-          });
-        })
-      );
-    }
-
-    // delete all annotations
-    for (const annotationSet of annotationSets) {
-      const annotations = await fetchAllPages<
-        Annotation,
-        'annotationsByAnnotationSetId'
-      >(
-        (nextToken) =>
-          client.graphql({
-            query: annotationsByAnnotationSetId,
-            variables: { setId: annotationSet.id, nextToken },
-          }) as Promise<
-            GraphQLResult<{
-              annotationsByAnnotationSetId: PagedList<Annotation>;
-            }>
-          >,
-        'annotationsByAnnotationSetId'
-      );
-
-      await Promise.all(
-        annotations.map(async (annotation) => {
-          await client.graphql({
-            query: deleteAnnotation,
-            variables: { input: { id: annotation.id } },
-          });
-        })
-      );
-    }
-
-    // delete all locations
-    const locations = await fetchAllPages<Location, 'listLocations'>(
-      (nextToken) =>
-        client.graphql({
-          query: listLocations,
-          variables: { filter: { projectId: { eq: projectId } }, nextToken },
-        }) as Promise<GraphQLResult<{ listLocations: PagedList<Location> }>>,
-      'listLocations'
-    );
-
-    await Promise.all(
-      locations.map(async (location) => {
-        await client.graphql({
-          query: deleteLocation,
-          variables: { input: { id: location.id } },
-        });
-      })
-    );
-
-    cleanupErrors.push(
-      ...(await deleteLocationChildren(
-        projectId,
-        locations.map((location) => location.id),
-        annotationSets.map((annotationSet) => annotationSet.id),
-        locations
-          .filter((location) => location.source === 'testing')
-          .map((location) => location.id)
-      ))
-    );
-
-    if (cleanupErrors.length) {
-      throw new Error(`Incomplete cleanup: ${cleanupErrors.join(' | ')}`);
-    }
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Project deleted',
-      }),
-    };
-  } catch (error: any) {
-    console.error('Error details:', error);
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: 'Error deleting project',
-        error: error.message,
-      }),
-    };
+const setProjectDeleting = /* GraphQL */ `
+  mutation SetProjectDeleting($input: UpdateProjectInput!) {
+    updateProject(input: $input) { id group }
   }
+`;
+
+// Rows found by a set or image index are kept unless they name this survey.
+async function sweepOwned(
+  target: DeleteSpec,
+  field: string,
+  arg: string,
+  value: string,
+  projectId: string,
+): Promise<void> {
+  const rows = await listRows(field, arg, value, [
+    ...new Set([...target.keys, 'projectId']),
+  ]);
+  await deleteRows(
+    target,
+    rows.filter((row) => row.projectId === projectId),
+  );
+}
+
+function failIfAny(phase: string, errors: string[]) {
+  if (errors.length) {
+    throw new Error(`Incomplete cleanup (${phase}): ${errors.join(' | ')}`);
+  }
+}
+
+// Logs whether another survey in the organisation names the same image set.
+async function logS3Sharing(
+  projectId: string,
+  organizationId: string,
+  imageSetNames: Set<string>,
+) {
+  const projects = await fetchAllPages<Project, 'listProjects'>(
+    (nextToken) =>
+      client.graphql({
+        query: listProjects,
+        variables: { filter: { organizationId: { eq: organizationId } }, nextToken },
+      }) as Promise<GraphQLResult<{ listProjects: PagedList<Project> }>>,
+    'listProjects',
+  );
+  let shared = false;
+  for (const other of projects) {
+    if (other.id === projectId || shared) continue;
+    const sets = await listRows('imageSetsByProjectId', 'projectId', other.id, ['name']);
+    shared = sets.some((set) => imageSetNames.has(set.name));
+  }
+  console.log(
+    shared
+      ? `Not deleting S3 data for project ${projectId} since it's shared with other projects`
+      : `S3 data for project ${projectId} is not shared; S3 data deletion is not implemented yet`,
+  );
+}
+
+// Children go before the rows that lead to them and the project row goes
+// last, so a failed run can be repeated with the same projectId.
+export const handler: DeleteProjectInFullHandler = async (event) => {
+  const projectId = event.arguments.projectId;
+  console.log(`Deleting project ${projectId}`);
+
+  const project = (
+    await client.graphql({ query: getProject, variables: { id: projectId } })
+  ).data?.getProject;
+
+  if (project) {
+    authorizeRequest(event.identity, project.organizationId);
+    // Router authorisation can be stale by the time an async invocation runs.
+    const identity = event.identity as { sub?: string; groups?: string[] | null } | null;
+    if (identity?.sub) await authorizeSurveyAdmin(identity, project, executeGraphql);
+    await client.graphql({
+      query: setProjectDeleting,
+      variables: { input: { id: projectId, status: 'deleting' } },
+    });
+  } else {
+    // The organisation is unknown once the row is gone.
+    assertSysadmin(event.identity);
+    console.warn(`Project ${projectId} row is gone; finishing its cleanup`);
+  }
+
+  const memberships = await listRows(
+    'userProjectMembershipsByProjectId',
+    'projectId',
+    projectId,
+    ['id', 'userId'],
+  );
+  const orgMembers = project
+    ? await listRows(
+        'membershipsByOrganizationId',
+        'organizationId',
+        project.organizationId,
+        ['userId'],
+      )
+    : [];
+  const userIds = [...memberships, ...orgMembers].map((m) => m.userId);
+
+  // Memberships go first so project lists update right away.
+  await mapLimit(memberships, async (membership) => {
+    try {
+      await client.graphql({
+        query: deleteUserProjectMembership,
+        variables: { input: { id: membership.id } },
+      });
+    } catch (error) {
+      if (!isAlreadyGone(error)) throw error;
+    }
+  });
+
+  const [annotationSets, locationSets, categories, imageSets, images, locations] =
+    await Promise.all([
+      listRows('annotationSetsByProjectId', 'projectId', projectId, ['id']),
+      listRows('locationSetsByProjectId', 'projectId', projectId, ['id']),
+      listRows('categoriesByProjectId', 'projectId', projectId, ['id']),
+      listRows('imageSetsByProjectId', 'projectId', projectId, ['id', 'name']),
+      listRows('imagesByProjectId', 'projectId', projectId, ['id']),
+      listRows('locationsByProjectIdAndSource', 'projectId', projectId, [
+        'id',
+        'source',
+      ]),
+    ]);
+  const annotationSetIds = annotationSets.map((set) => set.id);
+
+  if (project) {
+    try {
+      await logS3Sharing(
+        projectId,
+        project.organizationId,
+        new Set(imageSets.map((set) => set.name)),
+      );
+    } catch (error) {
+      console.warn('S3 sharing check failed', error);
+    }
+  }
+
+  failIfAny('children', [
+    ...(await deleteIndexedSurveyRows(projectId, annotationSetIds, userIds)),
+    ...(await runSteps([
+      [
+        'TasksOnAnnotationSet',
+        async () => {
+          for (const setId of annotationSetIds) {
+            await sweep(
+              spec('TasksOnAnnotationSet'),
+              'locationSetsByAnnotationSetId',
+              'annotationSetId',
+              setId,
+            );
+          }
+        },
+      ],
+      [
+        'AnnotationInfoTag',
+        async () => {
+          for (const setId of annotationSetIds) {
+            await sweepOwned(
+              spec('AnnotationInfoTag', 'annotationId', 'infoTagId'),
+              'annotationInfoTagsByAnnotationSetId',
+              'annotationSetId',
+              setId,
+              projectId,
+            );
+          }
+        },
+      ],
+      [
+        'ImageFile',
+        () =>
+          mapLimit(images, (image) =>
+            sweepOwned(
+              spec('ImageFile'),
+              'imagesByimageId',
+              'imageId',
+              image.id,
+              projectId,
+            ),
+          ),
+      ],
+      [
+        'Object',
+        async () => {
+          const objects = await fetchAllPages<ObjectRow, 'listObjects'>(
+            (nextToken) =>
+              client.graphql({
+                query: listObjects,
+                variables: { filter: { projectId: { eq: projectId } }, nextToken },
+              }) as Promise<GraphQLResult<{ listObjects: PagedList<ObjectRow> }>>,
+            'listObjects',
+          );
+          await deleteRows(spec('Object'), objects as unknown as Row[]);
+        },
+      ],
+    ])),
+    ...(await deleteLocationChildren(
+      projectId,
+      locations.map((location) => location.id),
+      annotationSetIds,
+      locations
+        .filter((location) => location.source === 'testing')
+        .map((location) => location.id),
+    )),
+  ]);
+
+  failIfAny(
+    'survey rows',
+    await runSteps([
+      [
+        'InfoTag',
+        async () => {
+          await sweep(spec('InfoTag'), 'infoTagsByProjectId', 'projectId', projectId);
+        },
+      ],
+      [
+        'Annotation',
+        async () => {
+          await sweep(
+            spec('Annotation'),
+            'annotationsByProjectIdAndCreatedAt',
+            'projectId',
+            projectId,
+          );
+        },
+      ],
+      ['Location', () => deleteRows(spec('Location'), locations)],
+      ['Image', () => deleteRows(spec('Image'), images)],
+    ]),
+  );
+
+  failIfAny(
+    'sets',
+    await runSteps([
+      ['Category', () => deleteRows(spec('Category'), categories)],
+      ['LocationSet', () => deleteRows(spec('LocationSet'), locationSets)],
+      ['AnnotationSet', () => deleteRows(spec('AnnotationSet'), annotationSets)],
+    ]),
+  );
+
+  if (project) {
+    await deleteRows(spec('Project'), [{ id: projectId }]);
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ message: 'Project deleted' }),
+  };
 };

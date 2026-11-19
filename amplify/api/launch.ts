@@ -21,8 +21,12 @@ export interface DispatchTargets {
 }
 
 export interface LaunchStore {
-  // projectId is the survey the file was uploaded for.
-  readJson(key: string): Promise<{ value: unknown; projectId?: string }>;
+  // projectId is the survey the file was uploaded for; beforeParse sees it
+  // before the body is read.
+  readJson(
+    key: string,
+    beforeParse?: (projectId: string | undefined) => Promise<void>,
+  ): Promise<{ value: unknown; projectId?: string }>;
   writeJson(prefix: string, value: unknown): Promise<string>;
   remove(key: string): Promise<void>;
   projectsOf(
@@ -33,31 +37,32 @@ export interface LaunchStore {
   dispatchTargets(): Promise<DispatchTargets | null>;
 }
 
-const SCALARS: Record<string, ReferenceModel> = {
-  annotationSetId: 'AnnotationSet',
-  categoryId: 'Category',
-  locationSetId: 'LocationSet',
-  existingLocationSetId: 'LocationSet',
-  locationId: 'Location',
-  imageId: 'Image',
-  image1Id: 'Image',
-  image2Id: 'Image',
-};
-const LISTS: Record<string, ReferenceModel> = {
-  categoryIds: 'Category',
-  locationSetIds: 'LocationSet',
-  locationIds: 'Location',
-  launchImageIds: 'Image',
-  annotatedImageIds: 'Image',
-  incompleteTransectIds: 'Transect',
-};
+// Maps, so inherited names such as constructor never match.
+const SCALARS = new Map<string, ReferenceModel>([
+  ['annotationSetId', 'AnnotationSet'],
+  ['categoryId', 'Category'],
+  ['locationSetId', 'LocationSet'],
+  ['existingLocationSetId', 'LocationSet'],
+  ['locationId', 'Location'],
+  ['imageId', 'Image'],
+  ['image1Id', 'Image'],
+  ['image2Id', 'Image'],
+]);
+const LISTS = new Map<string, ReferenceModel>([
+  ['categoryIds', 'Category'],
+  ['locationSetIds', 'LocationSet'],
+  ['locationIds', 'Location'],
+  ['launchImageIds', 'Image'],
+  ['annotatedImageIds', 'Image'],
+  ['incompleteTransectIds', 'Transect'],
+]);
 // Objects under these keys are rows of the model, named by their `id`.
-const ROWS: Record<string, ReferenceModel> = {
-  images: 'Image',
-  primaryImage: 'Image',
-  secondaryImage: 'Image',
-  locationTiles: 'Location',
-};
+const ROWS = new Map<string, ReferenceModel>([
+  ['images', 'Image'],
+  ['primaryImage', 'Image'],
+  ['secondaryImage', 'Image'],
+  ['locationTiles', 'Location'],
+]);
 const PAYLOAD_PREFIX = 'launch-payloads/';
 const MANIFEST_PREFIX = 'queue-manifests/';
 const MANIFEST_KEYS = ['locationManifestS3Key', 'manifestS3Key'];
@@ -80,15 +85,17 @@ export function collectReferences(value: unknown) {
       return;
     }
     if (!isObject(node)) return;
-    if (rowModel) add(rowModel, node.id);
+    if (rowModel && Object.hasOwn(node, 'id')) add(rowModel, node.id);
     for (const [key, child] of Object.entries(node)) {
+      const scalar = SCALARS.get(key);
+      const list = LISTS.get(key);
       if (key === 'projectId') {
         if (typeof child !== 'string') throw badRequest('Invalid projectId');
         projects.add(child);
-      } else if (SCALARS[key]) add(SCALARS[key], child);
-      else if (LISTS[key] && Array.isArray(child))
-        child.forEach((id) => add(LISTS[key], id));
-      else visit(child, ROWS[key]);
+      } else if (scalar) add(scalar, child);
+      else if (list && Array.isArray(child))
+        child.forEach((id) => add(list, id));
+      else visit(child, ROWS.get(key));
     }
   };
   visit(value);
@@ -139,15 +146,23 @@ export async function authorizeLaunch(
   const payloadKey = request.payloadS3Key
     ? storedKey(request.payloadS3Key, PAYLOAD_PREFIX)
     : undefined;
-  const stored = payloadKey ? await store.readJson(payloadKey) : undefined;
+  // The upload's survey is checked before its body is read.
+  let checkedSurvey: string | undefined;
+  const stored = payloadKey
+    ? await store.readJson(payloadKey, async (owner) => {
+        if (typeof owner !== 'string') throw forbidden('The file has no survey');
+        await access.requireSurveyAdmin(owner);
+        checkedSurvey = owner;
+      })
+    : undefined;
   const payload = stored ? stored.value : request;
   if (!isObject(payload) || typeof payload.projectId !== 'string') {
     throw badRequest('The request needs a projectId');
   }
   const projectId = payload.projectId;
-  await access.requireSurveyAdmin(projectId);
   if (stored && stored.projectId !== projectId)
     throw forbidden('The file was uploaded for another survey');
+  if (checkedSurvey !== projectId) await access.requireSurveyAdmin(projectId);
 
   const checked: Row = { ...payload };
   delete checked.payloadS3Key;
@@ -155,7 +170,10 @@ export async function authorizeLaunch(
   for (const field of MANIFEST_KEYS) {
     if (checked[field] === undefined || checked[field] === null) continue;
     const key = storedKey(checked[field], MANIFEST_PREFIX);
-    const file = await store.readJson(key);
+    const file = await store.readJson(key, async (owner) => {
+      if (owner !== projectId)
+        throw forbidden('The file was uploaded for another survey');
+    });
     if (file.projectId !== projectId)
       throw forbidden('The file was uploaded for another survey');
     const manifest = file.value;

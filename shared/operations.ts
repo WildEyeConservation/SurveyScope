@@ -306,26 +306,78 @@ export function operationType(name: string): OperationType | undefined {
   return undefined;
 }
 
+function specOf(name: string): Spec | undefined {
+  if (Object.prototype.hasOwnProperty.call(QUERIES, name))
+    return (QUERIES as Record<string, Spec>)[name];
+  if (Object.prototype.hasOwnProperty.call(MUTATIONS, name))
+    return (MUTATIONS as Record<string, Spec>)[name];
+  return undefined;
+}
+
 export function operationReturnsJson(name: string): boolean {
-  const spec =
-    (QUERIES as Record<string, Spec>)[name] ??
-    (MUTATIONS as Record<string, Spec>)[name];
-  return spec?.returns === 'AWSJSON';
+  return specOf(name)?.returns === 'AWSJSON';
+}
+
+// Generous enough for batched image lists and inline launch requests.
+export const ARG_LIMITS = {
+  listLength: 100_000,
+  stringLength: 1_000_000,
+  idLength: 1024,
+  jsonChars: 2_000_000,
+  jsonDepth: 32,
+} as const;
+const INT_MIN = -(2 ** 31);
+const INT_MAX = 2 ** 31 - 1;
+
+function jsonDepthWithin(value: unknown, limit: number): boolean {
+  const stack: [unknown, number][] = [[value, 1]];
+  while (stack.length) {
+    const [node, depth] = stack.pop()!;
+    if (typeof node !== 'object' || node === null) continue;
+    if (depth > limit) return false;
+    for (const child of Object.values(node)) stack.push([child, depth + 1]);
+  }
+  return true;
+}
+
+function jsonMatches(value: unknown): boolean {
+  let parsed: unknown = value;
+  let text: string | undefined;
+  try {
+    if (typeof value === 'string') {
+      if (value.length > ARG_LIMITS.jsonChars) return false;
+      parsed = JSON.parse(value);
+    } else {
+      text = JSON.stringify(value);
+      if (text === undefined || text.length > ARG_LIMITS.jsonChars)
+        return false;
+    }
+  } catch {
+    return false;
+  }
+  return jsonDepthWithin(parsed, ARG_LIMITS.jsonDepth);
 }
 
 function scalarMatches(base: string, value: unknown): boolean {
   switch (base) {
     case 'String':
+      return (
+        typeof value === 'string' && value.length <= ARG_LIMITS.stringLength
+      );
     case 'ID':
-      return typeof value === 'string';
+      return typeof value === 'string' && value.length <= ARG_LIMITS.idLength;
     case 'Int':
-      return Number.isInteger(value);
+      return (
+        Number.isInteger(value) &&
+        (value as number) >= INT_MIN &&
+        (value as number) <= INT_MAX
+      );
     case 'Float':
       return typeof value === 'number' && Number.isFinite(value);
     case 'Boolean':
       return typeof value === 'boolean';
     case 'AWSJSON':
-      return value !== undefined;
+      return value !== undefined && jsonMatches(value);
     default:
       return false;
   }
@@ -336,9 +388,7 @@ export function operationArgsError(
   name: string,
   args: Record<string, unknown>,
 ): string | null {
-  const spec =
-    (QUERIES as Record<string, Spec>)[name] ??
-    (MUTATIONS as Record<string, Spec>)[name];
+  const spec = specOf(name);
   if (!spec) return `Unknown operation ${name}`;
   const declared = spec.args ?? {};
   for (const key of Object.keys(args)) {
@@ -359,6 +409,8 @@ export function operationArgsError(
       continue;
     }
     if (!Array.isArray(value)) return `${key} must be ${notation}`;
+    if (value.length > ARG_LIMITS.listLength)
+      return `${key} has more than ${ARG_LIMITS.listLength} items`;
     for (const item of value) {
       if (item === null || item === undefined) {
         if (f.isRequired) return `${key} must be ${notation}`;

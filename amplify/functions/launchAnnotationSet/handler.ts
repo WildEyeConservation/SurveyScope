@@ -27,6 +27,8 @@ import {
   createShadowWorkflowRun,
   workflowLaunchUserId,
 } from '../workflowStats/runWriter';
+import { assertNewQueueUrl, buildQueueName, queueTags } from '../shared/queueNames';
+import { annotationQueueTag, isUnder, manifestPrefixFor } from '../shared/s3Keys';
 // Inline minimal mutations – return key fields + `group` to avoid nested-resolver
 // auth failures while still enabling subscription delivery via groupDefinedIn('group').
 const getProjectOrganizationId = /* GraphQL */ `
@@ -116,7 +118,7 @@ const deleteObservationMutation = /* GraphQL */ `
 
 const getLocationSetQuery = /* GraphQL */ `
   query GetLocationSet($id: ID!) {
-    getLocationSet(id: $id) { id name }
+    getLocationSet(id: $id) { id name projectId }
   }
 `;
 
@@ -131,7 +133,7 @@ const annotationSetsByProjectIdQuery = /* GraphQL */ `
       limit: $limit
       nextToken: $nextToken
     ) {
-      items { id }
+      items { id projectId }
       nextToken
     }
   }
@@ -181,6 +183,8 @@ const observationsByAnnotationSetId = /* GraphQL */ `
       items {
         id
         source
+        projectId
+        annotationSetId
       }
       nextToken
     }
@@ -204,6 +208,8 @@ const annotationsByAnnotationSetId = /* GraphQL */ `
       items {
         id
         source
+        projectId
+        setId
       }
       nextToken
     }
@@ -356,6 +362,8 @@ export const handler: LaunchAnnotationSetHandler = async (event) => {
       console.log('Reading payload from S3', { key: payloadS3Key });
       payload = await readPayloadFromS3(payloadS3Key);
     }
+
+    payload.taskTag = annotationQueueTag(payload.taskTag, payload.queueOptions.name);
 
     // Check if this is a tiling-only operation (no annotation set to launch)
     const isTilingOnly = payload.tiledRequest && !payload.annotationSetId;
@@ -679,8 +687,11 @@ async function handleDistributedTiling(
 
     // Fetch the old set's name so we can form a meaningful archive label.
     const oldSetData = await executeGraphql<{
-      getLocationSet?: { id: string; name: string };
+      getLocationSet?: { id: string; name: string; projectId?: string | null };
     }>(getLocationSetQuery, { id: oldLocationSetId });
+    if (oldSetData.getLocationSet?.projectId !== payload.projectId) {
+      throw new Error('Location set does not belong to this project');
+    }
     const oldName = oldSetData.getLocationSet?.name ?? 'Location Set';
 
     // Rename the old set so it's identifiable but clearly no longer active.
@@ -1195,9 +1206,8 @@ async function createQueue(
   launchedCount?: number | null,
   organizationId?: string
 ): Promise<QueueRecord> {
-  const queueNameSeed = `${queueOptions.name}-${randomUUID()}`;
-  const safeBaseName = makeSafeQueueName(queueNameSeed);
-  const finalName = queueOptions.fifo ? `${safeBaseName}.fifo` : safeBaseName;
+  const queueId = randomUUID();
+  const finalName = buildQueueName(queueOptions.name, queueId, queueOptions.fifo);
 
   const createResult = await sqsClient.send(
     new CreateQueueCommand({
@@ -1206,6 +1216,7 @@ async function createQueue(
         MessageRetentionPeriod: '1209600',
         FifoQueue: queueOptions.fifo ? 'true' : undefined,
       },
+      tags: queueTags(payload.projectId, queueId),
     })
   );
 
@@ -1213,12 +1224,13 @@ async function createQueue(
   if (!queueUrl) {
     throw new Error('Unable to determine created queue URL');
   }
-
-  // Generate a unique ID for the queue record before creating it
-  const queueId = randomUUID();
+  await assertNewQueueUrl(queueUrl, finalName, executeGraphql);
 
   // Use manifest provided by client if available
   const manifestKey = locationManifestS3Key || null;
+  if (manifestKey && !isUnder(manifestKey, manifestPrefixFor(payload.taskTag))) {
+    throw new Error('Location manifest is outside the queue manifest prefix');
+  }
   const finalLaunchedCount = launchedCount ?? locationIds.length;
 
   if (manifestKey) {
@@ -1390,16 +1402,6 @@ async function executeGraphql<T>(
   return response.data;
 }
 
-// Normalize queue names to AWS-friendly characters/length.
-function makeSafeQueueName(input: string): string {
-  let sanitized = input.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const maxMainLength = 75;
-  if (sanitized.length > maxMainLength) {
-    sanitized = sanitized.substring(0, maxMainLength);
-  }
-  return sanitized;
-}
-
 // Flip project status in AppSync so the UI reflects progress.
 async function setProjectStatus(
   projectId: string,
@@ -1419,12 +1421,15 @@ async function setProjectStatus(
 }
 
 // Delete false negative annotations and observations using GraphQL
-async function deleteFalseNegativeData(annotationSetId: string): Promise<void> {
+async function deleteFalseNegativeData(
+  projectId: string,
+  annotationSetId: string
+): Promise<void> {
   // Delete false negative observations
-  await deleteFalseNegativeObservations(annotationSetId);
+  await deleteFalseNegativeObservations(projectId, annotationSetId);
 
   // Delete false negative annotations
-  await deleteFalseNegativeAnnotations(annotationSetId);
+  await deleteFalseNegativeAnnotations(projectId, annotationSetId);
 
   // Delete the FN manifest from S3 (for continuation detection)
   await deleteFnManifest(annotationSetId);
@@ -1453,7 +1458,7 @@ async function deleteFalseNegativeDataForProject(
 
   type AnnotationSetsResponse = {
     annotationSetsByProjectId?: {
-      items?: Array<{ id?: string | null }>;
+      items?: Array<{ id?: string | null; projectId?: string | null }>;
       nextToken?: string | null;
     };
   };
@@ -1474,7 +1479,7 @@ async function deleteFalseNegativeDataForProject(
 
     const page = response.annotationSetsByProjectId;
     for (const item of page?.items || []) {
-      if (item?.id) annotationSetIds.push(item.id);
+      if (item?.id && item.projectId === projectId) annotationSetIds.push(item.id);
     }
     nextToken = page?.nextToken ?? undefined;
   } while (nextToken);
@@ -1489,7 +1494,7 @@ async function deleteFalseNegativeDataForProject(
   });
 
   for (const annotationSetId of annotationSetIds) {
-    await deleteFalseNegativeData(annotationSetId);
+    await deleteFalseNegativeData(projectId, annotationSetId);
   }
 
   console.log('Finished deleting FN data for project', {
@@ -1532,6 +1537,7 @@ async function deleteFnManifest(annotationSetId: string): Promise<void> {
 
 // Delete observations with source containing 'false-negative'
 async function deleteFalseNegativeObservations(
+  projectId: string,
   annotationSetId: string
 ): Promise<void> {
   console.log('Querying false negative observations', { annotationSetId });
@@ -1558,6 +1564,8 @@ async function deleteFalseNegativeObservations(
         items?: Array<{
           id?: string | null;
           source?: string | null;
+          projectId?: string | null;
+          annotationSetId?: string | null;
         }>;
         nextToken?: string | null;
       };
@@ -1572,14 +1580,16 @@ async function deleteFalseNegativeObservations(
     }
 
     const page = response.data?.observationsByAnnotationSetId;
-    const items = page?.items ?? [];
+    const items = (page?.items ?? []).filter(
+      (item) =>
+        item?.projectId === projectId && item.annotationSetId === annotationSetId
+    );
     nextToken = page?.nextToken ?? null;
 
     totalFetched += items.length;
 
-    if (items.length === 0) {
-      break;
-    }
+    // Filtered pages can be empty before the last one.
+    if (items.length === 0) continue;
 
     // Delete each item using GraphQL mutation
     const deleteTasks = items.map((item) =>
@@ -1615,6 +1625,7 @@ async function deleteFalseNegativeObservations(
 
 // Delete annotations with source containing 'false-negative'
 async function deleteFalseNegativeAnnotations(
+  projectId: string,
   annotationSetId: string
 ): Promise<void> {
   console.log('Querying false negative annotations', { annotationSetId });
@@ -1641,6 +1652,8 @@ async function deleteFalseNegativeAnnotations(
         items?: Array<{
           id?: string | null;
           source?: string | null;
+          projectId?: string | null;
+          setId?: string | null;
         }>;
         nextToken?: string | null;
       };
@@ -1655,14 +1668,15 @@ async function deleteFalseNegativeAnnotations(
     }
 
     const page = response.data?.annotationsByAnnotationSetId;
-    const items = page?.items ?? [];
+    const items = (page?.items ?? []).filter(
+      (item) => item?.projectId === projectId && item.setId === annotationSetId
+    );
     nextToken = page?.nextToken ?? null;
 
     totalFetched += items.length;
 
-    if (items.length === 0) {
-      break;
-    }
+    // Filtered pages can be empty before the last one.
+    if (items.length === 0) continue;
 
     // Delete each item using GraphQL mutation
     const deleteTasks = items.map((item) =>

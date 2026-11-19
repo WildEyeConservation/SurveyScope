@@ -8,6 +8,9 @@ import { actor, MemoryData, operationContext } from './testing';
 
 function fixture() {
   return new MemoryData({
+    ImageFile: [
+      { id: 'f3', imageId: 'i3', projectId: 'p3', key: 'images/c/3.jpg' },
+    ],
     OrganizationMembership: [
       { organizationId: 'org1', userId: 'admin', isAdmin: true },
       { organizationId: 'org1', userId: 'annotator', isAdmin: false },
@@ -47,6 +50,7 @@ class Files implements LaunchStore {
     i1: { projectId: 'p1', originalPath: 'a/1.jpg' },
     i2: { projectId: 'p2', originalPath: 'b/2.jpg' },
     i3: { projectId: 'p3', originalPath: 'c/3.jpg' },
+    i5: { projectId: 'p3', originalPath: 'd/5.jpg' },
     i4: { projectId: 'p1', originalPath: null },
   };
   targets: DispatchTargets | null = {
@@ -297,6 +301,14 @@ describe('operation authorisation', () => {
       setId: 'l3',
       images: ['i3---c/3.jpg'],
     });
+    // A legacy key must be a file registered to that image and survey.
+    await denied(
+      authorize('admin', 'runScoutbot', {
+        projectId: 'p3',
+        setId: 'l3',
+        images: ['i5---d/5.jpg'],
+      }),
+    );
     await denied(
       authorize('admin', 'runScoutbot', {
         projectId: 'p3',

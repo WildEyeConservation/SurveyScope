@@ -5,6 +5,7 @@ import { generateClient } from 'aws-amplify/data';
 import type { GraphQLResult } from '@aws-amplify/api-graphql';
 import { SQSClient, SendMessageBatchCommand } from '@aws-sdk/client-sqs';
 import pLimit from 'p-limit';
+import { registeredLegacyImages } from '../shared/legacyImageKeys';
 
 Amplify.configure(
   {
@@ -202,6 +203,15 @@ async function enqueueRefresh(
   project: ProjectRow,
   manifestCreatedAt: string
 ): Promise<number> {
+  if (project.tags?.includes('legacy')) {
+    images = (
+      await registeredLegacyImages(
+        project.id,
+        images.filter((img) => img.originalPath),
+        executeGraphql
+      )
+    ).kept;
+  }
   if (images.length === 0) return 0;
   const queueUrl = env.REFRESH_TILES_QUEUE_URL;
   const prefix = buildImageKeyPrefix(project);

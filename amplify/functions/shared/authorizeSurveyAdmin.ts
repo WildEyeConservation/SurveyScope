@@ -10,12 +10,23 @@ const getOrganizationMembershipQuery = /* GraphQL */ `
 `;
 
 const userProjectMembershipsQuery = /* GraphQL */ `
-  query UserProjectMembershipsByUserId($userId: String!, $limit: Int) {
-    userProjectMembershipsByUserId(userId: $userId, limit: $limit) {
+  query UserProjectMembershipsByUserId(
+    $userId: String!
+    $filter: ModelUserProjectMembershipFilterInput
+    $limit: Int
+    $nextToken: String
+  ) {
+    userProjectMembershipsByUserId(
+      userId: $userId
+      filter: $filter
+      limit: $limit
+      nextToken: $nextToken
+    ) {
       items {
         projectId
         isAdmin
       }
+      nextToken
     }
   }
 `;
@@ -43,16 +54,31 @@ export async function authorizeSurveyAdmin(
     organizationId: project.organizationId,
     userId: identity.sub,
   });
-  if (organization.getOrganizationMembership?.isAdmin) return;
-  const memberships = await executeGraphql<{
-    userProjectMembershipsByUserId?: {
-      items: { projectId: string; isAdmin: boolean | null }[];
-    };
-  }>(userProjectMembershipsQuery, { userId: identity.sub, limit: 1000 });
-  const membership = memberships.userProjectMembershipsByUserId?.items?.find(
-    (m) => m.projectId === project.id,
-  );
-  if (!membership?.isAdmin) {
-    throw new Error('Unauthorized: user is not a project admin');
+  const organizationMembership = organization.getOrganizationMembership;
+  // Someone who left the organisation keeps no access through stale survey rows.
+  if (!organizationMembership) {
+    throw new Error('Unauthorized: user does not belong to this organization');
   }
+  if (organizationMembership.isAdmin) return;
+  // Duplicate membership rows can exist; any admin row for the project counts.
+  let nextToken: string | null | undefined;
+  do {
+    const page = await executeGraphql<{
+      userProjectMembershipsByUserId?: {
+        items?: ({ projectId: string; isAdmin: boolean | null } | null)[];
+        nextToken?: string | null;
+      } | null;
+    }>(userProjectMembershipsQuery, {
+      userId: identity.sub,
+      filter: { projectId: { eq: project.id } },
+      limit: 1000,
+      nextToken,
+    });
+    const memberships = page.userProjectMembershipsByUserId;
+    if (memberships?.items?.some((m) => m?.projectId === project.id && m.isAdmin)) {
+      return;
+    }
+    nextToken = memberships?.nextToken;
+  } while (nextToken);
+  throw new Error('Unauthorized: user is not a project admin');
 }

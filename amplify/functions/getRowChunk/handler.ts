@@ -119,6 +119,9 @@ export const handler: GetRowChunkHandler = async (event) => {
     values[':high'] = between[1];
   }
   const join = joined.length ? source.join : undefined;
+  // Set indexes may hold rows that name another project.
+  const byProject = source.partitionKey !== 'projectId';
+  if (byProject) values[':project'] = projectId;
 
   // AppSync caps resolver responses at 5 MB and requests at 30 s.
   return readChunk(
@@ -132,9 +135,11 @@ export const handler: GetRowChunkHandler = async (event) => {
           ExclusiveStartKey: startKey,
           Limit: limit,
           ProjectionExpression: Object.keys(names).join(', '),
+          FilterExpression: byProject ? '#project = :project' : undefined,
           ExpressionAttributeNames: {
             ...names,
             '#pk': source.partitionKey,
+            ...(byProject ? { '#project': 'projectId' } : {}),
             ...(source.sortKey && (beginsWith != null || between)
               ? { '#sk': source.sortKey }
               : {}),

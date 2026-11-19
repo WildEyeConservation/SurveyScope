@@ -1,3 +1,5 @@
+import { isActiveShareReviewer } from '../shared/chainShareAccess';
+
 type Row = Record<string, unknown>;
 export interface GuardStore {
   get(model: string, key: Row): Promise<Row | undefined>;
@@ -84,15 +86,16 @@ export function createGuard(store: GuardStore) {
     )
       deny();
     const shareId = requireValue(row.shareId);
-    const share = await store.get('ChainShare', { shareId });
-    if (share?.status !== 'active' || share.group !== `chainshare-${shareId}`)
-      deny();
-    // Read current membership so removal cannot be bypassed with an old session.
-    if (
-      !isAdmin &&
-      !(await store.groups(identity.username)).includes(`chainshare-${shareId}`)
-    )
-      deny();
+    const shareGroup = `chainshare-${shareId}`;
+    const reviewer = await isActiveShareReviewer(
+      {
+        share: (id) => store.get('ChainShare', { shareId: id }),
+        groups: (username) => store.groups(username),
+      },
+      { username: identity.username, groups: identity.groups },
+      shareId
+    );
+    if (!reviewer) deny();
     // The existing UI stores source annotation IDs, not snapshot row IDs.
     const annotation = await store.find(
       'SharedChainAnnotation',
@@ -100,7 +103,7 @@ export function createGuard(store: GuardStore) {
       'sourceAnnotationId',
       requireValue(row.sharedAnnotationId)
     );
-    if (!annotation || annotation.group !== share.group) deny();
+    if (!annotation || annotation.group !== shareGroup) deny();
     if (
       row.chainId != null &&
       row.chainId !== (annotation.objectId ?? annotation.sourceAnnotationId)
@@ -129,7 +132,7 @@ export function createGuard(store: GuardStore) {
           'sourceCategoryId',
           requireValue(row.proposedCategoryId)
         );
-        if (!category || category.group !== share.group) deny();
+        if (!category || category.group !== shareGroup) deny();
       }
       for (const key of ['proposedObscured', 'proposedCategoryId', 'comment']) {
         const expected =

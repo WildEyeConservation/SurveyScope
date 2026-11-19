@@ -1,5 +1,6 @@
 export interface StorageIdentity {
   sub: string;
+  username?: string;
   groups: string[];
 }
 
@@ -23,6 +24,9 @@ export function requireStorageUser(identity: unknown): StorageIdentity {
   }
   return {
     sub: value.sub,
+    ...(typeof value.username === 'string' && value.username
+      ? { username: value.username }
+      : {}),
     groups: Array.isArray(value.groups)
       ? value.groups.filter((g): g is string => typeof g === 'string')
       : [],

@@ -39,6 +39,7 @@ export interface SharedImageRow {
 export interface ShareRow {
   shareId: string;
   status?: string;
+  group?: string;
 }
 
 export function isLegacyProject(project: ProjectRow): boolean {

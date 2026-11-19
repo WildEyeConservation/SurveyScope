@@ -19,6 +19,8 @@ import {
   parsePayload,
   type LaunchInfoTagsPayload,
 } from './validation';
+import { assertNewQueueUrl, buildQueueName, queueTags } from '../shared/queueNames';
+import { KIND_TAGS, manifestPrefixFor } from '../shared/s3Keys';
 
 const createQueueMutation = /* GraphQL */ `
   mutation CreateQueue($input: CreateQueueInput!) {
@@ -277,7 +279,7 @@ async function handleLaunch(
     throw new Error('OUTPUTS_BUCKET_NAME environment variable not set');
   }
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const manifestKey = `info-tag-manifests/${annotationSetId}/${timestamp}.json`;
+  const manifestKey = `${manifestPrefixFor(KIND_TAGS['info-tags'])}${annotationSetId}/${timestamp}.json`;
   const manifest: InfoTagManifest = {
     annotationSetId,
     categoryIds,
@@ -403,15 +405,16 @@ async function createQueue(
   }
 ) {
   const queueId = randomUUID();
-  const safeDisplayName = makeSafeQueueName(options.name);
-  const queueName = `${safeDisplayName}-${queueId}`;
+  const queueName = buildQueueName(options.name, queueId);
   const result = await sqsClient.send(
     new CreateQueueCommand({
       QueueName: queueName,
       Attributes: { MessageRetentionPeriod: '1209600' },
+      tags: queueTags(projectId, queueId),
     })
   );
   if (!result.QueueUrl) throw new Error('Unable to determine created queue URL');
+  await assertNewQueueUrl(result.QueueUrl, queueName, executeGraphql);
 
   const bucketName = env.OUTPUTS_BUCKET_NAME;
   await s3Client.send(
@@ -435,7 +438,7 @@ async function createQueue(
       batchSize,
       zoom,
       hidden: options.hidden,
-      tag: 'info-tags',
+      tag: KIND_TAGS['info-tags'],
       approximateSize: tracking.launchedCount,
       updatedAt: timestamp,
       requeueAt: timestamp,
@@ -518,10 +521,6 @@ async function setProjectStatus(
     input: { id: projectId, status },
     ...(condition ? { condition } : {}),
   });
-}
-
-function makeSafeQueueName(input: string) {
-  return truncate(input.replace(/[^a-zA-Z0-9-_]/g, '_'), 40);
 }
 
 function truncate(value: string, maxLength: number) {

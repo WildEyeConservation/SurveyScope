@@ -90,6 +90,17 @@ export function installApi(props: {
     'TASK_LEASES_TABLE',
     leases.tableName,
   );
+  // Sysadmin and chain-share standing is read live, not from the token.
+  router.addToRolePolicy(
+    new iam.PolicyStatement({
+      actions: ['cognito-idp:AdminListGroupsForUser'],
+      resources: [props.userPool.userPoolArn],
+    }),
+  );
+  (router as lambda.Function).addEnvironment(
+    'USER_POOL_ID',
+    props.userPool.userPoolId,
+  );
   // Queue names are free-form; the router checks each queue row first.
   router.addToRolePolicy(
     new iam.PolicyStatement({

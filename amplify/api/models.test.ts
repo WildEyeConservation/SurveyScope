@@ -1,9 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { ApiError } from './errors';
 import type { ModelPolicy } from './models';
 import { POLICIES } from './policies';
-import { actor, gateway, MemoryData } from './testing';
+import { actor, gateway, MemoryData, refused } from './testing';
 
 const policies: Record<string, ModelPolicy> = {
   ...POLICIES,
@@ -58,12 +57,8 @@ function fixture() {
 const as = (data: MemoryData, user: string, groups: string[] = []) =>
   gateway(data, actor(user, groups), policies);
 
-async function denied(promise: Promise<unknown>, status = 403) {
-  await assert.rejects(
-    promise,
-    (e: unknown) => e instanceof ApiError && e.status === status,
-  );
-}
+const denied = (promise: Promise<unknown>, status = 403) =>
+  refused(promise, status);
 
 describe('survey standing', () => {
   it('follows the ladder from the database', async () => {
@@ -454,5 +449,103 @@ describe('model gateway', () => {
       [{}],
     );
     assert.deepEqual(result.data, []);
+  });
+});
+
+describe('review fixes', () => {
+  it('keeps keys and scope filled, and index queries to their own keys', async () => {
+    const data = fixture();
+    const { models } = as(data, 'surveyAdmin');
+    await refused(
+      models.run('UserProjectMembership', 'update', [
+        { id: 'm2', projectId: null },
+      ]),
+      400,
+    );
+    await refused(
+      models.run('UserProjectMembership', 'userProjectMembershipsByUserId', [
+        { userId: 'surveyAdmin', projectId: 'p1' },
+      ]),
+      400,
+    );
+    // Options inside the input still work, as the Amplify client sends them.
+    const own = await models.run(
+      'UserProjectMembership',
+      'userProjectMembershipsByUserId',
+      [{ userId: 'surveyAdmin', selectionSet: ['id', 'projectId'], limit: 10 }],
+    );
+    assert.deepEqual(
+      (own.data as { id: string }[]).map((m) => m.id),
+      ['m1'],
+    );
+    // An unscoped page with nothing readable gives no hint of more.
+    data.tables.UserProjectMembership.push({
+      id: 'm9',
+      userId: 'outsider',
+      projectId: 'p2',
+    });
+    const hidden = await models.run(
+      'UserProjectMembership',
+      'userProjectMembershipsByUserId',
+      [{ userId: 'outsider' }],
+    );
+    assert.deepEqual(hidden.data, []);
+    assert.equal(hidden.nextToken ?? null, null);
+  });
+
+  it('adds survey members only from the organisation, and ends self access on leaving', async () => {
+    const data = fixture();
+    const admin = as(data, 'surveyAdmin').models;
+    await admin.run('UserProjectMembership', 'create', [
+      { userId: 'bystander', projectId: 'p1' },
+    ]);
+    await refused(
+      admin.run('UserProjectMembership', 'create', [
+        { userId: 'outsider', projectId: 'p1' },
+      ]),
+    );
+    await refused(
+      admin.run('UserProjectMembership', 'update', [
+        { id: 'm2', userId: 'outsider' },
+      ]),
+    );
+    data.tables.OrganizationMembership =
+      data.tables.OrganizationMembership.filter(
+        (m) => m.userId !== 'annotator',
+      );
+    const former = as(data, 'annotator').models;
+    assert.equal(
+      (await former.run('UserProjectMembership', 'get', [{ id: 'm2' }])).data,
+      null,
+    );
+    assert.equal(
+      await former.canSubscribe('UserProjectMembership', 'userId', 'annotator'),
+      true,
+    );
+  });
+
+  it('gives sets server ids and keeps raw storage keys out of legacy surveys', async () => {
+    const data = fixture();
+    data.tables.ImageSet = [];
+    data.tables.Image = [];
+    const admin = as(data, 'surveyAdmin').models;
+    data.intro.models.ImageSet = data.intro.models.LocationSet;
+    const created = await admin.run('ImageSet', 'create', [
+      { id: 'chosen', projectId: 'p1' },
+    ]);
+    assert.notEqual((created.data as { id: string }).id, 'chosen');
+    data.intro.models.Image.fields.originalPath = {
+      name: 'originalPath',
+      type: 'String',
+    };
+    await admin.run('Image', 'create', [
+      { projectId: 'p1', originalPath: 'a.jpg' },
+    ]);
+    data.tables.Project.find((p) => p.id === 'p1')!.tags = ['legacy'];
+    await refused(
+      as(data, 'surveyAdmin').models.run('Image', 'create', [
+        { projectId: 'p1', originalPath: 'b.jpg' },
+      ]),
+    );
   });
 });

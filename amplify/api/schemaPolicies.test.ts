@@ -6,7 +6,7 @@ import { ApiError } from './errors';
 import { FOREIGN_KEYS } from './foreignKeys';
 import { POLICIES } from './policies';
 import type { Introspection } from './schema';
-import { actor, gateway, MemoryData } from './testing';
+import { actor, gateway, MemoryData, refused } from './testing';
 
 // The schema the router sees in production, not the test fixture.
 const deployed = JSON.parse(
@@ -51,11 +51,7 @@ function fixture() {
   );
 }
 
-const forbidden = (promise: Promise<unknown>) =>
-  assert.rejects(
-    promise,
-    (e: unknown) => e instanceof ApiError && e.status === 403,
-  );
+const forbidden = (promise: Promise<unknown>) => refused(promise);
 
 describe('policies on the deployed schema', () => {
   it('links surveys only to test presets of their own organisation', async () => {

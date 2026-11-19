@@ -4,14 +4,26 @@ import { ApiError } from './errors';
 import { OPERATIONS } from './operations';
 import { POLICIES } from './policies';
 import * as tasks from './tasks';
-import { actor, MemoryData, MemoryQueue, operationContext } from './testing';
+import {
+  actor,
+  MemoryData,
+  MemoryQueue,
+  operationContext,
+  refused,
+} from './testing';
 
 function fixture() {
   return new MemoryData({
     OrganizationMembership: [
-      { organizationId: 'org1', userId: 'annotator', isAdmin: false },
+      {
+        organizationId: 'org1',
+        userId: 'annotator',
+        isAdmin: false,
+        isTested: true,
+      },
       { organizationId: 'org1', userId: 'other', isAdmin: false },
     ],
+    ProjectTestConfig: [{ projectId: 'p1', testType: 'interval', interval: 2 }],
     Project: [
       { id: 'p1', organizationId: 'org1' },
       { id: 'p2', organizationId: 'org1' },
@@ -101,11 +113,7 @@ function fixture() {
 const as = (data: MemoryData, user: string, queue = new MemoryQueue()) =>
   operationContext(data, actor(user), POLICIES, { queue });
 
-const denied = (promise: Promise<unknown>) =>
-  assert.rejects(
-    promise,
-    (e: unknown) => e instanceof ApiError && e.status === 403,
-  );
+const denied = (promise: Promise<unknown>) => refused(promise);
 
 describe('task leases', () => {
   it('opens only the received task to its holder', async () => {
@@ -679,12 +687,15 @@ describe('task leases', () => {
     );
     assert.equal(data.leases.length, 0);
     await denied(tasks.test(ctx, { ...args, jobAnnotationSetId: 'pool' }));
-    await denied(
-      tasks.test(ctx, {
-        ...args,
-        locationId: 'loc1',
-        jobAnnotationSetId: 'a1',
-      }),
+    // Only organisations that test someone hand them tests.
+    assert.equal(
+      (
+        await tasks.test(as(data, 'other').tasks, {
+          ...args,
+          jobAnnotationSetId: 'a1',
+        })
+      ).data,
+      null,
     );
   });
 
@@ -736,5 +747,373 @@ describe('task leases', () => {
     await denied(
       OPERATIONS.pingIndividualIdTransect.authorize(former, { id: 't1' }),
     );
+  });
+});
+
+describe('review fixes', () => {
+  // A test box on img1 in the job's own set, and work beside it.
+  function testedFixture() {
+    const data = fixture();
+    data.tables.Location.push(
+      {
+        id: 'tbox',
+        projectId: 'p1',
+        imageId: 'img1',
+        x: 50,
+        y: 50,
+        width: 20,
+        height: 20,
+      },
+      {
+        id: 'work',
+        projectId: 'p1',
+        imageId: 'img2',
+        x: 50,
+        y: 50,
+        width: 20,
+        height: 20,
+      },
+      {
+        id: 'overlap',
+        projectId: 'p1',
+        imageId: 'img1',
+        x: 55,
+        y: 55,
+        width: 20,
+        height: 20,
+      },
+    );
+    data.tables.TestPresetLocation.push({
+      testPresetId: 'preset',
+      locationId: 'tbox',
+      annotationSetId: 'a1',
+    });
+    data.tables.Annotation = [
+      {
+        id: 'ans',
+        projectId: 'p1',
+        imageId: 'img1',
+        setId: 'a1',
+        categoryId: 'j1',
+        x: 52,
+        y: 52,
+      },
+      {
+        id: 'free',
+        projectId: 'p1',
+        imageId: 'img1',
+        setId: 'a1',
+        categoryId: 'j1',
+        x: 300,
+        y: 300,
+      },
+    ];
+    return data;
+  }
+  const work = (id = 'work') => ({
+    body: { location: { id, annotationSetId: 'a1' } },
+  });
+
+  it('refuses relation objects and references to rows that do not exist', async () => {
+    const data = fixture();
+    const admin = as(data, 'root');
+    admin.access.actor.groups.push('sysadmin');
+    await refused(
+      admin.models.run('Queue', 'create', [
+        { projectId: 'p1', name: 'x', project: { id: 'p2' } },
+      ]),
+      400,
+    );
+    await refused(
+      admin.models.run('Location', 'create', [
+        { projectId: 'p1', imageId: 'missing' },
+      ]),
+      400,
+    );
+  });
+
+  it("keeps a tester's own test answers out of their leases", async () => {
+    const data = testedFixture();
+    const { tasks: ctx, models } = as(
+      data,
+      'annotator',
+      new MemoryQueue([work()]),
+    );
+    const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
+      .data;
+    assert.ok(task);
+    const fresh = as(data, 'annotator');
+    assert.equal(
+      (await fresh.models.run('Annotation', 'get', [{ id: 'ans' }])).data,
+      null,
+    );
+    assert.ok(
+      (await fresh.models.run('Annotation', 'get', [{ id: 'free' }])).data,
+    );
+    assert.equal(
+      await fresh.models.canSubscribe('Annotation', 'imageId', 'img1'),
+      false,
+    );
+    assert.equal(
+      await fresh.models.canSubscribe('Annotation', 'imageId', 'img2'),
+      true,
+    );
+    // Someone not tested sees the image as before.
+    data.tables.OrganizationMembership.find(
+      (m) => m.userId === 'annotator',
+    )!.isTested = false;
+    assert.ok(
+      (
+        await as(data, 'annotator').models.run('Annotation', 'get', [
+          { id: 'ans' },
+        ])
+      ).data,
+    );
+    void models;
+  });
+
+  it("serves tasks on a tester's own test box but hides its answers", async () => {
+    const data = testedFixture();
+    const queue = new MemoryQueue([work('overlap')]);
+    const ctx = as(data, 'annotator', queue).tasks;
+    assert.equal(
+      (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data.length,
+      1,
+    );
+    const fresh = as(data, 'annotator');
+    assert.equal(
+      (await fresh.models.run('Annotation', 'get', [{ id: 'ans' }])).data,
+      null,
+    );
+  });
+
+  it('finishes a task only once its work is saved, and keeps releases final', async () => {
+    const data = testedFixture();
+    const queue = new MemoryQueue([work(), work()]);
+    const { tasks: ctx, models } = as(data, 'annotator', queue);
+    const [first, second] = (
+      await tasks.receiveBatch(ctx, { queueId: 'q1', max: 2 })
+    ).data as {
+      leaseId: string;
+      messageId: string;
+    }[];
+    await assert.rejects(
+      tasks.ack(ctx, { leaseId: first.leaseId }),
+      (e: unknown) => e instanceof ApiError && e.status === 409,
+    );
+    await models.run('Observation', 'create', [
+      {
+        id: `queue-message:${first.messageId}`,
+        projectId: 'p1',
+        locationId: 'work',
+        annotationSetId: 'a1',
+        annotationCount: 1,
+      },
+    ]);
+    await tasks.ack(as(data, 'annotator', queue).tasks, {
+      leaseId: first.leaseId,
+    });
+    assert.ok(queue.removed.includes('receipt-msg-0'));
+    // The same location, now saved, may be let go as a duplicate.
+    await tasks.visibility(ctx, { leaseId: second.leaseId, seconds: 0 });
+    await assert.rejects(
+      tasks.visibility(ctx, { leaseId: second.leaseId, seconds: 600 }),
+      (e: unknown) => e instanceof ApiError && e.status === 404,
+    );
+  });
+
+  it('shows neighbour images but lets a task change only its own', async () => {
+    const data = testedFixture();
+    const { tasks: ctx } = as(data, 'annotator', new MemoryQueue([work()]));
+    await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 });
+    const fresh = as(data, 'annotator');
+    const mark = {
+      projectId: 'p1',
+      setId: 'a1',
+      categoryId: 'j1',
+      x: 300,
+      y: 300,
+    };
+    await fresh.models.run('Annotation', 'create', [
+      { ...mark, imageId: 'img2' },
+    ]);
+    await refused(
+      fresh.models.run('Annotation', 'create', [{ ...mark, imageId: 'img1' }]),
+    );
+  });
+
+  it('grades each spot once, counts wrong labels and repeats tests only once all are taken', async () => {
+    const data = fixture();
+    data.tables.Category.push({
+      id: 'jz',
+      projectId: 'p1',
+      annotationSetId: 'a1',
+      name: 'Zebra',
+    });
+    const ctx = as(data, 'annotator').tasks;
+    const started = (
+      await tasks.test(ctx, { projectId: 'p1', jobAnnotationSetId: 'a1' })
+    ).data!;
+    await tasks.submitTest(ctx, {
+      leaseId: started.leaseId,
+      annotations: [
+        { x: 12, y: 22, categoryId: 'j1' },
+        { x: 12, y: 22, categoryId: 'j1' },
+        { x: 15, y: 25, categoryId: 'jz' },
+      ],
+    });
+    const [result] = data.tables.TestResult;
+    assert.equal(result.testAnimals, 2);
+    assert.equal(result.totalMissedAnimals, 1);
+    assert.equal(result.falsePositives, 1);
+    assert.deepEqual(
+      data.tables.TestResultCategoryCount.map((c) => [
+        c.categoryName,
+        c.userCount,
+        c.testCount,
+      ]),
+      [
+        ['Elephant', 1, 2],
+        ['Zebra', 1, 0],
+      ],
+    );
+    // Every location is tested, so the server starts round again.
+    const again = (
+      await tasks.test(ctx, { projectId: 'p1', jobAnnotationSetId: 'a1' })
+    ).data!;
+    assert.equal(again.location.id, started.location.id);
+    await tasks.submitTest(ctx, { leaseId: again.leaseId, annotations: [] });
+    assert.equal(data.tables.TestResult.length, 2);
+  });
+
+  it('holds back work when a test falls due until one is taken', async () => {
+    const data = testedFixture();
+    data.tables.Location.find((l) => l.id === 'loc1')!.width = 10;
+    data.tables.Location.find((l) => l.id === 'loc1')!.height = 10;
+    const queue = new MemoryQueue([work('loc1'), work('loc1'), work('loc1')]);
+    const { tasks: ctx, models } = as(data, 'annotator', queue);
+    const received = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 2 }))
+      .data as {
+      leaseId: string;
+      messageId: string;
+    }[];
+    let due = false;
+    for (const task of received) {
+      await models.run('Observation', 'create', [
+        {
+          id: `queue-message:${task.messageId}`,
+          projectId: 'p1',
+          locationId: 'loc1',
+          annotationSetId: 'a1',
+          annotationCount: 0,
+        },
+      ]);
+      due = (
+        await tasks.ack(as(data, 'annotator', queue).tasks, {
+          leaseId: task.leaseId,
+        })
+      ).testDue;
+    }
+    assert.equal(due, true);
+    await assert.rejects(
+      tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }),
+      (e: unknown) => e instanceof ApiError && e.status === 409,
+    );
+    const started = (
+      await tasks.test(ctx, { projectId: 'p1', jobAnnotationSetId: 'a1' })
+    ).data!;
+    await tasks.submitTest(ctx, { leaseId: started.leaseId, annotations: [] });
+    assert.equal(
+      (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data.length,
+      1,
+    );
+  });
+
+  it('credits observations to their own queue and counts each task once', async () => {
+    const data = testedFixture();
+    data.tables.Queue.push({
+      id: 'q2',
+      projectId: 'p1',
+      url: 'https://queue/q2',
+      annotationSetId: 'a1',
+    });
+    const queue = new MemoryQueue([work()]);
+    const { tasks: ctx, models } = as(data, 'annotator', queue);
+    const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
+      .data as {
+      messageId: string;
+    }[];
+    const observation = {
+      id: `queue-message:${task.messageId}`,
+      projectId: 'p1',
+      locationId: 'work',
+      annotationSetId: 'a1',
+    };
+    data.intro.models.Observation.fields.queueId = {
+      name: 'queueId',
+      type: 'String',
+    };
+    await refused(
+      models.run('Observation', 'create', [{ ...observation, queueId: 'q2' }]),
+    );
+    await models.run('Observation', 'create', [
+      { ...observation, queueId: 'q1' },
+    ]);
+    const counted: string[] = [];
+    const op = as(data, 'annotator', queue);
+    op.queues.recordObservation = async (id: string) => {
+      counted.push(id);
+      return counted.length;
+    };
+    await OPERATIONS.incrementQueueCount.run!(op, { id: 'q1' });
+    await OPERATIONS.incrementQueueCount.run!(as(data, 'annotator', queue), {
+      id: 'q1',
+    });
+    assert.deepEqual(counted, ['q1']);
+  });
+
+  it('keeps labels to the annotation set and annotators to hand-made marks', async () => {
+    const data = testedFixture();
+    data.tables.Category.push({
+      id: 'other',
+      projectId: 'p1',
+      annotationSetId: 'a2',
+      name: 'Lion',
+    });
+    const { tasks: ctx } = as(data, 'annotator', new MemoryQueue([work()]));
+    await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 });
+    const fresh = as(data, 'annotator');
+    const mark = {
+      projectId: 'p1',
+      setId: 'a1',
+      imageId: 'img2',
+      x: 300,
+      y: 300,
+    };
+    await refused(
+      fresh.models.run('Annotation', 'create', [
+        { ...mark, categoryId: 'other' },
+      ]),
+    );
+    await refused(
+      fresh.models.run('Annotation', 'create', [
+        { ...mark, categoryId: 'j1', source: 'scoutbotv3' },
+      ]),
+    );
+    await fresh.models.run('Annotation', 'create', [
+      { ...mark, categoryId: 'j1', source: 'manual-elephants' },
+    ]);
+  });
+
+  it('adds only neighbours from the same survey to a lease', async () => {
+    const data = testedFixture();
+    data.tables.ImageNeighbour.push({
+      image1Id: 'img2',
+      image2Id: 'poolImage',
+      projectId: 'p1',
+    });
+    const { tasks: ctx } = as(data, 'annotator', new MemoryQueue([work()]));
+    await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 });
+    assert.deepEqual(data.leases[0].imageIds.sort(), ['img1', 'img2']);
   });
 });

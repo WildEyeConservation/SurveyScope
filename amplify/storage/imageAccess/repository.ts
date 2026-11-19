@@ -1,3 +1,4 @@
+import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
@@ -7,7 +8,6 @@ import {
 import {
   authorizeProject,
   assertFileOwnership,
-  isSysadmin,
   requireStorageUser,
   safeSourceKey,
   type ImageFileRow,
@@ -17,6 +17,10 @@ import {
   type SharedImageRow,
   type StorageIdentity,
 } from './authorization';
+import {
+  isActiveShareReviewer,
+  listUserGroups,
+} from '../../functions/shared/chainShareAccess';
 
 export const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -107,14 +111,36 @@ function accessCacheKey(
   ]);
 }
 
+const cognito = new CognitoIdentityProviderClient({});
+const groupCache = new Map<string, { groups: string[]; expires: number }>();
+
+// Live Cognito groups, cached as briefly as access decisions.
+export const reviewerGroups = {
+  lookup: (username: string) =>
+    listUserGroups(cognito, process.env.USER_POOL_ID, username),
+};
+
+async function liveGroups(username: string, now: () => number) {
+  const cached = groupCache.get(username);
+  if (cached && cached.expires > now()) return cached.groups;
+  const groups = await reviewerGroups.lookup(username);
+  groupCache.set(username, { groups, expires: now() + ACCESS_CACHE_TTL_MS });
+  while (groupCache.size > ACCESS_CACHE_LIMIT) {
+    groupCache.delete(groupCache.keys().next().value!);
+  }
+  return groups;
+}
+
 export function clearAccessCache(): void {
   accessCache.clear();
+  groupCache.clear();
 }
 
 async function resolveSharedAccess(
   user: StorageIdentity,
   args: ImageAccessArgs,
-  sharedImageId: string
+  sharedImageId: string,
+  now: () => number
 ): Promise<ImageAccess> {
   const snapshot = await getRecord<SharedImageRow>('SharedChainImage', {
     id: sharedImageId,
@@ -127,14 +153,15 @@ async function resolveSharedAccess(
   ) {
     throw new Error('Unauthorized: invalid shared image');
   }
-  const share = await getRecord<ShareRow>('ChainShare', {
-    shareId: snapshot.shareId,
-  });
-  if (
-    !share ||
-    share.status !== 'active' ||
-    (!isSysadmin(user) && !user.groups.includes(snapshot.group))
-  ) {
+  const reviewer = await isActiveShareReviewer(
+    {
+      share: (shareId) => getRecord<ShareRow>('ChainShare', { shareId }),
+      groups: (username) => liveGroups(username, now),
+    },
+    user,
+    snapshot.shareId
+  );
+  if (!reviewer) {
     throw new Error('Unauthorized: image share is unavailable');
   }
   return {
@@ -179,7 +206,7 @@ export async function resolveImageAccess(
 
   const value =
     allowShare && args.sharedImageId
-      ? await resolveSharedAccess(user, args, args.sharedImageId)
+      ? await resolveSharedAccess(user, args, args.sharedImageId, now)
       : await resolveOwnedAccess(user, args);
 
   accessCache.set(key, { value, expires: now() + ACCESS_CACHE_TTL_MS });

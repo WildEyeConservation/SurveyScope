@@ -3,6 +3,7 @@ import { env } from '$amplify/env/runImageRegistration';
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { authorizeRequest } from '../shared/authorizeRequest';
+import { registeredLegacyImages } from '../shared/legacyImageKeys';
 import {
   countMaskRegions,
   pairCameraMasks,
@@ -177,6 +178,66 @@ const camerasWithMasks = /* GraphQL */ `
 `;
 
 let cameraMasksById = new Map<string, CameraMasks>();
+
+async function executeGraphql<T>(
+  query: string,
+  variables: Record<string, unknown>
+): Promise<T> {
+  const response = (await client.graphql({
+    query,
+    variables,
+  } as never)) as GraphQLResult<T>;
+  if (response.errors?.length) {
+    throw new Error(
+      `GraphQL error: ${JSON.stringify(response.errors.map((e) => e.message))}`
+    );
+  }
+  if (!response.data) throw new Error('GraphQL response missing data');
+  return response.data;
+}
+
+const getImageForRegistration = /* GraphQL */ `
+  query GetImageForRegistration($id: ID!) {
+    getImage(id: $id) {
+      id
+      projectId
+      originalPath
+      timestamp
+      cameraId
+    }
+  }
+`;
+
+// Caller batches name images only; paths and cameras come from the rows.
+async function loadBatchImages(
+  projectId: string,
+  ids: string[]
+): Promise<MinimalImage[]> {
+  const rows: MinimalImage[] = [];
+  for (let i = 0; i < ids.length; i += 25) {
+    const page = await Promise.all(
+      ids.slice(i, i + 25).map(async (id) => {
+        const data = await gqlWithRetry(() =>
+          executeGraphql<{
+            getImage?: (MinimalImage & { projectId?: string | null }) | null;
+          }>(getImageForRegistration, { id })
+        );
+        const row = data.getImage;
+        if (!row || row.projectId !== projectId) {
+          throw new Error(`Image ${id} does not belong to this project`);
+        }
+        return {
+          id: row.id,
+          originalPath: row.originalPath ?? null,
+          timestamp: typeof row.timestamp === 'number' ? row.timestamp : null,
+          cameraId: row.cameraId ?? null,
+        };
+      })
+    );
+    rows.push(...page);
+  }
+  return rows;
+}
 
 interface MinimalImage {
   id: string;
@@ -674,47 +735,31 @@ export const handler: RunImageRegistrationHandler = async (event) => {
     const skipExistingSuggestions = !!metadata?.skipExistingSuggestions;
     const queueUrl = event.arguments.queueUrl;
 
-    let organizationId: string | undefined = undefined;
-    let isLegacyProject = false;
-    try {
-      const projResp = (await client.graphql({
-        query: getProject,
-        variables: { id: projectId },
-      })) as GraphQLResult<GetProjectQuery>;
-      organizationId = projResp.data?.getProject?.organizationId;
-      const tagsRaw = projResp.data?.getProject?.tags ?? [];
-      const tags = Array.isArray(tagsRaw)
-        ? tagsRaw.filter((t): t is string => typeof t === 'string')
-        : [];
-      isLegacyProject = tags.includes('legacy');
-    } catch (e) {
-      console.warn(
-        'Unable to fetch project tags; defaulting to legacy=false behavior'
-      );
-    }
+    // No fallback: a wrong legacy guess would turn paths into bare keys.
+    const projResp = (await client.graphql({
+      query: getProject,
+      variables: { id: projectId },
+    })) as GraphQLResult<GetProjectQuery>;
+    const organizationId = projResp.data?.getProject?.organizationId;
+    if (!organizationId) throw new Error(`Project ${projectId} not found`);
+    const tagsRaw = projResp.data?.getProject?.tags ?? [];
+    const isLegacyProject = Array.isArray(tagsRaw) && tagsRaw.includes('legacy');
 
-    if (organizationId) {
-      authorizeRequest(event.identity, organizationId);
-    }
+    authorizeRequest(event.identity, organizationId);
 
     const computeKey = (orig: string) =>
-      !isLegacyProject && organizationId
-        ? `${organizationId}/${projectId}/${orig}`
-        : orig;
+      isLegacyProject ? orig : `${organizationId}/${projectId}/${orig}`;
 
     // If metadata supplies a batch, use it to avoid scanning the whole project.
     const providedBatch = Array.isArray(metadata?.images)
       ? metadata.images.filter((it): it is NonNullable<typeof it> => Boolean(it))
       : [];
 
-    const images: MinimalImage[] = providedBatch.length
-      ? providedBatch.map((it) => ({
-        id: it.id,
-        originalPath: it.originalPath,
-        timestamp:
-          typeof it.timestamp === 'number' ? (it.timestamp as number) : null,
-        cameraId: (it.cameraId ?? null) as string | null,
-      }))
+    const loaded: MinimalImage[] = providedBatch.length
+      ? await loadBatchImages(
+        projectId,
+        [...new Set(providedBatch.map((it) => String(it.id)))]
+      )
       : (await fetchAllPages<
         { id: string; originalPath?: string | null; timestamp?: number | null; cameraId?: string | null },
         'imagesByProjectId'
@@ -740,6 +785,15 @@ export const handler: RunImageRegistrationHandler = async (event) => {
         timestamp: typeof img.timestamp === 'number' ? img.timestamp : null,
         cameraId: (img.cameraId ?? null) as string | null,
       }));
+    const images = isLegacyProject
+      ? (
+        await registeredLegacyImages(
+          projectId,
+          loaded.filter((image) => image.originalPath),
+          executeGraphql
+        )
+      ).kept
+      : loaded;
 
     const cameras = await fetchAllPages<
       { id: string; masks?: string | null },

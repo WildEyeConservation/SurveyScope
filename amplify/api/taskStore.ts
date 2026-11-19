@@ -16,6 +16,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { Lease } from './leases';
+import type { Row } from './schema';
 
 export interface QueueMessage {
   messageId: string;
@@ -43,12 +44,12 @@ export interface LeaseTable {
   put(lease: Lease): Promise<void>;
   get(userId: string, leaseId: string): Promise<Lease | null>;
   active(userId: string): Promise<Lease[]>;
-  expire(
+  // False when the lease is gone or already finished.
+  transition(
     userId: string,
     leaseId: string,
-    expiresAt: number,
-    acked?: boolean,
-  ): Promise<void>;
+    change: LeaseChange,
+  ): Promise<boolean>;
   // A short exclusive hold, so a check and the writes it allows cannot interleave.
   lock(userId: string, name: string, seconds: number): Promise<boolean>;
   fixGrade(
@@ -57,9 +58,21 @@ export interface LeaseTable {
     grade: NonNullable<NonNullable<Lease['test']>['grade']>,
   ): Promise<void>;
   unlock(userId: string, name: string): Promise<void>;
+  // Small per-user records kept beside the leases, such as test cadence.
+  getState(userId: string, name: string): Promise<Row | null>;
+  putState(userId: string, name: string, value: Row): Promise<void>;
 }
 
+// Release and acknowledgement are final; only an open lease can be extended.
+export type LeaseChange =
+  | { kind: 'extend' | 'release' | 'ack'; expiresAt: number }
+  | { kind: 'done' }
+  // A finished task adds to its queue's count once.
+  | { kind: 'counted' };
+
 export const LOCK_PREFIX = 'lock#';
+const STATE_PREFIX = 'state#';
+const STATE_SECONDS = 90 * 86400;
 
 const sqs = new SQSClient({});
 const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -221,19 +234,75 @@ export const dynamoLeaseTable: LeaseTable = {
       }),
     );
   },
-  async expire(userId, leaseId, expiresAt, acked = false) {
-    await dynamo.send(
-      new UpdateCommand({
+  async getState(userId, name) {
+    const result = await dynamo.send(
+      new GetCommand({
         TableName: table(),
-        Key: { userId, leaseId },
-        UpdateExpression: `SET expiresAt = :at, deleteAfter = :del${acked ? ', acked = :acked' : ''}`,
-        ConditionExpression: 'attribute_exists(leaseId)',
-        ExpressionAttributeValues: {
-          ':at': expiresAt,
-          ':del': expiresAt + DELETE_AFTER,
-          ...(acked ? { ':acked': true } : {}),
+        Key: { userId, leaseId: `${STATE_PREFIX}${name}` },
+        ConsistentRead: true,
+      }),
+    );
+    return (result.Item?.value as Row | undefined) ?? null;
+  },
+  // No expiresAt, so the expiry index never lists it as a lease.
+  async putState(userId, name, value) {
+    await dynamo.send(
+      new PutCommand({
+        TableName: table(),
+        Item: {
+          userId,
+          leaseId: `${STATE_PREFIX}${name}`,
+          value,
+          deleteAfter: Math.floor(Date.now() / 1000) + STATE_SECONDS,
         },
       }),
     );
+  },
+  async transition(userId, leaseId, change) {
+    const open =
+      'attribute_exists(leaseId) AND attribute_not_exists(released) AND attribute_not_exists(acked)';
+    const command =
+      change.kind === 'counted'
+        ? {
+            UpdateExpression: 'SET counted = :yes',
+            ConditionExpression:
+              'attribute_exists(leaseId) AND attribute_not_exists(counted)',
+            ExpressionAttributeValues: { ':yes': true },
+          }
+        : change.kind === 'done'
+          ? {
+              UpdateExpression: 'SET done = :yes',
+              ConditionExpression: open,
+              ExpressionAttributeValues: { ':yes': true },
+            }
+          : {
+              UpdateExpression: `SET expiresAt = :at, deleteAfter = :del${
+                change.kind === 'extend'
+                  ? ''
+                  : `, ${change.kind === 'ack' ? 'acked' : 'released'} = :yes`
+              }`,
+              ConditionExpression: open,
+              ExpressionAttributeValues: {
+                ':at': change.expiresAt,
+                ':del': change.expiresAt + DELETE_AFTER,
+                ...(change.kind === 'extend' ? {} : { ':yes': true }),
+              },
+            };
+    try {
+      await dynamo.send(
+        new UpdateCommand({
+          TableName: table(),
+          Key: { userId, leaseId },
+          ...command,
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (
+        (error as { name?: string }).name === 'ConditionalCheckFailedException'
+      )
+        return false;
+      throw error;
+    }
   },
 };
