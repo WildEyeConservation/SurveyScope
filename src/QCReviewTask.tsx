@@ -35,6 +35,12 @@ export default function QCReviewTask() {
   const processedRef = useRef<Set<string>>(new Set());
 
   const [queueZoom, setQueueZoom] = useState<number | null>(null);
+  const [ownReviews, setOwnReviews] = useState<Record<string, string>>({});
+  const recordOwnReview = useCallback(
+    (annotationId: string, reviewCatId: string) =>
+      setOwnReviews((prev) => ({ ...prev, [annotationId]: reviewCatId })),
+    [],
+  );
 
   // Batches count only work done on this queue.
   useEffect(() => {
@@ -195,6 +201,8 @@ export default function QCReviewTask() {
                   }))}
                 legendCollapsed={legendCollapsed}
                 setLegendCollapsed={setLegendCollapsed}
+                ownReviews={ownReviews}
+                recordOwnReview={recordOwnReview}
               />
             )}
           />
