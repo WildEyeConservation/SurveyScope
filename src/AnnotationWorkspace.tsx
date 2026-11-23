@@ -191,19 +191,14 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   nextRef.current = next;
   ackRef.current = ack;
 
-  // Queue tasks are filtered when fetched and checked once more when they
-  // become visible, in case another user annotated the location meanwhile.
-  // Ignore a result after local annotation creation: the revalidation query
-  // can otherwise see that new row and incorrectly advance to another task.
+  // Another user may annotate a queued location before it becomes visible.
   useEffect(() => {
     if (!visible || !revalidate || hasRevalidated.current) return;
     hasRevalidated.current = true;
-    let settled = false;
     let cancelled = false;
 
     revalidate()
       .then((isValid: boolean) => {
-        settled = true;
         if (cancelled || localAnnotationCreated.current) return;
         if (!isValid) {
           ackRef.current?.();
@@ -211,7 +206,6 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         }
       })
       .catch((error: unknown) => {
-        settled = true;
         if (!cancelled) {
           console.error('Failed to revalidate annotation task', error);
         }
@@ -219,9 +213,6 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
 
     return () => {
       cancelled = true;
-      // If the task was hidden before its check completed, allow a fresh
-      // revalidation when the user returns instead of using a stale result.
-      if (!settled) hasRevalidated.current = false;
     };
   }, [visible, revalidate]);
 

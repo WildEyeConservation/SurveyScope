@@ -14,6 +14,7 @@ import type {
 import { primeTask } from './annotator/prefetchTask';
 import { TILE_VIEW_BOUNDS_SCALE } from './annotator/viewTiles';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
+import { firstViewCheck } from './firstViewCheck';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
 import { decideTestCadence } from './testCadence';
@@ -444,8 +445,7 @@ export default function useAnnotationTaskQueue() {
 
       return {
         ...preparedTask,
-        // Last-resort filtering when the buffered task becomes visible.
-        revalidate: async () => Boolean(await prepareTask(body)),
+        revalidate: firstViewCheck(() => prepareTask(body).then(Boolean)),
       };
     },
     [client, getSqsClient, prepareTask, leases],
