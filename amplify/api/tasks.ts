@@ -37,8 +37,6 @@ const MAX_HELD_TASKS = 30;
 const MISSING_ROW_RETRIES = 5;
 const MISSING_ROW_DELAY_SECONDS = 60;
 const now = () => Math.floor(Date.now() / 1000);
-// A review held back for another reviewer waits this long.
-const OTHERS_FIRST_SECONDS = 30;
 // Observations already counted towards test cadence, most recent kept.
 const COUNTED_KEPT = 100;
 const isObject = (v: unknown): v is Row =>
@@ -161,18 +159,6 @@ export async function messageScope(
   };
 }
 
-async function reviewsOwnTestAnswer(ctx: TaskContext, annotationIds: string[]) {
-  const pool = await ctx.access.testPool();
-  for (const id of annotationIds) {
-    const annotation = await ctx.models.load('Annotation', { id });
-    if (!annotation || ctx.access.isSelf(annotation.owner)) continue;
-    const point = { x: Number(annotation.x), y: Number(annotation.y) };
-    const boxes = pool.boxes.get(String(annotation.imageId)) ?? [];
-    if (boxes.some((b) => isWithinLocationBounds(point, b.box))) return true;
-  }
-  return false;
-}
-
 function parsedSkip(body: string) {
   try {
     const parsed = JSON.parse(body) as Row;
@@ -216,20 +202,6 @@ async function leaseMessage(
       error,
     });
     await ctx.queue.remove(url, message.receiptHandle);
-    return null;
-  }
-  // A review of someone else's mark inside the tester's own test box can be
-  // neither seen nor finished by them, so it waits for another reviewer.
-  if (
-    scope.annotationIds.length &&
-    !(await ctx.access.isSurveyAdmin(projectId)) &&
-    (await reviewsOwnTestAnswer(ctx, scope.annotationIds))
-  ) {
-    await ctx.queue.visibility(
-      url,
-      message.receiptHandle,
-      OTHERS_FIRST_SECONDS,
-    );
     return null;
   }
   // Someone saved it but the acknowledgement was lost.
@@ -1111,18 +1083,11 @@ async function gradeTest(
         testCount: 0,
       })),
   ];
-  const matched = counts.reduce(
-    (a, c) => a + Math.min(c.userCount, c.testCount),
-    0,
-  );
+  const marked = Object.values(userCounts).reduce((a, n) => a + n, 0);
   return {
     testAnimals,
-    // Wrongly labelled marks do not make up for missed animals.
-    totalMissedAnimals: testAnimals - matched,
-    falsePositives: counts.reduce(
-      (a, c) => a + Math.max(0, c.userCount - c.testCount),
-      0,
-    ),
+    totalMissedAnimals: Math.max(0, testAnimals - marked),
+    falsePositives: Math.max(0, marked - testAnimals),
     counts,
   };
 }

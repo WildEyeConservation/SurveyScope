@@ -1,5 +1,4 @@
-import { isWithinLocationBounds } from '../../shared/locationGeometry';
-import type { Access, TestPool } from './access';
+import type { TestPool } from './access';
 import type { TaskScope } from './leases';
 import type { ModelPolicy, Rule, ScopeSpec } from './models';
 import type { Row } from './schema';
@@ -101,40 +100,10 @@ const notLegacy: Rule = {
     return !(Array.isArray(project?.tags) && project.tags.includes('legacy'));
   },
 };
-// Whether a row sits inside one of the tester's own test boxes, of any set.
-// Unknown without a position, so queries filter rows and channels stay shut.
-async function inOwnTestBox(access: Access, r: Row) {
-  // Their own marks reveal nothing.
-  if (typeof r.imageId !== 'string' || access.isSelf(r.owner)) return false;
-  const boxes = (await access.testPool()).boxes.get(r.imageId);
-  if (!boxes?.length) return false;
-  if (typeof r.x !== 'number' || typeof r.y !== 'number') return undefined;
-  const point = { x: r.x, y: r.y };
-  return boxes.some((b) => isWithinLocationBounds(point, b.box));
-}
-
-// Leases never show a tester the answers inside their own test boxes.
-const leasedAnnotation: Rule = {
-  check: async ({ access }, r) => {
-    const verdict = (await access.tasks()).readsAnnotation(
-      r.imageId,
-      r.setId,
-      r.projectId,
-    );
-    if (!verdict) return verdict;
-    const inside = await inOwnTestBox(access, r);
-    return inside === undefined ? undefined : !inside;
-  },
-  fields: ['imageId', 'setId', 'projectId', 'x', 'y', 'owner'],
-};
-// Nor change them, as that would show them too.
-const outsideOwnTestBox: Rule = {
-  check: async ({ access }, r) => {
-    const inside = await inOwnTestBox(access, r);
-    return inside === undefined ? undefined : !inside;
-  },
-  fields: ['imageId', 'x', 'y', 'owner'],
-};
+const leasedAnnotation = task(
+  (t, r) => t.readsAnnotation(r.imageId, r.setId, r.projectId),
+  ['imageId', 'setId'],
+);
 const throughParent = (
   model: string,
   field: string,
@@ -382,15 +351,10 @@ export const POLICIES: Record<string, ModelPolicy> = {
     ],
     update: [
       surveyAdmin,
-      {
-        all: [
-          task(
-            (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
-            ['imageId', 'setId'],
-          ),
-          outsideOwnTestBox,
-        ],
-      },
+      task(
+        (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
+        ['imageId', 'setId'],
+      ),
     ],
     // Annotators remove their own marks; whole-job leases may tidy anyone's.
     delete: [
@@ -401,7 +365,6 @@ export const POLICIES: Record<string, ModelPolicy> = {
             (t, r) => t.writesAnnotation(r.imageId, r.setId, r.projectId),
             ['imageId', 'setId'],
           ),
-          outsideOwnTestBox,
           {
             check: async (ctx, r) =>
               r.owner === undefined

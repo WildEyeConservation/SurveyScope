@@ -35,6 +35,7 @@ import {
   type LabelProps,
 } from 'recharts';
 import { neutraliseCsvRows } from '../../shared/csv';
+import { tallyTestResult } from '../../shared/testScoring';
 import { useUsers } from '../apiInterface';
 import { GlobalContext, TestingContext } from '../Context';
 import { hasModelField } from '../modelFields';
@@ -88,20 +89,6 @@ const dailyChart = {
   passed: { label: 'Passed', color: '#5cb85c' },
   failed: { label: 'Failed', color: '#d9534f' },
 } satisfies ChartConfig;
-// Animals found and extra marks. Older results kept overcounts as negative misses.
-function tally(result: TestResult) {
-  if (result.falsePositives != null) {
-    return {
-      found: result.testAnimals - result.totalMissedAnimals,
-      over: result.falsePositives,
-    };
-  }
-  const counted = result.testAnimals - result.totalMissedAnimals;
-  return {
-    found: Math.min(counted, result.testAnimals),
-    over: Math.max(0, counted - result.testAnimals),
-  };
-}
 
 const accuracyChart = {
   difference: { label: 'Over/under count' },
@@ -232,9 +219,8 @@ export default function Results() {
 
   const passed = (result: TestResult) => {
     const total = result.testAnimals;
-    const { found, over } = tally(result);
+    const { found, over } = tallyTestResult(result);
     const band = accuracy / 100;
-    // Wrong labels count against the upper bound, never towards the lower one.
     return (
       found >= total * band &&
       (ignoreOvercounts || found + over <= total * (2 - band))
@@ -397,13 +383,13 @@ export default function Results() {
         meta: { className: 'text-right tabular-nums' },
       },
       {
-        accessorFn: (r) => r.testAnimals - tally(r).found,
+        accessorFn: (r) => r.testAnimals - tallyTestResult(r).found,
         id: 'missed',
         header: 'Missed',
         meta: { className: 'text-right tabular-nums' },
       },
       {
-        accessorFn: (r) => tally(r).over,
+        accessorFn: (r) => tallyTestResult(r).over,
         id: 'over',
         header: 'Overcounted',
         meta: { className: 'text-right tabular-nums' },
@@ -482,8 +468,8 @@ export default function Results() {
           date: r.createdAt,
           testFrom: r.testPreset.name,
           testAnimals: r.testAnimals,
-          missedAnimals: r.testAnimals - tally(r).found,
-          overcounted: tally(r).over,
+          missedAnimals: r.testAnimals - tallyTestResult(r).found,
+          overcounted: tallyTestResult(r).over,
           passed: passed(r),
         })),
       ),

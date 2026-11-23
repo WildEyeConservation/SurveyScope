@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { countTestAnnotations, countTestKey } from './testScoring';
+import {
+  countTestAnnotations,
+  countTestKey,
+  tallyTestResult,
+} from './testScoring';
 
 const location = { x: 100, y: 100, width: 50, height: 50 };
 const names = { a: 'oryx', b: 'kudu' };
@@ -102,5 +106,33 @@ test('an empty box has an empty key', () => {
       location,
     ),
     [],
+  );
+});
+
+test('tallies every stored result format on totals, whatever the label', () => {
+  const totals = { found: 2, over: 0 };
+  // Graded by label: one wrong label counted as a miss and an extra mark.
+  assert.deepEqual(
+    tallyTestResult({
+      testAnimals: 2,
+      totalMissedAnimals: 1,
+      falsePositives: 1,
+    }),
+    totals,
+  );
+  assert.deepEqual(
+    tallyTestResult({
+      testAnimals: 2,
+      totalMissedAnimals: 0,
+      falsePositives: 0,
+    }),
+    totals,
+  );
+  assert.deepEqual(
+    tallyTestResult({ testAnimals: 2, totalMissedAnimals: -1 }),
+    {
+      found: 2,
+      over: 1,
+    },
   );
 });

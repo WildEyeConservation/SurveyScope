@@ -71,3 +71,19 @@ export function countTestAnnotations(
   }
   return counts;
 }
+
+// Older rows stored overcounts as negative misses, or split them by label.
+export function tallyTestResult(result: {
+  testAnimals: number;
+  totalMissedAnimals: number;
+  falsePositives?: number | null;
+}) {
+  const marked =
+    result.testAnimals -
+    result.totalMissedAnimals +
+    (result.falsePositives ?? 0);
+  return {
+    found: Math.min(marked, result.testAnimals),
+    over: Math.max(0, marked - result.testAnimals),
+  };
+}

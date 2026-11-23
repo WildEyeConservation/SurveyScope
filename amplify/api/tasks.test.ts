@@ -824,27 +824,22 @@ describe('review fixes', () => {
     );
   });
 
-  it("keeps a tester's own test answers out of their leases", async () => {
+  it('shows a tester every mark on their leased images, test spots included', async () => {
     const data = testedFixture();
-    const { tasks: ctx, models } = as(
-      data,
-      'annotator',
-      new MemoryQueue([work()]),
-    );
+    const { tasks: ctx } = as(data, 'annotator', new MemoryQueue([work()]));
     const [task] = (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 }))
       .data;
     assert.ok(task);
     const fresh = as(data, 'annotator');
-    assert.equal(
+    assert.ok(
       (await fresh.models.run('Annotation', 'get', [{ id: 'ans' }])).data,
-      null,
     );
     assert.ok(
       (await fresh.models.run('Annotation', 'get', [{ id: 'free' }])).data,
     );
     assert.equal(
       await fresh.models.canSubscribe('Annotation', 'imageSet', 'img1_a1'),
-      false,
+      true,
     );
     assert.equal(
       await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a1'),
@@ -854,37 +849,6 @@ describe('review fixes', () => {
     assert.equal(
       await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a2'),
       false,
-    );
-    assert.equal(
-      await fresh.models.canSubscribe('Annotation', 'imageId', 'img2'),
-      false,
-    );
-    // Someone not tested sees the image as before.
-    data.tables.OrganizationMembership.find(
-      (m) => m.userId === 'annotator',
-    )!.isTested = false;
-    assert.ok(
-      (
-        await as(data, 'annotator').models.run('Annotation', 'get', [
-          { id: 'ans' },
-        ])
-      ).data,
-    );
-    void models;
-  });
-
-  it("serves tasks on a tester's own test box but hides its answers", async () => {
-    const data = testedFixture();
-    const queue = new MemoryQueue([work('overlap')]);
-    const ctx = as(data, 'annotator', queue).tasks;
-    assert.equal(
-      (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data.length,
-      1,
-    );
-    const fresh = as(data, 'annotator');
-    assert.equal(
-      (await fresh.models.run('Annotation', 'get', [{ id: 'ans' }])).data,
-      null,
     );
   });
 
@@ -943,7 +907,7 @@ describe('review fixes', () => {
     );
   });
 
-  it('grades each spot once, counts wrong labels and repeats tests only once all are taken', async () => {
+  it('grades each spot once, on totals whatever the label, and repeats tests only once all are taken', async () => {
     const data = fixture();
     data.tables.Category.push({
       id: 'jz',
@@ -963,8 +927,8 @@ describe('review fixes', () => {
     });
     const [result] = data.tables.TestResult;
     assert.equal(result.testAnimals, 2);
-    assert.equal(result.totalMissedAnimals, 1);
-    assert.equal(result.falsePositives, 1);
+    assert.equal(result.totalMissedAnimals, 0);
+    assert.equal(result.falsePositives, 0);
     assert.deepEqual(
       data.tables.TestResultCategoryCount.map((c) => [
         c.categoryName,
@@ -1204,7 +1168,7 @@ describe('review fixes', () => {
     });
   });
 
-  it('filters image queries row by row and keeps hidden answers unchangeable', async () => {
+  it("lists and edits the marks on a tester's own test spot like any other", async () => {
     const data = testedFixture();
     const { tasks: ctx } = as(
       data,
@@ -1216,30 +1180,11 @@ describe('review fixes', () => {
     const rows = await fresh.run('Annotation', 'annotationsByImageIdAndSetId', [
       { imageId: 'img1', setId: { eq: 'a1' } },
     ]);
-    assert.deepEqual(
-      (rows.data as { id: string }[]).map((a) => a.id),
-      ['free'],
-    );
-    await refused(
-      fresh.run('Annotation', 'update', [{ id: 'ans', categoryId: 'j1' }]),
-    );
-    await refused(fresh.run('Annotation', 'delete', [{ id: 'ans' }]));
-    // The tester's own marks inside the box stay theirs to see and change.
-    const mine = await fresh.run('Annotation', 'create', [
-      {
-        projectId: 'p1',
-        setId: 'a1',
-        imageId: 'img1',
-        categoryId: 'j1',
-        x: 51,
-        y: 51,
-      },
+    assert.deepEqual((rows.data as { id: string }[]).map((a) => a.id).sort(), [
+      'ans',
+      'free',
     ]);
-    const id = (mine.data as { id: string }).id;
-    assert.ok(
-      (await as(data, 'annotator').models.run('Annotation', 'get', [{ id }]))
-        .data,
-    );
+    await fresh.run('Annotation', 'update', [{ id: 'ans', categoryId: 'j1' }]);
   });
 
   it('treats labels that differ in case as one answer', async () => {
@@ -1355,15 +1300,14 @@ describe('review fixes', () => {
     assert.equal(data.states.get('annotator|cadence#p1')?.unannotated, 1);
   });
 
-  it("holds back a review of someone else's mark inside the tester's own test box", async () => {
+  it("serves a review of a mark inside the tester's own test spot", async () => {
     const data = testedFixture();
     const queue = new MemoryQueue([{ body: { annotation: { id: 'ans' } } }]);
     const ctx = as(data, 'annotator', queue).tasks;
-    assert.deepEqual(
-      (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data,
-      [],
+    assert.equal(
+      (await tasks.receiveBatch(ctx, { queueId: 'q1', max: 1 })).data.length,
+      1,
     );
-    assert.deepEqual(queue.visibilities, [['receipt-msg-0', 30]]);
   });
 
   it('lets a pair go only once it is saved or skipped', async () => {
