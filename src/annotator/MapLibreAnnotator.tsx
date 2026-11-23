@@ -267,6 +267,14 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
           height: location.height,
         }
       : undefined;
+  const writeBounds = allowOutside
+    ? {
+        x: image.width / 2,
+        y: image.height / 2,
+        width: image.width,
+        height: image.height,
+      }
+    : locationBounds;
 
   const menuItems = useImageMenuItems({
     image,
@@ -279,6 +287,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   menuItemsRef.current = menuItems;
   const locationBoundsRef = useRef(locationBounds);
   locationBoundsRef.current = locationBounds;
+  const writeBoundsRef = useRef(writeBounds);
+  writeBoundsRef.current = writeBounds;
   // Read at hover time so tags arriving later show up without rebinding the
   // map's interaction handlers.
   const infoTagsRef = useRef(infoTags);
@@ -682,7 +692,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       if (!annotation) return;
       const x = Math.round(pos.x);
       const y = Math.round(pos.y);
-      const bounds = locationBoundsRef.current;
+      const bounds = writeBoundsRef.current;
       if (bounds && !isWithinLocationBounds({ x, y }, bounds)) {
         refreshAnnotationSource(); // revert
         return;
@@ -703,7 +713,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       if (featureAt(e.point)) return; // clicks on markers never create
       const px = lngLat2px(e.lngLat.lng, e.lngLat.lat);
       const xy = { x: Math.round(px.x), y: Math.round(px.y) };
-      const bounds = locationBoundsRef.current;
+      const bounds = writeBoundsRef.current;
       if (bounds && !isWithinLocationBounds(xy, bounds)) return;
       if (!currentCategory || !source || !project) return;
       annotationsHook.create({
@@ -951,7 +961,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       event.stopPropagation();
       const x = Math.round(cursorPxRef.current.x);
       const y = Math.round(cursorPxRef.current.y);
-      const bounds = locationBoundsRef.current;
+      const bounds = writeBoundsRef.current;
       if (bounds && !isWithinLocationBounds({ x, y }, bounds)) return;
       annotationsHook.create({
         categoryId: category.id,
