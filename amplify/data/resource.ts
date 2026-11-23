@@ -610,7 +610,7 @@ export const schema = a
         annotationSetId: a.id().required(),
         testAnimals: a.integer().required(),
         totalMissedAnimals: a.integer().required(),
-        // Marks beyond the answer key for their label, wrong labels included.
+        // Marks beyond the answer key's total, whatever their label.
         falsePositives: a.integer(),
         passedOnTotal: a.boolean().required(),
         // Set when per-label counts were recorded for every linked label.
