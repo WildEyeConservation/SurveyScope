@@ -85,6 +85,22 @@ test('floors negative counters and times and drops times over the cap', () => {
   assert.equal(overCap.searchTime, 0);
 });
 
+test('caps waiting time at two minutes whatever the outcome', () => {
+  const search = statsDeltaFromObservation({
+    ...observation,
+    annotationCount: 0,
+    waitingTime: 10 * 60 * 60 * 1000,
+  });
+  assert.equal(search.waitingTime, 120_000);
+
+  const sighting = statsDeltaFromObservation({
+    ...observation,
+    annotationCount: 2,
+    waitingTime: 10 * 60 * 60 * 1000,
+  });
+  assert.equal(sighting.waitingTime, 120_000);
+});
+
 test('uses separate stable receipt ids for each side effect', () => {
   assert.equal(statsReceiptId('event-1'), 'stats:event-1');
   assert.equal(queueReceiptId('event-1'), 'queue:event-1');

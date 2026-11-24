@@ -74,6 +74,8 @@ function requiredString(
   return value;
 }
 
+const MAX_WAITING_TIME_MS = 120 * 1000;
+
 function finiteNumber(value: unknown): number {
   const number = typeof value === 'number' ? value : Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
@@ -98,15 +100,18 @@ export function statsDeltaFromObservation(
   }
 
   const annotationCount = Math.max(finiteNumber(input.annotationCount), 0);
-  const waitingTime = Math.max(finiteNumber(input.waitingTime), 0);
   const sightingCount = annotationCount > 0 ? 1 : 0;
+  const maxTime = sightingCount > 0 ? 900 * 1000 : 120 * 1000;
   let activeTime = Math.max(finiteNumber(input.timeTaken), 0);
-  if (
-    activeTime >
-    (sightingCount > 0 ? 900 * 1000 : 120 * 1000)
-  ) {
+  if (activeTime > maxTime) {
     activeTime = 0;
   }
+  // Real waits take seconds; longer ones mean the user walked away or lost
+  // connection, so cap them (older clients sent them uncapped).
+  const waitingTime = Math.min(
+    Math.max(finiteNumber(input.waitingTime), 0),
+    MAX_WAITING_TIME_MS
+  );
 
   const queueId =
     typeof input.queueId === 'string' && input.queueId.length > 0
