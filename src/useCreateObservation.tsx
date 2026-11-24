@@ -37,6 +37,8 @@ interface UseCreateObservationProps {
 // Time limits in milliseconds (matching server-side validation)
 const MAX_TIME_WITH_ANNOTATIONS = 900 * 1000; // 15 minutes
 const MAX_TIME_WITHOUT_ANNOTATIONS = 120 * 1000; // 2 minutes
+// Real loads take seconds; longer means the user walked away or lost connection.
+const MAX_LOAD_TIME = 120 * 1000;
 
 export default function useCreateObservation(props: UseCreateObservationProps) {
   const {
@@ -153,10 +155,16 @@ export default function useCreateObservation(props: UseCreateObservationProps) {
           // in which case the user waited 0ms (never negative).
           waitingTime:
             visibleTimestamp && fullyLoadedTimestamp
-              ? Math.max(0, fullyLoadedTimestamp - visibleTimestamp)
+              ? Math.min(
+                  MAX_LOAD_TIME,
+                  Math.max(0, fullyLoadedTimestamp - visibleTimestamp),
+                )
               : 0,
           loadingTime: fullyLoadedTimestamp
-            ? fullyLoadedTimestamp - (startLoadingTimestamp ?? 0)
+            ? Math.min(
+                MAX_LOAD_TIME,
+                fullyLoadedTimestamp - (startLoadingTimestamp ?? 0),
+              )
             : 0,
           locationId: id,
           projectId: project.id,
