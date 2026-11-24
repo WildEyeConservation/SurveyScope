@@ -24,14 +24,18 @@ function fixture() {
     setId: 's1',
     categoryId: `zebra-${n}`,
     imageId: `img-${i}`,
-    x: 100 + i,
-    y: 200 + i,
+    x: 1000 + i,
+    y: 1000 + i,
     source: i % 2 ? 'manual' : 'scoutbot',
     reviewedBy: i === 7 ? 'qc' : null,
     objectId: null,
     createdAt: '2026-01-01T00:00:00Z',
   }));
+  const images = [...annotations.map((a) => a.imageId), 'img-oov', 'img-e'].map(
+    (id) => ({ id, width: 4000, height: 3000 }),
+  );
   const data = new MemoryData({
+    Image: [...images, { id: 'img-edge', width: 4000, height: 3000 }],
     OrganizationMembership: [
       { organizationId: org1, userId: 'admin', isAdmin: true },
       { organizationId: org1, userId: 'annotator', isAdmin: false },
@@ -72,6 +76,17 @@ function fixture() {
     Annotation: [
       ...annotations,
       {
+        id: `edge-${n}`,
+        projectId: p1,
+        setId: 's1',
+        categoryId: `zebra-${n}`,
+        imageId: 'img-edge',
+        x: 3990,
+        y: 1500,
+        source: 'manual',
+        reviewedBy: 'qc',
+      },
+      {
         id: `oov-${n}`,
         projectId: p1,
         setId: 's1',
@@ -88,8 +103,8 @@ function fixture() {
         setId: 's2',
         categoryId: `eland2-${n}`,
         imageId: 'img-e',
-        x: 5,
-        y: 6,
+        x: 500,
+        y: 600,
         source: 'manual',
       },
     ],
@@ -108,7 +123,7 @@ async function call(
     images: {
       crop: async (imageId, point) => {
         crops.push({ imageId, point });
-        return { width: 1, height: 1, point, tiles: [] } as NotebookCrop;
+        return { size: 1, type: 'image/webp', data: '' } as NotebookCrop;
       },
     },
   });
@@ -160,11 +175,18 @@ describe('species notebook', () => {
         { projectId: p1, name: 'Zebra' },
       )) as NotebookExamples;
       for (const e of examples)
-        await call(data, 'annotator', 'speciesNotebookCrop', {
-          token: e.token,
-        }, crops as never);
+        await call(
+          data,
+          'annotator',
+          'speciesNotebookCrop',
+          {
+            token: e.token,
+          },
+          crops as never,
+        );
     }
     assert.equal(new Set(crops.map((c) => c.imageId)).size, 20);
+    assert.ok(!crops.some((c) => c.imageId === 'img-edge'));
   });
 
   it('gives survey admins the Explore target', async () => {
@@ -213,7 +235,34 @@ describe('species notebook', () => {
       { token: examples[0].token },
       crops,
     );
-    assert.deepEqual(crops, [{ imageId: 'img-e', point: { x: 5, y: 6 } }]);
+    assert.deepEqual(crops, [{ imageId: 'img-e', point: { x: 500, y: 600 } }]);
+  });
+
+  it("keeps images holding the caller's tests out of the notebook", async () => {
+    const { data, p1 } = fixture();
+    const ask = async () =>
+      (
+        (await call(data, 'annotator', 'speciesNotebookExamples', {
+          projectId: p1,
+          name: 'Eland',
+        })) as NotebookExamples
+      ).examples;
+    const [before] = await ask();
+    const membership = data.tables.OrganizationMembership.find(
+      (m) => m.userId === 'annotator',
+    )!;
+    membership.isTested = true;
+    data.tables.TestPresetProject = [{ testPresetId: 'tp', projectId: p1 }];
+    data.tables.TestPresetLocation = [
+      { testPresetId: 'tp', locationId: 'loc', annotationSetId: 's2' },
+    ];
+    data.tables.Location = [
+      { id: 'loc', imageId: 'img-e', x: 500, y: 600, width: 100, height: 100 },
+    ];
+    assert.deepEqual(await ask(), []);
+    await denied(
+      call(data, 'annotator', 'speciesNotebookCrop', { token: before.token }),
+    );
   });
 
   it('refuses outsiders, other users and tampered tokens', async () => {

@@ -1,11 +1,10 @@
 import { Spinner } from '@/components/ui/spinner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useContext, useEffect, useState, type ReactNode } from 'react';
-import { GlobalContext } from '../Context';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CropView } from './CropView';
 import { cropQuery } from './data';
 import { EmptyNotice } from './EmptyNotice';
-import { useLabelGallery } from './hooks';
+import { useLabelGallery, useNotebookScope } from './hooks';
 import type { LabelRef, NotebookExample } from './types';
 
 const BEHIND = 1;
@@ -42,7 +41,7 @@ export function ExamplePager({
   onCurrent: (item: NotebookExample | null) => void;
   onViewerKey: (event: React.KeyboardEvent) => void;
 }) {
-  const { client } = useContext(GlobalContext)!;
+  const scope = useNotebookScope();
   const queryClient = useQueryClient();
   const gallery = useLabelGallery(label);
   const key = `${label.projectId}/${label.name}`;
@@ -55,16 +54,16 @@ export function ExamplePager({
   useEffect(() => onCurrent(item), [onCurrent, item]);
 
   const crop = useQuery({
-    ...cropQuery(client, item?.token ?? ''),
+    ...cropQuery(scope, item?.token ?? ''),
     enabled: Boolean(item),
   });
   useEffect(() => {
     for (let i = index - BEHIND; i <= index + AHEAD; i++) {
       const near = items[i];
       if (near && i !== index)
-        void queryClient.prefetchQuery(cropQuery(client, near.token));
+        void queryClient.prefetchQuery(cropQuery(scope, near.token));
     }
-  }, [items, index, client, queryClient]);
+  }, [items, index, scope, queryClient]);
 
   const step = (delta: number) => {
     const next = index + delta;

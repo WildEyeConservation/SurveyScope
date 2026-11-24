@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto';
 import { EncryptJWT, jwtDecrypt } from 'jose';
+import { createHash } from 'node:crypto';
 import {
   arrangeItems,
+  cropFits,
   isModelSource,
   matchingCategories,
   NOTEBOOK_LIMIT,
@@ -88,7 +89,13 @@ function categoriesOf(data: DataLayer, projectId: string) {
           'categoriesByProjectId',
           { projectId },
           {
-            selectionSet: ['id', 'name', 'color', 'projectId', 'annotationSetId'],
+            selectionSet: [
+              'id',
+              'name',
+              'color',
+              'projectId',
+              'annotationSetId',
+            ],
             limit: 1000,
             nextToken,
           },
@@ -115,59 +122,79 @@ function otherSurveys(data: DataLayer, organizationId: string) {
   );
 }
 
-// Only the first page, so asking again never reveals more annotations.
+function imageSize(data: DataLayer, id: string) {
+  return cached(`image:${id}`, async () => {
+    const image = (
+      await data.get('Image', { id }, { selectionSet: ['width', 'height'] })
+    ).data;
+    return {
+      width: Number(image?.width) || 0,
+      height: Number(image?.height) || 0,
+    };
+  });
+}
+
+// No paging, so callers cannot ask for more examples.
 function firstAnnotations(data: DataLayer, categoryId: string, limit: number) {
   return cached(`annotations:${categoryId}:${limit}`, async () => {
-    const page = await data.query(
-      'Annotation',
-      'annotationsByCategoryId',
-      { categoryId },
-      {
-        selectionSet: [
-          'id',
-          'x',
-          'y',
-          'imageId',
-          'setId',
-          'categoryId',
-          'projectId',
-          'objectId',
-          'source',
-          'reviewedBy',
-          'reviewCatId',
-          'createdAt',
-          'oov',
-        ],
-        limit,
-      },
+    const candidates = await firstPage(data, categoryId, limit * 2);
+    const fits = await Promise.all(
+      candidates.map(async (c) =>
+        cropFits(c, await imageSize(data, c.imageId)),
+      ),
     );
-    if (page.errors?.length && !page.data)
-      throw new Error(JSON.stringify(page.errors));
-    return (page.data ?? [])
-      .slice(0, limit)
-      .filter(
-        (row) =>
-          !row.oov &&
-          typeof row.imageId === 'string' &&
-          typeof row.x === 'number' &&
-          typeof row.y === 'number',
-      )
-      .map(
-        (row): Candidate => ({
-          id: String(row.id),
-          x: row.x as number,
-          y: row.y as number,
-          imageId: row.imageId as string,
-          setId: String(row.setId),
-          categoryId: String(row.categoryId),
-          projectId: String(row.projectId),
-          objectId: (row.objectId as string | null) ?? null,
-          source: (row.source as string | null) ?? null,
-          createdAt: (row.createdAt as string | null) ?? null,
-          reviewed: Boolean(row.reviewedBy || row.reviewCatId),
-        }),
-      );
+    return candidates.filter((_, i) => fits[i]).slice(0, limit);
   });
+}
+
+async function firstPage(data: DataLayer, categoryId: string, limit: number) {
+  const page = await data.query(
+    'Annotation',
+    'annotationsByCategoryId',
+    { categoryId },
+    {
+      selectionSet: [
+        'id',
+        'x',
+        'y',
+        'imageId',
+        'setId',
+        'categoryId',
+        'projectId',
+        'objectId',
+        'source',
+        'reviewedBy',
+        'reviewCatId',
+        'createdAt',
+        'oov',
+      ],
+      limit,
+    },
+  );
+  if (page.errors?.length && !page.data)
+    throw new Error(JSON.stringify(page.errors));
+  return (page.data ?? [])
+    .slice(0, limit)
+    .filter(
+      (row) =>
+        !row.oov &&
+        typeof row.imageId === 'string' &&
+        typeof row.x === 'number' &&
+        typeof row.y === 'number',
+    )
+    .map((row): Candidate => ({
+      id: String(row.id),
+      x: row.x as number,
+      y: row.y as number,
+      imageId: row.imageId as string,
+      setId: String(row.setId),
+      categoryId: String(row.categoryId),
+      projectId: String(row.projectId),
+      objectId: (row.objectId as string | null) ?? null,
+      source: (row.source as string | null) ?? null,
+      createdAt: (row.createdAt as string | null) ?? null,
+      reviewed: Boolean(row.reviewedBy || row.reviewCatId),
+    }));
 }
 
 const tokenKey = (ctx: NotebookContext) =>
@@ -192,6 +219,11 @@ async function exampleToken(
     .setIssuedAt()
     .setExpirationTime(TOKEN_LIFETIME)
     .encrypt(tokenKey(ctx));
+}
+
+// A crop could show a test answer, so images holding the caller's tests are left out.
+async function testImages(ctx: NotebookContext) {
+  return new Set((await ctx.access.testPool()).boxes.keys());
 }
 
 async function toExample(
@@ -231,11 +263,7 @@ async function borrowedCategories(
   ).flat();
 }
 
-// Label names from the organisation's other surveys, for the search list.
-export async function labels(
-  ctx: NotebookContext,
-  args: Row,
-): Promise<Result> {
+export async function labels(ctx: NotebookContext, args: Row): Promise<Result> {
   const surveyId = required(args, 'projectId');
   await ctx.access.requireSurveyMember(surveyId);
   const names = new Set(
@@ -251,6 +279,9 @@ export async function examples(
   const surveyId = required(args, 'projectId');
   const name = required(args, 'name');
   await ctx.access.requireSurveyMember(surveyId);
+  const tested = await testImages(ctx);
+  const usable = (items: Candidate[]) =>
+    items.filter((item) => !tested.has(item.imageId));
   const own = (await categoriesOf(ctx.data, surveyId)).filter(
     (c) => c.name === name,
   );
@@ -258,7 +289,7 @@ export async function examples(
   for (const category of own) {
     const left = NOTEBOOK_LIMIT - found.length;
     if (left <= 0) break;
-    found.push(...(await firstAnnotations(ctx.data, category.id, left)));
+    found.push(...usable(await firstAnnotations(ctx.data, category.id, left)));
   }
   let items = arrangeItems(found);
   let borrowedSurveys = 0;
@@ -269,11 +300,13 @@ export async function examples(
       surveyId,
     ).slice(0, NOTEBOOK_LIMIT);
     const per = Math.max(1, Math.floor(NOTEBOOK_LIMIT / matches.length));
-    const borrowed = (
-      await Promise.all(
-        matches.map((c) => firstAnnotations(ctx.data, c.id, per)),
-      )
-    ).flat();
+    const borrowed = usable(
+      (
+        await Promise.all(
+          matches.map((c) => firstAnnotations(ctx.data, c.id, per)),
+        )
+      ).flat(),
+    );
     items = sampleAcrossSurveys(borrowed, NOTEBOOK_LIMIT);
     borrowedSurveys = new Set(borrowed.map((item) => item.projectId)).size;
   }
@@ -306,6 +339,7 @@ export async function crop(ctx: NotebookContext, args: Row): Promise<Result> {
     throw forbidden();
   // Leaving the survey ends access to its examples.
   await ctx.access.requireSurveyMember(claims.s);
+  if ((await testImages(ctx)).has(claims.i)) throw forbidden();
   return {
     data: await ctx.images.crop(claims.i, { x: claims.x, y: claims.y }),
   };

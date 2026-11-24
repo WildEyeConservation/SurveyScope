@@ -97,7 +97,7 @@ async function requestContext(token: Actor, fresh = false) {
   models.afterWrite = (model, op, row) => noteSavedWork(tasks, model, op, row);
   const images = {
     crop: async (imageId: string, point: { x: number; y: number }) => {
-      const result = await invokeResolver('imageAccess', {
+      const result = await invokeResolver('generateTile', {
         typeName: 'Query',
         fieldName: 'speciesNotebookCrop',
         arguments: { imageId, ...point },

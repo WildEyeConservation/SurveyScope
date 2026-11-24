@@ -2,6 +2,8 @@ import type { DataClient } from '../../amplify/shared/data-schema.generated';
 import { fetchAllPaginatedResults } from '../utils';
 import type { NotebookCrop, NotebookExamples, SurveyCategory } from './types';
 
+export type NotebookScope = { client: DataClient; userId: string };
+
 const STALE = 5 * 60 * 1000;
 // Example tokens last half an hour on the server.
 const TOKEN_STALE = 20 * 60 * 1000;
@@ -10,14 +12,16 @@ type JsonResult = { data?: unknown; errors?: { message?: string }[] | null };
 
 async function json<T>(call: Promise<JsonResult>): Promise<T> {
   const { data, errors } = await call;
-  if (errors?.length)
-    throw new Error(errors.map((e) => e.message).join('; '));
+  if (errors?.length) throw new Error(errors.map((e) => e.message).join('; '));
   return (typeof data === 'string' ? JSON.parse(data) : data) as T;
 }
 
-export function surveyCategoriesQuery(client: DataClient, projectId: string) {
+export function surveyCategoriesQuery(
+  { client, userId }: NotebookScope,
+  projectId: string,
+) {
   return {
-    queryKey: ['species-notebook', 'categories', projectId],
+    queryKey: ['species-notebook', userId, 'categories', projectId],
     staleTime: STALE,
     meta: { persist: false },
     queryFn: () =>
@@ -35,10 +39,12 @@ export function surveyCategoriesQuery(client: DataClient, projectId: string) {
   };
 }
 
-// Label names used in the organisation's other surveys.
-export function otherLabelsQuery(client: DataClient, projectId: string) {
+export function otherLabelsQuery(
+  { client, userId }: NotebookScope,
+  projectId: string,
+) {
   return {
-    queryKey: ['species-notebook', 'other-labels', projectId],
+    queryKey: ['species-notebook', userId, 'other-labels', projectId],
     staleTime: STALE,
     meta: { persist: false },
     queryFn: async () =>
@@ -51,14 +57,15 @@ export function otherLabelsQuery(client: DataClient, projectId: string) {
 }
 
 export function examplesQuery(
-  client: DataClient,
+  { client, userId }: NotebookScope,
   projectId: string,
   name: string,
 ) {
   return {
-    queryKey: ['species-notebook', 'examples', projectId, name],
+    queryKey: ['species-notebook', userId, 'examples', projectId, name],
     staleTime: TOKEN_STALE,
     gcTime: TOKEN_STALE,
+    refetchInterval: TOKEN_STALE,
     meta: { persist: false },
     queryFn: () =>
       json<NotebookExamples>(
@@ -67,9 +74,9 @@ export function examplesQuery(
   };
 }
 
-export function cropQuery(client: DataClient, token: string) {
+export function cropQuery({ client, userId }: NotebookScope, token: string) {
   return {
-    queryKey: ['species-notebook', 'crop', token],
+    queryKey: ['species-notebook', userId, 'crop', token],
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
     meta: { persist: false },

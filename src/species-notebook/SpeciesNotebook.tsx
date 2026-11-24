@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { useContext, useEffect, useState } from 'react';
 import { matchPath, useLocation } from 'react-router-dom';
 import { UserContext } from '../Context';
+import { onImageSessionChange } from '../StorageLayer';
 import { SpeciesPalette } from './SpeciesPalette';
 import { isSpeciesSearchShortcut, speciesShortcutLabel } from './shortcut';
 import { notebook, useNotebookState } from './store';
@@ -29,8 +30,18 @@ export default function SpeciesNotebook() {
   const { label } = useNotebookState();
   const projectId = label?.projectId ?? surveyId;
 
+  useEffect(
+    () =>
+      onImageSessionChange(() => {
+        void queryClient.cancelQueries({ queryKey: ['species-notebook'] });
+        queryClient.removeQueries({ queryKey: ['species-notebook'] });
+      }),
+    [queryClient],
+  );
+
   useEffect(() => {
     if (cachedFor !== userId) {
+      void queryClient.cancelQueries({ queryKey: ['species-notebook'] });
       queryClient.removeQueries({ queryKey: ['species-notebook'] });
       notebook.closePalette();
       cachedFor = userId;

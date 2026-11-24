@@ -10,16 +10,11 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { GlobalContext } from '../Context';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCanExplore } from '../useCanExplore';
-import {
-  examplesQuery,
-  otherLabelsQuery,
-  surveyCategoriesQuery,
-} from './data';
+import { examplesQuery, otherLabelsQuery, surveyCategoriesQuery } from './data';
 import { ExamplePager } from './ExamplePager';
-import { openExample, useOrganizationId } from './hooks';
+import { openExample, useNotebookScope, useOrganizationId } from './hooks';
 import { buildPaletteRows, type PaletteRow } from './paletteRows';
 import { stopKeys } from './shortcut';
 import { notebook, useNotebookState } from './store';
@@ -90,7 +85,7 @@ function saveLastSearch(projectId: string, search: LastSearch) {
 }
 
 export function SpeciesPalette({ projectId }: { projectId: string }) {
-  const { client } = useContext(GlobalContext)!;
+  const scope = useNotebookScope();
   const { paletteOpen, label: openedOn } = useNotebookState();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
@@ -116,14 +111,14 @@ export function SpeciesPalette({ projectId }: { projectId: string }) {
   }, [paletteOpen, projectId, query, activeName]);
 
   const categories = useQuery({
-    ...surveyCategoriesQuery(client, projectId),
+    ...surveyCategoriesQuery(scope, projectId),
     enabled: paletteOpen,
   });
   const organizationId = useOrganizationId(paletteOpen ? projectId : undefined);
   const canExplore = useCanExplore();
   const showOpen = canExplore(projectId, organizationId);
   const others = useQuery({
-    ...otherLabelsQuery(client, projectId),
+    ...otherLabelsQuery(scope, projectId),
     enabled: paletteOpen && query.trim().length > 0,
   });
   const otherNames = others.data;
@@ -147,11 +142,9 @@ export function SpeciesPalette({ projectId }: { projectId: string }) {
     if (!paletteOpen || activeIndex < 0) return;
     for (const row of [rows[activeIndex + 1], rows[activeIndex - 1]]) {
       if (!row?.inSurvey || row.categoryIds.length === 0) continue;
-      void queryClient.prefetchQuery(
-        examplesQuery(client, projectId, row.name),
-      );
+      void queryClient.prefetchQuery(examplesQuery(scope, projectId, row.name));
     }
-  }, [paletteOpen, rows, activeIndex, projectId, queryClient, client]);
+  }, [paletteOpen, rows, activeIndex, projectId, queryClient, scope]);
 
   const move = (delta: number) => {
     if (rows.length === 0) return;

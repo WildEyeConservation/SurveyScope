@@ -1,6 +1,7 @@
 import { env } from '$amplify/env/createChainShare';
 import { Amplify } from 'aws-amplify';
 import { generateClient, GraphQLResult } from 'aws-amplify/data';
+import { selectSourceKeyForImage } from '../../../shared/imageSourceKey';
 import type { CreateChainShareHandler } from '../../data/resource';
 import { checkedGraph, shareLifecycle, mapWithConcurrency } from '../../chain-shares/lifecycle';
 import {
@@ -150,9 +151,6 @@ const createSharedChainCategory = /* GraphQL */ `
     createSharedChainCategory(input: $input) { id }
   }
 `;
-// --- selectSourceKeyForImage (kept in sync with -------------------------------
-// --- src/chain-viewer/utils/imageSourceKey.ts; src cannot be imported here) ---
-
 interface ImageFileRow {
   id?: string;
   key?: string | null;
@@ -161,44 +159,6 @@ interface ImageFileRow {
   projectId?: string | null;
   imageId?: string | null;
   group?: string | null;
-}
-function normalizeImagePath(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return value.replace(/\\/g, '/').replace(/^images\//, '');
-}
-function isJpegFile(file: ImageFileRow): boolean {
-  const type = file.type?.toLowerCase() ?? '';
-  const key = normalizeImagePath(file.key);
-  const path = normalizeImagePath(file.path);
-  return (
-    type === 'image/jpeg' ||
-    type === 'image/jpg' ||
-    !!key?.match(/\.jpe?g$/i) ||
-    !!path?.match(/\.jpe?g$/i)
-  );
-}
-function imageFileMatchesOriginalPath(
-  file: ImageFileRow,
-  originalPath: string | null | undefined
-): boolean {
-  const original = normalizeImagePath(originalPath);
-  if (!original) return false;
-  const key = normalizeImagePath(file.key);
-  const path = normalizeImagePath(file.path);
-  return (
-    key === original ||
-    path === original ||
-    !!key?.endsWith(`/${original}`) ||
-    !!path?.endsWith(`/${original}`)
-  );
-}
-function selectSourceKeyForImage(
-  files: ImageFileRow[],
-  originalPath: string | null | undefined
-): string | null {
-  const jpgs = files.filter(isJpegFile);
-  const exact = jpgs.find((file) => imageFileMatchesOriginalPath(file, originalPath));
-  return exact?.key ?? jpgs[0]?.key ?? null;
 }
 
 // --- Amplify client (IAM) ----------------------------------------------------

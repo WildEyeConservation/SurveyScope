@@ -4,6 +4,7 @@ import {
   arrangeItems,
   cropTiles,
   cropWindow,
+  insideImage,
   isModelSource,
   matchingCategories,
   sampleAcrossSurveys,
@@ -126,29 +127,27 @@ test('sampling stops when every survey is used up', () => {
   assert.deepEqual(sampleAcrossSurveys([], 5), []);
 });
 
-test('the crop is centred on the point and stays inside the image', () => {
-  const image = { width: 4000, height: 3000 };
-  assert.deepEqual(cropWindow({ x: 2000, y: 1500 }, image), {
+test('the crop is centred on the point even at the image edge', () => {
+  assert.deepEqual(cropWindow({ x: 2000.4, y: 10 }), {
     left: 1744,
-    top: 1244,
+    top: -246,
     width: 512,
     height: 512,
-  });
-  assert.deepEqual(cropWindow({ x: 10, y: 2990 }, image), {
-    left: 0,
-    top: 2488,
-    width: 512,
-    height: 512,
-  });
-  assert.deepEqual(cropWindow({ x: 50, y: 50 }, { width: 300, height: 200 }), {
-    left: 0,
-    top: 0,
-    width: 300,
-    height: 200,
   });
 });
 
-test('crop tiles are the full-resolution tiles under the window', () => {
+test('only the part of the crop inside the image is read', () => {
+  const image = { width: 4000, height: 3000 };
+  assert.deepEqual(insideImage(cropWindow({ x: 10, y: 2990 }), image), {
+    left: 0,
+    top: 2734,
+    width: 266,
+    height: 266,
+  });
+  assert.equal(insideImage(cropWindow({ x: -600, y: 10 }), image), null);
+});
+
+test('crop tiles are the full-resolution tiles under the area', () => {
   const tiles = cropTiles(
     { left: 1744, top: 1244, width: 512, height: 512 },
     { tileSize: 256, maxZoom: 4 },
@@ -160,12 +159,5 @@ test('crop tiles are the full-resolution tiles under the window', () => {
       '4/5/6', '4/5/7', '4/5/8',
       '4/6/6', '4/6/7', '4/6/8',
     ],
-  );
-  assert.equal(
-    cropTiles({ left: 0, top: 0, width: 512, height: 512 }, {
-      tileSize: 256,
-      maxZoom: 4,
-    }).length,
-    4,
   );
 });

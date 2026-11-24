@@ -8,26 +8,6 @@ const clampScale = (scale: number) =>
 
 type View = { scale: number; x: number; y: number };
 
-async function draw(canvas: HTMLCanvasElement, crop: NotebookCrop) {
-  const bitmaps = await Promise.all(
-    crop.tiles.map(async (tile) => {
-      const bytes = Uint8Array.from(atob(tile.data), (c) => c.charCodeAt(0));
-      return {
-        tile,
-        bitmap: await createImageBitmap(new Blob([bytes], { type: tile.type })),
-      };
-    }),
-  );
-  canvas.width = crop.width;
-  canvas.height = crop.height;
-  const context = canvas.getContext('2d');
-  if (!context) return;
-  for (const { tile, bitmap } of bitmaps) {
-    context.drawImage(bitmap, tile.left, tile.top, tile.size, tile.size);
-    bitmap.close();
-  }
-}
-
 function useSize(element: HTMLElement | null) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   useLayoutEffect(() => {
@@ -44,7 +24,6 @@ function useSize(element: HTMLElement | null) {
   return size;
 }
 
-// A small still around one example, zoomable with the wheel, drag or +/-.
 export function CropView({
   crop,
   color,
@@ -54,12 +33,11 @@ export function CropView({
 }: {
   crop: NotebookCrop;
   color: string;
-  // Screen pixels per image pixel, carried over from the annotator.
+  // Screen pixels per image pixel.
   scale: number | null;
   onScale: (scale: number) => void;
   zoomKey: number;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const size = useSize(box);
   const [view, setView] = useState<View | null>(null);
@@ -73,21 +51,17 @@ export function CropView({
     setView(next);
   };
 
-  useEffect(() => {
-    if (!canvasRef.current) return;
-    setFailed(false);
-    draw(canvasRef.current, crop).catch(() => setFailed(true));
-  }, [crop]);
+  useEffect(() => setFailed(false), [crop]);
 
-  // Each example opens with the point centred.
   useEffect(() => {
     if (!size.width || !size.height) return;
-    const fit = Math.min(size.width / crop.width, size.height / crop.height);
-    const s = clampScale(scale ?? fit);
+    const s = clampScale(
+      scale ?? Math.min(size.width, size.height) / crop.size,
+    );
     show({
       scale: s,
-      x: size.width / 2 - crop.point.x * s,
-      y: size.height / 2 - crop.point.y * s,
+      x: size.width / 2 - (crop.size / 2) * s,
+      y: size.height / 2 - (crop.size / 2) * s,
     });
     // Only a new example or panel size reframes; zooming keeps the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,10 +139,15 @@ export function CropView({
             : undefined,
         }}
       >
-        <canvas
-          ref={canvasRef}
-          className='block'
+        <img
+          src={`data:${crop.type};base64,${crop.data}`}
+          alt=''
+          draggable={false}
+          onError={() => setFailed(true)}
+          className='block max-w-none'
           style={{
+            width: crop.size,
+            height: crop.size,
             imageRendering:
               view && view.scale >= 2 ? 'pixelated' : ('auto' as const),
           }}
@@ -177,8 +156,8 @@ export function CropView({
           className='pointer-events-none absolute rounded-full border-2'
           style={{
             borderColor: color,
-            left: crop.point.x,
-            top: crop.point.y,
+            left: crop.size / 2,
+            top: crop.size / 2,
             width: 28 / (view?.scale ?? 1),
             height: 28 / (view?.scale ?? 1),
             borderWidth: 2 / (view?.scale ?? 1),

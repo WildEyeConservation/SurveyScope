@@ -1,8 +1,6 @@
 import type { TileCoordinate } from './imageTiles';
 
-// The notebook shows what a species looks like, never where it was seen.
 export const NOTEBOOK_LIMIT = 20;
-// Image pixels around each example: enough to recognise the animal.
 export const CROP_SIZE = 512;
 
 export type NotebookCandidate = {
@@ -34,20 +32,8 @@ export type NotebookExamples = {
   borrowedSurveys: number;
 };
 
-export type NotebookCropTile = {
-  left: number;
-  top: number;
-  size: number;
-  type: string;
-  data: string;
-};
-
-export type NotebookCrop = {
-  width: number;
-  height: number;
-  point: { x: number; y: number };
-  tiles: NotebookCropTile[];
-};
+// A square image with the example at its centre.
+export type NotebookCrop = { size: number; type: string; data: string };
 
 const PERSON_SOURCES = ['manual', 'individual-id'];
 
@@ -63,7 +49,6 @@ export function isPrimary(item: { id: string; objectId?: string | null }) {
 const time = (item: NotebookCandidate) =>
   item.createdAt ? Date.parse(item.createdAt) || 0 : 0;
 
-// Prefer a mix of photos among equally ranked examples.
 export function spreadByImage<T extends { imageId: string }>(
   items: readonly T[],
   rank: (item: T) => number,
@@ -147,36 +132,50 @@ export type CropWindow = {
   height: number;
 };
 
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-// Centred on the point, kept inside the image.
 export function cropWindow(
   point: { x: number; y: number },
-  image: { width: number; height: number },
   size = CROP_SIZE,
 ): CropWindow {
-  const width = Math.min(size, image.width);
-  const height = Math.min(size, image.height);
   return {
-    left: Math.round(clamp(point.x - width / 2, 0, image.width - width)),
-    top: Math.round(clamp(point.y - height / 2, 0, image.height - height)),
-    width,
-    height,
+    left: Math.round(point.x) - size / 2,
+    top: Math.round(point.y) - size / 2,
+    width: size,
+    height: size,
   };
 }
 
-// Full-resolution tiles covering the window.
-export function cropTiles(
+export function insideImage(
   crop: CropWindow,
+  image: { width: number; height: number },
+): CropWindow | null {
+  const left = Math.max(0, crop.left);
+  const top = Math.max(0, crop.top);
+  const right = Math.min(image.width, crop.left + crop.width);
+  const bottom = Math.min(image.height, crop.top + crop.height);
+  if (right <= left || bottom <= top) return null;
+  return { left, top, width: right - left, height: bottom - top };
+}
+
+// Padding would show how far the example is from the image edge.
+export function cropFits(
+  point: { x: number; y: number },
+  image: { width: number; height: number },
+): boolean {
+  const crop = cropWindow(point);
+  const area = insideImage(crop, image);
+  return area?.width === crop.width && area.height === crop.height;
+}
+
+export function cropTiles(
+  area: CropWindow,
   pyramid: { tileSize: number; maxZoom: number },
 ): TileCoordinate[] {
   const { tileSize, maxZoom } = pyramid;
   const tiles: TileCoordinate[] = [];
-  const lastRow = Math.floor((crop.top + crop.height - 1) / tileSize);
-  const lastCol = Math.floor((crop.left + crop.width - 1) / tileSize);
-  for (let row = Math.floor(crop.top / tileSize); row <= lastRow; row++)
-    for (let col = Math.floor(crop.left / tileSize); col <= lastCol; col++)
+  const lastRow = Math.floor((area.top + area.height - 1) / tileSize);
+  const lastCol = Math.floor((area.left + area.width - 1) / tileSize);
+  for (let row = Math.floor(area.top / tileSize); row <= lastRow; row++)
+    for (let col = Math.floor(area.left / tileSize); col <= lastCol; col++)
       tiles.push({ z: maxZoom, row, col });
   return tiles;
 }

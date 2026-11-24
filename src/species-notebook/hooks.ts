@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { useContext } from 'react';
-import { GlobalContext } from '../Context';
-import { examplesQuery, surveyCategoriesQuery } from './data';
+import { useContext, useMemo } from 'react';
+import { GlobalContext, UserContext } from '../Context';
+import {
+  examplesQuery,
+  surveyCategoriesQuery,
+  type NotebookScope,
+} from './data';
 import { openInExplore, openInNewTab } from './exploreLink';
 import { notebook } from './store';
 import type { LabelRef, NotebookExample } from './types';
@@ -19,16 +23,22 @@ export function useOrganizationId(projectId: string | undefined) {
   return project.data?.data?.organizationId ?? undefined;
 }
 
-export function useLabelGallery(label: LabelRef | null) {
+export function useNotebookScope(): NotebookScope {
   const { client } = useContext(GlobalContext)!;
+  const userId = useContext(UserContext)?.user?.userId ?? '';
+  return useMemo(() => ({ client, userId }), [client, userId]);
+}
+
+export function useLabelGallery(label: LabelRef | null) {
+  const scope = useNotebookScope();
   const projectId = label?.projectId ?? '';
   const name = label?.name ?? '';
   const categories = useQuery({
-    ...surveyCategoriesQuery(client, projectId),
+    ...surveyCategoriesQuery(scope, projectId),
     enabled: Boolean(label),
   });
   const examples = useQuery({
-    ...examplesQuery(client, projectId, name),
+    ...examplesQuery(scope, projectId, name),
     enabled: Boolean(label),
   });
   const items = examples.data?.examples ?? [];

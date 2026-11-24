@@ -1,11 +1,3 @@
-/**
- * Resolve the JPEG "source key" for an image from its ImageFile rows — the S3
- * key the tile pyramid (`slippymaps/<sourceKey>/...`) is built from.
- *
- * NOTE: a self-contained copy of this logic lives in
- * `amplify/functions/createChainShare/handler.ts`. Keep the two in sync.
- */
-
 export interface ImageFileRow {
   key?: string | null;
   path?: string | null;

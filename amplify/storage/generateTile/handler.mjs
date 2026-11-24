@@ -2,7 +2,14 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3
 import sharp from 'sharp';
 import { env } from '$amplify/env/generateTile';
 import { decodeForTiling } from '../../functions/shared/tilingDecode.mjs';
-import { resolveImageAccess } from '../imageAccess/repository';
+import {
+  getRecord,
+  queryFiles,
+  resolveImageAccess,
+} from '../imageAccess/repository';
+import { requireStorageUser } from '../imageAccess/authorization';
+import { notebookCrop } from './notebookCrop';
+import { composeCrop, cutCrop } from './composeCrop.mjs';
 import {
   validTile,
   MAX_GENERATED_TILE_BATCH,
@@ -150,6 +157,51 @@ async function uploadTile(tileBuffer, outputKey) {
   );
 }
 
+async function readOutput(key, range) {
+  try {
+    const response = await s3.send(
+      new GetObjectCommand({
+        Bucket: env.OUTPUTS_BUCKET_NAME,
+        Key: key,
+        Range: range ? `bytes=${range[0]}-${range[1]}` : undefined,
+      })
+    );
+    return new Uint8Array(await streamToBuffer(response.Body));
+  } catch (err) {
+    const status = err?.$metadata?.httpStatusCode;
+    if (err?.name === 'NoSuchKey' || status === 404 || status === 403) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function cropFromSource(sourceKey, crop) {
+  return cutCrop(await getSource(`images/${sourceKey}`, {}), crop);
+}
+
+const cropSource = {
+  image: (id) => getRecord('Image', { id }),
+  project: (id) => getRecord('Project', { id }),
+  files: (imageId) => queryFiles('imageId', imageId),
+  read: readOutput,
+  compose: composeCrop,
+  fromSource: cropFromSource,
+};
+
+// Reached only through the API router, which checks the example token first.
+async function speciesNotebookCrop(event) {
+  const { imageId, x, y } = event.arguments;
+  if (typeof imageId !== 'string' || !imageId) throw new Error('Invalid image');
+  if (typeof x !== 'number' || typeof y !== 'number') {
+    throw new Error('Invalid point');
+  }
+  return notebookCrop(cropSource, requireStorageUser(event.identity), imageId, {
+    x,
+    y,
+  });
+}
+
 /**
  * AppSync query handler.
  *
@@ -171,6 +223,9 @@ async function uploadTile(tileBuffer, outputKey) {
  *      them cheaply.
  */
 export async function handler(event) {
+  if (event.fieldName === 'speciesNotebookCrop') {
+    return speciesNotebookCrop(event);
+  }
   const { imageId, sharedImageId, zs, rows, cols } = event.arguments;
   const requestedKey = event.arguments.imageKey?.replace(/^images\//, '');
   if (!imageId || !requestedKey) {
