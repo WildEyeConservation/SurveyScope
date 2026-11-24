@@ -99,15 +99,14 @@ export default function WorkflowStatistics() {
   const { cognitoGroups, myMembershipHook, myOrganizationHook } =
     useContext(UserContext)!;
   const { users: allUsers } = useUsers();
-  const administers = useCallback(
+  // Every survey member sees the survey's statistics.
+  const canView = useCallback(
     (project: ProjectOption) =>
       cognitoGroups.includes('sysadmin') ||
       myOrganizationHook.data.some(
         (m) => m.organizationId === project.organizationId && m.isAdmin,
       ) ||
-      myMembershipHook.data.some(
-        (m) => m.projectId === project.id && m.isAdmin,
-      ),
+      myMembershipHook.data.some((m) => m.projectId === project.id),
     [cognitoGroups, myMembershipHook.data, myOrganizationHook.data],
   );
 
@@ -166,7 +165,7 @@ export default function WorkflowStatistics() {
         if (cancelled) return;
         setProjects(
           allProjects
-            .filter(administers)
+            .filter(canView)
             .sort((left, right) =>
               (left.name ?? '').localeCompare(right.name ?? ''),
             ),
@@ -194,7 +193,7 @@ export default function WorkflowStatistics() {
     return () => {
       cancelled = true;
     };
-  }, [client, administers]);
+  }, [client, canView]);
 
   const projectOptions = useMemo(
     () =>

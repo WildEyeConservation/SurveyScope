@@ -577,9 +577,10 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   snapshotChainShare: { fn: 'createChainShare', authorize: sysadmin },
   revokeChainShare: { fn: 'revokeChainShare', authorize: sysadmin },
   getAdminStats: { fn: 'getAdminStats', authorize: sysadmin },
+  // Annotators compare themselves with their teammates; raw events stay with admins.
   queryWorkflowStats: {
     fn: 'queryWorkflowStats',
-    authorize: surveyAdmin('projectId'),
+    authorize: surveyMember('projectId'),
   },
   queryWorkflowEvents: {
     fn: 'queryWorkflowEvents',
