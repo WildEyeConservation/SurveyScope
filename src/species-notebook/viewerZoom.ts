@@ -15,19 +15,6 @@ export function zoomFromScale(scale: number, width: number, height: number) {
   );
 }
 
-export function targetZoom(
-  image: { width: number; height: number },
-  scale: number | null,
-  storedDefaultZoom: number | null,
-): number | null {
-  if (scale != null && scale > 0) {
-    return zoomFromScale(scale, image.width, image.height);
-  }
-  // Stored defaults use the image pyramid's levels, one above MapLibre's.
-  if (storedDefaultZoom != null) return storedDefaultZoom - 1;
-  return null;
-}
-
 let current: { owner: object; scale: number } | null = null;
 
 export function reportViewerZoom(

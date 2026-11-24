@@ -65,6 +65,9 @@ const QUERIES = {
     annotationSetId: 'ID!',
     jobId: 'ID!',
   }),
+  speciesNotebookLabels: op('AWSJSON', { projectId: 'ID!' }),
+  speciesNotebookExamples: op('AWSJSON', { projectId: 'ID!', name: 'String!' }),
+  speciesNotebookCrop: op('AWSJSON', { token: 'String!' }),
   getRowChunk: op('AWSJSON', {
     source: 'String!',
     scopeId: 'String!',

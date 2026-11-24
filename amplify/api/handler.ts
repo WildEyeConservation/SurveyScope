@@ -8,6 +8,7 @@ import {
   operationReturnsJson,
   operationType,
 } from '../../shared/operations';
+import type { NotebookCrop } from '../../shared/speciesNotebook';
 import { Access, type Actor } from './access';
 import { AmplifyAccessStore, AmplifyDataLayer, amplifyData } from './data';
 import { ApiError, badRequest, forbidden } from './errors';
@@ -94,11 +95,24 @@ async function requestContext(token: Actor, fresh = false) {
     neighbours: (imageId) => store.neighbours(imageId),
   };
   models.afterWrite = (model, op, row) => noteSavedWork(tasks, model, op, row);
+  const images = {
+    crop: async (imageId: string, point: { x: number; y: number }) => {
+      const result = await invokeResolver('imageAccess', {
+        typeName: 'Query',
+        fieldName: 'speciesNotebookCrop',
+        arguments: { imageId, ...point },
+        identity: resolverIdentity(actor, await access.organizationIds()),
+      });
+      if (result.errors?.length) throw new Error('Could not load the image');
+      return (result.data ?? null) as NotebookCrop | null;
+    },
+  };
   return {
     schema,
     access,
     models,
     data,
+    images,
     secret: () => {
       if (!process.env.JWT_SECRET) throw new Error('JWT_SECRET is not set');
       return process.env.JWT_SECRET;

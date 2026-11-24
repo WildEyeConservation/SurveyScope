@@ -10,15 +10,20 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { GlobalContext } from '../Context';
 import { useCanExplore } from '../useCanExplore';
-import { AnnotationPager } from './AnnotationPager';
-import { labelAnnotationsQuery, surveyCategoriesQuery } from './data';
-import { useOpenItem, useOrganizationId, useOrgCategories } from './hooks';
+import {
+  examplesQuery,
+  otherLabelsQuery,
+  surveyCategoriesQuery,
+} from './data';
+import { ExamplePager } from './ExamplePager';
+import { openExample, useOrganizationId } from './hooks';
 import { buildPaletteRows, type PaletteRow } from './paletteRows';
 import { stopKeys } from './shortcut';
 import { notebook, useNotebookState } from './store';
-import type { GalleryItem, LabelRef } from './types';
+import type { LabelRef, NotebookExample } from './types';
 import { viewerScale } from './viewerZoom';
 
 function Row({
@@ -85,11 +90,12 @@ function saveLastSearch(projectId: string, search: LastSearch) {
 }
 
 export function SpeciesPalette({ projectId }: { projectId: string }) {
+  const { client } = useContext(GlobalContext)!;
   const { paletteOpen, label: openedOn } = useNotebookState();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
   const [activeName, setActiveName] = useState<string | null>(null);
-  const [current, setCurrent] = useState<GalleryItem | null>(null);
+  const [current, setCurrent] = useState<NotebookExample | null>(null);
   const [scale, setScale] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const viewerRef = useRef<HTMLDivElement | null>(null);
@@ -110,26 +116,17 @@ export function SpeciesPalette({ projectId }: { projectId: string }) {
   }, [paletteOpen, projectId, query, activeName]);
 
   const categories = useQuery({
-    ...surveyCategoriesQuery(projectId),
+    ...surveyCategoriesQuery(client, projectId),
     enabled: paletteOpen,
   });
   const organizationId = useOrganizationId(paletteOpen ? projectId : undefined);
-  const open = useOpenItem();
   const canExplore = useCanExplore();
   const showOpen = canExplore(projectId, organizationId);
-  const canOpen = (item: GalleryItem) =>
-    canExplore(item.projectId, organizationId);
-  const org = useOrgCategories(
-    organizationId,
-    paletteOpen && query.trim().length > 0,
-  );
-  const otherNames = useMemo(
-    () =>
-      (org.data ?? [])
-        .filter((c) => c.projectId !== projectId)
-        .map((c) => c.name),
-    [org.data, projectId],
-  );
+  const others = useQuery({
+    ...otherLabelsQuery(client, projectId),
+    enabled: paletteOpen && query.trim().length > 0,
+  });
+  const otherNames = others.data;
   const { present, absent } = useMemo(
     () =>
       buildPaletteRows({
@@ -151,10 +148,10 @@ export function SpeciesPalette({ projectId }: { projectId: string }) {
     for (const row of [rows[activeIndex + 1], rows[activeIndex - 1]]) {
       if (!row?.inSurvey || row.categoryIds.length === 0) continue;
       void queryClient.prefetchQuery(
-        labelAnnotationsQuery(projectId, row.name, row.categoryIds),
+        examplesQuery(client, projectId, row.name),
       );
     }
-  }, [paletteOpen, rows, activeIndex, projectId, queryClient]);
+  }, [paletteOpen, rows, activeIndex, projectId, queryClient, client]);
 
   const move = (delta: number) => {
     if (rows.length === 0) return;
@@ -258,14 +255,16 @@ export function SpeciesPalette({ projectId }: { projectId: string }) {
               ))}
               {categories.isSuccess && rows.length === 0 && (
                 <div className='px-3 py-2 text-sm text-muted-foreground'>
-                  {org.loading ? 'Searching…' : 'No matching labels.'}
+                  {others.isLoading && others.fetchStatus !== 'idle'
+                    ? 'Searching…'
+                    : 'No matching labels.'}
                 </div>
               )}
             </div>
           </div>
           <div className='flex min-w-0 flex-1 flex-col'>
             {activeLabel ? (
-              <AnnotationPager
+              <ExamplePager
                 label={activeLabel}
                 scale={scale}
                 onScale={setScale}
@@ -287,13 +286,13 @@ export function SpeciesPalette({ projectId }: { projectId: string }) {
           {showOpen && (
             <Button
               className='ml-auto'
-              disabled={!activeLabel || !current || !canOpen(current)}
+              disabled={!activeLabel || !current?.explore}
               title={
-                current && !canOpen(current)
+                current && !current.explore
                   ? 'Only admins of that survey can open it in Explore'
                   : undefined
               }
-              onClick={() => current && open(current)}
+              onClick={() => current && openExample(current)}
             >
               Open in Explore
             </Button>

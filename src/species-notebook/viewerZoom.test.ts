@@ -4,7 +4,6 @@ import {
   clearViewerZoom,
   reportViewerZoom,
   scaleFromZoom,
-  targetZoom,
   viewerScale,
   zoomFromScale,
 } from './viewerZoom';
@@ -17,13 +16,6 @@ test('matches magnification across image sizes', () => {
   const zoom = zoomFromScale(scale, large.width, large.height);
   assert.equal(zoom, 6);
   assert.equal(scaleFromZoom(zoom, large.width, large.height), scale);
-});
-
-test('prefers the viewer zoom, then the stored default, then framing', () => {
-  const scale = scaleFromZoom(3, small.width, small.height);
-  assert.equal(targetZoom(small, scale, 6), 3);
-  assert.equal(targetZoom(small, null, 6), 5);
-  assert.equal(targetZoom(small, null, null), null);
 });
 
 test('only the reporting viewer can clear its zoom', () => {

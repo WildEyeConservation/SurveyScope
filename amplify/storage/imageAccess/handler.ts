@@ -33,6 +33,7 @@ import {
   type ProjectRow,
   type StorageIdentity,
 } from './authorization';
+import { notebookCrop, type CropSource } from './notebookCrop';
 import {
   db,
   table,
@@ -243,6 +244,44 @@ export function createImageAccessHandler(s3 = presignClient()) {
       ),
       expiresAt: lifetime.expiresAt,
     };
+  }
+
+  const cropSource: CropSource = {
+    image: (id) => getRecord<ImageRow>('Image', { id }),
+    project: (id) => getRecord<ProjectRow>('Project', { id }),
+    files: (imageId) => queryFiles('imageId', imageId),
+    read: async (key, range) => {
+      try {
+        const response = await s3.send(
+          new GetObjectCommand({
+            Bucket: bucket('OUTPUTS'),
+            Key: key,
+            Range: range ? `bytes=${range[0]}-${range[1]}` : undefined,
+          })
+        );
+        return response.Body
+          ? new Uint8Array(await response.Body.transformToByteArray())
+          : null;
+      } catch (error) {
+        const status = (error as { $metadata?: { httpStatusCode?: number } })
+          .$metadata?.httpStatusCode;
+        if (status === 404 || status === 403) return null;
+        throw error;
+      }
+    },
+  };
+
+  // Reached only through the API router, which checks the example token first.
+  async function speciesNotebookCrop(user: StorageIdentity, args: Args) {
+    const x = args.x;
+    const y = args.y;
+    if (typeof x !== 'number' || typeof y !== 'number') {
+      throw new Error('Invalid point');
+    }
+    return notebookCrop(cropSource, user, requireString(args, 'imageId'), {
+      x,
+      y,
+    });
   }
 
   async function imageDownloadUrl(event: AppSyncEvent) {
@@ -571,6 +610,9 @@ export function createImageAccessHandler(s3 = presignClient()) {
       return result;
     }
     if (fieldName === 'imageDownloadUrl') return imageDownloadUrl(event);
+    if (fieldName === 'speciesNotebookCrop') {
+      return speciesNotebookCrop(user, event.arguments);
+    }
     const operation = projectOperations[fieldName];
     if (!operation) throw new Error('Unsupported storage operation');
     return operation(user, event.arguments);

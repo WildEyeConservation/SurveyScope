@@ -131,6 +131,16 @@ export const introspection: Introspection = {
       scalar('group'),
       belongsTo('image', 'Image', 'imageId'),
     ]),
+    Category: model(
+      'Category',
+      [
+        scalar('projectId'),
+        scalar('annotationSetId'),
+        scalar('name'),
+        scalar('color'),
+      ],
+      { indexes: { categoriesByProjectId: ['projectId'] } },
+    ),
     Annotation: model(
       'Annotation',
       [
@@ -589,7 +599,11 @@ export function operationContext(
   data: MemoryData,
   who: Actor,
   policies: Record<string, ModelPolicy>,
-  extra: { queue?: TaskQueue; launches?: LaunchStore } = {},
+  extra: {
+    queue?: TaskQueue;
+    launches?: LaunchStore;
+    images?: OperationContext['images'];
+  } = {},
 ): OperationContext {
   const { access, models } = gateway(data, who, policies);
   const leases: LeaseTable = {
@@ -660,6 +674,9 @@ export function operationContext(
   return {
     access,
     models,
+    data,
+    secret: () => 'test-secret',
+    images: extra.images ?? { crop: async () => null },
     tasks,
     launches: extra.launches ?? {
       readJson: async () => ({ value: {} }),
