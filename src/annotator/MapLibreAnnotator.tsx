@@ -11,14 +11,30 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-import { isHotkeyPressed, useHotkeys } from 'react-hotkeys-hook';
+import { isHotkeyPressed } from 'react-hotkeys-hook';
 import { isOnEffort } from '../../shared/boundaryStatus';
 import { canMarkOutsideBoundary, isMarkedOutside } from '../annotationBoundary';
-import type { AnnotationImage, AnnotationLocation } from '../annotationTypes';
+import type {
+  AnnotationImage,
+  AnnotationLocation,
+  NeighbourImageLookup,
+  OtherViewsHandler,
+  OtherViewsTarget,
+  ViewerFocus,
+} from '../annotationTypes';
 import ChangeCategoryModal from '../ChangeCategoryModal';
 import { ImageContext, ManagementContext, ProjectContext } from '../Context';
 import { NavButtons } from '../NavButtons';
 import type { CategoryType, ExtendedAnnotationType } from '../schemaTypes';
+import {
+  PaletteViewerContext,
+  useViewerHotkeys,
+} from '../species-notebook/paletteViewer';
+import {
+  clearViewerZoom,
+  reportViewerZoom,
+  scaleFromZoom,
+} from '../species-notebook/viewerZoom';
 import useImageMenuItems from '../useImageMenuItems';
 import { isWithinLocationBounds, resolveCategoryIdForSet } from '../utils';
 import {
@@ -55,6 +71,7 @@ import {
   storedZoomToMapZoom,
 } from './imageTiles';
 import MapRotateControl from './MapRotateControl';
+import { useNeighbourOverlaps } from './neighbourOverlapLayers';
 import { setAnnotatorViewport } from './prefetchTask';
 import useImageFileSource from './useImageFileSource';
 import { defaultViewBoundsScale } from './viewTiles';
@@ -82,6 +99,38 @@ const LAYER_ICONS = ANNOTATION_MARKER_LAYERS.icons;
 const LAYER_STATUS_ICONS = ANNOTATION_MARKER_LAYERS.statusIcons;
 const SOURCE_LOCATION = 'location-rect';
 const LAYER_LOCATION = 'location-rect-line';
+const POPUP_GRACE_MS = 300;
+const POPUP_EVENTS = [
+  'mousedown',
+  'mouseup',
+  'mousemove',
+  'click',
+  'dblclick',
+  'contextmenu',
+  'mouseover',
+  'mouseout',
+] as const;
+
+const otherViewsTarget = (a: ExtendedAnnotationType): OtherViewsTarget => ({
+  id: a.id,
+  imageId: a.imageId,
+  objectId: a.objectId ?? null,
+  categoryId: a.categoryId,
+  x: a.x,
+  y: a.y,
+});
+
+// Unsnapped, so images of other sizes open at the same magnification.
+function centreAt(
+  map: maplibregl.Map,
+  center: maplibregl.LngLatLike,
+  zoom: number,
+) {
+  const snap = map.getZoomSnap();
+  map.setZoomSnap(0);
+  map.jumpTo({ center, zoom });
+  map.setZoomSnap(snap);
+}
 
 export interface MapLibreAnnotatorProps {
   image: AnnotationImage;
@@ -111,6 +160,12 @@ export interface MapLibreAnnotatorProps {
   infoTags?: Map<string, string[]>;
   /** Fill the container with no frame or task outline. */
   embedded?: boolean;
+  /** False leaves adding marks to the category hotkeys. */
+  clickToCreate?: boolean;
+  otherViews?: OtherViewsHandler;
+  neighbourOverlaps?: NeighbourImageLookup;
+  /** Centres on this point whenever `seq` changes, at `zoom` if given. */
+  focus?: ViewerFocus;
   bearing?: number;
   onBearingChange?: (bearing: number) => void;
 }
@@ -136,9 +191,18 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     showMapLegend,
     infoTags,
     embedded,
+    clickToCreate = true,
+    otherViews,
+    neighbourOverlaps,
+    focus,
     bearing,
     onBearingChange,
   } = props;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const palette = useContext(PaletteViewerContext);
+  const paletteRef = useRef(palette);
+  paletteRef.current = palette;
   const bearingRef = useRef(bearing);
   bearingRef.current = bearing;
   const onBearingChangeRef = useRef(onBearingChange);
@@ -161,6 +225,10 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
+  const popupAnnotationIdRef = useRef<string | null>(null);
+  const popupCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const otherViewsRef = useRef(otherViews);
+  otherViewsRef.current = otherViews;
   const [mapReady, setMapReady] = useState(false);
   const [fullyLoaded, setFullyLoaded] = useState(false);
   const [canAdvance, setCanAdvance] = useState(false);
@@ -199,6 +267,14 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
           height: location.height,
         }
       : undefined;
+  const writeBounds = allowOutside
+    ? {
+        x: image.width / 2,
+        y: image.height / 2,
+        width: image.width,
+        height: image.height,
+      }
+    : locationBounds;
 
   const menuItems = useImageMenuItems({
     image,
@@ -211,6 +287,8 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   menuItemsRef.current = menuItems;
   const locationBoundsRef = useRef(locationBounds);
   locationBoundsRef.current = locationBounds;
+  const writeBoundsRef = useRef(writeBounds);
+  writeBoundsRef.current = writeBounds;
   // Read at hover time so tags arriving later show up without rebinding the
   // map's interaction handlers.
   const infoTagsRef = useRef(infoTags);
@@ -234,6 +312,30 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     [readonlyAnnotations],
   );
   readonlyAnnotationsRef.current = shownReadonlyAnnotations;
+
+  const cancelPopupClose = useCallback(() => {
+    if (popupCloseTimerRef.current) clearTimeout(popupCloseTimerRef.current);
+    popupCloseTimerRef.current = null;
+  }, []);
+  const closePopup = useCallback(() => {
+    cancelPopupClose();
+    popupRef.current?.remove();
+    popupRef.current = null;
+    popupAnnotationIdRef.current = null;
+  }, [cancelPopupClose]);
+  // With an action in it, the popup lingers so the pointer can reach it.
+  const schedulePopupClose = useCallback(() => {
+    if (!otherViewsRef.current) return closePopup();
+    if (!popupCloseTimerRef.current)
+      popupCloseTimerRef.current = setTimeout(closePopup, POPUP_GRACE_MS);
+  }, [closePopup]);
+  const openOtherViews = useCallback(
+    (annotation: ExtendedAnnotationType) => {
+      closePopup();
+      otherViewsRef.current?.open(otherViewsTarget(annotation));
+    },
+    [closePopup],
+  );
 
   const categoryColor = useCallback(
     (categoryId: string) =>
@@ -262,8 +364,9 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       locationBounds: locationBoundsRef.current,
       px2lngLat,
       categoryColor,
+      plainFalseNegatives: Boolean(palette),
     });
-  }, [px2lngLat, categoryColor]);
+  }, [px2lngLat, categoryColor, palette]);
 
   const refreshAnnotationSource = useCallback(() => {
     const src = mapRef.current?.getSource(SOURCE_ANNOTATIONS) as
@@ -342,15 +445,21 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       map.once('idle', () => setFullyLoaded(true));
     });
 
-    map.on('zoomend', () => {
+    map.on('zoomend', (e) => {
       // Report using the persisted scale so existing default zooms stay stable.
       setZoom(mapZoomToStoredZoom(map.getZoom()));
+      if (!visibleRef.current) return;
+      const inPalette = paletteRef.current;
+      if (!inPalette) reportViewerZoom(mapRef, map.getZoom(), image);
+      else if (e.originalEvent)
+        inPalette.onUserZoom(
+          scaleFromZoom(map.getZoom(), image.width, image.height),
+        );
     });
 
     return () => {
       unregisterMarkerImages();
-      popupRef.current?.remove();
-      popupRef.current = null;
+      closePopup();
       map.remove();
       mapRef.current = null;
       setMapReady(false);
@@ -361,7 +470,9 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
 
   // ── Initial view ──
   const fitInitialView = (map: maplibregl.Map) => {
-    if (zoom != null) {
+    if (focus?.zoom != null) {
+      centreAt(map, px2lngLat(focus.x, focus.y), focus.zoom);
+    } else if (zoom != null) {
       map.jumpTo({
         center: px2lngLat(
           location?.x ?? image.width / 2,
@@ -414,6 +525,37 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       map.setBearing(bearing);
   }, [mapReady, bearing]);
 
+  const appliedFocusRef = useRef<number | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady) appliedFocusRef.current = null;
+    if (!map || !mapReady || !focus || appliedFocusRef.current === focus.seq)
+      return;
+    if (!map.getContainer().clientWidth) return;
+    appliedFocusRef.current = focus.seq;
+    if (focus.zoom != null) {
+      centreAt(map, px2lngLat(focus.x, focus.y), focus.zoom);
+      return;
+    }
+    const half = Math.min(image.width, image.height) / 8;
+    fitPxBounds(
+      map,
+      projection,
+      focus.x - half,
+      focus.y - half,
+      focus.x + half,
+      focus.y + half,
+    );
+  }, [
+    mapReady,
+    focus,
+    visible,
+    image.width,
+    image.height,
+    projection,
+    px2lngLat,
+  ]);
+
   // ── Annotation data sync ──
   useEffect(() => {
     if (mapReady) refreshAnnotationSource();
@@ -423,6 +565,13 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     mapReady,
     refreshAnnotationSource,
   ]);
+
+  useNeighbourOverlaps(
+    mapReady ? mapRef.current : null,
+    image,
+    px2lngLat,
+    palette ? undefined : neighbourOverlaps,
+  );
 
   // ── Interactions ──
   useEffect(() => {
@@ -459,10 +608,13 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       const id = featureProperties(feature)?.id ?? null;
       if (id !== hoveredIdRef.current) {
         hoveredIdRef.current = id;
-        popupRef.current?.remove();
-        popupRef.current = null;
         const annotation = id ? displayedAnnotationById(id) : undefined;
-        if (annotation) {
+        if (!annotation || paletteRef.current) {
+          schedulePopupClose();
+        } else if (popupAnnotationIdRef.current === id) {
+          cancelPopupClose();
+        } else {
+          closePopup();
           const div = document.createElement('div');
           div.style.color = '#212529';
           div.style.fontSize = '13px';
@@ -480,7 +632,15 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             row.textContent = text;
             div.appendChild(row);
           });
-          popupRef.current = new maplibregl.Popup({
+          const views = otherViewsRef.current;
+          if (views) {
+            div.appendChild(
+              otherViewsRow(views.describe(otherViewsTarget(annotation)), () =>
+                openOtherViews(annotation),
+              ),
+            );
+          }
+          const popup = new maplibregl.Popup({
             closeButton: false,
             closeOnClick: false,
             maxWidth: '360px',
@@ -494,6 +654,18 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             )
             .setDOMContent(div)
             .addTo(map);
+          popupRef.current = popup;
+          popupAnnotationIdRef.current = annotation.id;
+          if (views) {
+            const el = popup.getElement();
+            for (const type of POPUP_EVENTS)
+              el.addEventListener(type, (event) => event.stopPropagation());
+            el.addEventListener('mouseenter', cancelPopupClose);
+            el.addEventListener('mouseleave', () => {
+              hoveredIdRef.current = null;
+              schedulePopupClose();
+            });
+          }
         }
       }
     };
@@ -502,7 +674,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       if (e.originalEvent.button !== 0) return;
       const feature = featureAt(e.point);
       const properties = featureProperties(feature);
-      if (!properties || properties.readonly) return;
+      if (!properties || properties.readonly || paletteRef.current) return;
       e.preventDefault(); // keep the map from panning
       draggingIdRef.current = properties.id;
       dragPositionRef.current = lngLat2px(e.lngLat.lng, e.lngLat.lat);
@@ -520,7 +692,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       if (!annotation) return;
       const x = Math.round(pos.x);
       const y = Math.round(pos.y);
-      const bounds = locationBoundsRef.current;
+      const bounds = writeBoundsRef.current;
       if (bounds && !isWithinLocationBounds({ x, y }, bounds)) {
         refreshAnnotationSource(); // revert
         return;
@@ -537,10 +709,11 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
         setMenu(null);
         return;
       }
+      if (!clickToCreate) return;
       if (featureAt(e.point)) return; // clicks on markers never create
       const px = lngLat2px(e.lngLat.lng, e.lngLat.lat);
       const xy = { x: Math.round(px.x), y: Math.round(px.y) };
-      const bounds = locationBoundsRef.current;
+      const bounds = writeBoundsRef.current;
       if (bounds && !isWithinLocationBounds(xy, bounds)) return;
       if (!currentCategory || !source || !project) return;
       annotationsHook.create({
@@ -563,6 +736,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
 
     const onContextMenu = (e: maplibregl.MapMouseEvent) => {
       e.preventDefault();
+      if (paletteRef.current) return;
       const feature = featureAt(e.point);
       if (feature) {
         const properties = featureProperties(feature);
@@ -577,6 +751,12 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
           onUpdate: annotationsHook.update,
           onChangeCategory: setCategoryModalAnnotation,
         });
+        if (otherViewsRef.current)
+          items.push({
+            text: 'View in other images',
+            callback: () => openOtherViews(annotation),
+          });
+        closePopup();
         setMenu({ x: e.point.x, y: e.point.y, items });
       } else {
         const items = buildImageMenuItems(
@@ -590,12 +770,14 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     const onMouseOver = () => {
       mouseOverMapRef.current = true;
     };
-    const onMouseOut = () => {
+    const onMouseOut = (e: maplibregl.MapMouseEvent) => {
       mouseOverMapRef.current = false;
       map.getCanvas().style.cursor = '';
       hoveredIdRef.current = null;
-      popupRef.current?.remove();
-      popupRef.current = null;
+      const into = e.originalEvent.relatedTarget as Node | null;
+      if (into && popupRef.current?.getElement().contains(into))
+        cancelPopupClose();
+      else schedulePopupClose();
     };
 
     map.on('mousemove', onMouseMove);
@@ -617,6 +799,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   }, [
     mapReady,
     menu,
+    clickToCreate,
     currentCategory,
     projectCategories,
     categories,
@@ -631,6 +814,10 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     refreshAnnotationSource,
     categoryName,
     allUsers,
+    closePopup,
+    cancelPopupClose,
+    schedulePopupClose,
+    openOtherViews,
   ]);
 
   // ── Marker visibility (Tab to peek underneath) ──
@@ -651,6 +838,14 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       }
     });
   }, [markersHidden, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (visible && map && mapReady && !palette)
+      reportViewerZoom(mapRef, map.getZoom(), image);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, mapReady]);
+  useEffect(() => () => clearViewerZoom(mapRef), []);
 
   // ── Task lifecycle: timestamps + advance gating ──
   useEffect(() => {
@@ -679,7 +874,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
   }, [visible, fullyLoaded]);
 
   // ── Hotkeys ──
-  useHotkeys(
+  useViewerHotkeys(
     'RightArrow',
     next ?? (() => {}),
     {
@@ -687,9 +882,11 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     },
     [next],
   );
-  useHotkeys('LeftArrow', prev ?? (() => {}), { enabled: visible }, [prev]);
+  useViewerHotkeys('LeftArrow', prev ?? (() => {}), { enabled: visible }, [
+    prev,
+  ]);
 
-  useHotkeys(
+  useViewerHotkeys(
     'Tab',
     (event) => {
       event.preventDefault();
@@ -698,7 +895,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     { keyup: true, keydown: true, enabled: visible },
   );
 
-  useHotkeys(
+  useViewerHotkeys(
     'Backspace',
     () => {
       const id = hoveredIdRef.current;
@@ -713,7 +910,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       }
       annotationsHook.delete(annotation);
     },
-    { enabled: visible },
+    { enabled: visible && !palette },
     [annotationsHook],
   );
 
@@ -731,7 +928,24 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
     return map;
   }, [hotkeyCategories]);
   const hotkeys = hotkeyCategories.map((c) => c.shortcutKey!).join(',');
-  useHotkeys(
+
+  const enterIsLabel = categoryByHotkey.has(normalizeShortcutKey('enter'));
+  useViewerHotkeys(
+    'enter',
+    (event) => {
+      const id = hoveredIdRef.current ?? popupAnnotationIdRef.current;
+      const annotation = id
+        ? (annotationsRef.current.find((a) => a.id === id) ??
+          readonlyAnnotationsRef.current.find((a) => a.id === id))
+        : undefined;
+      if (!annotation) return;
+      event.preventDefault();
+      openOtherViews(annotation);
+    },
+    { enabled: visible && !!otherViews && !enterIsLabel },
+    [openOtherViews],
+  );
+  useViewerHotkeys(
     hotkeys || 'f24',
     (event, hotkeysEvent) => {
       if (event.repeat) return;
@@ -747,7 +961,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       event.stopPropagation();
       const x = Math.round(cursorPxRef.current.x);
       const y = Math.round(cursorPxRef.current.y);
-      const bounds = locationBoundsRef.current;
+      const bounds = writeBoundsRef.current;
       if (bounds && !isWithinLocationBounds({ x, y }, bounds)) return;
       annotationsHook.create({
         categoryId: category.id,
@@ -761,7 +975,11 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       });
       setCurrentCategory(category);
     },
-    { keydown: true, keyup: false, enabled: visible && hotkeys.length > 0 },
+    {
+      keydown: true,
+      keyup: false,
+      enabled: visible && hotkeys.length > 0 && !palette,
+    },
     [categoryByHotkey, annotationsHook, setId, image.id, source, project],
   );
 
@@ -781,7 +999,7 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
             height: '100%',
             borderRadius: embedded ? 0 : 10,
             overflow: 'hidden',
-            background: '#ffffff',
+            background: palette ? '#1f2933' : '#ffffff',
             border: embedded ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
           }}
         />
@@ -802,12 +1020,14 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
           imageId={image.id}
         />
 
-        <AnnotationLegendOverlay
-          categories={categories}
-          currentCategoryId={currentCategory?.id}
-          forceVisible={showMapLegend}
-          onSelectCategory={setCurrentCategory}
-        />
+        {!palette && (
+          <AnnotationLegendOverlay
+            categories={categories}
+            currentCategoryId={currentCategory?.id}
+            forceVisible={showMapLegend}
+            onSelectCategory={setCurrentCategory}
+          />
+        )}
 
         <ContextMenuOverlay menu={menu} onClose={() => setMenu(null)} />
 
@@ -832,4 +1052,34 @@ export default function MapLibreAnnotator(props: MapLibreAnnotatorProps) {
       )}
     </div>
   );
+}
+
+function otherViewsRow(
+  info: { label: string; linked: boolean },
+  onOpen: () => void,
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.style.cssText =
+    'margin-top:8px;padding-top:8px;border-top:1px solid #dee2e6';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.title = 'Enter';
+  button.style.cssText =
+    'display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;padding:6px 10px;font-size:13px;font-weight:600;line-height:1.2;cursor:pointer;border:0;background:#df6919;color:#fff';
+  const hint = document.createElement('span');
+  hint.textContent = '↵';
+  hint.style.cssText = 'opacity:.7;font-weight:400';
+  button.append(info.label, hint);
+  button.addEventListener('mouseenter', () => {
+    button.style.background = '#c45a12';
+  });
+  button.addEventListener('mouseleave', () => {
+    button.style.background = '#df6919';
+  });
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onOpen();
+  });
+  row.appendChild(button);
+  return row;
 }

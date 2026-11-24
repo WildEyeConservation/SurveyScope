@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { queueDepths } from './api/tasks';
 import { GlobalContext, ProjectContext, UserContext } from './Context';
 
-export function JobsRemaining() {
+export function JobsRemaining({ queueId }: { queueId?: string } = {}) {
   const { client } = useContext(GlobalContext)!;
   const {
     jobsCompleted: sessionJobsCompleted,
@@ -19,24 +19,26 @@ export function JobsRemaining() {
   const [usingBackupQueue, setUsingBackupQueue] = useState<boolean>(false);
   const navigate = useNavigate();
 
+  const activeQueueId = queueId ?? currentPM.queueId;
+  // The backup queue belongs to the membership's own queue only.
+  const backupQueueId = queueId ? undefined : currentPM.backupQueueId;
+
   useEffect(() => {
-    if (currentPM.queueId) {
-      client.models.Queue.get({ id: currentPM.queueId }).then(({ data }) => {
+    if (activeQueueId) {
+      client.models.Queue.get({ id: activeQueueId }).then(({ data }) => {
         if (!data) return;
         setUrl(data.url ? data.id : undefined);
         if (data.batchSize) {
           setBatchSize(data.batchSize);
         }
       });
-      if (currentPM.backupQueueId) {
-        client.models.Queue.get({ id: currentPM.backupQueueId }).then(
-          ({ data }) => {
-            setBackupUrl(data?.url ? data.id : undefined);
-          },
-        );
+      if (backupQueueId) {
+        client.models.Queue.get({ id: backupQueueId }).then(({ data }) => {
+          setBackupUrl(data?.url ? data.id : undefined);
+        });
       }
     }
-  }, [currentPM]);
+  }, [activeQueueId, backupQueueId, client]);
 
   useEffect(() => {
     if (url) {

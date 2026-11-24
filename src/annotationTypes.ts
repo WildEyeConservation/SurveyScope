@@ -58,15 +58,54 @@ export interface AnnotationWorkspaceProps {
   isFalseNegatives?: boolean;
   /** Image only: no header, side legend or frame, for viewers embedded in a page. */
   embedded?: boolean;
+  /** False leaves adding marks to the category hotkeys. */
+  clickToCreate?: boolean;
   /** Map bearing in degrees; rotating the map reports the new one. */
   bearing?: number;
   onBearingChange?: (bearing: number) => void;
+  otherViews?: OtherViewsHandler;
+  neighbourOverlaps?: NeighbourImageLookup;
+  focus?: ViewerFocus;
 }
+
+export type OtherViewsTarget = {
+  id: string;
+  imageId: string;
+  objectId: string | null;
+  categoryId: string;
+  x: number;
+  y: number;
+};
+
+export type OtherViewsHandler = {
+  describe: (target: OtherViewsTarget) => { label: string; linked: boolean };
+  open: (target: OtherViewsTarget) => void;
+};
+
+export type NeighbourImageInfo = {
+  width?: number | null;
+  height?: number | null;
+  originalPath?: string | null;
+  timestamp?: number | null;
+};
+
+export type NeighbourImageLookup = (
+  imageId: string,
+) => NeighbourImageInfo | undefined;
+
+// If zoom is omitted, frame the point's surroundings.
+export type ViewerFocus = { x: number; y: number; seq: number; zoom?: number };
 
 /** A fully hydrated task returned by the annotation queue source. */
 export type AnnotationTaskPayload = Omit<
   AnnotationWorkspaceProps,
-  'visible' | 'next' | 'prev' | 'bearing' | 'onBearingChange'
+  | 'visible'
+  | 'next'
+  | 'prev'
+  | 'bearing'
+  | 'onBearingChange'
+  | 'otherViews'
+  | 'focus'
 > & {
   ack: TaskAcknowledgement;
 };

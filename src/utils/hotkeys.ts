@@ -176,12 +176,16 @@ export function findShortcutMatch<T>(
   items: readonly T[],
   getShortcutKey: (item: T) => string | null | undefined,
 ): T | undefined {
-  const candidates = canonicalHotkeysFromEvent(event);
-  if (candidates.length === 0) return undefined;
-  return items.find((item) => {
-    const normalized = normalizeShortcutKey(getShortcutKey(item));
-    return normalized !== '' && candidates.includes(normalized);
-  });
+  const keyed = items.map((item) => ({
+    item,
+    key: normalizeShortcutKey(getShortcutKey(item)),
+  }));
+  // Exact matches first, so Shift+E finds 'shift+e' before plain 'e'.
+  for (const candidate of canonicalHotkeysFromEvent(event)) {
+    const match = keyed.find((k) => k.key === candidate);
+    if (match) return match.item;
+  }
+  return undefined;
 }
 
 /** Human-readable rendering of a stored shortcutKey. 'ctrl+h' -> 'Ctrl+H'. */

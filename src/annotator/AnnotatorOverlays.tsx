@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CategoryType } from '../schemaTypes';
+import { LabelPeek, toLabelRef } from '../species-notebook';
 import type { ImageMenuItem } from '../useImageMenuItems';
 import { formatShortcutKey } from '../utils/hotkeys';
 
@@ -110,6 +111,11 @@ export function AnnotationLegendOverlay({
                 />
                 <span style={{ flexGrow: 1 }}>{category.name}</span>
                 <span>({formatShortcutKey(category.shortcutKey)})</span>
+                <LabelPeek
+                  label={toLabelRef(category)}
+                  tone='onLight'
+                  className='-my-2 -me-1'
+                />
               </div>
             ))
           : 'Legend'}

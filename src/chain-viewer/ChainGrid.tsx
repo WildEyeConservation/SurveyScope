@@ -1,3 +1,4 @@
+import { Fragment, type ReactNode } from 'react';
 import { ChainTile } from './ChainTile';
 import type { AnnotationImageMeta, Chain } from './types';
 import { rotationKeyFor } from './utils/rotationKey';
@@ -19,6 +20,17 @@ interface Props {
   openImageHrefFor: (annotation: Chain['annotations'][number]) => string;
   /** Toggles `obscured` on an annotation. */
   onToggleObscured: (annotationId: string) => void;
+  gap?: number;
+  markerFor?: (
+    annotation: Chain['annotations'][number],
+  ) => 'ring' | 'strong' | 'crosshair' | 'none';
+  canToggleObscured?: (annotation: Chain['annotations'][number]) => boolean;
+  bareTiles?: boolean;
+  wrapTile?: (
+    annotation: Chain['annotations'][number],
+    tile: ReactNode,
+    index: number,
+  ) => ReactNode;
 }
 
 /**
@@ -39,6 +51,11 @@ export function ChainGrid({
   onZoomChange,
   openImageHrefFor,
   onToggleObscured,
+  gap = 12,
+  markerFor,
+  canToggleObscured,
+  bareTiles,
+  wrapTile,
 }: Props) {
   const gridTemplateColumns =
     columns === null
@@ -49,15 +66,15 @@ export function ChainGrid({
       style={{
         display: 'grid',
         gridTemplateColumns,
-        gap: 12,
+        gap,
         width: '100%',
       }}
     >
-      {chain.annotations.map((a) => {
+      {chain.annotations.map((a, index) => {
         const meta = metaByAnnotationId.get(a.id);
         const rotKey = rotationKeyFor(meta, a.imageId);
         const rotation = cameraRotations.get(rotKey) ?? 0;
-        return (
+        const tile = (
           <ChainTile
             key={a.id}
             annotation={a}
@@ -69,8 +86,19 @@ export function ChainGrid({
             zoomOut={tileZoom.get(a.id) ?? 0}
             onZoomChange={(next) => onZoomChange(a.id, next)}
             openImageHref={openImageHrefFor(a)}
-            onToggleObscured={() => onToggleObscured(a.id)}
+            onToggleObscured={
+              canToggleObscured?.(a) === false
+                ? undefined
+                : () => onToggleObscured(a.id)
+            }
+            marker={markerFor?.(a)}
+            bare={bareTiles}
           />
+        );
+        return wrapTile ? (
+          <Fragment key={a.id}>{wrapTile(a, tile, index)}</Fragment>
+        ) : (
+          tile
         );
       })}
     </div>

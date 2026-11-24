@@ -32,6 +32,8 @@ interface TabsProps {
   onTabChange?: (tab: number) => void;
   className?: string;
   sharedChild?: React.ReactNode;
+  // Shown at the right of the tab bar; kept out of the overflow measuring.
+  headerExtra?: React.ReactNode;
   disableSwitching?: boolean;
   // Hide inactive tabs instead of unmounting them, so they keep their state.
   keepMounted?: boolean;
@@ -52,6 +54,7 @@ export const Tabs: React.FC<TabsProps> = ({
   onTabChange,
   className,
   sharedChild,
+  headerExtra,
   disableSwitching = false,
   keepMounted = false,
   activeTab: controlledTab,
@@ -221,6 +224,11 @@ export const Tabs: React.FC<TabsProps> = ({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+        )}
+        {headerExtra && (
+          <div className='absolute top-1/2 right-0 hidden -translate-y-1/2 md:block'>
+            {headerExtra}
+          </div>
         )}
       </div>
       <div className='flex h-full w-full grow flex-col'>

@@ -15,7 +15,13 @@ import {
 import { useRecordHotkeys } from 'react-hotkeys-hook';
 import { GlobalContext } from '../Context';
 import { fetchAllPaginatedResults } from '../utils';
-import { formatShortcutKey } from '../utils/hotkeys';
+import { formatShortcutKey, normalizeShortcutKey } from '../utils/hotkeys';
+import { suggestLabelColour } from './labelColours';
+import {
+  isBrowserReservedShortcut,
+  isSpeciesSearchShortcutKey,
+  suggestShortcutKey,
+} from './labelHotkeys';
 import { plural } from './launchLabel';
 
 interface Label {
@@ -28,9 +34,12 @@ interface Label {
 type LabelRow = Label & {
   usage: number;
   shortcutText: string;
+  suggestedKey?: string;
   removeDisabled: boolean;
   onColor: (color: string) => void;
   onName: (name: string) => void;
+  onNameBlur: () => void;
+  onUseSuggestedKey: () => void;
   onShortcutFocus: () => void;
   onShortcutBlur: () => void;
   onRemove: () => void;
@@ -94,6 +103,9 @@ export default function LabelEditor({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const { client } = useContext(GlobalContext)!;
   const defaultLabelsRef = useRef<Label[]>(defaultLabels);
+  // Rows whose key or colour was suggested and not yet changed by hand.
+  const autoKeyIds = useRef(new Set<string>());
+  const autoColourIds = useRef(new Set<string>());
   const onStatusChangeRef = useRef(onStatusChange);
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange;
@@ -254,8 +266,23 @@ export default function LabelEditor({
       setShortcutError('"+" and "=" are reserved and cannot be shortcuts.');
       return;
     }
+    if (isSpeciesSearchShortcutKey(newShortcutKey)) {
+      setShortcutError(
+        `${formatShortcutKey(newShortcutKey)} opens the Species Notebook and cannot be a shortcut.`,
+      );
+      return;
+    }
+    if (isBrowserReservedShortcut(newShortcutKey)) {
+      setShortcutError(
+        `${formatShortcutKey(newShortcutKey)} is taken by the browser and cannot be a shortcut.`,
+      );
+      return;
+    }
     const clash = labels.find(
-      (l) => l.id !== labelId && l.shortcutKey === newShortcutKey,
+      (l) =>
+        l.id !== labelId &&
+        normalizeShortcutKey(l.shortcutKey) ===
+          normalizeShortcutKey(newShortcutKey),
     );
     if (clash) {
       setShortcutError(
@@ -264,12 +291,20 @@ export default function LabelEditor({
       return;
     }
     setShortcutError(null);
+    autoKeyIds.current.delete(labelId);
     setLabels(
       labels.map((l) =>
         l.id === labelId ? { ...l, shortcutKey: newShortcutKey } : l,
       ),
     );
   };
+
+  const othersOf = (id: string) => labels.filter((l) => l.id !== id);
+  const suggestKeyFor = (label: Label) =>
+    suggestShortcutKey(
+      label.name,
+      othersOf(label.id).map((l) => l.shortcutKey),
+    );
 
   const rows: LabelRow[] = labels.map((label) => ({
     ...label,
@@ -278,12 +313,43 @@ export default function LabelEditor({
       isRecording && activeRowId === label.id
         ? formatShortcutKey(Array.from(keys).join('+'))
         : formatShortcutKey(label.shortcutKey),
+    suggestedKey:
+      label.shortcutKey || (isRecording && activeRowId === label.id)
+        ? undefined
+        : suggestKeyFor(label),
     removeDisabled:
       isEditing && !usage && defaultLabels.some((l) => l.id === label.id),
-    onColor: (color) =>
-      setLabels(labels.map((l) => (l.id === label.id ? { ...l, color } : l))),
-    onName: (name) =>
-      setLabels(labels.map((l) => (l.id === label.id ? { ...l, name } : l))),
+    onColor: (color) => {
+      autoColourIds.current.delete(label.id);
+      setLabels(labels.map((l) => (l.id === label.id ? { ...l, color } : l)));
+    },
+    onName: (name) => {
+      const auto =
+        autoKeyIds.current.has(label.id) ||
+        (!label.shortcutKey && !defaultLabels.some((l) => l.id === label.id));
+      const shortcutKey = auto
+        ? (suggestKeyFor({ ...label, name }) ?? '')
+        : label.shortcutKey;
+      if (auto) autoKeyIds.current.add(label.id);
+      setLabels(
+        labels.map((l) =>
+          l.id === label.id ? { ...l, name, shortcutKey } : l,
+        ),
+      );
+    },
+    onNameBlur: () => {
+      if (!autoColourIds.current.has(label.id)) return;
+      const color = suggestLabelColour(label.name, othersOf(label.id));
+      setLabels(labels.map((l) => (l.id === label.id ? { ...l, color } : l)));
+    },
+    onUseSuggestedKey: () => {
+      const shortcutKey = suggestKeyFor(label);
+      if (!shortcutKey) return;
+      setShortcutError(null);
+      setLabels(
+        labels.map((l) => (l.id === label.id ? { ...l, shortcutKey } : l)),
+      );
+    },
     onShortcutFocus: () => {
       setActiveRowId(label.id);
       start();
@@ -328,6 +394,7 @@ export default function LabelEditor({
               value={row.original.name}
               className={row.original.usage > 0 ? 'pr-36' : undefined}
               onChange={(e) => row.original.onName(e.target.value)}
+              onBlur={row.original.onNameBlur}
             />
             {row.original.usage > 0 && (
               <span className='pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#6c757d] tabular-nums'>
@@ -342,17 +409,35 @@ export default function LabelEditor({
         header: 'Shortcut',
         enableSorting: false,
         meta: { className: 'w-48' },
-        cell: ({ row }) => (
-          <Input
-            type='text'
-            aria-label={`Shortcut for ${row.original.name || noun}`}
-            placeholder='Press a key'
-            value={row.original.shortcutText}
-            onFocus={row.original.onShortcutFocus}
-            onBlur={row.original.onShortcutBlur}
-            onChange={() => {}}
-          />
-        ),
+        cell: ({ row }) => {
+          const suggested =
+            !row.original.shortcutText && row.original.suggestedKey;
+          return (
+            <div className='relative'>
+              <Input
+                type='text'
+                aria-label={`Shortcut for ${row.original.name || noun}`}
+                placeholder='Press a key'
+                value={row.original.shortcutText}
+                className={suggested ? 'pr-24' : undefined}
+                onFocus={row.original.onShortcutFocus}
+                onBlur={row.original.onShortcutBlur}
+                onChange={() => {}}
+              />
+              {suggested && (
+                <button
+                  type='button'
+                  title={`Use the suggested shortcut ${formatShortcutKey(suggested)}`}
+                  className='absolute inset-y-1.5 right-1.5 border border-white/30 px-2 text-xs text-muted-foreground hover:border-white/60 hover:text-foreground'
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={row.original.onUseSuggestedKey}
+                >
+                  Use {formatShortcutKey(suggested)}
+                </button>
+              )}
+            </div>
+          );
+        },
       },
       {
         id: 'remove',
@@ -378,9 +463,11 @@ export default function LabelEditor({
 
   return (
     <div className='flex flex-col gap-2'>
-      <div>
-        <div className='text-sm'>{title}</div>
-        <div className='text-xs text-muted-foreground'>{description}</div>
+      <div className='flex flex-wrap items-end justify-between gap-2'>
+        <div>
+          <div className='text-sm'>{title}</div>
+          <div className='text-xs text-muted-foreground'>{description}</div>
+        </div>
       </div>
       <DataTable
         storageKey='survey-labels'
@@ -423,17 +510,19 @@ export default function LabelEditor({
               : undefined
           }
           className='flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground hover:bg-white/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-50'
-          onClick={() =>
+          onClick={() => {
+            const id = crypto.randomUUID();
+            autoColourIds.current.add(id);
             setLabels([
               ...labels,
               {
-                id: crypto.randomUUID(),
+                id,
                 name: '',
                 shortcutKey: '',
-                color: '#000000',
+                color: suggestLabelColour('', labels),
               },
-            ])
-          }
+            ]);
+          }}
         >
           <PlusIcon className='size-4' />
           Add {noun}

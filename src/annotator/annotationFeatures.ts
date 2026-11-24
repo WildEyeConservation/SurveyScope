@@ -37,6 +37,7 @@ interface BuildAnnotationFeaturesOptions {
   locationBounds?: AnnotationBounds;
   px2lngLat: (x: number, y: number) => [number, number];
   categoryColor: (categoryId: string) => string;
+  plainFalseNegatives?: boolean;
 }
 
 export function isFalseNegative(annotation: {
@@ -60,6 +61,7 @@ export function buildAnnotationFeatureProperties(
   annotation: ExtendedAnnotationType,
   categoryColor: (categoryId: string) => string,
   locationBounds?: AnnotationBounds,
+  plainFalseNegatives = false,
 ): AnnotationFeatureProperties {
   const markerKind = annotation.shadow
     ? 'shadow'
@@ -81,11 +83,12 @@ export function buildAnnotationFeatureProperties(
     readonly: locationBounds
       ? !isWithinLocationBounds(annotation, locationBounds)
       : false,
-    icon: isFalseNegative(annotation)
-      ? 'fn-marker'
-      : markerKind === 'primary'
-        ? `identicon-${identityKey}`
-        : '',
+    icon:
+      isFalseNegative(annotation) && !plainFalseNegatives
+        ? 'fn-marker'
+        : markerKind === 'primary'
+          ? `identicon-${identityKey}`
+          : '',
     statusIcon: annotation.obscured ? 'obscured-marker' : '',
   };
 }
@@ -98,6 +101,7 @@ export function buildAnnotationFeatureCollection({
   locationBounds,
   px2lngLat,
   categoryColor,
+  plainFalseNegatives,
 }: BuildAnnotationFeaturesOptions): GeoJSON.FeatureCollection<
   GeoJSON.Point,
   AnnotationFeatureProperties
@@ -112,7 +116,12 @@ export function buildAnnotationFeatureCollection({
         coordinates: px2lngLat(annotation.x, annotation.y),
       },
       properties: {
-        ...buildAnnotationFeatureProperties(annotation, categoryColor),
+        ...buildAnnotationFeatureProperties(
+          annotation,
+          categoryColor,
+          undefined,
+          plainFalseNegatives,
+        ),
         readonly: true,
       },
     }),
@@ -135,6 +144,7 @@ export function buildAnnotationFeatureCollection({
             annotation,
             categoryColor,
             locationBounds,
+            plainFalseNegatives,
           ),
         };
       }),
@@ -161,11 +171,14 @@ export function buildAnnotationPopupLines(
     }`,
   );
   if (annotation.createdAt) lines.push(`Created at: ${annotation.createdAt}`);
-  if (annotation.objectId) {
-    lines.push(`Name: ${annotationObjectName(annotation.objectId)}`);
-  } else if (annotation.proposedObjectId) {
+  if (!annotation.objectId && annotation.proposedObjectId) {
     lines.push(
       `Proposed Name: ${annotationObjectName(annotation.proposedObjectId)}`,
+    );
+  } else {
+    // Match the identicon's ID fallback.
+    lines.push(
+      `Name: ${annotationObjectName(annotation.objectId ?? annotation.id)}`,
     );
   }
   return lines;

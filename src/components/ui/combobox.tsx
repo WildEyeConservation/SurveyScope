@@ -44,6 +44,7 @@ type BaseComboboxProps = {
   name?: string;
   size?: FieldSize;
   'aria-label'?: string;
+  optionAddon?: (option: ComboboxOption) => React.ReactNode;
 };
 
 type SingleComboboxProps = BaseComboboxProps & {
@@ -287,6 +288,11 @@ export function Combobox(props: ComboboxProps) {
                   <span className='min-w-0 leading-snug break-words whitespace-normal'>
                     {option.label}
                   </span>
+                  {props.optionAddon && (
+                    <span className='ml-auto flex shrink-0 items-center'>
+                      {props.optionAddon(option)}
+                    </span>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>
