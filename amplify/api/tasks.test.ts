@@ -838,16 +838,16 @@ describe('review fixes', () => {
       (await fresh.models.run('Annotation', 'get', [{ id: 'free' }])).data,
     );
     assert.equal(
-      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img1_a1'),
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img1-a1'),
       true,
     );
     assert.equal(
-      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a1'),
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2-a1'),
       true,
     );
     // Channels are per set, so another set on the same image stays shut.
     assert.equal(
-      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2_a2'),
+      await fresh.models.canSubscribe('Annotation', 'imageSet', 'img2-a2'),
       false,
     );
   });

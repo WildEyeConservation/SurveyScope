@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   channelRow,
   channelsFor,
+  channelValue,
   EPOCH_LEAD_MS,
   EPOCH_MS,
   joinableEpochs,
@@ -53,14 +54,41 @@ test('a joined window ends within the revocation bound', () => {
 });
 
 test('annotations are published per image and set', () => {
-  assert.deepEqual(
-    channelsFor('Annotation', { imageId: 'i-1', setId: 's-1' }, 7),
-    ['/data/Annotation/imageSet/i-1_s-1/7'],
-  );
-  assert.deepEqual(channelsFor('Annotation', { imageId: 'i-1' }, 7), []);
-  assert.deepEqual(channelRow('Annotation', 'imageSet', 'i-1_s-1'), {
-    imageId: 'i-1',
-    setId: 's-1',
+  const imageId = 'e32bc996-dfb1-4fe7-ab49-2350b366f2ea';
+  const setId = '2c373c9d-c860-4737-a505-bd5d438548e3';
+  const [channel] = channelsFor('Annotation', { imageId, setId }, 7);
+  const value = channel.split('/')[4];
+  // AppSync Events refuses longer segments and any other characters.
+  assert.match(value, /^[A-Za-z0-9-]{1,50}$/);
+  assert.equal(channel, `/data/Annotation/imageSet/${value}/7`);
+  assert.deepEqual(channelRow('Annotation', 'imageSet', value), {
+    imageId,
+    setId,
   });
-  assert.equal(channelRow('Annotation', 'imageSet', 'i-1'), undefined);
+  assert.deepEqual(channelsFor('Annotation', { imageId }, 7), []);
+  assert.equal(channelRow('Annotation', 'imageSet', 'i1'), undefined);
+});
+
+test('annotation channels name exactly one image and set', () => {
+  assert.equal(
+    channelValue('Annotation', 'imageSet', { imageId: 'img1', setId: 'a1' }),
+    'img1-a1',
+  );
+  assert.deepEqual(channelRow('Annotation', 'imageSet', 'img1-a-1'), {
+    imageId: 'img1',
+    setId: 'a-1',
+  });
+  // An image id with a dash would read back as another row.
+  assert.equal(
+    channelValue('Annotation', 'imageSet', { imageId: 'i-1', setId: 's1' }),
+    undefined,
+  );
+  // So would a plain id that looks packed.
+  assert.equal(
+    channelValue('Annotation', 'imageSet', {
+      imageId: '0'.repeat(22),
+      setId: 's1',
+    }),
+    undefined,
+  );
 });

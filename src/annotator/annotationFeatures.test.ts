@@ -76,6 +76,20 @@ test('popup flags annotations outside the survey area only', () => {
   assert.ok(!lines().includes('Outside survey area'));
 });
 
+test('popup names the annotator from the stored owner', () => {
+  const users = [{ id: 'sub-1', name: 'userone' }];
+  const createdBy = (owner?: string) =>
+    buildAnnotationPopupLines(
+      annotation({ owner }),
+      () => 'Elephant',
+      users,
+    ).find((line) => line.startsWith('Created by'));
+
+  assert.equal(createdBy('sub-1::sub-1'), 'Created by: userone');
+  assert.equal(createdBy('sub-1'), 'Created by: userone');
+  assert.equal(createdBy(undefined), 'Created by: Unknown');
+});
+
 test('read-only annotations render first and are always read-only', () => {
   const collection = buildAnnotationFeatureCollection({
     annotations: [annotation({ id: 'own', x: 10, y: 10 })],

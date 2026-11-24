@@ -4,6 +4,7 @@ import {
   isMissingRow,
   withRowReinstated,
   withRowRestored,
+  withUpdateTarget,
   withoutRow,
 } from './optimisticCache';
 
@@ -97,4 +98,31 @@ test('composite keys are honoured instead of assuming an id field', () => {
   assert.deepEqual(withoutRow(rows, { orgId: 'o1', userId: 'u1' }, key), [
     { orgId: 'o1', userId: 'u2' },
   ]);
+});
+
+test('an update naming its row by id finds a row kept under a composite key', () => {
+  type Member = {
+    id: string;
+    userId?: string;
+    projectId?: string;
+    queueId?: string;
+  };
+  const byMember = (m: Member) =>
+    m.userId && m.projectId ? `${m.userId}:${m.projectId}` : m.id;
+  const rows: Member[] = [
+    { id: 'm1', userId: 'u', projectId: 'p1' },
+    { id: 'm2', userId: 'u', projectId: 'p2' },
+  ];
+  const target = withUpdateTarget(rows, { id: 'm2', queueId: 'q' }, byMember);
+  assert.deepEqual(target, {
+    id: 'm2',
+    userId: 'u',
+    projectId: 'p2',
+    queueId: 'q',
+  });
+  assert.equal(byMember(target), 'u:p2');
+  // An unknown row is left as given.
+  assert.deepEqual(withUpdateTarget(rows, { id: 'zzz' }, byMember), {
+    id: 'zzz',
+  });
 });

@@ -220,6 +220,32 @@ function compositeParts(model: string, field: string) {
     : undefined;
 }
 
+// AppSync Events segments are at most 50 letters, digits or dashes, so a UUID
+// part is packed into 22 base-62 digits.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const PACKED = /^[0-9A-Za-z]{22}$/;
+const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+function pack(id: string) {
+  if (!UUID.test(id)) return id;
+  let n = BigInt(`0x${id.replace(/-/g, '')}`);
+  let out = '';
+  while (n > 0n) {
+    out = DIGITS[Number(n % 62n)] + out;
+    n /= 62n;
+  }
+  return out.padStart(22, '0');
+}
+
+function unpack(part: string) {
+  if (!PACKED.test(part)) return part;
+  let n = 0n;
+  for (const c of part) n = n * 62n + BigInt(DIGITS.indexOf(c));
+  if (n >= 1n << 128n) return part;
+  const hex = n.toString(16).padStart(32, '0');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 // The value of a channel field for a row (or a filter's pins), if it has one.
 export function channelValue(
   model: string,
@@ -228,9 +254,16 @@ export function channelValue(
 ): string | undefined {
   const parts = compositeParts(model, field);
   const values = (parts ?? [field]).map((f) => row[f]);
-  if (!values.every((v) => typeof v === 'string' && SEGMENT.test(v)))
+  if (!values.every((v): v is string => typeof v === 'string' && v !== ''))
     return undefined;
-  return values.join('_');
+  if (!parts) return SEGMENT.test(values[0]) ? values[0] : undefined;
+  const value = values.map(pack).join('-');
+  if (!SEGMENT.test(value)) return undefined;
+  // Only a value that reads back as this row names its channel.
+  const back = channelRow(model, field, value);
+  return back && parts.every((p, i) => back[p] === values[i])
+    ? value
+    : undefined;
 }
 
 // The row fields a channel value stands for.
@@ -239,11 +272,16 @@ export function channelRow(
   field: string,
   value: string,
 ): Record<string, string> | undefined {
+  if (!SEGMENT.test(value)) return undefined;
   const parts = compositeParts(model, field);
   if (!parts) return { [field]: value };
-  const values = value.split('_');
-  if (values.length !== parts.length || values.some((v) => !SEGMENT.test(v)))
-    return undefined;
+  const pieces = value.split('-');
+  if (pieces.length < parts.length) return undefined;
+  const values = [
+    ...pieces.slice(0, parts.length - 1),
+    pieces.slice(parts.length - 1).join('-'),
+  ].map(unpack);
+  if (values.some((v) => v === '')) return undefined;
   return Object.fromEntries(parts.map((p, i) => [p, values[i]]));
 }
 

@@ -165,9 +165,11 @@ export function buildAnnotationPopupLines(
     lines.push(`Info tags: ${formatInfoTagsForDisplay(infoTags)}`);
   }
   if (isFalseNegative(annotation)) lines.push('False Negative');
+  // Owners are stored as `sub::username`.
+  const ownerId = annotation.owner?.split('::')[0];
   lines.push(
     `Created by: ${
-      users.find((user) => user.id === annotation.owner)?.name ?? 'Unknown'
+      users.find((user) => user.id === ownerId)?.name ?? 'Unknown'
     }`,
   );
   if (annotation.createdAt) lines.push(`Created at: ${annotation.createdAt}`);

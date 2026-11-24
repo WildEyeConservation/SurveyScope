@@ -31,6 +31,22 @@ export function withoutRow<T>(
   return rows.filter((existing) => getKey(existing) !== key);
 }
 
+/** An update may name its row by id alone, without a composite key's fields. */
+export function withUpdateTarget<T>(
+  rows: readonly T[],
+  item: T,
+  getKey: KeyFn<T>,
+): T {
+  const key = getKey(item);
+  const id = (item as { id?: unknown }).id;
+  const existing =
+    rows.find((row) => getKey(row) === key) ??
+    (id == null
+      ? undefined
+      : rows.find((row) => (row as { id?: unknown }).id === id));
+  return existing ? { ...existing, ...item } : item;
+}
+
 /** Puts back the pre-update version of a row whose update failed. */
 export function withRowRestored<T>(
   rows: readonly T[],

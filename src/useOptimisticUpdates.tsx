@@ -55,6 +55,7 @@ import {
   isMissingRow,
   withRowReinstated,
   withRowRestored,
+  withUpdateTarget,
   withoutRow,
 } from './utils/optimisticCache';
 
@@ -219,14 +220,13 @@ export function useOptimisticUpdates<T, ModelKey extends keyof DataModels>(
     onMutate: async (updatedItem: T) => {
       await queryClient.cancelQueries({ queryKey });
       const previousItems = queryClient.getQueryData<T[]>(queryKey);
+      const target = withUpdateTarget(previousItems ?? [], updatedItem, getKey);
       queryClient.setQueryData<T[]>(queryKey, (old = []) =>
         old.map((item) =>
-          getKey(item) === getKey(updatedItem)
-            ? { ...item, ...updatedItem }
-            : item,
+          getKey(item) === getKey(target) ? { ...item, ...updatedItem } : item,
         ),
       );
-      return { previousItems };
+      return { previousItems, target };
     },
     onSuccess: (result: unknown, updatedItem: T, context) => {
       if (!isMissingRow(result)) return;
@@ -234,11 +234,11 @@ export function useOptimisticUpdates<T, ModelKey extends keyof DataModels>(
         `${String(modelKey)}.update returned no row — the write was rejected. Rolling back.`,
         updatedItem,
       );
-      restoreInCache(updatedItem, context?.previousItems);
+      restoreInCache(context?.target ?? updatedItem, context?.previousItems);
     },
     onError: (err, updatedItem, context) => {
       console.error(err, updatedItem, context);
-      restoreInCache(updatedItem, context?.previousItems);
+      restoreInCache(context?.target ?? updatedItem, context?.previousItems);
     },
   });
 

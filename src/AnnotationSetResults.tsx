@@ -36,6 +36,7 @@ import { fetchAllInfoTagsForSet, formatInfoTagsForCsv } from './infoTags';
 import { Body, Footer, Header, Modal, Title } from './Modal';
 import { loadProjectImages } from './projectImages';
 import { loadRows } from './rowChunks';
+import { extractUserIdFromOwner } from './sightingQueries';
 import { fetchAllPaginatedResults } from './utils.tsx';
 
 const NO_IMAGE = {
@@ -283,7 +284,8 @@ export default function AnnotationSetResults({
               latitude: anno.image.latitude,
               longitude: anno.image.longitude,
               obscured: anno.obscured ?? false,
-              annotator: userMap[anno.owner ?? ''] || 'Unknown',
+              annotator:
+                userMap[extractUserIdFromOwner(anno.owner) ?? ''] || 'Unknown',
               isPrimary: anno.objectId === anno.id,
               x: anno.x,
               y: anno.y,
