@@ -1,29 +1,24 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { AnnotationFeatureProperties } from '../annotator/annotationFeatures';
+import {
+  addAnnotationMarkerLayers,
+  ANNOTATION_MARKER_LAYERS,
+  registerAnnotationMarkerImages,
+} from '../annotator/annotationMarkerLayers';
+import { makeCentredProjection } from '../annotator/imageProjection';
+import { createImageMap } from '../annotator/imageTiles';
+import MapRotateControl from '../annotator/MapRotateControl';
 import type { NotebookCrop } from './types';
 
-const MIN_SCALE = 0.25;
-const MAX_SCALE = 16;
-const clampScale = (scale: number) =>
-  Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
+const SOURCE_CROP = 'notebook-crop';
+const LAYER_CROP = 'notebook-crop-layer';
+const SOURCE_MARKER = 'notebook-marker';
+// MapLibre's world is 512 screen pixels wide at zoom 0.
+const WORLD_PX = 512;
 
-type View = { scale: number; x: number; y: number };
-
-function useSize(element: HTMLElement | null) {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  useLayoutEffect(() => {
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setSize({
-        width: entry.contentRect.width,
-        height: entry.contentRect.height,
-      }),
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [element]);
-  return size;
-}
-
+// The crop in the annotator's map, with its controls and marker style.
 export function CropView({
   crop,
   color,
@@ -38,133 +33,146 @@ export function CropView({
   onScale: (scale: number) => void;
   zoomKey: number;
 }) {
-  const [box, setBox] = useState<HTMLDivElement | null>(null);
-  const size = useSize(box);
-  const [view, setView] = useState<View | null>(null);
-  const viewRef = useRef<View | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
   const onScaleRef = useRef(onScale);
   onScaleRef.current = onScale;
-  const [failed, setFailed] = useState(false);
-  const drag = useRef<{ x: number; y: number } | null>(null);
-  const show = (next: View) => {
-    viewRef.current = next;
-    setView(next);
-  };
 
-  useEffect(() => setFailed(false), [crop]);
+  const projection = useMemo(
+    () => makeCentredProjection(crop.size, crop.size),
+    [crop.size],
+  );
+  const zoomFor = (s: number) => Math.log2((s * projection.size) / WORLD_PX);
+  const scaleAt = (zoom: number) => (2 ** zoom * WORLD_PX) / projection.size;
 
   useEffect(() => {
-    if (!size.width || !size.height) return;
-    const s = clampScale(
-      scale ?? Math.min(size.width, size.height) / crop.size,
+    if (!containerRef.current) return;
+    const map = createImageMap(containerRef.current, projection);
+    mapRef.current = map;
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: false, showZoom: true }),
+      'top-left',
     );
-    show({
-      scale: s,
-      x: size.width / 2 - (crop.size / 2) * s,
-      y: size.height / 2 - (crop.size / 2) * s,
+    map.addControl(new MapRotateControl(), 'top-left');
+    const unregister = registerAnnotationMarkerImages(map);
+    map.on('zoomend', (event) => {
+      if (event.originalEvent) onScaleRef.current(scaleAt(map.getZoom()));
     });
-    // Only a new example or panel size reframes; zooming keeps the view.
+    map.on('error', (event) => {
+      if ((event as { sourceId?: string }).sourceId === SOURCE_CROP)
+        setFailed(true);
+    });
+    map.on('load', () => {
+      map.addSource(SOURCE_MARKER, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      addAnnotationMarkerLayers(map, SOURCE_MARKER);
+      setReady(true);
+    });
+    return () => {
+      unregister();
+      map.remove();
+      mapRef.current = null;
+      setReady(false);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [crop, size.width, size.height]);
+  }, [projection]);
 
-  const zoomAt = (factor: number, at: { x: number; y: number }) => {
-    const v = viewRef.current;
-    if (!v) return;
-    const s = clampScale(v.scale * factor);
-    show({
-      scale: s,
-      x: at.x - (at.x - v.x) * (s / v.scale),
-      y: at.y - (at.y - v.y) * (s / v.scale),
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    setFailed(false);
+    const { size } = crop;
+    const url = `data:${crop.type};base64,${crop.data}`;
+    const coordinates = [
+      projection.px2lngLat(0, 0),
+      projection.px2lngLat(size, 0),
+      projection.px2lngLat(size, size),
+      projection.px2lngLat(0, size),
+    ] as maplibregl.Coordinates;
+    const source = map.getSource(SOURCE_CROP) as
+      maplibregl.ImageSource | undefined;
+    if (source) {
+      source.updateImage({ url, coordinates });
+    } else {
+      map.addSource(SOURCE_CROP, { type: 'image', url, coordinates });
+      map.addLayer(
+        {
+          id: LAYER_CROP,
+          type: 'raster',
+          source: SOURCE_CROP,
+          paint: { 'raster-fade-duration': 0 },
+        },
+        ANNOTATION_MARKER_LAYERS.outlines,
+      );
+    }
+    const container = map.getContainer();
+    const fit = Math.min(container.clientWidth, container.clientHeight) / size;
+    map.jumpTo({
+      center: projection.px2lngLat(size / 2, size / 2),
+      zoom: zoomFor(scaleRef.current ?? fit),
     });
-    onScaleRef.current(s);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crop, ready, projection]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const marker: AnnotationFeatureProperties = {
+      id: 'example',
+      color,
+      markerKind: 'primary',
+      borderColor: 'rgba(0, 0, 0, 0.7)',
+      borderWidth: 1,
+      opacity: 1,
+      active: false,
+      obscured: false,
+      readonly: true,
+      icon: '',
+      statusIcon: '',
+    };
+    (map.getSource(SOURCE_MARKER) as maplibregl.GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Point',
+            coordinates: projection.px2lngLat(crop.size / 2, crop.size / 2),
+          },
+          properties: marker,
+        },
+      ],
+    });
+  }, [color, crop.size, ready, projection]);
 
   const lastKey = useRef(zoomKey);
   useEffect(() => {
-    if (zoomKey === lastKey.current) return;
-    const factor = zoomKey > lastKey.current ? 1.25 : 0.8;
+    const map = mapRef.current;
+    if (!map || zoomKey === lastKey.current) return;
+    const zoom = map.getZoom() + (zoomKey > lastKey.current ? 1 : -1);
     lastKey.current = zoomKey;
-    zoomAt(factor, { x: size.width / 2, y: size.height / 2 });
+    map.easeTo({ zoom, duration: 200 });
+    onScaleRef.current(scaleAt(zoom));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomKey]);
 
-  useEffect(() => {
-    if (!box) return;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const rect = box.getBoundingClientRect();
-      zoomAt(Math.exp(-event.deltaY * 0.0015), {
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
-      });
-    };
-    box.addEventListener('wheel', onWheel, { passive: false });
-    return () => box.removeEventListener('wheel', onWheel);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [box]);
-
   return (
-    <div
-      ref={setBox}
-      className='absolute inset-0 cursor-grab touch-none overflow-hidden active:cursor-grabbing'
-      onPointerDown={(event) => {
-        drag.current = { x: event.clientX, y: event.clientY };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        const from = drag.current;
-        const v = viewRef.current;
-        if (!from || !v) return;
-        drag.current = { x: event.clientX, y: event.clientY };
-        show({
-          ...v,
-          x: v.x + event.clientX - from.x,
-          y: v.y + event.clientY - from.y,
-        });
-      }}
-      onPointerUp={() => (drag.current = null)}
-      onPointerCancel={() => (drag.current = null)}
-    >
+    <>
+      {/* MapLibre makes its container relative, so it fills a positioned box. */}
+      <div className='absolute inset-0'>
+        <div ref={containerRef} className='h-full w-full' />
+      </div>
       {failed && (
         <div className='absolute inset-0 flex items-center justify-center text-sm text-[#bcccdc]'>
           This image is unavailable.
         </div>
       )}
-      <div
-        className='absolute top-0 left-0 origin-top-left'
-        style={{
-          visibility: view ? 'visible' : 'hidden',
-          transform: view
-            ? `translate(${view.x}px, ${view.y}px) scale(${view.scale})`
-            : undefined,
-        }}
-      >
-        <img
-          src={`data:${crop.type};base64,${crop.data}`}
-          alt=''
-          draggable={false}
-          onError={() => setFailed(true)}
-          className='block max-w-none'
-          style={{
-            width: crop.size,
-            height: crop.size,
-            imageRendering:
-              view && view.scale >= 2 ? 'pixelated' : ('auto' as const),
-          }}
-        />
-        <span
-          className='pointer-events-none absolute rounded-full border-2'
-          style={{
-            borderColor: color,
-            left: crop.size / 2,
-            top: crop.size / 2,
-            width: 28 / (view?.scale ?? 1),
-            height: 28 / (view?.scale ?? 1),
-            borderWidth: 2 / (view?.scale ?? 1),
-            transform: 'translate(-50%, -50%)',
-          }}
-        />
-      </div>
-    </div>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 import { Spinner } from '@/components/ui/spinner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
+import { ImageStepper } from '../ImageStepper';
 import { CropView } from './CropView';
 import { cropQuery } from './data';
 import { EmptyNotice } from './EmptyNotice';
@@ -134,9 +135,12 @@ export function ExamplePager({
           </div>
         )}
         {items.length > 0 && (
-          <div className='pointer-events-none absolute right-2.5 bottom-2.5 z-10 bg-black/50 px-1.5 text-xs leading-5 text-white'>
-            {index + 1} / {items.length}
-          </div>
+          <ImageStepper
+            title={label.name}
+            index={index}
+            total={items.length}
+            onStep={step}
+          />
         )}
       </div>
     </div>

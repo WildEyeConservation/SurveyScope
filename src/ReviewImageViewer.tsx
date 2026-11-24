@@ -1,4 +1,3 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
 import type { BoundaryStatus } from '../shared/boundaryStatus';
 import type {
@@ -7,6 +6,7 @@ import type {
   ViewerFocus,
 } from './annotationTypes';
 import AnnotationWorkspace from './AnnotationWorkspace';
+import { ImageStepper } from './ImageStepper';
 import {
   fileName,
   formatTime,
@@ -90,33 +90,13 @@ export default function ReviewImageViewer({
         />
       )}
 
-      <div className='absolute top-2.5 left-1/2 z-10 flex max-w-[60%] -translate-x-1/2 items-center gap-2 bg-white px-1.5 py-1 text-sm text-[#212529] shadow-lg'>
-        <button
-          type='button'
-          aria-label='Previous image'
-          disabled={!hasPrev}
-          onClick={() => onStep(-1)}
-          className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
-        >
-          <ChevronLeft className='size-4' />
-        </button>
-        <span className='min-w-0 truncate'>
-          <strong>{fileName(image.originalPath, image.id)}</strong>
-          <span className='text-[#6c757d]'>
-            {image.timestamp ? ` · ${formatTime(image.timestamp)}` : ''}
-            {index >= 0 && ` · ${index + 1} of ${total.toLocaleString()}`}
-          </span>
-        </span>
-        <button
-          type='button'
-          aria-label='Next image'
-          disabled={!hasNext}
-          onClick={() => onStep(1)}
-          className='flex size-6 flex-none items-center justify-center bg-primary text-white disabled:opacity-40'
-        >
-          <ChevronRight className='size-4' />
-        </button>
-      </div>
+      <ImageStepper
+        title={fileName(image.originalPath, image.id)}
+        detail={image.timestamp ? formatTime(image.timestamp) : null}
+        index={index}
+        total={total}
+        onStep={onStep}
+      />
 
       {counts.length > 0 && (
         <div

@@ -1,5 +1,8 @@
 import sharp from 'sharp';
 
+// The tiles are already lossy, so a second encode must lose little more.
+const CROP_WEBP = { quality: 95, smartSubsample: true };
+
 export async function composeCrop(size, pieces) {
   const layers = [];
   for (const piece of pieces) {
@@ -36,10 +39,7 @@ export async function composeCrop(size, pieces) {
     .toBuffer({ resolveWithObject: true });
   // Any gap would show where the image ends, so such crops are refused.
   for (let i = 3; i < data.length; i += 4) if (data[i] < 255) return null;
-  return sharp(data, { raw: info })
-    .removeAlpha()
-    .webp({ quality: 85 })
-    .toBuffer();
+  return sharp(data, { raw: info }).removeAlpha().webp(CROP_WEBP).toBuffer();
 }
 
 export async function cutCrop({ raw, info }, crop) {
@@ -56,6 +56,6 @@ export async function cutCrop({ raw, info }, crop) {
   })
     .extract(crop)
     .removeAlpha()
-    .webp({ quality: 85 })
+    .webp(CROP_WEBP)
     .toBuffer();
 }
