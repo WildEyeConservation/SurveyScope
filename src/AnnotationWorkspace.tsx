@@ -16,7 +16,10 @@ import { Schema } from './amplify/client-schema';
 import type {
   AnnotationLocation,
   AnnotationWorkspaceProps,
+  NeighbourImageLookup,
+  OtherViewsHandler,
   TaskAcknowledgement,
+  ViewerFocus,
 } from './annotationTypes';
 import MapLibreAnnotator from './annotator/MapLibreAnnotator';
 import { selectTestContextAnnotations } from './annotator/testContextAnnotations';
@@ -55,6 +58,10 @@ interface AnnotationSessionProps {
   showMapLegend?: boolean;
   infoTags?: Map<string, string[]>;
   embedded?: boolean;
+  clickToCreate?: boolean;
+  otherViews?: OtherViewsHandler;
+  neighbourOverlaps?: NeighbourImageLookup;
+  focus?: ViewerFocus;
   bearing?: number;
   onBearingChange?: (bearing: number) => void;
 }
@@ -89,6 +96,10 @@ function AnnotationSession(props: AnnotationSessionProps) {
     viewBoundsScale,
     hideNavButtons,
     embedded,
+    clickToCreate,
+    otherViews,
+    neighbourOverlaps,
+    focus,
     bearing,
     onBearingChange,
   } = props;
@@ -128,6 +139,10 @@ function AnnotationSession(props: AnnotationSessionProps) {
         showMapLegend={showMapLegend}
         infoTags={infoTags}
         embedded={embedded}
+        clickToCreate={clickToCreate}
+        otherViews={otherViews}
+        neighbourOverlaps={neighbourOverlaps}
+        focus={focus}
         bearing={bearing}
         onBearingChange={onBearingChange}
       />
@@ -157,6 +172,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
     isFalseNegatives,
     viewBoundsScale,
     embedded = false,
+    clickToCreate,
+    otherViews,
+    neighbourOverlaps,
+    focus,
     bearing,
     onBearingChange,
   } = props;
@@ -170,19 +189,14 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
   nextRef.current = next;
   ackRef.current = ack;
 
-  // Queue tasks are filtered when fetched and checked once more when they
-  // become visible, in case another user annotated the location meanwhile.
-  // Ignore a result after local annotation creation: the revalidation query
-  // can otherwise see that new row and incorrectly advance to another task.
+  // Another user may annotate a queued location before it becomes visible.
   useEffect(() => {
     if (!visible || !revalidate || hasRevalidated.current) return;
     hasRevalidated.current = true;
-    let settled = false;
     let cancelled = false;
 
     revalidate()
       .then((isValid: boolean) => {
-        settled = true;
         if (cancelled || localAnnotationCreated.current) return;
         if (!isValid) {
           ackRef.current?.();
@@ -190,7 +204,6 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
         }
       })
       .catch((error: unknown) => {
-        settled = true;
         if (!cancelled) {
           console.error('Failed to revalidate annotation task', error);
         }
@@ -198,9 +211,6 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
 
     return () => {
       cancelled = true;
-      // If the task was hidden before its check completed, allow a fresh
-      // revalidation when the user returns instead of using a stale result.
-      if (!settled) hasRevalidated.current = false;
     };
   }, [visible, revalidate]);
 
@@ -452,6 +462,10 @@ export default function AnnotationWorkspace(props: AnnotationWorkspaceProps) {
       showMapLegend={embedded || legendCollapsed}
       infoTags={infoTagsByAnnotation}
       embedded={embedded}
+      clickToCreate={clickToCreate}
+      otherViews={otherViews}
+      neighbourOverlaps={neighbourOverlaps}
+      focus={focus}
       bearing={bearing}
       onBearingChange={onBearingChange}
     />

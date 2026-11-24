@@ -1,8 +1,8 @@
-import { Badge } from '@/components/ui/badge';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ackTask, queueDepths, receiveTask } from './api/tasks';
+import { ackTask, receiveTask } from './api/tasks';
 import { GlobalContext, UserContext } from './Context';
+import { JobsRemaining } from './JobsRemaining';
 import QCAnnotationReview from './QCAnnotationReview';
 import { TaskBuffer } from './TaskBuffer';
 import { touchQueue } from './touchQueue';
@@ -11,7 +11,7 @@ import { fetchAllPaginatedResults } from './utils';
 
 export default function QCReviewTask() {
   const { queueId } = useParams<{ queueId: string }>();
-  const { myMembershipHook } = useContext(UserContext)!;
+  const { myMembershipHook, setJobsCompleted } = useContext(UserContext)!;
   const { client } = useContext(GlobalContext)!;
   const [index, setIndex] = useState(0);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
@@ -25,6 +25,17 @@ export default function QCReviewTask() {
   const processedRef = useRef<Set<string>>(new Set());
 
   const [queueZoom, setQueueZoom] = useState<number | null>(null);
+  const [ownReviews, setOwnReviews] = useState<Record<string, string>>({});
+  const recordOwnReview = useCallback(
+    (annotationId: string, reviewCatId: string) =>
+      setOwnReviews((prev) => ({ ...prev, [annotationId]: reviewCatId })),
+    [],
+  );
+
+  // Batches count only work done on this queue.
+  useEffect(() => {
+    setJobsCompleted(0);
+  }, [queueId, setJobsCompleted]);
 
   // Fetch queue URL and annotationSetId on mount.
   useEffect(() => {
@@ -121,23 +132,6 @@ export default function QCReviewTask() {
     }
   }, [queueUrl, queueId]);
 
-  const [jobsRemaining, setJobsRemaining] = useState<string>('Unknown');
-
-  useEffect(() => {
-    if (!queueUrl) return;
-    const updateJobs = async () => {
-      try {
-        const depths = await queueDepths([queueId!]);
-        setJobsRemaining(depths[queueId!] || 'Unknown');
-      } catch {
-        // ignore polling errors
-      }
-    };
-    updateJobs();
-    const interval = setInterval(updateJobs, 10000);
-    return () => clearInterval(interval);
-  }, [queueUrl, queueId]);
-
   return (
     <div
       className='flex h-full w-full flex-col items-center gap-4'
@@ -174,6 +168,8 @@ export default function QCReviewTask() {
                   }))}
                 legendCollapsed={legendCollapsed}
                 setLegendCollapsed={setLegendCollapsed}
+                ownReviews={ownReviews}
+                recordOwnReview={recordOwnReview}
               />
             )}
           />
@@ -185,11 +181,7 @@ export default function QCReviewTask() {
           </div>
         )}
       </div>
-      <Badge className='flex w-full flex-row flex-wrap items-center justify-center gap-4 bg-secondary p-2'>
-        <p className='mb-0'>{jobsRemaining} jobs remaining (globally)</p>
-        <span className='hidden sm:block'>|</span>
-        <p className='mb-0'>{index} jobs completed in this session</p>
-      </Badge>
+      <JobsRemaining queueId={queueId} />
     </div>
   );
 }

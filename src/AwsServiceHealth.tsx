@@ -15,6 +15,10 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import {
+  CloudWatchClient,
+  GetMetricDataCommand,
+} from '@aws-sdk/client-cloudwatch';
+import {
   DescribeClustersCommand,
   DescribeServicesCommand,
   DescribeTaskDefinitionCommand,
@@ -98,6 +102,8 @@ type QueueHealthRow = {
   inflight: MaybeNumber;
   delayed: MaybeNumber;
   dlq?: DlqSummary;
+  // Messages deleted per minute recently; undefined when not measured.
+  drainRate?: number;
   error?: string | null;
   scope: QueueDescriptor['scope'];
   projectId?: string | null;
@@ -113,6 +119,60 @@ const NUMBER_ATTRIBUTES = [
 const parseNumberAttr = (value?: string): number => {
   const parsed = parseInt(value ?? '0', 10);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const RATE_WINDOW_MINUTES = 15;
+
+const backlog = (row: QueueHealthRow) =>
+  (row.available ?? 0) + (row.inflight ?? 0) + (row.delayed ?? 0);
+
+const fetchDrainRates = async (
+  region: string,
+  queueNames: string[],
+): Promise<Map<string, number>> => {
+  const rates = new Map<string, number>();
+  if (!queueNames.length) return rates;
+  const { credentials } = await fetchAuthSession();
+  const cloudwatch = new CloudWatchClient({ region, credentials });
+  const end = new Date();
+  const start = new Date(end.getTime() - RATE_WINDOW_MINUTES * 60_000);
+  const response = await cloudwatch.send(
+    new GetMetricDataCommand({
+      StartTime: start,
+      EndTime: end,
+      MetricDataQueries: queueNames.map((name, index) => ({
+        Id: `q${index}`,
+        MetricStat: {
+          Metric: {
+            Namespace: 'AWS/SQS',
+            MetricName: 'NumberOfMessagesDeleted',
+            Dimensions: [{ Name: 'QueueName', Value: name }],
+          },
+          Period: 60,
+          Stat: 'Sum',
+        },
+      })),
+    }),
+  );
+  for (const result of response.MetricDataResults ?? []) {
+    const name = queueNames[Number(result.Id?.slice(1))];
+    const values = result.Values ?? [];
+    if (name && values.length) {
+      rates.set(name, values.reduce((a, b) => a + b, 0) / values.length);
+    }
+  }
+  return rates;
+};
+
+const formatDuration = (minutes: number): string => {
+  if (minutes < 1) return '< 1 min';
+  if (minutes < 60) return `~${Math.round(minutes)} min`;
+  if (minutes < 48 * 60) {
+    const hours = Math.floor(minutes / 60);
+    const rest = Math.round(minutes % 60);
+    return rest ? `~${hours}h ${rest}m` : `~${hours}h`;
+  }
+  return `~${Math.round(minutes / 1440)} days`;
 };
 
 const SHORT_NAME_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
@@ -485,6 +545,23 @@ export default function AwsServiceHealth() {
         }),
       );
 
+      const busySystemQueues = queueRows.filter(
+        (row) => row.scope === 'system' && row.arn && backlog(row) > 0,
+      );
+      if (global?.region && busySystemQueues.length) {
+        try {
+          const rates = await fetchDrainRates(
+            global.region,
+            busySystemQueues.map((row) => row.arn!.split(':').pop()!),
+          );
+          for (const row of busySystemQueues) {
+            row.drainRate = rates.get(row.arn!.split(':').pop()!);
+          }
+        } catch (error) {
+          console.error('Unable to load queue throughput', error);
+        }
+      }
+
       setRows(queueRows.sort((a, b) => a.label.localeCompare(b.label)));
       setLastRefreshed(new Date());
     } catch (error) {
@@ -500,6 +577,7 @@ export default function AwsServiceHealth() {
     client,
     contextsReady,
     getSqsClient,
+    global?.region,
     listAllQueues,
     systemQueues,
   ]);
@@ -843,6 +921,44 @@ const countCell = (value: MaybeNumber | undefined) =>
 
 const numberMeta = { className: 'text-right tabular-nums whitespace-nowrap' };
 
+const minutesRemaining = (row: QueueHealthRow): number | null =>
+  row.drainRate ? backlog(row) / row.drainRate : null;
+
+function TimeRemainingCell({ row }: { row: QueueHealthRow }) {
+  if (backlog(row) === 0) {
+    return <span className='text-muted-foreground'>—</span>;
+  }
+  if (row.drainRate === undefined) {
+    return (
+      <span className='text-muted-foreground' title='No throughput data'>
+        —
+      </span>
+    );
+  }
+  const minutes = minutesRemaining(row);
+  if (minutes === null) {
+    return (
+      <span
+        className='text-warning'
+        title={`Nothing processed in the last ${RATE_WINDOW_MINUTES} minutes`}
+      >
+        Waiting
+      </span>
+    );
+  }
+  const finish = DateTime.now().plus({ minutes });
+  const rate = row.drainRate!;
+  return (
+    <span
+      title={`${rate < 10 ? rate.toFixed(1) : Math.round(rate).toLocaleString()} messages/min over the last ${RATE_WINDOW_MINUTES} minutes, finishing around ${finish.toLocaleString(
+        minutes > 24 * 60 ? DateTime.DATETIME_MED : DateTime.TIME_SIMPLE,
+      )}`}
+    >
+      {formatDuration(minutes)}
+    </span>
+  );
+}
+
 const isIdle = (row: QueueHealthRow) =>
   !row.error &&
   row.available === 0 &&
@@ -916,6 +1032,17 @@ function QueuesCard(props: {
         ) : (
           <span className='text-muted-foreground'>—</span>
         ),
+    },
+    {
+      id: 'eta',
+      header: 'Time remaining',
+      accessorFn: (row) =>
+        backlog(row) === 0
+          ? -2
+          : (minutesRemaining(row) ??
+            (row.drainRate === undefined ? -1 : Number.MAX_SAFE_INTEGER)),
+      cell: ({ row }) => <TimeRemainingCell row={row.original} />,
+      meta: numberMeta,
     },
     {
       id: 'available',
@@ -1061,11 +1188,9 @@ function QueuesCard(props: {
         <DataTable
           storageKey='aws-health-queues'
           key={scope}
-          columns={
-            scope === 'system'
-              ? columns.filter((column) => column.id !== 'survey')
-              : columns
-          }
+          columns={columns.filter(
+            (column) => column.id !== (scope === 'system' ? 'survey' : 'eta'),
+          )}
           data={visible}
           getRowId={(row) => row.id}
           pageSize={25}

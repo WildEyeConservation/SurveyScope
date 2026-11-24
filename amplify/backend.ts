@@ -859,6 +859,12 @@ sysadminRole.addToPrincipalPolicy(groupS3QueueManifestsPolicy);
 sysadminRole.addToPrincipalPolicy(sqsAnnotatorStatement);
 sysadminRole.addToPrincipalPolicy(sqsSysadminStatement);
 sysadminRole.addToPrincipalPolicy(groupEcsListPolicy);
+sysadminRole.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    actions: ['cloudwatch:GetMetricData'],
+    resources: ['*'],
+  }),
+);
 
 const imageInputBucket = backend.inputBucket.resources.bucket;
 const imageOutputBucket = backend.outputBucket.resources.bucket;

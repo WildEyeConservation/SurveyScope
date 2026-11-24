@@ -93,6 +93,11 @@ interface DensityMapProps {
   transectIds?: string[];
   primaryOnly?: boolean;
   editable?: boolean;
+  onOpenImage?: (image: {
+    imageId: string;
+    surveyId: string;
+    annotationSetId?: string;
+  }) => void;
   dropFalseNegatives?: boolean;
   /** Annotation set used when opening the image/annotation viewer. */
   primaryAnnotationSetId?: string;
@@ -212,6 +217,7 @@ export default function DensityMap({
   transectIds = [],
   primaryOnly = false,
   editable = false,
+  onOpenImage,
   dropFalseNegatives = false,
   primaryAnnotationSetId,
   onTransectsLoaded,
@@ -525,6 +531,10 @@ export default function DensityMap({
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [surveyDataSig],
+  );
+  const imageMeta = useCallback(
+    (id: string) => imageMetaById.get(id),
+    [imageMetaById],
   );
   const pointsBySetImage = useMemo(() => {
     const out = new Map<string, Point[]>();
@@ -1553,6 +1563,27 @@ export default function DensityMap({
           show={viewerOpen}
           onClose={closeViewer}
           stageRef={stageRef}
+          onOpenInExplore={
+            onOpenImage && viewerImageId
+              ? () => {
+                  const surveyId = imageById.get(viewerImageId)?.surveyId;
+                  if (!surveyId) return;
+                  const ownSet =
+                    effectiveSources.find(
+                      (s) => s.annotationSetId === reviewSetId,
+                    )?.surveyId === surveyId
+                      ? reviewSetId
+                      : effectiveSources.find((s) => s.surveyId === surveyId)
+                          ?.annotationSetId;
+                  closeViewer();
+                  onOpenImage({
+                    imageId: viewerImageId,
+                    surveyId,
+                    annotationSetId: ownSet,
+                  });
+                }
+              : undefined
+          }
         >
           {viewerImageId && (
             <ReviewImageStage
@@ -1562,6 +1593,7 @@ export default function DensityMap({
               annotationSetId={reviewSetId}
               visible={viewerOpen}
               buffer={viewerOpen}
+              neighbourOverlaps={imageMeta}
               onStep={(delta) => {
                 const next =
                   reviewIds[reviewIds.indexOf(viewerImageId) + delta];

@@ -50,6 +50,7 @@ export function LocationLoader() {
           visible={true}
           location={{ ...location, annotationSetId }}
           hideNavButtons
+          allowOutside
         />
       )}
     </div>

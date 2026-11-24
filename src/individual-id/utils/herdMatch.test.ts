@@ -125,6 +125,56 @@ test('a herd running one way at different speeds is paired', () => {
   assert.ok(correct(matchHerd(A, B)) >= 144);
 });
 
+const toB = (p: HerdPoint, x: number, y: number) => ({
+  id: p.id.replace('a', 'b'),
+  x,
+  y,
+});
+
+test('lassos holding opposite ends of a moved herd pair the animals in both', () => {
+  for (const seed of [30, 32, 36, 39]) {
+    const all = herd(120, seed);
+    const rand = rng(seed + 1);
+    const B = all
+      .map((p) =>
+        toB(
+          p,
+          p.x + 300 + (rand() - 0.5) * 20,
+          p.y + 100 + (rand() - 0.5) * 20,
+        ),
+      )
+      .filter((_, i) => all[i].x > 1500);
+    const A = all.filter((p) => p.x < 2900);
+    const shared = all.filter((p) => p.x > 1500 && p.x < 2900).length;
+    const got = correct(matchHerd(A, B));
+    assert.ok(got >= 0.75 * shared, `seed ${seed}: ${got} of ${shared}`);
+  }
+});
+
+test('a herd splitting two ways is paired on both sides of the split', () => {
+  for (const seed of [30, 36]) {
+    const A = herd(100, seed);
+    const cx = A.reduce((s, p) => s + p.x, 0) / A.length;
+    const B = A.map((p) => toB(p, p.x + (p.x < cx ? -200 : 200), p.y));
+    const got = correct(matchHerd(A, B));
+    assert.ok(got >= 98, `seed ${seed}: ${got} of 100`);
+  }
+});
+
+test('a lasso holding half of a grazing herd pairs that half', () => {
+  for (const seed of [30, 35, 38]) {
+    const A = herd(120, seed);
+    const rand = rng(seed + 1);
+    const B = A.map((p) => {
+      const a = rand() * 2 * Math.PI;
+      const m = 25 * (0.5 + rand());
+      return toB(p, p.x + 140 + m * Math.cos(a), p.y - 70 + m * Math.sin(a));
+    }).filter((_, i) => A[i].y < 2500);
+    const got = correct(matchHerd(A, B));
+    assert.ok(got >= 0.9 * B.length, `seed ${seed}: ${got} of ${B.length}`);
+  }
+});
+
 test('250 x 250 matches quickly', () => {
   const A = herd(250, 8);
   const B = moved(A, 9, { dx: 1200, dy: 600, jitter: 10 });

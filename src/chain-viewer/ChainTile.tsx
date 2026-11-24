@@ -39,7 +39,10 @@ interface Props {
   /** Target for the "open image" button — uses the ImageLoader route. */
   openImageHref: string;
   /** Toggle `obscured` on the annotation; persists to the DB. */
-  onToggleObscured: () => void;
+  onToggleObscured?: () => void;
+  // `crosshair` marks a projected position.
+  marker?: 'ring' | 'strong' | 'crosshair' | 'none';
+  bare?: boolean;
 }
 
 /**
@@ -67,6 +70,8 @@ export function ChainTile({
   onZoomChange,
   openImageHref,
   onToggleObscured,
+  marker = 'ring',
+  bare = false,
 }: Props) {
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -106,16 +111,7 @@ export function ChainTile({
       .then(({ canvas, markerX, markerY }) => {
         if (cancelled) return;
         const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.beginPath();
-          ctx.arc(markerX, markerY, 8, 0, Math.PI * 2);
-          ctx.strokeStyle = categoryColor;
-          ctx.lineWidth = 2;
-          ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-          ctx.shadowBlur = 3;
-          ctx.stroke();
-          ctx.shadowBlur = 0;
-        }
+        if (ctx) drawMarker(ctx, marker, markerX, markerY, categoryColor);
         canvas.toBlob((blob) => {
           if (cancelled || !blob) return;
           const url = URL.createObjectURL(blob);
@@ -139,6 +135,7 @@ export function ChainTile({
     meta,
     categoryColor,
     effectiveZoomOut,
+    marker,
   ]);
 
   useEffect(() => {
@@ -225,35 +222,37 @@ export function ChainTile({
           <span>OOV</span>
         </div>
       ) : (
-        <button
-          type='button'
-          className={
-            'chain-viewer-obscured-toggle ' +
-            (annotation.obscured
-              ? 'chain-viewer-obscured-toggle--active'
-              : 'chain-viewer-obscured-toggle--inactive')
-          }
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleObscured();
-            e.currentTarget.blur();
-          }}
-          title={
-            annotation.obscured
-              ? 'Marked as obscured — click to remove'
-              : 'Click to mark as obscured'
-          }
-          aria-pressed={annotation.obscured}
-        >
-          {annotation.obscured ? (
-            <EyeOff size={11} strokeWidth={2.5} />
-          ) : (
-            <Eye size={11} strokeWidth={2.5} />
-          )}
-          <span>{annotation.obscured ? 'Obscured' : 'Visible'}</span>
-        </button>
+        onToggleObscured && (
+          <button
+            type='button'
+            className={
+              'chain-viewer-obscured-toggle ' +
+              (annotation.obscured
+                ? 'chain-viewer-obscured-toggle--active'
+                : 'chain-viewer-obscured-toggle--inactive')
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleObscured();
+              e.currentTarget.blur();
+            }}
+            title={
+              annotation.obscured
+                ? 'Marked as obscured — click to remove'
+                : 'Click to mark as obscured'
+            }
+            aria-pressed={annotation.obscured}
+          >
+            {annotation.obscured ? (
+              <EyeOff size={11} strokeWidth={2.5} />
+            ) : (
+              <Eye size={11} strokeWidth={2.5} />
+            )}
+            <span>{annotation.obscured ? 'Obscured' : 'Visible'}</span>
+          </button>
+        )
       )}
-      {!annotation.oov && maxZoomOut > 0 && (
+      {!bare && !annotation.oov && maxZoomOut > 0 && (
         <>
           <button
             type='button'
@@ -285,58 +284,109 @@ export function ChainTile({
           </button>
         </>
       )}
-      <button
-        type='button'
-        className='chain-viewer-tile-action chain-viewer-tile-action-1'
-        onClick={(e) => {
-          e.stopPropagation();
-          onRotate();
-          e.currentTarget.blur();
-        }}
-        title='Rotate tile (and all tiles from this camera) 90°'
-        aria-label='Rotate 90 degrees'
-      >
-        <RotateCw size={14} strokeWidth={2.5} />
-      </button>
-      <a
-        className='chain-viewer-tile-action chain-viewer-tile-action-2'
-        href={openImageHref}
-        target='_blank'
-        rel='noopener noreferrer'
-        onClick={(e) => {
-          e.stopPropagation();
-          e.currentTarget.blur();
-        }}
-        title='Open image in a new tab'
-        aria-label='Open image in a new tab'
-      >
-        <ExternalLink size={14} strokeWidth={2.5} />
-      </a>
-      <div className='chain-viewer-tile-popup'>
-        {metaLoading && !meta ? (
-          <span style={{ fontStyle: 'italic', opacity: 0.7 }}>
-            Loading image info…
-          </span>
-        ) : (
-          <>
-            <div style={{ fontWeight: 600, wordBreak: 'break-all' }}>
-              {popupPath ?? 'Unknown path'}
-            </div>
-            <div style={{ opacity: 0.85, marginTop: 2 }}>
-              Camera: {popupCamera ?? 'Unknown'}
-            </div>
-            {meta &&
-              !isAnnotationOnEffort(
-                meta.boundaryStatus,
-                annotation.outsideBoundary,
-              ) && (
-                <div style={{ fontWeight: 600, marginTop: 2 }}>
-                  {OUTSIDE_SURVEY_AREA}
+      {!bare && (
+        <>
+          <button
+            type='button'
+            className='chain-viewer-tile-action chain-viewer-tile-action-1'
+            onClick={(e) => {
+              e.stopPropagation();
+              onRotate();
+              e.currentTarget.blur();
+            }}
+            title='Rotate tile (and all tiles from this camera) 90°'
+            aria-label='Rotate 90 degrees'
+          >
+            <RotateCw size={14} strokeWidth={2.5} />
+          </button>
+          <a
+            className='chain-viewer-tile-action chain-viewer-tile-action-2'
+            href={openImageHref}
+            target='_blank'
+            rel='noopener noreferrer'
+            onClick={(e) => {
+              e.stopPropagation();
+              e.currentTarget.blur();
+            }}
+            title='Open image in a new tab'
+            aria-label='Open image in a new tab'
+          >
+            <ExternalLink size={14} strokeWidth={2.5} />
+          </a>
+          <div className='chain-viewer-tile-popup'>
+            {metaLoading && !meta ? (
+              <span style={{ fontStyle: 'italic', opacity: 0.7 }}>
+                Loading image info…
+              </span>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600, wordBreak: 'break-all' }}>
+                  {popupPath ?? 'Unknown path'}
                 </div>
-              )}
-          </>
-        )}
-      </div>
+                <div style={{ opacity: 0.85, marginTop: 2 }}>
+                  Camera: {popupCamera ?? 'Unknown'}
+                </div>
+                {meta &&
+                  !isAnnotationOnEffort(
+                    meta.boundaryStatus,
+                    annotation.outsideBoundary,
+                  ) && (
+                    <div style={{ fontWeight: 600, marginTop: 2 }}>
+                      {OUTSIDE_SURVEY_AREA}
+                    </div>
+                  )}
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
+}
+
+function drawMarker(
+  ctx: CanvasRenderingContext2D,
+  marker: NonNullable<Props['marker']>,
+  x: number,
+  y: number,
+  color: string,
+) {
+  if (marker === 'none') return;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+  ctx.shadowBlur = 3;
+  if (marker === 'crosshair') {
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      ctx.moveTo(x + dx * 6, y + dy * 6);
+      ctx.lineTo(x + dx * 20, y + dy * 20);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  } else if (marker === 'strong') {
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
 }

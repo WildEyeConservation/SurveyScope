@@ -8,9 +8,10 @@ import {
 import { badRequest, forbidden } from './errors';
 import { authorizeLaunch, type LaunchStore } from './launch';
 import type { Lease } from './leases';
-import type { Models, Result } from './models';
+import type { DataLayer, Models, Result } from './models';
 import type { QueueActivity } from './queueStore';
 import type { Row } from './schema';
+import * as notebook from './speciesNotebook';
 import {
   assignedTransect,
   holdJob,
@@ -22,6 +23,9 @@ import {
 export interface OperationContext {
   access: Access;
   models: Models;
+  data: DataLayer;
+  secret: () => string;
+  images: notebook.NotebookContext['images'];
   launches: LaunchStore;
   tasks: TaskContext;
   queues: QueueActivity;
@@ -65,6 +69,11 @@ const surveyAdmin =
   (field: string): Authorize =>
   ({ access }, args) =>
     access.requireSurveyAdmin(stringArg(args, field));
+
+const surveyMember =
+  (field: string): Authorize =>
+  ({ access }, args) =>
+    access.requireSurveyMember(stringArg(args, field));
 
 const surveyAdminOf =
   (model: string, field: string): Authorize =>
@@ -582,6 +591,16 @@ export const OPERATIONS: Record<string, OperationPolicy> = {
   },
   jollyStatusUrl: { fn: 'workflowFiles', authorize: surveyResults },
   getRowChunk: { fn: 'getRowChunk', authorize: rowChunk },
+  speciesNotebookLabels: {
+    authorize: surveyMember('projectId'),
+    run: notebook.labels,
+  },
+  speciesNotebookExamples: {
+    authorize: surveyMember('projectId'),
+    run: notebook.examples,
+  },
+  // The token names the survey; crop checks it and the caller's membership.
+  speciesNotebookCrop: { authorize: signedIn, run: notebook.crop },
   pingIndividualIdTransect: {
     authorize: ({ tasks }, args) =>
       assignedTransect(tasks, stringArg(args, 'id')),

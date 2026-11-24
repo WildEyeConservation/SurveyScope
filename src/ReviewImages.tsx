@@ -1,7 +1,7 @@
 import { GridHead, GridTable } from '@/components/GridTable';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   useCallback,
@@ -11,7 +11,26 @@ import {
   useRef,
   useState,
 } from 'react';
+import type {
+  OtherViewsHandler,
+  OtherViewsTarget,
+  ViewerFocus,
+} from './annotationTypes';
 import { GlobalContext, ProjectContext } from './Context';
+import { buildMinimapModel } from './exploreViews/minimapModel';
+import { chainOtherCount, nearbyViews } from './exploreViews/otherViews';
+import OtherViewsDrawer, {
+  DRAWER_WIDTH,
+  type OtherViewsState,
+} from './exploreViews/OtherViewsDrawer';
+import {
+  MinimapCorner,
+  MinimapFooter,
+  type MinimapHint,
+} from './exploreViews/SurveyMinimap';
+import { cachedNeighbours } from './exploreViews/useImageNeighbours';
+import { useNarrowViewport } from './exploreViews/useNarrowViewport';
+import { insertVisit, keepCurrent } from './reviewImageList';
 import ReviewImageStage, { type StageSlot } from './ReviewImageStage';
 import { fileName, formatTime, type Point } from './reviewImageView';
 import {
@@ -42,6 +61,7 @@ export default function ReviewImages({
   transectIds,
   selectedImageId,
   onSelectImage,
+  visitRequest,
   visible,
 }: {
   surveyId: string;
@@ -52,6 +72,7 @@ export default function ReviewImages({
   transectIds: string[];
   selectedImageId: string | null;
   onSelectImage: (imageId: string) => void;
+  visitRequest?: { imageId: string; seq: number } | null;
   visible: boolean;
 }) {
   const { client } = useContext(GlobalContext)!;
@@ -135,13 +156,47 @@ export default function ReviewImages({
     return out;
   }, [annotationsQuery.data]);
 
-  const index = rows.findIndex((row) => row.id === selectedImageId);
-  const selected = selectedImageId ? imagesById.get(selectedImageId) : null;
   const rowIds = useMemo(() => rows.map((row) => row.id), [rows]);
   const rowById = useMemo(
     () => new Map(rows.map((row) => [row.id, row])),
     [rows],
   );
+
+  const [visit, setVisit] = useState<{
+    id: string;
+    from: string | null;
+  } | null>(null);
+
+  // Keep the open image until navigation or a filter or sort change.
+  const viewKey = `${annotationSetId}|${filterKey}|${sort}`;
+  const shownRef = useRef({ key: viewKey, ids: [] as string[] });
+  const ids = useMemo(() => {
+    const shown = shownRef.current;
+    const same = shown.key === viewKey;
+    let next = same ? keepCurrent(rowIds, shown.ids, selectedImageId) : rowIds;
+    if (same && visit?.id === selectedImageId && imagesById.has(visit.id))
+      next = insertVisit(next, shown.ids, visit.id, visit.from);
+    shownRef.current = { key: viewKey, ids: next };
+    return next;
+  }, [rowIds, viewKey, selectedImageId, visit, imagesById]);
+  const currentId =
+    selectedImageId && ids.includes(selectedImageId)
+      ? selectedImageId
+      : (ids[0] ?? null);
+  const index = currentId ? ids.indexOf(currentId) : -1;
+  const selected = currentId ? imagesById.get(currentId) : null;
+  const rowFor = (id: string): ImageRow => {
+    const row = rowById.get(id);
+    if (row) return row;
+    const image = imagesById.get(id);
+    return {
+      id,
+      name: fileName(image?.originalPath, id),
+      timestamp: image?.timestamp ?? 0,
+      total: 0,
+      counts: [],
+    };
+  };
   const lookup = useCallback(
     (id: string): StageSlot | null => {
       const image = imagesById.get(id);
@@ -163,17 +218,149 @@ export default function ReviewImages({
     [imagesById, pointsByImage, rowById, categoryById],
   );
 
+  const visitPending =
+    visit?.id === selectedImageId && !imagesById.has(visit.id);
   useEffect(() => {
-    if (rows.length && (!selectedImageId || !imagesById.has(selectedImageId)))
-      onSelectImage(rows[0].id);
-  }, [rows, selectedImageId, imagesById, onSelectImage]);
+    if (visitPending) return;
+    if (currentId && currentId !== selectedImageId) onSelectImage(currentId);
+  }, [currentId, selectedImageId, onSelectImage, visitPending]);
+
+  const queryClient = useQueryClient();
+  const narrow = useNarrowViewport();
+  const [drawer, setDrawer] = useState<OtherViewsState | null>(null);
+  const [focus, setFocus] = useState<{
+    imageId: string;
+    focus: ViewerFocus;
+  } | null>(null);
+  const [viewed, setViewed] = useState<Set<string>>(() => new Set());
+  const [mapExpanded, setMapExpanded] = useState(false);
+  // The drawer stays open only while the viewer shows an image it opened.
+  const drawerImageRef = useRef<string | null>(null);
+  const focusSeqRef = useRef(0);
+  const currentIdRef = useRef(currentId);
+  currentIdRef.current = currentId;
+
+  useEffect(() => {
+    if (!visitRequest) return;
+    const from = currentIdRef.current;
+    if (visitRequest.imageId !== from) {
+      setVisit({ id: visitRequest.imageId, from });
+    }
+    onSelectImage(visitRequest.imageId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitRequest]);
+  const setAnnotationsRef = useRef(annotationsQuery.data?.annotations ?? []);
+  setAnnotationsRef.current = annotationsQuery.data?.annotations ?? [];
+  const imagesByIdRef = useRef(imagesById);
+  imagesByIdRef.current = imagesById;
+
+  useEffect(() => {
+    if (!currentId) return;
+    setViewed((prev) =>
+      prev.has(currentId) ? prev : new Set(prev).add(currentId),
+    );
+    if (drawerImageRef.current && drawerImageRef.current !== currentId) {
+      drawerImageRef.current = null;
+      setDrawer(null);
+    }
+    setFocus((prev) => (prev && prev.imageId !== currentId ? null : prev));
+  }, [currentId]);
+
+  const otherViews = useMemo<OtherViewsHandler>(() => {
+    const otherCount = (t: OtherViewsTarget) =>
+      chainOtherCount(setAnnotationsRef.current, t.objectId, t.id);
+    return {
+      describe: (target) => {
+        const count = otherCount(target);
+        if (count > 0) return { label: `Other views (${count})`, linked: true };
+        const rows = cachedNeighbours(queryClient, target.imageId);
+        if (!rows) return { label: 'Nearby images', linked: false };
+        const sizeOf = (id: string) => {
+          const image = imagesByIdRef.current.get(id);
+          return image?.width && image.height
+            ? { width: image.width, height: image.height }
+            : undefined;
+        };
+        const n = nearbyViews(target.imageId, target, rows, sizeOf).length;
+        return { label: `Nearby images (${n})`, linked: false };
+      },
+      open: (target) => {
+        drawerImageRef.current = currentIdRef.current;
+        setDrawer({ target, linked: otherCount(target) > 0 });
+      },
+    };
+  }, [queryClient]);
+
+  const closeDrawer = useCallback(() => {
+    drawerImageRef.current = null;
+    setDrawer(null);
+  }, []);
+
+  const jumpTo = useCallback(
+    (imageId: string, point: Point | null) => {
+      if (!imagesByIdRef.current.has(imageId)) return;
+      drawerImageRef.current = imageId;
+      focusSeqRef.current += 1;
+      setFocus(
+        point
+          ? { imageId, focus: { ...point, seq: focusSeqRef.current } }
+          : null,
+      );
+      const from = currentIdRef.current;
+      if (imageId === from) return;
+      setVisit({ id: imageId, from });
+      onSelectImage(imageId);
+    },
+    [onSelectImage],
+  );
+
+  const focusFor = useCallback(
+    (id: string) => (focus?.imageId === id ? focus.focus : undefined),
+    [focus],
+  );
+  const imageInfo = useCallback(
+    (id: string) => imagesById.get(id),
+    [imagesById],
+  );
+
+  const minimapModel = useMemo(
+    () =>
+      surveyQuery.data
+        ? buildMinimapModel(
+            surveyQuery.data.images,
+            surveyQuery.data.strata,
+            surveyQuery.data.exclusions,
+          )
+        : null,
+    [surveyQuery.data],
+  );
+  const hintFor = useCallback(
+    (id: string): MinimapHint => {
+      const image = imagesById.get(id);
+      const counts = rowById.get(id)?.counts ?? [];
+      return {
+        title: fileName(image?.originalPath, id),
+        detail:
+          counts
+            .map(
+              ({ categoryId, count }) =>
+                `${count} ${categoryById.get(categoryId)?.name ?? 'Unknown'}`,
+            )
+            .join(', ') || undefined,
+      };
+    },
+    [imagesById, rowById, categoryById],
+  );
+  const drawerCategory = drawer
+    ? categoryById.get(drawer.target.categoryId)
+    : undefined;
 
   const listRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
-    count: rows.length,
+    count: ids.length,
     getScrollElement: () => listRef.current,
     estimateSize: () => 52,
-    getItemKey: (i) => rows[i].id,
+    getItemKey: (i) => ids[i],
     overscan: 5,
   });
 
@@ -182,8 +369,8 @@ export default function ReviewImages({
   }, [index, virtualizer]);
 
   const step = (delta: number) => {
-    const next = rows[index + delta];
-    if (next) onSelectImage(next.id);
+    const next = index >= 0 ? ids[index + delta] : undefined;
+    if (next) onSelectImage(next);
   };
 
   if (!annotationSetId) {
@@ -201,7 +388,7 @@ export default function ReviewImages({
       <GridTable className='flex w-64 flex-none flex-col'>
         <GridHead className='flex items-center justify-between gap-2'>
           <span>
-            {loading ? 'Loading...' : `${rows.length.toLocaleString()} images`}
+            {loading ? 'Loading...' : `${ids.length.toLocaleString()} images`}
           </span>
           <div className='flex border border-white/30 normal-case'>
             {(
@@ -247,7 +434,7 @@ export default function ReviewImages({
               <Spinner size='sm' />
               Loading sightings...
             </div>
-          ) : rows.length === 0 ? (
+          ) : ids.length === 0 ? (
             <div className='p-3 text-sm text-muted-foreground'>
               No images match the filters.
             </div>
@@ -257,7 +444,7 @@ export default function ReviewImages({
               style={{ height: virtualizer.getTotalSize() }}
             >
               {virtualizer.getVirtualItems().map((item) => {
-                const row = rows[item.index];
+                const row = rowFor(ids[item.index]);
                 return (
                   <button
                     key={item.key}
@@ -267,7 +454,7 @@ export default function ReviewImages({
                     onClick={() => onSelectImage(row.id)}
                     className={cn(
                       'absolute inset-x-0 top-0 flex flex-col gap-1 border-b border-white/[0.08] px-2.5 py-2 text-left',
-                      row.id === selectedImageId
+                      row.id === currentId
                         ? 'bg-primary/15 shadow-[inset_3px_0_0_var(--color-primary)]'
                         : cn(
                             'hover:bg-white/[0.075]',
@@ -285,6 +472,11 @@ export default function ReviewImages({
                       </span>
                     </span>
                     <span className='flex flex-wrap gap-1'>
+                      {!rowById.has(row.id) && (
+                        <span className='bg-black/25 px-1.5 text-[11px] text-muted-foreground italic'>
+                          Not in filter
+                        </span>
+                      )}
                       {row.counts.map(({ categoryId, count }) => {
                         const category = categoryById.get(categoryId);
                         return (
@@ -309,18 +501,34 @@ export default function ReviewImages({
             </div>
           )}
         </div>
+        {minimapModel && (
+          <MinimapFooter
+            model={minimapModel}
+            inFilterIds={ids}
+            viewed={viewed}
+            currentId={currentId}
+            hintFor={hintFor}
+            onSelect={onSelectImage}
+            expanded={mapExpanded}
+            onExpandedChange={() => setMapExpanded((prev) => !prev)}
+          />
+        )}
       </GridTable>
 
       <div className='relative min-w-0 grow overflow-hidden border border-white/15'>
         {selected ? (
           <ReviewImageStage
-            ids={rowIds}
+            ids={ids}
             currentId={selected.id}
             lookup={lookup}
             annotationSetId={annotationSetId}
             visible={visible}
             buffer={visible}
             onStep={step}
+            otherViews={otherViews}
+            neighbourOverlaps={imageInfo}
+            focusFor={focusFor}
+            rightInset={drawer && !narrow ? DRAWER_WIDTH : 0}
           />
         ) : (
           <div className='flex h-full items-center justify-center gap-2 text-sm text-muted-foreground'>
@@ -333,6 +541,37 @@ export default function ReviewImages({
               'No image selected.'
             )}
           </div>
+        )}
+        {drawer && (
+          <OtherViewsDrawer
+            key={drawer.target.id}
+            state={drawer}
+            currentImageId={currentId}
+            surveyId={surveyId}
+            annotationSetId={annotationSetId}
+            imageInfo={imageInfo}
+            categoryColor={drawerCategory?.color ?? '#ff8c1a'}
+            categoryName={drawerCategory?.name ?? 'Unknown'}
+            narrow={narrow}
+            onJump={jumpTo}
+            onClose={closeDrawer}
+          />
+        )}
+        {minimapModel && mapExpanded && (
+          <MinimapCorner
+            model={minimapModel}
+            inFilterIds={ids}
+            viewed={viewed}
+            currentId={currentId}
+            hintFor={hintFor}
+            onSelect={onSelectImage}
+            positionLabel={
+              index >= 0
+                ? `image ${(index + 1).toLocaleString()} of ${ids.length.toLocaleString()}`
+                : undefined
+            }
+            onClose={() => setMapExpanded(false)}
+          />
         )}
       </div>
     </div>

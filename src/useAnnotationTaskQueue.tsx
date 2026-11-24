@@ -15,6 +15,7 @@ import {
   type ReceivedTask,
 } from './api/tasks';
 import { subscribeToSharedDefaultZoom } from './defaultZoomEvents';
+import { firstViewCheck } from './firstViewCheck';
 import { createLocationLeases } from './locationLeases';
 import { tileLoadStats } from './storage/tileLoadStats';
 import { touchQueue } from './touchQueue';
@@ -289,8 +290,7 @@ export default function useAnnotationTaskQueue() {
 
       return {
         ...preparedTask,
-        // Last-resort filtering when the buffered task becomes visible.
-        revalidate: async () => Boolean(await prepareTask(body)),
+        revalidate: firstViewCheck(() => prepareTask(body).then(Boolean)),
       };
     },
     [client, prepareTask, leases, markTestDue],

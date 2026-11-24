@@ -7,6 +7,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { redeemResultsLink } from './api/results';
 import { UserContext } from './Context.tsx';
 import { ProgressIndicators } from './ProgressIndicators.jsx';
+import { SpeciesNotebook } from './species-notebook';
 import UploadProgress from './upload/UploadProgress.tsx';
 import Notifications from './user/Notifications.tsx';
 import Settings from './user/Settings.tsx';
@@ -195,6 +196,7 @@ export default function MainNavigation({ signOut }: { signOut: () => void }) {
             </div>
           )}
           <div className='mt-2 flex grow flex-col items-center justify-end gap-4 lg:mt-0 lg:flex-row lg:gap-0'>
+            <SpeciesNotebook />
             <UploadProgress />
             <ProgressIndicators />
             <Settings signOut={signOut} />

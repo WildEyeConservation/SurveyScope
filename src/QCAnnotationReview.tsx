@@ -40,6 +40,7 @@ import {
 } from './infoTags';
 import { recordWorkflowTask } from './recordWorkflowTask';
 import { reviewWorkflowTask } from './reviewWorkflowTask';
+import { LabelPeek } from './species-notebook';
 import { getTileBlob, imageTileContext } from './StorageLayer';
 import { DEFAULT_ZOOM_OFFSET } from './survey/zoomPreview';
 import { findShortcutMatch, formatShortcutKey } from './utils/hotkeys';
@@ -87,6 +88,9 @@ type QCReviewProps = {
   adminMemberships?: { projectId: string; queueId: string }[];
   legendCollapsed: boolean;
   setLegendCollapsed: (collapsed: boolean) => void;
+  // Preloaded tasks may miss recent reviews.
+  ownReviews: Record<string, string>;
+  recordOwnReview: (annotationId: string, reviewCatId: string) => void;
 };
 
 export default function QCAnnotationReview({
@@ -106,6 +110,8 @@ export default function QCAnnotationReview({
   adminMemberships,
   legendCollapsed,
   setLegendCollapsed,
+  ownReviews,
+  recordOwnReview,
 }: QCReviewProps) {
   const { client } = useContext(GlobalContext)!;
   const { user } = useContext(UserContext)!;
@@ -146,6 +152,7 @@ export default function QCAnnotationReview({
       x: number;
       y: number;
       categoryId: string;
+      reviewCatId: string | null;
       reviewed: boolean;
       outsideBoundary: boolean;
       infoTags: string[];
@@ -247,6 +254,7 @@ export default function QCAnnotationReview({
             'x',
             'y',
             'categoryId',
+            'reviewCatId',
             'reviewedBy',
             ...outsideBoundaryFields<'id'>(),
           ],
@@ -264,6 +272,7 @@ export default function QCAnnotationReview({
             x: a.x,
             y: a.y,
             categoryId: a.categoryId,
+            reviewCatId: a.reviewCatId ?? null,
             reviewed: !!a.reviewedBy,
             outsideBoundary: isMarkedOutside(a),
             infoTags: infoTagNamesFor(infoTagData, a.id),
@@ -354,25 +363,33 @@ export default function QCAnnotationReview({
     if (!source) return;
     source.setData({
       type: 'FeatureCollection',
-      features: otherAnnotations.map((a) => ({
-        type: 'Feature',
-        properties: {
-          label:
-            categories.find((c) => c.id === a.categoryId)?.name ?? 'Unknown',
-          reviewed: a.reviewed,
-          infoTags: JSON.stringify(a.infoTags),
-          outside: !isAnnotationOnEffort(
-            image?.boundaryStatus,
-            a.outsideBoundary,
-          ),
-        },
-        geometry: {
-          type: 'Point',
-          coordinates: px2lngLat(a.x, a.y),
-        },
-      })),
+      features: otherAnnotations.map((a) => {
+        const reviewCatId = ownReviews[a.id] ?? a.reviewCatId;
+        return {
+          type: 'Feature',
+          properties: {
+            label:
+              categories.find((c) => c.id === a.categoryId)?.name ?? 'Unknown',
+            reviewedLabel:
+              reviewCatId && reviewCatId !== a.categoryId
+                ? (categories.find((c) => c.id === reviewCatId)?.name ??
+                  'Unknown')
+                : '',
+            reviewed: a.reviewed || a.id in ownReviews,
+            infoTags: JSON.stringify(a.infoTags),
+            outside: !isAnnotationOnEffort(
+              image?.boundaryStatus,
+              a.outsideBoundary,
+            ),
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: px2lngLat(a.x, a.y),
+          },
+        };
+      }),
     });
-  }, [map, otherAnnotations, categories, image, px2lngLat, scale]);
+  }, [map, otherAnnotations, ownReviews, categories, image, px2lngLat, scale]);
 
   // ── Tile loading ──
   const updateVisibleTiles = useCallback(
@@ -600,7 +617,8 @@ export default function QCAnnotationReview({
         if (feat.geometry.type !== 'Point') return;
         const coords = feat.geometry.coordinates.slice() as [number, number];
         const label = String(feat.properties?.label ?? '');
-        const escaped = label
+        const reviewedLabel = String(feat.properties?.reviewedLabel ?? '');
+        const escaped = (reviewedLabel ? `${label} → ${reviewedLabel}` : label)
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;');
@@ -818,6 +836,7 @@ export default function QCAnnotationReview({
           }`,
         );
       }
+      recordOwnReview(annotation.id, reviewCatId);
 
       // Queue progress counts each annotation once; a re-review must not
       // advance it again.
@@ -839,6 +858,7 @@ export default function QCAnnotationReview({
       markerPosition,
       fetchExistingReviewer,
       incrementObservedCount,
+      recordOwnReview,
     ],
   );
 
@@ -1274,9 +1294,16 @@ export default function QCAnnotationReview({
                       }}
                     >
                       <div>{cat.name}</div>
-                      {cat.shortcutKey && (
-                        <div>({formatShortcutKey(cat.shortcutKey)})</div>
-                      )}
+                      <div className='flex items-center'>
+                        {cat.shortcutKey &&
+                          `(${formatShortcutKey(cat.shortcutKey)})`}
+                        {projectId && (
+                          <LabelPeek
+                            label={{ projectId, name: cat.name }}
+                            className='-my-1.5 ms-1 -me-2'
+                          />
+                        )}
+                      </div>
                     </Button>
                   ))}
               </CardContent>
