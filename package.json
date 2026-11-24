@@ -20,6 +20,7 @@
     "@aws-amplify/core": "^6.19.3",
     "@aws-amplify/ui-react": "^6.1.13",
     "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/client-cloudwatch": "^3.1156.0",
     "@aws-sdk/client-dynamodb": "^3.1156.0",
     "@aws-sdk/client-ecs": "^3.1156.0",
     "@aws-sdk/client-s3": "^3.1156.0",
