@@ -327,18 +327,28 @@ export default function Jobs() {
   }, [userProjectMembershipHook.data, myOrganizationHook.data]);
 
   const organizationOptions = Array.from(
-    new Map(
-      displayProjects.map((project) => [
-        project.organization.id,
-        project.organization.name,
-      ]),
-    ).entries(),
+    new Map([
+      ...displayProjects.map(
+        (project) =>
+          [project.organization.id, project.organization.name] as const,
+      ),
+      ...individualIdJobs.map(
+        (job) => [job.organizationId, job.organizationName] as const,
+      ),
+    ]).entries(),
   ).map(([id, name]) => ({ id, name }));
+  // A saved filter for an organisation not listed here (another account's, or
+  // one with no jobs now) would hide everything while the select reads "All".
+  const activeOrganization = organizationOptions.some(
+    (org) => org.id === organizationFilter,
+  )
+    ? organizationFilter
+    : '';
 
   const filteredProjects = displayProjects.filter((project) => {
     const searchLower = search.toLowerCase();
     const matchesOrganization =
-      !organizationFilter || project.organization.id === organizationFilter;
+      !activeOrganization || project.organization.id === activeOrganization;
     const matchesQueue = project.queues.some((queue) =>
       (queue.tag || '').toLowerCase().includes(searchLower),
     );
@@ -583,7 +593,7 @@ export default function Jobs() {
       .filter((job) => {
         const searchLower = search.toLowerCase();
         const matchesOrganization =
-          !organizationFilter || job.organizationId === organizationFilter;
+          !activeOrganization || job.organizationId === activeOrganization;
         const matchesSearch =
           searchLower === '' ||
           job.projectName.toLowerCase().includes(searchLower) ||
@@ -683,7 +693,7 @@ export default function Jobs() {
           />
           <NativeSelect
             className='w-full'
-            value={organizationFilter}
+            value={activeOrganization}
             onChange={(e) => setOrganizationFilter(e.target.value)}
             style={{
               minWidth: 0,
