@@ -1,10 +1,5 @@
 import { useContext, useMemo } from 'react';
-import {
-  ImageContext,
-  ManagementContext,
-  ProjectContext,
-  UserContext,
-} from './Context';
+import { ImageContext, ProjectContext } from './Context';
 import type { AnnotationImage, AnnotationLocation } from './annotationTypes';
 import { imageDownloadUrl } from './storage/api';
 
@@ -38,15 +33,7 @@ export default function useImageMenuItems({
   stats,
 }: UseImageMenuItemsProps): ImageMenuItem[] {
   const { prevImages, nextImages } = useContext(ImageContext)!;
-  const {
-    projectMembershipHook: { data: projectMemberships },
-  } = useContext(ManagementContext)!;
-  const { project } = useContext(ProjectContext)!;
-  const { user } = useContext(UserContext)!;
-
-  const belongsToCurrentProject = projectMemberships?.find(
-    (pm) => pm.userId == user.userId && pm.projectId == project.id,
-  );
+  const { project, currentPM } = useContext(ProjectContext)!;
 
   // Legacy projects stored the full key; newer ones prefix org/project ids,
   // which we hide from the user.
@@ -179,8 +166,7 @@ export default function useImageMenuItems({
           {
             text: 'Copy GPS data',
             disabled:
-              !belongsToCurrentProject?.isAdmin ||
-              (!image.latitude && !image.longitude),
+              !currentPM?.isAdmin || (!image.latitude && !image.longitude),
             callback: () => {
               const gpsData: string[] = [];
 
@@ -220,7 +206,7 @@ export default function useImageMenuItems({
     return items;
   }, [
     isTest,
-    belongsToCurrentProject,
+    currentPM?.isAdmin,
     sourceKey,
     displaySource,
     location?.id,

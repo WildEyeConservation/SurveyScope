@@ -275,46 +275,6 @@ export function Management({ children }: { children: React.ReactNode }) {
     () => ({ filter: { projectId: { eq: project.id } } }),
     [project.id],
   );
-  //const {items: projectMemberships} = useObserveQuery('UserProjectMembership',{ filter: { projectId: { eq: project.id } } });
-  // const projectMembershipHook = useOptimisticMembership(
-  //   async (nextToken) => client.models.UserProjectMembership.list({ filter: subscriptionFilter,nextToken }),
-  //   subscriptionFilter)
-  const projectMembershipHook = useOptimisticUpdates<
-    Schema['UserProjectMembership']['type'],
-    'UserProjectMembership'
-  >(
-    'UserProjectMembership',
-    async (nextToken) =>
-      client.models.UserProjectMembership.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
-    subscriptionFilter,
-  );
-  const imageSetsHook = useOptimisticUpdates<
-    Schema['ImageSet']['type'],
-    'ImageSet'
-  >(
-    'ImageSet',
-    async (nextToken) =>
-      client.models.ImageSet.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
-    subscriptionFilter,
-  );
-  const locationSetsHook = useOptimisticUpdates<
-    Schema['LocationSet']['type'],
-    'LocationSet'
-  >(
-    'LocationSet',
-    async (nextToken) =>
-      client.models.LocationSet.list({
-        filter: subscriptionFilter.filter,
-        nextToken,
-      }),
-    subscriptionFilter,
-  );
   const annotationSetsHook = useOptimisticUpdates<
     Schema['AnnotationSet']['type'],
     'AnnotationSet'
@@ -333,25 +293,13 @@ export function Management({ children }: { children: React.ReactNode }) {
     <ManagementContext.Provider
       value={{
         allUsers,
-        projectMembershipHook:
-          projectMembershipHook as unknown as ManagementContextType['projectMembershipHook'],
-        imageSetsHook:
-          imageSetsHook as unknown as ManagementContextType['imageSetsHook'],
-        locationSetsHook:
-          locationSetsHook as unknown as ManagementContextType['locationSetsHook'],
         annotationSetsHook:
           annotationSetsHook as unknown as ManagementContextType['annotationSetsHook'],
         queuesHook:
           queuesHook as unknown as ManagementContextType['queuesHook'],
       }}
     >
-      {allUsers &&
-        projectMembershipHook &&
-        imageSetsHook &&
-        locationSetsHook &&
-        annotationSetsHook &&
-        queuesHook &&
-        children}
+      {allUsers && annotationSetsHook && queuesHook && children}
     </ManagementContext.Provider>
   );
 }

@@ -63,10 +63,7 @@ export interface UserContextType {
 
 export interface ManagementContextType {
   allUsers: UserType[];
-  projectMembershipHook: CRUDhook<'UserProjectMembership'>;
   annotationSetsHook: CRUDhook<'AnnotationSet'>;
-  imageSetsHook: CRUDhook<'ImageSet'>;
-  locationSetsHook: CRUDhook<'LocationSet'>;
   queuesHook: {
     data: Schema['Queue']['type'][];
     update: (
