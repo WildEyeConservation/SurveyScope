@@ -18,7 +18,6 @@ const SOURCE_MARKER = 'notebook-marker';
 // MapLibre's world is 512 screen pixels wide at zoom 0.
 const WORLD_PX = 512;
 
-// The crop in the annotator's map, with its controls and marker style.
 export function CropView({
   crop,
   color,
@@ -37,6 +36,7 @@ export function CropView({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [noMap, setNoMap] = useState(false);
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
   const onScaleRef = useRef(onScale);
@@ -51,7 +51,14 @@ export function CropView({
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const map = createImageMap(containerRef.current, projection);
+    let map: maplibregl.Map;
+    try {
+      map = createImageMap(containerRef.current, projection);
+    } catch (error) {
+      console.warn('Species Notebook map unavailable', error);
+      setNoMap(true);
+      return;
+    }
     mapRef.current = map;
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false, showZoom: true }),
@@ -168,6 +175,19 @@ export function CropView({
       <div className='absolute inset-0'>
         <div ref={containerRef} className='h-full w-full' />
       </div>
+      {noMap && (
+        <>
+          <img
+            src={`data:${crop.type};base64,${crop.data}`}
+            alt=''
+            className='absolute inset-0 m-auto max-h-full max-w-full'
+          />
+          <span
+            className='pointer-events-none absolute top-1/2 left-1/2 size-5 -translate-1/2 rounded-full border border-black/70'
+            style={{ backgroundColor: color }}
+          />
+        </>
+      )}
       {failed && (
         <div className='absolute inset-0 flex items-center justify-center text-sm text-[#bcccdc]'>
           This image is unavailable.

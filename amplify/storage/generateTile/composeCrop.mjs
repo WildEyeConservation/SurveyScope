@@ -51,11 +51,14 @@ export async function cutCrop({ raw, info }, crop) {
   ) {
     return null;
   }
-  return sharp(raw, {
-    raw: { width: info.width, height: info.height, channels: info.channels },
-  })
-    .extract(crop)
-    .removeAlpha()
-    .webp(CROP_WEBP)
-    .toBuffer();
+  return (
+    sharp(raw, {
+      raw: { width: info.width, height: info.height, channels: info.channels },
+    })
+      .extract(crop)
+      .removeAlpha()
+      // Originals can hold more chroma than lossy WebP keeps.
+      .webp({ lossless: true })
+      .toBuffer()
+  );
 }

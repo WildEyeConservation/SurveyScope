@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { UserType } from '../amplify/shared/types';
 import { GlobalContext } from './Context';
 
@@ -6,6 +6,7 @@ export const useUsers = () => {
   const { client } = useContext(GlobalContext)!;
   const [result, setResult] = useState<UserType[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [version, setVersion] = useState(0);
   useEffect(() => {
     let isMounted = true;
     const fetchAllUsers = async () => {
@@ -31,6 +32,14 @@ export const useUsers = () => {
     return () => {
       isMounted = false;
     };
-  }, [client]);
-  return { users: result, loaded };
+  }, [client, version]);
+  // A new member joins their organisation group a moment after the membership.
+  const retry = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(retry.current), []);
+  const reload = useCallback(() => {
+    setVersion((v) => v + 1);
+    clearTimeout(retry.current);
+    retry.current = setTimeout(() => setVersion((v) => v + 1), 5000);
+  }, []);
+  return { users: result, loaded, reload };
 };

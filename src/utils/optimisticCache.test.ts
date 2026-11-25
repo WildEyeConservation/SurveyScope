@@ -121,7 +121,6 @@ test('an update naming its row by id finds a row kept under a composite key', ()
     queueId: 'q',
   });
   assert.equal(byMember(target), 'u:p2');
-  // An unknown row is left as given.
   assert.deepEqual(withUpdateTarget(rows, { id: 'zzz' }, byMember), {
     id: 'zzz',
   });

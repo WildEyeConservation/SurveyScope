@@ -61,6 +61,16 @@ function model(
 
 export const introspection: Introspection = {
   models: {
+    OrganizationInvite: model(
+      'OrganizationInvite',
+      [
+        scalar('organizationId'),
+        scalar('username'),
+        scalar('status'),
+        scalar('group'),
+      ],
+      { indexes: { organizationInvitesByUsername: ['username'] } },
+    ),
     Organization: model('Organization', [
       scalar('name'),
       scalar('group'),

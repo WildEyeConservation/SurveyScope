@@ -6,6 +6,7 @@ import { useContext, useState } from 'react';
 import { GlobalContext, UserContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
 import { loadCognitoGroups } from '../cognitoGroups';
+import { useLiveChanges } from '../useLiveChanges';
 
 export default function Notifications() {
   const [show, setShow] = useState(false);
@@ -29,6 +30,10 @@ export default function Notifications() {
     enabled: !!username,
     staleTime: 0,
     gcTime: 0,
+  });
+
+  useLiveChanges('OrganizationInvite', 'username', username, () => {
+    void refetch();
   });
 
   // An interrupted accept leaves "accepting"; accepting again finishes it.
@@ -227,7 +232,7 @@ function Invite({
           invited you to their organisation.
         </p>
         {unfinished && (
-          <p className='mb-0 mt-1 text-muted-foreground'>
+          <p className='mt-1 mb-0 text-muted-foreground'>
             Joining did not finish. Accept again to complete it.
           </p>
         )}

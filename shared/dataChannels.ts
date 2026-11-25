@@ -1,6 +1,7 @@
 // '*' denotes a sysadmin-only channel carrying every row.
 export const DATA_CHANNELS: Record<string, string[]> = {
   OrganizationMembership: ['userId', 'organizationId'],
+  OrganizationInvite: ['username'],
   OrganizationRegistration: ['*'],
   UserProjectMembership: ['userId', 'projectId'],
   Project: ['organizationId'],
@@ -18,6 +19,17 @@ export const DATA_CHANNELS: Record<string, string[]> = {
 
 // Fields of each model that events may carry; storage-only attributes stay out.
 export const DATA_FIELDS: Record<string, string[]> = {
+  OrganizationInvite: [
+    'id',
+    'organizationId',
+    'username',
+    'invitedBy',
+    'status',
+    'organizationName',
+    'group',
+    'createdAt',
+    'updatedAt',
+  ],
   OrganizationMembership: [
     'id',
     'organizationId',
@@ -208,7 +220,6 @@ export function publicFields(model: string, item: Record<string, unknown>) {
   );
 }
 
-// Channel fields built from several row fields, joined with '_'.
 const COMPOSITE: Record<string, Record<string, string[]>> = {
   Annotation: { imageSet: ['imageId', 'setId'] },
 };
@@ -220,8 +231,7 @@ function compositeParts(model: string, field: string) {
     : undefined;
 }
 
-// AppSync Events segments are at most 50 letters, digits or dashes, so a UUID
-// part is packed into 22 base-62 digits.
+// Pack UUIDs to fit AppSync Events' 50-character segment limit.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PACKED = /^[0-9A-Za-z]{22}$/;
 const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -259,7 +269,7 @@ export function channelValue(
   if (!parts) return SEGMENT.test(values[0]) ? values[0] : undefined;
   const value = values.map(pack).join('-');
   if (!SEGMENT.test(value)) return undefined;
-  // Only a value that reads back as this row names its channel.
+  // Round-trip so each channel names exactly one row.
   const back = channelRow(model, field, value);
   return back && parts.every((p, i) => back[p] === values[i])
     ? value

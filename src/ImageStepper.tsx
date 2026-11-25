@@ -1,6 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-// The pill over image viewers that names the image and steps through the list.
 export function ImageStepper({
   title,
   detail,

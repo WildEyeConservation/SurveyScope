@@ -4,10 +4,18 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 import { SearchIcon } from 'lucide-react';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { GlobalContext } from '../Context';
 import { Footer } from '../Modal';
 import { useUsers } from '../apiInterface';
+import { useLiveChanges } from '../useLiveChanges';
 import { fetchAllPaginatedResults } from '../utils';
 import { applyProjectMembershipChange } from '../utils/projectMembershipWrites';
 import { SectionTitle } from './SurveyStructure';
@@ -44,7 +52,7 @@ export default function ManageUsers({
   organizationId: string;
 }) {
   const { client, showModal } = useContext(GlobalContext)!;
-  const { users, loaded: usersLoaded } = useUsers();
+  const { users, loaded: usersLoaded, reload: reloadUsers } = useUsers();
 
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [originalMemberships, setOriginalMemberships] = useState<Membership[]>(
@@ -59,48 +67,66 @@ export default function ManageUsers({
     message: string;
   } | null>(null);
 
+  const loadMemberships = useCallback(
+    async (signal?: AbortSignal): Promise<Membership[]> => {
+      const [orgMemberships, projectMemberships] = await Promise.all([
+        fetchAllPaginatedResults(
+          client.models.OrganizationMembership.membershipsByOrganizationId,
+          {
+            organizationId,
+            selectionSet: ['userId', 'isAdmin'] as const,
+            signal,
+          },
+        ),
+        fetchAllPaginatedResults(
+          client.models.UserProjectMembership.userProjectMembershipsByProjectId,
+          {
+            projectId,
+            selectionSet: ['id', 'userId', 'isAdmin'] as const,
+            signal,
+          },
+        ),
+      ]);
+      return orgMemberships.map((orgMembership) => {
+        const projectMembership = projectMemberships.find(
+          (pm) => pm.userId === orgMembership.userId,
+        );
+        return {
+          userId: orgMembership.userId,
+          membershipId: projectMembership?.id ?? null,
+          annotationAccess: !!projectMembership,
+          isAdmin: !!projectMembership?.isAdmin,
+          isOrgAdmin: !!orgMembership.isAdmin,
+        };
+      });
+    },
+    [client, projectId, organizationId],
+  );
+
+  const loadSeq = useRef(0);
+  // Keep live refreshes from invalidating the post-save reload.
+  const foreground = useRef(0);
+  const livePending = useRef(false);
+  const runLive = useRef<() => void>(() => {});
   const fetchData = useCallback(
     async function fetchData(signal?: AbortSignal) {
+      const seq = ++loadSeq.current;
+      foreground.current += 1;
       try {
-        const [orgMemberships, projectMemberships] = await Promise.all([
-          fetchAllPaginatedResults(
-            client.models.OrganizationMembership.membershipsByOrganizationId,
-            {
-              organizationId,
-              selectionSet: ['userId', 'isAdmin'] as const,
-              signal,
-            },
-          ),
-          fetchAllPaginatedResults(
-            client.models.UserProjectMembership
-              .userProjectMembershipsByProjectId,
-            {
-              projectId,
-              selectionSet: ['id', 'userId', 'isAdmin'] as const,
-              signal,
-            },
-          ),
-        ]);
-
-        const loaded: Membership[] = orgMemberships.map((orgMembership) => {
-          const projectMembership = projectMemberships.find(
-            (pm) => pm.userId === orgMembership.userId,
-          );
-          return {
-            userId: orgMembership.userId,
-            membershipId: projectMembership?.id ?? null,
-            annotationAccess: !!projectMembership,
-            isAdmin: !!projectMembership?.isAdmin,
-            isOrgAdmin: !!orgMembership.isAdmin,
-          };
-        });
+        const loaded = await loadMemberships(signal);
+        if (seq !== loadSeq.current) return;
         setMemberships(loaded);
         setOriginalMemberships(loaded);
       } finally {
+        foreground.current -= 1;
         if (!signal?.aborted) setIsLoading(false);
+        if (foreground.current === 0 && livePending.current) {
+          livePending.current = false;
+          runLive.current();
+        }
       }
     },
-    [client, projectId, organizationId],
+    [loadMemberships],
   );
 
   useEffect(() => {
@@ -111,6 +137,64 @@ export default function ManageUsers({
     });
     return () => controller.abort();
   }, [fetchData]);
+
+  // Preserve unsaved permission edits during live refreshes.
+  const originalRef = useRef(originalMemberships);
+  originalRef.current = originalMemberships;
+  runLive.current = async () => {
+    if (foreground.current > 0) {
+      livePending.current = true;
+      return;
+    }
+    const seq = ++loadSeq.current;
+    try {
+      const fresh = await loadMemberships();
+      if (seq !== loadSeq.current) return;
+      const before = originalRef.current;
+      setMemberships((current) =>
+        fresh.map((row) => {
+          const local = current.find((m) => m.userId === row.userId);
+          const original = before.find((m) => m.userId === row.userId);
+          const edited =
+            local &&
+            original &&
+            (local.annotationAccess !== original.annotationAccess ||
+              local.isAdmin !== original.isAdmin);
+          return edited
+            ? {
+                ...row,
+                annotationAccess: local.annotationAccess,
+                isAdmin: local.isAdmin,
+              }
+            : row;
+        }),
+      );
+      setOriginalMemberships(fresh);
+    } catch (error) {
+      console.error('Failed to refresh users', error);
+    }
+  };
+  const liveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const onLiveChange = (item: Record<string, unknown>) => {
+    if (!users.some((u) => u.id === item.userId)) reloadUsers();
+    clearTimeout(liveTimer.current);
+    liveTimer.current = setTimeout(() => runLive.current(), 300);
+  };
+  useEffect(
+    () => () => {
+      clearTimeout(liveTimer.current);
+      loadSeq.current += 1;
+      livePending.current = false;
+    },
+    [],
+  );
+  useLiveChanges(
+    'OrganizationMembership',
+    'organizationId',
+    organizationId,
+    onLiveChange,
+  );
+  useLiveChanges('UserProjectMembership', 'projectId', projectId, onLiveChange);
 
   const permissions = useMemo<UserPermission[]>(() => {
     const byId = new Map(users.map((u) => [u.id, u]));

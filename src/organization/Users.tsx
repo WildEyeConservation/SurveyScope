@@ -9,6 +9,7 @@ import ConfirmationModal from '../ConfirmationModal';
 import { GlobalContext, UserContext } from '../Context';
 import { Schema } from '../amplify/client-schema';
 import { useUsers } from '../apiInterface';
+import { useLiveChanges } from '../useLiveChanges';
 import ExceptionsModal from './ExceptionsModal';
 import InviteUserModal from './InviteUserModal';
 
@@ -28,7 +29,7 @@ export default function Users({
 }) {
   const { client, showModal, modalToShow } = useContext(GlobalContext)!;
   const { user: authUser } = useContext(UserContext)!;
-  const { users, loaded: usersLoaded } = useUsers();
+  const { users, loaded: usersLoaded, reload: reloadUsers } = useUsers();
 
   const {
     data: memberships,
@@ -52,6 +53,16 @@ export default function Users({
       return allItems;
     },
   });
+
+  useLiveChanges(
+    'OrganizationMembership',
+    'organizationId',
+    organization.id,
+    (item) => {
+      void refetch();
+      if (!users.some((u) => u.id === item.userId)) reloadUsers();
+    },
+  );
 
   const isLoading = !usersLoaded || membershipsLoading;
   const [userToEdit, setUserToEdit] = useState<{

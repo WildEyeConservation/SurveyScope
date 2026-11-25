@@ -337,8 +337,7 @@ export default function Jobs() {
       ),
     ]).entries(),
   ).map(([id, name]) => ({ id, name }));
-  // A saved filter for an organisation not listed here (another account's, or
-  // one with no jobs now) would hide everything while the select reads "All".
+  // A saved filter not in the options would hide every job while the select shows "All".
   const activeOrganization = organizationOptions.some(
     (org) => org.id === organizationFilter,
   )

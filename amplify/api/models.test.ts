@@ -132,6 +132,24 @@ describe('production policies', () => {
   });
 });
 
+describe('invites', () => {
+  it('lets only the invitee hear about their invites', async () => {
+    const data = fixture();
+    data.tables.OrganizationInvite = [
+      { id: 'i1', organizationId: 'org1', username: 'annotator' },
+    ];
+    const channel = (user: string) =>
+      gateway(data, actor(user), POLICIES).models.canSubscribe(
+        'OrganizationInvite',
+        'username',
+        'annotator',
+      );
+    assert.equal(await channel('annotator'), true);
+    assert.equal(await channel('orgAdmin'), false);
+    assert.equal(await channel('outsider'), false);
+  });
+});
+
 describe('survey configuration', () => {
   it('hides hidden queues from annotators', async () => {
     const data = fixture();

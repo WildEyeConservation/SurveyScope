@@ -99,7 +99,6 @@ export default function WorkflowStatistics() {
   const { cognitoGroups, myMembershipHook, myOrganizationHook } =
     useContext(UserContext)!;
   const { users: allUsers } = useUsers();
-  // Every survey member sees the survey's statistics.
   const canView = useCallback(
     (project: ProjectOption) =>
       cognitoGroups.includes('sysadmin') ||
@@ -497,7 +496,6 @@ export default function WorkflowStatistics() {
       endString ?? 'all'
     }`.replace(/[\s()]/g, '_');
 
-  // Snapshots and raw events are for admins; the backend enforces the same rule.
   const projectOrganizationId = projects.find(
     (candidate) => candidate.id === project?.value,
   )?.organizationId;
