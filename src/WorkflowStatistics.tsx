@@ -497,11 +497,11 @@ export default function WorkflowStatistics() {
       endString ?? 'all'
     }`.replace(/[\s()]/g, '_');
 
-  // Raw events name annotators; the backend enforces the same rule.
+  // Snapshots and raw events are for admins; the backend enforces the same rule.
   const projectOrganizationId = projects.find(
     (candidate) => candidate.id === project?.value,
   )?.organizationId;
-  const canExportTaskEvents =
+  const isSurveyAdmin =
     cognitoGroups.includes('sysadmin') ||
     !!myOrganizationHook.data?.some(
       (m) => m.organizationId === projectOrganizationId && m.isAdmin,
@@ -769,7 +769,7 @@ export default function WorkflowStatistics() {
             </>
           )}
         </CardContent>
-        {hasLoaded && !loading && (
+        {hasLoaded && !loading && isSurveyAdmin && (
           <CardFooter className='flex justify-end gap-2'>
             <Button
               variant='primary'
@@ -779,22 +779,20 @@ export default function WorkflowStatistics() {
               <CameraIcon className='size-4' />
               Snapshot
             </Button>
-            {canExportTaskEvents && (
-              <Button
-                variant='outline-primary'
-                onClick={exportTaskEvents}
-                disabled={visibleRunIds.length === 0 || exportProgress !== null}
-              >
-                <DownloadIcon className='size-4' />
-                {exportProgress
-                  ? `Exporting… ${exportProgress}`
-                  : 'Export task events'}
-              </Button>
-            )}
+            <Button
+              variant='outline-primary'
+              onClick={exportTaskEvents}
+              disabled={visibleRunIds.length === 0 || exportProgress !== null}
+            >
+              <DownloadIcon className='size-4' />
+              {exportProgress
+                ? `Exporting… ${exportProgress}`
+                : 'Export task events'}
+            </Button>
           </CardFooter>
         )}
       </Card>
-      {project && (
+      {project && isSurveyAdmin && (
         <WorkflowSnapshotModal
           show={showSnapshot}
           onHide={() => setShowSnapshot(false)}
