@@ -128,6 +128,7 @@ export const handler: CreateOrganizationHandler = async (event) => {
         organizationId: orgId,
         userId,
         isAdmin: true,
+        isTested: true,
         group: orgId,
       },
     });
