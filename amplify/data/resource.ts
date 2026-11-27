@@ -1023,7 +1023,7 @@ const schema = a
         organization: a.belongsTo('Organization', 'organizationId'),
         userId: a.string().required(),
         isAdmin: a.boolean().default(false),
-        isTested: a.boolean().default(false),
+        isTested: a.boolean().default(true),
         group: a.string(),
       })
       .identifier(['organizationId', 'userId'])

@@ -123,6 +123,7 @@ export const handler: RespondToInviteHandler = async (event) => {
         organizationId: invite.organizationId,
         userId: callerSub,
         isAdmin: false,
+        isTested: true,
         group: invite.organizationId,
       },
     });
